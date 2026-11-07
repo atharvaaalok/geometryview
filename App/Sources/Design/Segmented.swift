@@ -1,7 +1,8 @@
 import AppKit
 
-/// A row of exclusive options in one pill. The chosen one is cream with an ink underline, since
-/// blue is kept for what is selected in the model.
+/// A row of exclusive options in one pill. The chosen one is cream and semibold with an ink
+/// underline, since blue is kept for what is selected in the model. Hover is a paler wash, so it
+/// never reads as chosen.
 @MainActor
 final class SegmentedPill: NSView {
     var onChange: ((Int) -> Void)?
@@ -125,7 +126,10 @@ final class SegmentedPill: NSView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             fill.frame = bounds
-            underline.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2)
+            // Just above the pill's border, which is drawn over the segments.
+            let scale = window?.backingScaleFactor ?? 2
+            let border = (Metrics.line * scale).rounded(.up) / scale
+            underline.frame = CGRect(x: 0, y: border, width: bounds.width, height: 2)
             divider.frame = CGRect(x: 0, y: 0, width: Metrics.line, height: bounds.height)
             CATransaction.commit()
         }
@@ -133,10 +137,16 @@ final class SegmentedPill: NSView {
         override func isAccessibilitySelected() -> Bool { isChosen }
 
         override func stateChanged() {
+            let color: NSColor
+            if isChosen {
+                color = Palette.cream
+            } else if isHovering && isEnabled {
+                color = Palette.creamWash
+            } else {
+                color = .clear
+            }
             Motion.animate {
-                fill.backgroundColor =
-                    (isChosen || (isHovering && isEnabled))
-                    ? Palette.cream.cgColor : NSColor.clear.cgColor
+                fill.backgroundColor = color.cgColor
                 underline.opacity = isChosen ? 1 : 0
             }
             label.font = Typography.font(Typography.textSmall, isChosen ? .semibold : .medium)
