@@ -8,6 +8,17 @@ add_library(geo_format STATIC "${CMAKE_SOURCE_DIR}/Import/format/blob.cpp")
 target_include_directories(geo_format PUBLIC "${CMAKE_SOURCE_DIR}/Import")
 target_link_libraries(geo_format PUBLIC geo_base PRIVATE geo_warnings)
 
+if(GEO_TARGET STREQUAL "wasm")
+    # The portable layers only: no Metal, no engine thread, no import processes.
+    file(GLOB_RECURSE engine_core_sources CONFIGURE_DEPENDS
+        math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp)
+    add_library(engine_core STATIC ${engine_core_sources})
+    target_include_directories(engine_core PUBLIC include PUBLIC .)
+    target_include_directories(engine_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
+    target_link_libraries(engine_core PUBLIC geo_base geo_format PRIVATE geo_warnings)
+    return()
+endif()
+
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
     math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp ipc/*.cpp gpu/*.mm gpu/*.cpp
     engine/*.cpp engine/*.mm)

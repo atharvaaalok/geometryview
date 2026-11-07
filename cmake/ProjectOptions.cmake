@@ -12,15 +12,29 @@ target_compile_options(geo_options INTERFACE
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,${geo_no_exceptions}>:-fno-exceptions>
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,${geo_no_exceptions}>:-fno-rtti>
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
-    $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-mcpu=apple-m1>
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,$<CONFIG:Release>>:-O3>
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,$<CONFIG:Release>>:-flto=thin>
 )
-# Scoped by linker language, because swiftc rejects these clang driver flags.
 target_link_options(geo_options INTERFACE
     $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-flto=thin>
-    $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-Wl,-dead_strip>
 )
+
+if(GEO_TARGET STREQUAL "wasm")
+    # SIMD128 everywhere; relaxed SIMD and 64-bit memory are left out because Safari lacks them.
+    target_compile_options(geo_options INTERFACE -msimd128)
+    option(GEO_WASM_THREADS "Build WebAssembly with threads (needs cross-origin isolation)" OFF)
+    if(GEO_WASM_THREADS)
+        target_compile_options(geo_options INTERFACE -pthread)
+        # The default allocator takes one global lock, which serialises the parallel stages.
+        target_link_options(geo_options INTERFACE -pthread -sMALLOC=mimalloc)
+    endif()
+else()
+    target_compile_options(geo_options INTERFACE
+        $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-mcpu=apple-m1>)
+    # Scoped by linker language, because swiftc rejects these clang driver flags.
+    target_link_options(geo_options INTERFACE
+        $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-Wl,-dead_strip>)
+endif()
 
 if(GEO_SANITIZE)
     target_compile_options(geo_options INTERFACE

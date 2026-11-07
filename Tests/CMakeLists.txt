@@ -1,3 +1,27 @@
+if(GEO_TARGET STREQUAL "wasm")
+    # The portable unit tests, run by Node. Tests of Metal, the import processes and the engine
+    # thread stay native.
+    set(portable_tests
+        blob camera edges face_state flight indexed_mesh interaction name_index overlay packer
+        parallel_sort part21 pointer_controller refinement shell spsc_ring step_structure
+        stl_reader style)
+    list(TRANSFORM portable_tests PREPEND unit/)
+    list(TRANSFORM portable_tests APPEND _test.cpp)
+    add_executable(geo_tests unit/main.cpp ${portable_tests})
+    target_include_directories(geo_tests PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
+    target_link_libraries(geo_tests PRIVATE engine_core import_core doctest geo_warnings)
+    set_target_properties(geo_tests PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
+    target_compile_options(geo_tests PRIVATE -fwasm-exceptions)
+    target_compile_definitions(geo_tests PRIVATE GEO_SANITIZED=0)
+    target_link_options(geo_tests PRIVATE -fwasm-exceptions -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1
+                        -sMAXIMUM_MEMORY=4GB -sEXIT_RUNTIME=1 -sSTACK_SIZE=4MB)
+    if(GEO_WASM_THREADS)
+        target_link_options(geo_tests PRIVATE -sPTHREAD_POOL_SIZE=16)
+    endif()
+    add_test(NAME unit COMMAND geo_tests)
+    return()
+endif()
+
 file(GLOB_RECURSE test_sources CONFIGURE_DEPENDS unit/*.cpp unit/*.mm)
 add_executable(geo_tests ${test_sources})
 target_include_directories(geo_tests PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
