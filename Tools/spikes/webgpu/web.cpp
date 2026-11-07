@@ -1,6 +1,7 @@
 // The renderer spike in the browser. The page calls, in turn:
 //   spike_init(width, height)            asks for a WebGPU device; spike_state() turns 1 when ready
-//   spike_load(bytes, size, copies)      builds and uploads the scene from a cache file in memory
+//   spike_load(bytes, size, copies, indexed)  builds and uploads the scene from a cache file in
+//                                        memory, to draw pulled or indexed (see Mode)
 //   spike_start()                        runs the scripted orbit; spike_state() turns 3 when done
 //   spike_results()                      the timings, as JSON
 // A negative state is an error, which spike_error() describes.
@@ -204,12 +205,13 @@ EMSCRIPTEN_KEEPALIVE int spike_state() { return app.state; }
 
 EMSCRIPTEN_KEEPALIVE const char* spike_error() { return app.error.c_str(); }
 
-EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies) {
+EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies, u32 indexed) {
     SceneData scene;
     std::string error;
+    const Mode mode = indexed != 0 ? Mode::Indexed : Mode::Pulled;
     if (!buildScene({bytes, size}, copies, scene, error) ||
-        !app.renderer.init(app.device, scene, app.format, wgpu::CallbackMode::AllowSpontaneous,
-                           error)) {
+        !app.renderer.init(app.device, scene, mode, app.format,
+                           wgpu::CallbackMode::AllowSpontaneous, error)) {
         fail(error);
         return -1;
     }

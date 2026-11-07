@@ -58,6 +58,17 @@ const kClusterVertices = 48u;
 @group(0) @binding(10) var<storage, read_write> args: array<DrawArgs, 2>;
 @group(0) @binding(11) var visTexture: texture_2d<u32>;
 
+// The indexed mode: visible meshlets get slots, and the cull pass writes their triangles' indices,
+// so the hardware reuses a vertex across the triangles that share it.
+struct IndexedArgs { indexCount: atomic<u32>, instanceCount: u32, firstIndex: u32, baseVertex: i32,
+                     firstInstance: u32 }
+@group(0) @binding(12) var<storage, read_write> slotsOut: array<u32>;
+@group(0) @binding(13) var<storage, read_write> indicesOut: array<u32>;
+@group(0) @binding(14) var<storage, read_write> indexedArgs: array<IndexedArgs, 2>;
+@group(0) @binding(15) var<storage, read> slots: array<u32>;
+@group(0) @binding(16) var surfaceTexture: texture_2d<u32>;
+@group(0) @binding(17) var normalTexture: texture_2d<f32>;
+
 fn transformPoint(o: Occurrence, p: vec3f) -> vec3f {
     let h = vec4f(p, 1.0);
     return vec3f(dot(o.row0, h), dot(o.row1, h), dot(o.row2, h));
@@ -209,6 +220,123 @@ fn visFragment(in: VisOut) -> @location(0) u32 {
     return in.vis;
 }
 
+// ---- Indexed mode: cull, expand and draw with vertex reuse ------------------------------------
+
+// Every slot holds a whole meshlet's worth of indices, with unused triangles left degenerate.
+const kSlotIndices = 372u; // 124 triangles
+const kSlotShift = 7u;     // an index is slot << 7 | vertex within the meshlet
+
+var<workgroup> slotCount: array<atomic<u32>, 2>;
+var<workgroup> slotBase: array<u32, 2>;
+var<workgroup> wantSlot: array<u32, 64>;     // the global slot each thread's meshlet got, or none
+var<workgroup> wantInstance: array<u32, 64>;
+
+@compute @workgroup_size(64)
+fn cullIndexed(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
+               @builtin(num_workgroups) groups: vec3u) {
+    let index = (group.y * groups.x + group.x) * 64u + lid;
+    if (lid < 2u) {
+        atomicStore(&slotCount[lid], 0u);
+    }
+    workgroupBarrier();
+    var kind = 0u;
+    var local = 0xFFFFFFFFu;
+    if (index < frame.instanceCount) {
+        let instance = instances[index];
+        let o = occurrences[instance.x];
+        let d = definitions[o.definition];
+        if (isVisible(meshlets[d.meshletBase + instance.y], d, o)) {
+            kind = (d.flags & kDefinitionOpen) >> 1u;
+            local = atomicAdd(&slotCount[kind], 1u);
+        }
+    }
+    workgroupBarrier();
+    if (lid < 2u) {
+        let total = atomicLoad(&slotCount[lid]);
+        var base = 0u;
+        if (total > 0u) {
+            base = atomicAdd(&indexedArgs[lid].indexCount, total * kSlotIndices) / kSlotIndices;
+        }
+        slotBase[lid] = base + select(0u, frame.openClusterStart, lid == 1u);
+    }
+    workgroupBarrier();
+    var slot = 0xFFFFFFFFu;
+    if (local != 0xFFFFFFFFu) {
+        slot = slotBase[kind] + local;
+        slotsOut[slot] = index;
+    }
+    wantSlot[lid] = slot;
+    wantInstance[lid] = index;
+    workgroupBarrier();
+
+    // Together, write each visible meshlet's indices.
+    for (var v = 0u; v < 64u; v++) {
+        let slotIndex = wantSlot[v];
+        if (slotIndex == 0xFFFFFFFFu) {
+            continue;
+        }
+        let instance = instances[wantInstance[v]];
+        let d = definitions[occurrences[instance.x].definition];
+        let m = meshlets[d.meshletBase + instance.y];
+        let triangleCount = (m.b.y >> 8u) & 0xFFu;
+        let last = (m.b.y & 0xFFu) - 1u;
+        for (var j = lid; j < kSlotIndices; j += 64u) {
+            let t = j / 3u;
+            var vertex = 0u;
+            if (t < triangleCount) {
+                let packed = triangles[d.triangleBase + m.a.w + t];
+                vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
+            }
+            indicesOut[slotIndex * kSlotIndices + j] = (slotIndex << kSlotShift) | vertex;
+        }
+    }
+}
+
+struct SurfaceOut {
+    @builtin(position) position: vec4f,
+    @location(0) normal: vec3f,
+    @location(1) @interpolate(flat) id: vec2u, // pick id, occurrence + 1
+}
+
+@vertex
+fn visIndexedVertex(@builtin(vertex_index) index: u32) -> SurfaceOut {
+    let instance = instances[slots[index >> kSlotShift]];
+    let o = occurrences[instance.x];
+    let d = definitions[o.definition];
+    let m = meshlets[d.meshletBase + instance.y];
+    let vertex = m.a.z + min(index & ((1u << kSlotShift) - 1u), (m.b.y & 0xFFu) - 1u);
+    var out: SurfaceOut;
+    out.position = frame.viewProjection * vec4f(transformPoint(o, decodePosition(d, vertex)), 1.0);
+    out.normal = transformDirection(o, decodeNormal(d, vertex));
+    out.id = vec2u(o.idBase + m.b.x + localFace(d, vertex) + 1u, instance.x + 1u);
+    return out;
+}
+
+// Octahedral, so a view-space normal fits two half floats.
+fn encodeNormal(n: vec3f) -> vec2f {
+    let p = n.xy / (abs(n.x) + abs(n.y) + abs(n.z));
+    if (n.z < 0.0) {
+        return (1.0 - abs(p.yx)) * select(vec2f(-1.0), vec2f(1.0), p >= vec2f(0.0));
+    }
+    return p;
+}
+
+fn decodeViewNormal(e: vec2f) -> vec3f {
+    var n = vec3f(e, 1.0 - abs(e.x) - abs(e.y));
+    if (n.z < 0.0) {
+        n = vec3f((1.0 - abs(n.yx)) * select(vec2f(-1.0), vec2f(1.0), n.xy >= vec2f(0.0)), n.z);
+    }
+    return normalize(n);
+}
+
+struct SurfaceTargets { @location(0) id: vec2u, @location(1) normal: vec2f }
+
+@fragment
+fn visIndexedFragment(in: SurfaceOut) -> SurfaceTargets {
+    let n = (frame.viewRotation * vec4f(normalize(in.normal), 0.0)).xyz;
+    return SurfaceTargets(in.id, encodeNormal(n));
+}
+
 // ---- Composite ---------------------------------------------------------------------------------
 
 struct FullOut { @builtin(position) position: vec4f }
@@ -275,12 +403,48 @@ fn hash(x: u32) -> u32 {
     return h;
 }
 
+fn sheetColor(y: f32) -> vec3f {
+    return mix(vec3f(0.96, 0.95, 0.92), vec3f(0.88, 0.87, 0.84), y / frame.viewport.y);
+}
+
+// Three soft bands, a part colour from its occurrence, a little rim. `n` is in view space.
+fn shade(n: vec3f, occurrence: u32) -> vec3f {
+    let h = hash(occurrence + 1u);
+    let base = vec3f(f32(h & 0xFFu), f32((h >> 8u) & 0xFFu), f32((h >> 16u) & 0xFFu)) / 255.0 * 0.35 +
+               vec3f(0.55, 0.6, 0.66);
+    let light = normalize(vec3f(-0.35, 0.55, 0.75));
+    let lit = dot(n, light);
+    let a = smoothstep(0.45, 0.55, lit);
+    let b = smoothstep(-0.05, 0.05, lit);
+    var color = base * select(mix(0.62, 0.82, b), mix(0.82, 1.0, a), a > 0.0);
+    return color + vec3f(0.08) * pow(1.0 - abs(n.z), 3.0);
+}
+
+const kInk = vec3f(0.12, 0.13, 0.15);
+
+@fragment
+fn compositeIndexed(in: FullOut) -> @location(0) vec4f {
+    let size = vec2i(frame.viewport);
+    let p = vec2i(in.position.xy);
+    let id = textureLoad(surfaceTexture, p, 0).rg;
+    if (id.x == 0u) {
+        return vec4f(sheetColor(in.position.y), 1.0);
+    }
+    let n = decodeViewNormal(textureLoad(normalTexture, p, 0).rg);
+    let right = textureLoad(surfaceTexture, min(p + vec2i(1, 0), size - 1), 0).g;
+    let down = textureLoad(surfaceTexture, min(p + vec2i(0, 1), size - 1), 0).g;
+    if (right != id.y || down != id.y) {
+        return vec4f(kInk, 1.0);
+    }
+    return vec4f(shade(n, id.y - 1u), 1.0);
+}
+
 @fragment
 fn composite(in: FullOut) -> @location(0) vec4f {
     let size = vec2i(frame.viewport);
     let p = vec2i(in.position.xy);
     let vis = textureLoad(visTexture, p, 0).r;
-    let sheet = mix(vec3f(0.96, 0.95, 0.92), vec3f(0.88, 0.87, 0.84), in.position.y / frame.viewport.y);
+    let sheet = sheetColor(in.position.y);
     if (vis == 0u) {
         return vec4f(sheet, 1.0);
     }

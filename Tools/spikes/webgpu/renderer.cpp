@@ -34,7 +34,8 @@ struct FrameUniforms {
 static_assert(sizeof(FrameUniforms) == 224);
 
 constexpr u32 kQueries = 6;
-constexpr u64 kReadbackBytes = kQueries * 8 + 32; // timestamps, then both draws' arguments
+constexpr u64 kReadbackBytes = kQueries * 8 + 40; // timestamps, then both draws' arguments
+constexpr u32 kSlotIndices = 372;                 // a meshlet's indices in the indexed mode
 
 using Vec3 = std::array<float, 3>;
 
@@ -65,14 +66,17 @@ wgpu::BindGroupEntry bufferEntry(u32 binding, const wgpu::Buffer& buffer) {
 
 } // namespace
 
-bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFormat outputFormat,
-                    wgpu::CallbackMode callbackMode, std::string& error) {
+bool Renderer::init(wgpu::Device device, const SceneData& scene, Mode mode,
+                    wgpu::TextureFormat outputFormat, wgpu::CallbackMode callbackMode,
+                    std::string& error) {
     device_ = device;
     queue_ = device.GetQueue();
+    mode_ = mode;
     callbackMode_ = callbackMode;
     outputFormat_ = outputFormat;
     instanceCount_ = u32(scene.instances.size());
-    openClusterStart_ = u32(scene.closedClusters);
+    const bool indexed = mode == Mode::Indexed;
+    openClusterStart_ = u32(indexed ? scene.closedInstances : scene.closedClusters);
     for (u32 axis = 0; axis < 3; ++axis) {
         center_[axis] = 0.5f * (scene.boundsMin[axis] + scene.boundsMax[axis]);
     }
@@ -89,6 +93,11 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFo
             return false;
         }
     }
+    const u64 indexBytes = u64(scene.instances.size()) * kSlotIndices * 4;
+    if (indexed && indexBytes > limits.maxStorageBufferBindingSize) {
+        error = "The indexed mode's index buffer is larger than the device can bind.";
+        return false;
+    }
 
     using U = wgpu::BufferUsage;
     const U input = U::Storage | U::CopyDst;
@@ -98,9 +107,16 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFo
     occurrences_ = makeBuffer(device, scene.occurrences.size() * sizeof(GpuOccurrence), input,
                               "occurrences");
     instances_ = makeBuffer(device, scene.instances.size() * 8, input, "instances");
-    clusters_ = makeBuffer(device, (scene.closedClusters + scene.openClusters) * 4, U::Storage,
-                           "clusters");
-    args_ = makeBuffer(device, 32, U::Storage | U::Indirect | U::CopyDst | U::CopySrc, "args");
+    if (indexed) {
+        slots_ = makeBuffer(device, scene.instances.size() * 4, U::Storage, "slots");
+        indices_ = makeBuffer(device, indexBytes, U::Storage | U::Index, "indices");
+        indexedArgs_ = makeBuffer(device, 40, U::Storage | U::Indirect | U::CopyDst | U::CopySrc,
+                                  "indexed args");
+    } else {
+        clusters_ = makeBuffer(device, (scene.closedClusters + scene.openClusters) * 4,
+                               U::Storage, "clusters");
+        args_ = makeBuffer(device, 32, U::Storage | U::Indirect | U::CopyDst | U::CopySrc, "args");
+    }
     const char* names[kStreams] = {"meshlets", "vertices", "highBits", "triangles"};
     for (u32 s = 0; s < kStreams; ++s) {
         streams_[s] = makeBuffer(device, scene.streamBytes[s], input, names[s]);
@@ -124,7 +140,7 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFo
     wgpu::ComputePipelineDescriptor cull{};
     cull.label = "cull";
     cull.compute.module = module;
-    cull.compute.entryPoint = "cull";
+    cull.compute.entryPoint = indexed ? "cullIndexed" : "cull";
     cull_ = device.CreateComputePipeline(&cull);
 
     // Reversed depth: near is 1, compared with greater, for the most precision far away.
@@ -132,16 +148,17 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFo
     depth.format = wgpu::TextureFormat::Depth32Float;
     depth.depthWriteEnabled = wgpu::OptionalBool::True;
     depth.depthCompare = wgpu::CompareFunction::Greater;
-    wgpu::ColorTargetState visTarget{};
-    visTarget.format = wgpu::TextureFormat::R32Uint;
+    wgpu::ColorTargetState visTargets[2] = {};
+    visTargets[0].format = indexed ? wgpu::TextureFormat::RG32Uint : wgpu::TextureFormat::R32Uint;
+    visTargets[1].format = wgpu::TextureFormat::RG16Float;
     wgpu::FragmentState visFragment{};
     visFragment.module = module;
-    visFragment.entryPoint = "visFragment";
-    visFragment.targetCount = 1;
-    visFragment.targets = &visTarget;
+    visFragment.entryPoint = indexed ? "visIndexedFragment" : "visFragment";
+    visFragment.targetCount = indexed ? 2 : 1;
+    visFragment.targets = visTargets;
     wgpu::RenderPipelineDescriptor vis{};
     vis.vertex.module = module;
-    vis.vertex.entryPoint = "visVertex";
+    vis.vertex.entryPoint = indexed ? "visIndexedVertex" : "visVertex";
     vis.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
     vis.primitive.frontFace = wgpu::FrontFace::CCW;
     vis.depthStencil = &depth;
@@ -157,7 +174,7 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, wgpu::TextureFo
     output.format = outputFormat;
     wgpu::FragmentState compositeFragment{};
     compositeFragment.module = module;
-    compositeFragment.entryPoint = "composite";
+    compositeFragment.entryPoint = indexed ? "compositeIndexed" : "composite";
     compositeFragment.targetCount = 1;
     compositeFragment.targets = &output;
     wgpu::RenderPipelineDescriptor composite{};
@@ -196,13 +213,20 @@ void Renderer::createTargets() {
     descriptor.size = {width_, height_, 1};
     descriptor.dimension = wgpu::TextureDimension::e2D;
     descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-    descriptor.format = wgpu::TextureFormat::R32Uint;
+    const bool indexed = mode_ == Mode::Indexed;
+    descriptor.format = indexed ? wgpu::TextureFormat::RG32Uint : wgpu::TextureFormat::R32Uint;
     descriptor.label = "vis";
     vis_ = device_.CreateTexture(&descriptor);
+    visView_ = vis_.CreateView();
+    if (indexed) {
+        descriptor.format = wgpu::TextureFormat::RG16Float;
+        descriptor.label = "normal";
+        normal_ = device_.CreateTexture(&descriptor);
+        normalView_ = normal_.CreateView();
+    }
     descriptor.format = wgpu::TextureFormat::Depth32Float;
     descriptor.label = "depth";
     depth_ = device_.CreateTexture(&descriptor);
-    visView_ = vis_.CreateView();
     depthView_ = depth_.CreateView();
 }
 
@@ -211,13 +235,49 @@ void Renderer::createBindGroups() {
     const wgpu::Buffer& vertices = streams_[kStreamVertices];
     const wgpu::Buffer& highBits = streams_[kStreamHighBits];
     const wgpu::Buffer& triangles = streams_[kStreamTriangles];
+    wgpu::BindGroupDescriptor group{};
+
+    if (mode_ == Mode::Indexed) {
+        const wgpu::BindGroupEntry cull[] = {
+            bufferEntry(0, frameBuffer_), bufferEntry(1, definitions_),
+            bufferEntry(2, occurrences_), bufferEntry(3, meshlets),
+            bufferEntry(4, instances_),   bufferEntry(7, triangles),
+            bufferEntry(12, slots_),      bufferEntry(13, indices_),
+            bufferEntry(14, indexedArgs_),
+        };
+        group.layout = cull_.GetBindGroupLayout(0);
+        group.entryCount = std::size(cull);
+        group.entries = cull;
+        cullGroup_ = device_.CreateBindGroup(&group);
+        const wgpu::BindGroupEntry vis[] = {
+            bufferEntry(0, frameBuffer_), bufferEntry(1, definitions_),
+            bufferEntry(2, occurrences_), bufferEntry(3, meshlets),
+            bufferEntry(4, instances_),   bufferEntry(5, vertices),
+            bufferEntry(6, highBits),     bufferEntry(15, slots_),
+        };
+        group.entryCount = std::size(vis);
+        group.entries = vis;
+        group.layout = visClosed_.GetBindGroupLayout(0);
+        visClosedGroup_ = device_.CreateBindGroup(&group);
+        group.layout = visOpen_.GetBindGroupLayout(0);
+        visOpenGroup_ = device_.CreateBindGroup(&group);
+        wgpu::BindGroupEntry composite[3] = {bufferEntry(0, frameBuffer_), {}, {}};
+        composite[1].binding = 16;
+        composite[1].textureView = visView_;
+        composite[2].binding = 17;
+        composite[2].textureView = normalView_;
+        group.entryCount = 3;
+        group.entries = composite;
+        group.layout = composite_.GetBindGroupLayout(0);
+        compositeGroup_ = device_.CreateBindGroup(&group);
+        return;
+    }
 
     const wgpu::BindGroupEntry cull[] = {
         bufferEntry(0, frameBuffer_), bufferEntry(1, definitions_), bufferEntry(2, occurrences_),
         bufferEntry(3, meshlets),     bufferEntry(4, instances_),   bufferEntry(9, clusters_),
         bufferEntry(10, args_),
     };
-    wgpu::BindGroupDescriptor group{};
     group.layout = cull_.GetBindGroupLayout(0);
     group.entryCount = std::size(cull);
     group.entries = cull;
@@ -295,8 +355,14 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     u.instanceCount = instanceCount_;
     u.openClusterStart = openClusterStart_;
     queue_.WriteBuffer(frameBuffer_, 0, &u, sizeof(u));
-    const u32 args[8] = {0, 1, 0, 0, 0, 1, openClusterStart_ * 48, 0};
-    queue_.WriteBuffer(args_, 0, args, sizeof(args));
+    const bool indexed = mode_ == Mode::Indexed;
+    if (indexed) {
+        const u32 args[10] = {0, 1, 0, 0, 0, 0, 1, openClusterStart_ * kSlotIndices, 0, 0};
+        queue_.WriteBuffer(indexedArgs_, 0, args, sizeof(args));
+    } else {
+        const u32 args[8] = {0, 1, 0, 0, 0, 1, openClusterStart_ * 48, 0};
+        queue_.WriteBuffer(args_, 0, args, sizeof(args));
+    }
 
     const wgpu::CommandEncoder encoder = device_.CreateCommandEncoder();
     wgpu::PassTimestampWrites writes[3];
@@ -316,28 +382,39 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     compute.DispatchWorkgroups(x, (groups + x - 1) / std::max(x, 1u));
     compute.End();
 
-    wgpu::RenderPassColorAttachment visColor{};
-    visColor.view = visView_;
-    visColor.loadOp = wgpu::LoadOp::Clear;
-    visColor.storeOp = wgpu::StoreOp::Store;
-    visColor.clearValue = {0, 0, 0, 0};
+    wgpu::RenderPassColorAttachment visColor[2] = {};
+    for (u32 i = 0; i < 2; ++i) {
+        visColor[i].view = i == 0 ? visView_ : normalView_;
+        visColor[i].loadOp = wgpu::LoadOp::Clear;
+        visColor[i].storeOp = wgpu::StoreOp::Store;
+        visColor[i].clearValue = {0, 0, 0, 0};
+    }
     wgpu::RenderPassDepthStencilAttachment visDepth{};
     visDepth.view = depthView_;
     visDepth.depthLoadOp = wgpu::LoadOp::Clear;
     visDepth.depthStoreOp = wgpu::StoreOp::Store;
     visDepth.depthClearValue = 0.f;
     wgpu::RenderPassDescriptor visPass{};
-    visPass.colorAttachmentCount = 1;
-    visPass.colorAttachments = &visColor;
+    visPass.colorAttachmentCount = indexed ? 2 : 1;
+    visPass.colorAttachments = visColor;
     visPass.depthStencilAttachment = &visDepth;
     visPass.timestampWrites = querySet_ ? &writes[1] : nullptr;
     const wgpu::RenderPassEncoder visEncoder = encoder.BeginRenderPass(&visPass);
     visEncoder.SetPipeline(visClosed_);
     visEncoder.SetBindGroup(0, visClosedGroup_);
-    visEncoder.DrawIndirect(args_, 0);
+    if (indexed) {
+        visEncoder.SetIndexBuffer(indices_, wgpu::IndexFormat::Uint32);
+        visEncoder.DrawIndexedIndirect(indexedArgs_, 0);
+    } else {
+        visEncoder.DrawIndirect(args_, 0);
+    }
     visEncoder.SetPipeline(visOpen_);
     visEncoder.SetBindGroup(0, visOpenGroup_);
-    visEncoder.DrawIndirect(args_, 16);
+    if (indexed) {
+        visEncoder.DrawIndexedIndirect(indexedArgs_, 20);
+    } else {
+        visEncoder.DrawIndirect(args_, 16);
+    }
     visEncoder.End();
 
     wgpu::RenderPassColorAttachment color{};
@@ -367,7 +444,8 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
             encoder.ResolveQuerySet(querySet_, 0, kQueries, resolve_, 0);
             encoder.CopyBufferToBuffer(resolve_, 0, readback->buffer, 0, kQueries * 8);
         }
-        encoder.CopyBufferToBuffer(args_, 0, readback->buffer, kQueries * 8, 32);
+        encoder.CopyBufferToBuffer(indexed ? indexedArgs_ : args_, 0, readback->buffer,
+                                   kQueries * 8, indexed ? 40 : 32);
     }
     const wgpu::CommandBuffer commands = encoder.Finish();
     queue_.Submit(1, &commands);
@@ -376,12 +454,12 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
         readback->busy = true;
         readback->buffer.MapAsync(
             wgpu::MapMode::Read, 0, kReadbackBytes, callbackMode_,
-            [this, readback, tag = tag_](wgpu::MapAsyncStatus status, wgpu::StringView) {
+            [this, readback, indexed, tag = tag_](wgpu::MapAsyncStatus status, wgpu::StringView) {
                 if (status == wgpu::MapAsyncStatus::Success) {
                     const auto* bytes =
                         static_cast<const u8*>(readback->buffer.GetConstMappedRange(0, kReadbackBytes));
                     u64 t[kQueries];
-                    u32 args[8];
+                    u32 args[10];
                     std::memcpy(t, bytes, sizeof(t));
                     std::memcpy(args, bytes + sizeof(t), sizeof(args));
                     FrameTiming timing;
@@ -392,7 +470,9 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
                         timing.composite = double(t[5] - t[4]) * 1e-6;
                         timing.total = double(t[5] - t[0]) * 1e-6;
                     }
-                    timing.clusters = (u64(args[0]) + u64(args[4])) / 48;
+                    // Pulled: 16-triangle clusters. Indexed: visible meshlets, of up to 124.
+                    timing.clusters = indexed ? (u64(args[0]) + u64(args[5])) / kSlotIndices
+                                              : (u64(args[0]) + u64(args[4])) / 48;
                     if (std::getenv("SPIKE_RAW_TIMESTAMPS") != nullptr) {
                         std::fprintf(stderr, "%llu %llu %llu %llu %llu %llu\n", t[0], t[1], t[2],
                                      t[3], t[4], t[5]);

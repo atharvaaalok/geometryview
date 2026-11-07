@@ -140,6 +140,7 @@ bool buildScene(std::span<const u8> file, u32 copies, SceneData& scene, std::str
                 scene.instances.push_back({occurrence, m});
                 const u64 clusters = (meshlets[m].triangleCount + 15u) / 16u;
                 (open ? scene.openClusters : scene.closedClusters) += clusters;
+                scene.closedInstances += open ? 0 : 1;
             }
             scene.triangles += r->triangleCount;
         }

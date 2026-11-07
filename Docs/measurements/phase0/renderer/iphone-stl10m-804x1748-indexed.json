@@ -1,0 +1,73 @@
+{
+    "label": "iphone-loopback-stl10m-804x1748-indexed",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "devicePixelRatio": 3,
+    "model": "stl10m",
+    "copies": 1,
+    "mode": "indexed",
+    "fileMB": 150.8,
+    "fetchMs": 115,
+    "uploadMs": 42,
+    "adapter": "apple apple",
+    "width": 804,
+    "height": 1748,
+    "triangles": 10000006,
+    "instances": 86595,
+    "timestamps": true,
+    "zooms": [
+        {
+            "zoom": 1,
+            "frames": 359,
+            "timedFrames": 360,
+            "gpuMs": {
+                "p50": 13.184,
+                "p99": 14.422
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 17
+            },
+            "cpuSubmitMs": {
+                "p50": 0.2,
+                "p99": 0.44
+            },
+            "clustersP50": 77340
+        },
+        {
+            "zoom": 2,
+            "frames": 359,
+            "timedFrames": 360,
+            "gpuMs": {
+                "p50": 14.033,
+                "p99": 14.987
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 18
+            },
+            "cpuSubmitMs": {
+                "p50": 0.16,
+                "p99": 0.38
+            },
+            "clustersP50": 75782
+        },
+        {
+            "zoom": 4,
+            "frames": 359,
+            "timedFrames": 360,
+            "gpuMs": {
+                "p50": 9.809,
+                "p99": 13.682
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 17
+            },
+            "cpuSubmitMs": {
+                "p50": 0.26,
+                "p99": 0.44
+            },
+            "clustersP50": 41579
+        }
+    ]
+}

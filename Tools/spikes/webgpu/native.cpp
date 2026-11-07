@@ -1,7 +1,8 @@
 // The renderer spike natively on Dawn: the control that separates WebGPU's own cost from a
 // browser's. Renders a scripted orbit offscreen at three zooms and prints GPU timings as JSON.
 //
-//   spike_webgpu <blob> [--size W H] [--frames N] [--copies C] [--png out.ppm]
+//   spike_webgpu <blob> [--size W H] [--frames N] [--copies C] [--interval ms] [--indexed]
+//                [--png out.ppm]
 
 #include "renderer.h"
 #include "scene.h"
@@ -78,6 +79,7 @@ int main(int argc, char** argv) {
     }
     u32 width = 2880, height = 1800, frames = 360, copies = 1;
     double interval = 0; // milliseconds between frame starts, as a display would pace them
+    Mode mode = Mode::Pulled;
     const char* png = nullptr;
     for (int i = 2; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--size") && i + 2 < argc) {
@@ -87,6 +89,8 @@ int main(int argc, char** argv) {
             frames = u32(std::atoi(argv[++i]));
         } else if (!std::strcmp(argv[i], "--copies") && i + 1 < argc) {
             copies = u32(std::atoi(argv[++i]));
+        } else if (!std::strcmp(argv[i], "--indexed")) {
+            mode = Mode::Indexed;
         } else if (!std::strcmp(argv[i], "--interval") && i + 1 < argc) {
             interval = std::atof(argv[++i]);
         } else if (!std::strcmp(argv[i], "--png") && i + 1 < argc) {
@@ -165,7 +169,7 @@ int main(int argc, char** argv) {
     }
 
     Renderer renderer;
-    if (!renderer.init(device, scene, wgpu::TextureFormat::RGBA8Unorm,
+    if (!renderer.init(device, scene, mode, wgpu::TextureFormat::RGBA8Unorm,
                        wgpu::CallbackMode::AllowProcessEvents, error)) {
         std::println(stderr, "{}", error);
         return 1;
@@ -207,9 +211,9 @@ int main(int argc, char** argv) {
     }
 
     std::println("{{\"adapter\": \"{}\", \"backend\": \"Dawn native\", \"width\": {}, \"height\": {}, "
-                 "\"intervalMs\": {},",
+                 "\"intervalMs\": {}, \"mode\": \"{}\",",
                  std::string_view(adapterInfo.device.data, adapterInfo.device.length), width, height,
-                 interval);
+                 interval, mode == Mode::Indexed ? "indexed" : "pulled");
     std::println(" \"triangles\": {}, \"instances\": {}, \"timestamps\": {}, \"zooms\": [",
                  scene.triangles, scene.instances.size(), renderer.timestamps());
     const float zooms[] = {1.f, 2.f, 4.f};

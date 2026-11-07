@@ -24,12 +24,19 @@ struct FrameTiming {
     u32 tag = 0; // the caller's tag at the time the frame was submitted
 };
 
+/// How the visibility pass draws. Pulled: 16-triangle clusters, three vertex invocations per
+/// triangle, and the composite finds each pixel's triangle again. Indexed: the cull pass writes
+/// visible meshlets' indices, the hardware reuses vertices, and the pass writes the pixel's normal
+/// and ids for the composite to read directly.
+enum class Mode { Pulled, Indexed };
+
 class Renderer {
 public:
     /// `callbackMode` is how timing readbacks complete: AllowProcessEvents natively, where the
     /// caller processes events, and AllowSpontaneous in the browser.
-    bool init(wgpu::Device device, const SceneData& scene, wgpu::TextureFormat outputFormat,
-              wgpu::CallbackMode callbackMode, std::string& error);
+    bool init(wgpu::Device device, const SceneData& scene, Mode mode,
+              wgpu::TextureFormat outputFormat, wgpu::CallbackMode callbackMode,
+              std::string& error);
     void resize(u32 width, u32 height);
     /// Encodes and submits one frame into `target`, which must be `width` by `height`.
     void frame(const View& view, wgpu::TextureView target);
@@ -59,8 +66,10 @@ private:
     wgpu::ComputePipeline cull_;
     wgpu::RenderPipeline visClosed_, visOpen_, composite_;
     wgpu::BindGroup cullGroup_, visClosedGroup_, visOpenGroup_, compositeGroup_;
-    wgpu::Texture vis_, depth_;
-    wgpu::TextureView visView_, depthView_;
+    wgpu::Buffer slots_, indices_, indexedArgs_; // the indexed mode's
+    wgpu::Texture vis_, normal_, depth_;
+    wgpu::TextureView visView_, normalView_, depthView_;
+    Mode mode_ = Mode::Pulled;
     wgpu::QuerySet querySet_;
     wgpu::Buffer resolve_;
     Readback readbacks_[4];

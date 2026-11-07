@@ -8,8 +8,9 @@ const model = params.get("model") ?? "stl10m";
 const width = Number(params.get("w") ?? 2880);
 const height = Number(params.get("h") ?? 1800);
 const copies = Number(params.get("copies") ?? 1);
+const mode = params.get("mode") === "indexed" ? "indexed" : "pulled";
 const label = `${params.get("label") ?? "unlabelled"}-${model}${copies > 1 ? `x${copies}` : ""}` +
-              `-${width}x${height}`;
+              `-${width}x${height}-${mode}`;
 const status = document.getElementById("status");
 const canvas = document.getElementById("canvas");
 canvas.width = width;
@@ -53,7 +54,7 @@ try {
   started = performance.now();
   const pointer = spike._malloc(bytes.length);
   spike.HEAPU8.set(bytes, pointer);
-  const loaded = spike._spike_load(pointer, bytes.length, copies);
+  const loaded = spike._spike_load(pointer, bytes.length, copies, mode === "indexed" ? 1 : 0);
   spike._free(pointer);
   if (loaded !== 0) {
     await until(spike, 99);
@@ -64,7 +65,7 @@ try {
   spike._spike_start();
   await until(spike, 3);
   const results = JSON.parse(spike.UTF8ToString(spike._spike_results()));
-  const report = { userAgent: navigator.userAgent, devicePixelRatio, model, copies,
+  const report = { userAgent: navigator.userAgent, devicePixelRatio, model, copies, mode,
                    fileMB: +(bytes.length / 2 ** 20).toFixed(1), fetchMs: Math.round(fetchMs),
                    uploadMs: Math.round(uploadMs), ...results };
   status.textContent = JSON.stringify(report, null, 1);
