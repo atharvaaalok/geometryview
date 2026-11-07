@@ -3,7 +3,7 @@
   "name": "geometry-viewer",
   "display_name": "Geometry",
   "version": "0.1.0",
-  "description": "Open, inspect and picture STEP and STL models on this Mac.",
+  "description": "View 3D CAD models: open, inspect and picture STEP and STL files on this Mac.",
   "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and open them in the Geometry app.",
   "author": { "name": "Atharva Aalok" },
   "server": {

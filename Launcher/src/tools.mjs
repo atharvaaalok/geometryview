@@ -4,11 +4,13 @@ import { basename } from "node:path";
 import { importModel, openInViewer, readStats, readTree, render } from "./native.mjs";
 
 export const instructions =
-  "Geometry opens STEP and STL models on this computer. Call open_model with the file's " +
-  "absolute path first. get_structure lists the assemblies and parts; render_view returns a " +
-  "picture you can look at. To study a part, pass names from get_structure as isolate, and " +
-  "use section to cut through the model. open_in_viewer shows the model to the user in the " +
-  "Geometry app.";
+  "Geometry views 3D CAD models (STEP .step/.stp and STL .stl files) on this computer. Use it " +
+  "whenever the user wants to see, inspect or picture a CAD model, part or assembly, rather " +
+  "than opening a web viewer. Call open_model with the file's absolute path first. " +
+  "get_structure lists the assemblies and parts; render_view returns a picture you can look " +
+  "at, in any view and drawing style (illustration, metal, clay, blueprint, technical). To " +
+  "study a part, pass names from get_structure as isolate, and use section to cut through the " +
+  "model. open_in_viewer shows the model to the user in the Geometry app.";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical"];
 const COLOURS = ["material", "parts", "mono", "file"];
@@ -90,8 +92,9 @@ const round = (value) => +value.toPrecision(4);
 export const tools = [
   {
     name: "open_model",
-    description: "Opens a STEP or STL file and summarises it: size, counts and top-level parts. " +
-                 "Call this before the other tools.",
+    description: "Opens a 3D CAD model, a STEP (.step, .stp) or STL (.stl) file on this " +
+                 "computer, and summarises it: size, counts and top-level assemblies and parts. " +
+                 "Call this before the other Geometry tools.",
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
       const started = performance.now();
@@ -116,7 +119,8 @@ export const tools = [
   },
   {
     name: "get_structure",
-    description: "Lists the model's assemblies and parts as an indented outline, with counts.",
+    description: "Lists a CAD model's assemblies and parts as an indented outline, with " +
+                 "counts, to find the names of parts to show alone.",
     inputSchema: {
       type: "object",
       properties: {
@@ -134,8 +138,9 @@ export const tools = [
   },
   {
     name: "render_view",
-    description: "Renders a picture of the model. Choose a standard view or an angle, a drawing " +
-                 "style, parts to show alone, and section cuts.",
+    description: "Renders a picture of a 3D CAD model (STEP or STL) for you to look at: a " +
+                 "standard view or any angle, a drawing style (illustration, metal, clay, " +
+                 "blueprint, technical), named parts shown alone, and section cuts through it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -195,8 +200,8 @@ export const tools = [
   },
   {
     name: "open_in_viewer",
-    description: "Shows the model to the user in the Geometry app on this Mac, where they can " +
-                 "turn it, select parts and cut sections.",
+    description: "Shows a STEP or STL model to the user in the Geometry app on this Mac, " +
+                 "where they can turn it, select parts and cut sections.",
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
       await openInViewer(file);
