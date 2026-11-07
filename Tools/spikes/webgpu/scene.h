@@ -12,7 +12,7 @@
 
 namespace geo::spike {
 
-// 64 bytes, as the shaders' Definition. Bases index the streams in elements.
+// 80 bytes, as the shaders' Definition. Bases index the streams in elements.
 struct GpuDefinition {
     u32 meshletBase, vertexBase, highBitsBase, triangleBase;
     float boundsMin[3];
@@ -21,8 +21,9 @@ struct GpuDefinition {
     u32 flags;
     float boundsScale[3];
     u32 vertexCount;
+    u32 edgeChunkBase, edgeSegmentBase, faceCount, pad0;
 };
-static_assert(sizeof(GpuDefinition) == 64);
+static_assert(sizeof(GpuDefinition) == 80);
 
 // 64 bytes: a 3x4 transform by rows, the definition and the first pick id.
 struct GpuOccurrence {
@@ -31,7 +32,15 @@ struct GpuOccurrence {
 };
 static_assert(sizeof(GpuOccurrence) == 64);
 
-enum Stream : u32 { kStreamMeshlets, kStreamVertices, kStreamHighBits, kStreamTriangles, kStreams };
+enum Stream : u32 {
+    kStreamMeshlets,
+    kStreamVertices,
+    kStreamHighBits,
+    kStreamTriangles,
+    kStreamEdgeChunks,
+    kStreamEdgeSegments,
+    kStreams
+};
 
 // A run of the file's bytes, and where it goes in a stream.
 struct Piece {
@@ -47,6 +56,8 @@ struct SceneData {
     // Every meshlet of every occurrence, as (occurrence, meshlet within its definition): what the
     // cull pass tests, one thread each.
     std::vector<std::array<u32, 2>> instances;
+    // Every edge chunk of every occurrence, as (occurrence, chunk within its definition).
+    std::vector<std::array<u32, 2>> edgeInstances;
     std::array<u64, kStreams> streamBytes{};
     std::vector<Piece> pieces;
     // 16-triangle clusters the cull pass can emit at most, for closed and for open surfaces.

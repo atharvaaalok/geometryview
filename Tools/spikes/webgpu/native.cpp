@@ -1,8 +1,8 @@
 // The renderer spike natively on Dawn: the control that separates WebGPU's own cost from a
 // browser's. Renders a scripted orbit offscreen at three zooms and prints GPU timings as JSON.
 //
-//   spike_webgpu <blob> [--size W H] [--frames N] [--copies C] [--interval ms] [--indexed]
-//                [--png out.ppm]
+//   spike_webgpu <blob> [--size W H] [--frames N] [--copies C] [--interval ms] [--ppp P]
+//                [--indexed [--no-edges] [--no-shadow] [--no-occlusion]] [--png out.ppm]
 
 #include "renderer.h"
 #include "scene.h"
@@ -80,6 +80,8 @@ int main(int argc, char** argv) {
     u32 width = 2880, height = 1800, frames = 360, copies = 1;
     double interval = 0; // milliseconds between frame starts, as a display would pace them
     Mode mode = Mode::Pulled;
+    Features features;
+    float pixelsPerPoint = 2.f; // a Retina display
     const char* png = nullptr;
     for (int i = 2; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--size") && i + 2 < argc) {
@@ -91,6 +93,14 @@ int main(int argc, char** argv) {
             copies = u32(std::atoi(argv[++i]));
         } else if (!std::strcmp(argv[i], "--indexed")) {
             mode = Mode::Indexed;
+        } else if (!std::strcmp(argv[i], "--no-edges")) {
+            features.edges = false;
+        } else if (!std::strcmp(argv[i], "--no-shadow")) {
+            features.shadow = false;
+        } else if (!std::strcmp(argv[i], "--no-occlusion")) {
+            features.occlusion = false;
+        } else if (!std::strcmp(argv[i], "--ppp") && i + 1 < argc) {
+            pixelsPerPoint = float(std::atof(argv[++i]));
         } else if (!std::strcmp(argv[i], "--interval") && i + 1 < argc) {
             interval = std::atof(argv[++i]);
         } else if (!std::strcmp(argv[i], "--png") && i + 1 < argc) {
@@ -137,9 +147,9 @@ int main(int argc, char** argv) {
     wgpu::Limits adapterLimits{};
     adapter.GetLimits(&adapterLimits);
 
-    std::vector<wgpu::FeatureName> features;
+    std::vector<wgpu::FeatureName> deviceFeatures;
     if (adapter.HasFeature(wgpu::FeatureName::TimestampQuery)) {
-        features.push_back(wgpu::FeatureName::TimestampQuery);
+        deviceFeatures.push_back(wgpu::FeatureName::TimestampQuery);
     }
     wgpu::Limits limits{};
     limits.maxBufferSize = adapterLimits.maxBufferSize;
@@ -151,8 +161,8 @@ int main(int argc, char** argv) {
     toggles.disabledToggles = disabledToggles;
     wgpu::DeviceDescriptor deviceDescriptor{};
     deviceDescriptor.nextInChain = &toggles;
-    deviceDescriptor.requiredFeatureCount = features.size();
-    deviceDescriptor.requiredFeatures = features.data();
+    deviceDescriptor.requiredFeatureCount = deviceFeatures.size();
+    deviceDescriptor.requiredFeatures = deviceFeatures.data();
     deviceDescriptor.requiredLimits = &limits;
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView message) {
@@ -169,7 +179,7 @@ int main(int argc, char** argv) {
     }
 
     Renderer renderer;
-    if (!renderer.init(device, scene, mode, wgpu::TextureFormat::RGBA8Unorm,
+    if (!renderer.init(device, scene, mode, features, pixelsPerPoint, wgpu::TextureFormat::RGBA8Unorm,
                        wgpu::CallbackMode::AllowProcessEvents, error)) {
         std::println(stderr, "{}", error);
         return 1;
@@ -214,6 +224,11 @@ int main(int argc, char** argv) {
                  "\"intervalMs\": {}, \"mode\": \"{}\",",
                  std::string_view(adapterInfo.device.data, adapterInfo.device.length), width, height,
                  interval, mode == Mode::Indexed ? "indexed" : "pulled");
+    std::println(" \"edges\": {}, \"shadow\": {}, \"occlusion\": {}, \"bufferMB\": {:.1f}, "
+                 "\"targetMB\": {:.1f},",
+                 mode == Mode::Indexed && features.edges, mode == Mode::Indexed && features.shadow,
+                 mode == Mode::Indexed && features.occlusion, double(renderer.bufferBytes()) / 1048576.0,
+                 double(renderer.targetBytes()) / 1048576.0);
     std::println(" \"triangles\": {}, \"instances\": {}, \"timestamps\": {}, \"zooms\": [",
                  scene.triangles, scene.instances.size(), renderer.timestamps());
     const float zooms[] = {1.f, 2.f, 4.f};
@@ -222,9 +237,11 @@ int main(int argc, char** argv) {
             render({35.f + 360.f * float(f) / float(frames), 25.f, zooms[z]});
         }
         instance.ProcessEvents();
-        std::vector<double> cull, vis, composite, total, clusters;
+        std::vector<double> cull, shadow, vis, occlusion, composite, total, clusters;
         for (const FrameTiming& t : renderer.timings()) {
             cull.push_back(t.cull);
+            shadow.push_back(t.shadow);
+            occlusion.push_back(t.occlusion);
             vis.push_back(t.vis);
             composite.push_back(t.composite);
             total.push_back(t.total);
@@ -232,10 +249,11 @@ int main(int argc, char** argv) {
         }
         renderer.timings().clear();
         std::println("  {{\"zoom\": {}, \"frames\": {}, \"gpuMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
-                     "\"cullMs\": {:.3f}, \"visMs\": {:.3f}, \"compositeMs\": {:.3f}, "
-                     "\"clustersP50\": {:.0f}}}{}",
+                     "\"cullMs\": {:.3f}, \"shadowMs\": {:.3f}, \"visMs\": {:.3f}, "
+                     "\"occlusionMs\": {:.3f}, \"compositeMs\": {:.3f}, \"clustersP50\": {:.0f}}}{}",
                      zooms[z], total.size(), percentile(total, 0.5), percentile(total, 0.99),
-                     percentile(cull, 0.5), percentile(vis, 0.5), percentile(composite, 0.5),
+                     percentile(cull, 0.5), percentile(shadow, 0.5), percentile(vis, 0.5),
+                     percentile(occlusion, 0.5), percentile(composite, 0.5),
                      percentile(clusters, 0.5), z < 2 ? "," : "");
     }
     std::println("]}}");

@@ -1,7 +1,9 @@
 // The renderer spike in the browser. The page calls, in turn:
 //   spike_init(width, height)            asks for a WebGPU device; spike_state() turns 1 when ready
-//   spike_load(bytes, size, copies, indexed)  builds and uploads the scene from a cache file in
-//                                        memory, to draw pulled or indexed (see Mode)
+//   spike_load(bytes, size, copies, indexed, features, pixelsPerPoint)
+//                                        builds and uploads the scene from a cache file in memory,
+//                                        to draw pulled or indexed, with edges (1), shadow (2) and
+//                                        occlusion (4)
 //   spike_start()                        runs the scripted orbit; spike_state() turns 3 when done
 //   spike_results()                      the timings, as JSON
 // A negative state is an error, which spike_error() describes.
@@ -73,24 +75,33 @@ void finish() {
     collect();
     std::string out = std::format(
         "{{\"adapter\": \"{}\", \"width\": {}, \"height\": {}, \"triangles\": {}, "
-        "\"instances\": {}, \"timestamps\": {}, \"zooms\": [",
+        "\"instances\": {}, \"timestamps\": {}, \"bufferMB\": {:.1f}, \"targetMB\": {:.1f}, "
+        "\"zooms\": [",
         app.adapterName, app.width, app.height, app.triangles, app.instances,
-        app.renderer.timestamps());
+        app.renderer.timestamps(), double(app.renderer.bufferBytes()) / 1048576.0,
+        double(app.renderer.targetBytes()) / 1048576.0);
     for (u32 z = 0; z < 3; ++z) {
-        std::vector<double> total, clusters;
+        std::vector<double> total, clusters, shadow, vis, occlusion, composite;
         for (const FrameTiming& t : app.timings[z]) {
             total.push_back(t.total);
             clusters.push_back(double(t.clusters));
+            shadow.push_back(t.shadow);
+            vis.push_back(t.vis);
+            occlusion.push_back(t.occlusion);
+            composite.push_back(t.composite);
         }
         out += std::format(
             "{}{{\"zoom\": {}, \"frames\": {}, \"timedFrames\": {}, "
             "\"gpuMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
             "\"frameIntervalMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
-            "\"cpuSubmitMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, \"clustersP50\": {:.0f}}}",
+            "\"cpuSubmitMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, \"clustersP50\": {:.0f}, "
+            "\"passMsP50\": {{\"shadow\": {:.3f}, \"vis\": {:.3f}, \"occlusion\": {:.3f}, "
+            "\"composite\": {:.3f}}}}}",
             z ? ", " : "", kZooms[z], app.intervals[z].size(), total.size(),
             percentile(total, 0.5), percentile(total, 0.99), percentile(app.intervals[z], 0.5),
             percentile(app.intervals[z], 0.99), percentile(app.cpu[z], 0.5),
-            percentile(app.cpu[z], 0.99), percentile(clusters, 0.5));
+            percentile(app.cpu[z], 0.99), percentile(clusters, 0.5), percentile(shadow, 0.5),
+            percentile(vis, 0.5), percentile(occlusion, 0.5), percentile(composite, 0.5));
     }
     app.results = out + "]}";
     app.state = 3;
@@ -205,12 +216,15 @@ EMSCRIPTEN_KEEPALIVE int spike_state() { return app.state; }
 
 EMSCRIPTEN_KEEPALIVE const char* spike_error() { return app.error.c_str(); }
 
-EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies, u32 indexed) {
+EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies, u32 indexed,
+                                    u32 featureBits, float pixelsPerPoint) {
     SceneData scene;
     std::string error;
     const Mode mode = indexed != 0 ? Mode::Indexed : Mode::Pulled;
+    const Features features{(featureBits & 1) != 0, (featureBits & 2) != 0,
+                            (featureBits & 4) != 0};
     if (!buildScene({bytes, size}, copies, scene, error) ||
-        !app.renderer.init(app.device, scene, mode, app.format,
+        !app.renderer.init(app.device, scene, mode, features, pixelsPerPoint, app.format,
                            wgpu::CallbackMode::AllowSpontaneous, error)) {
         fail(error);
         return -1;

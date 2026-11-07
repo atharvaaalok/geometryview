@@ -19,7 +19,10 @@ struct Frame {
     up: vec3f, halfHeight: f32,
     forward: vec3f, tanHalfX: f32,
     viewport: vec2f, tanHalfY: f32, secHalfX: f32,
-    secHalfY: f32, instanceCount: u32, openClusterStart: u32, pad0: u32,
+    secHalfY: f32, instanceCount: u32, openClusterStart: u32, edgeInstanceCount: u32,
+    lightTravel: vec3f, ground: f32,
+    worldPerPixel: f32, pixelsPerPoint: f32, depthNear: f32, depthFar: f32,
+    aoRadius: f32, aoSamples: u32, features: u32, pad0: u32,
 }
 
 struct Definition {
@@ -27,6 +30,7 @@ struct Definition {
     boundsMin: vec3f, boundsStep: f32,
     decodeScale: vec3f, flags: u32,
     boundsScale: vec3f, vertexCount: u32,
+    edgeChunkBase: u32, edgeSegmentBase: u32, faceCount: u32, pad0: u32,
 }
 
 struct Occurrence { row0: vec4f, row1: vec4f, row2: vec4f, definition: u32, idBase: u32,
@@ -68,6 +72,33 @@ struct IndexedArgs { indexCount: atomic<u32>, instanceCount: u32, firstIndex: u3
 @group(0) @binding(15) var<storage, read> slots: array<u32>;
 @group(0) @binding(16) var surfaceTexture: texture_2d<u32>;
 @group(0) @binding(17) var normalTexture: texture_2d<f32>;
+
+// Feature edges: chunks of 32 segments, culled into slots and drawn as screen-space quads.
+@group(0) @binding(18) var<storage, read> edgeInstances: array<vec2u>; // occurrence, chunk
+@group(0) @binding(19) var<storage, read> edgeChunks: array<vec4u>;
+@group(0) @binding(20) var<storage, read> edgeSegments: array<u32>;    // five words each
+@group(0) @binding(21) var<storage, read_write> edgeSlotsOut: array<u32>;
+@group(0) @binding(22) var<storage, read_write> edgeArgs: array<DrawArgs, 1>;
+@group(0) @binding(23) var<storage, read> edgeSlots: array<u32>;
+// What the composite reads besides the surface.
+@group(0) @binding(28) var depthTexture: texture_depth_2d;
+@group(0) @binding(29) var inkTexture: texture_2d<f32>;
+@group(0) @binding(30) var occlusionTexture: texture_2d<f32>;
+@group(0) @binding(31) var shadowTexture: texture_2d<f32>;
+
+const kFeatureEdges = 1u;
+const kFeatureShadow = 2u;
+const kFeatureOcclusion = 4u;
+
+// The cast shadow reuses the indexed cull and vertex stages: with this set, a meshlet is kept if
+// its shadow is in view, and vertices land where their shadow falls on the ground.
+override kShadow: bool = false;
+
+// Where a point's shadow lands on the ground.
+fn shadowOf(p: vec3f) -> vec3f {
+    let height = p.z - frame.ground;
+    return p + frame.lightTravel * (height / max(-frame.lightTravel.z, 1e-3));
+}
 
 fn transformPoint(o: Occurrence, p: vec3f) -> vec3f {
     let h = vec4f(p, 1.0);
@@ -123,6 +154,10 @@ fn isVisible(m: Meshlet, d: Definition, o: Occurrence) -> bool {
     let grid = vec3f(f32(m.a.x & 0xFFFFu), f32(m.a.x >> 16u), f32(m.a.y & 0xFFFFu));
     let center = transformPoint(o, grid * d.boundsScale + d.boundsMin);
     let radius = f32(m.a.y >> 16u) * d.boundsStep;
+    if (kShadow) {
+        // Flattened along a light 75 degrees up, a sphere stretches by under 4%.
+        return sphereInView(shadowOf(center), radius * 1.05);
+    }
     if (!sphereInView(center, radius)) {
         return false;
     }
@@ -246,7 +281,8 @@ fn cullIndexed(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id)
         let o = occurrences[instance.x];
         let d = definitions[o.definition];
         if (isVisible(meshlets[d.meshletBase + instance.y], d, o)) {
-            kind = (d.flags & kDefinitionOpen) >> 1u;
+            // A shadow shows both sides, so open and closed surfaces draw together.
+            kind = select((d.flags & kDefinitionOpen) >> 1u, 0u, kShadow);
             local = atomicAdd(&slotCount[kind], 1u);
         }
     }
@@ -306,7 +342,13 @@ fn visIndexedVertex(@builtin(vertex_index) index: u32) -> SurfaceOut {
     let m = meshlets[d.meshletBase + instance.y];
     let vertex = m.a.z + min(index & ((1u << kSlotShift) - 1u), (m.b.y & 0xFFu) - 1u);
     var out: SurfaceOut;
-    out.position = frame.viewProjection * vec4f(transformPoint(o, decodePosition(d, vertex)), 1.0);
+    let world = transformPoint(o, decodePosition(d, vertex));
+    out.position = frame.viewProjection * vec4f(world, 1.0);
+    if (kShadow) {
+        // Held at mid depth, since the flattened model can reach outside the depth range.
+        let clip = frame.viewProjection * vec4f(shadowOf(world), 1.0);
+        out.position = vec4f(clip.xy, 0.5 * clip.w, clip.w);
+    }
     out.normal = transformDirection(o, decodeNormal(d, vertex));
     out.id = vec2u(o.idBase + m.b.x + localFace(d, vertex) + 1u, instance.x + 1u);
     return out;
@@ -335,6 +377,191 @@ struct SurfaceTargets { @location(0) id: vec2u, @location(1) normal: vec2f }
 fn visIndexedFragment(in: SurfaceOut) -> SurfaceTargets {
     let n = (frame.viewRotation * vec4f(normalize(in.normal), 0.0)).xyz;
     return SurfaceTargets(in.id, encodeNormal(n));
+}
+
+@fragment
+fn shadowFragment() -> @location(0) vec4f {
+    return vec4f(1.0);
+}
+
+// ---- Feature edges -------------------------------------------------------------------------------
+
+const kChunkSegments = 32u;
+const kEdgeVertices = 192u;  // six per segment: two triangles
+const kMinChunkPixels = 3.0; // smaller chunks would only blot the part with ink
+const kEdgeSmooth = 1u;
+const kCrease = 1.25;        // points
+
+var<workgroup> edgeCount: atomic<u32>;
+var<workgroup> edgeBase: u32;
+
+@compute @workgroup_size(64)
+fn cullEdges(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
+             @builtin(num_workgroups) groups: vec3u) {
+    let index = (group.y * groups.x + group.x) * 64u + lid;
+    if (lid == 0u) {
+        atomicStore(&edgeCount, 0u);
+    }
+    workgroupBarrier();
+    var local = 0xFFFFFFFFu;
+    if (index < frame.edgeInstanceCount) {
+        let instance = edgeInstances[index];
+        let o = occurrences[instance.x];
+        let d = definitions[o.definition];
+        let c = edgeChunks[d.edgeChunkBase + instance.y];
+        let grid = vec3f(f32(c.x & 0xFFFFu), f32(c.x >> 16u), f32(c.y & 0xFFFFu));
+        let center = transformPoint(o, grid * d.boundsScale + d.boundsMin);
+        let radius = f32(c.y >> 16u) * d.boundsStep;
+        if (radius >= kMinChunkPixels * frame.worldPerPixel && sphereInView(center, radius)) {
+            local = atomicAdd(&edgeCount, 1u);
+        }
+    }
+    workgroupBarrier();
+    if (lid == 0u) {
+        let total = atomicLoad(&edgeCount);
+        var base = 0u;
+        if (total > 0u) {
+            base = atomicAdd(&edgeArgs[0].vertexCount, total * kEdgeVertices) / kEdgeVertices;
+        }
+        edgeBase = base;
+    }
+    workgroupBarrier();
+    if (local != 0xFFFFFFFFu) {
+        edgeSlotsOut[edgeBase + local] = index;
+    }
+}
+
+struct EdgeOut {
+    @builtin(position) position: vec4f,
+    @location(0) @interpolate(linear) across: f32, // pixels from the line's middle
+    @location(1) @interpolate(flat) halfWidth: f32,
+}
+
+// Six vertices per segment, a quad around the line on screen, lifted toward the eye so a
+// neighbour's slightly different tessellation does not cut it into dashes.
+@vertex
+fn edgeVertex(@builtin(vertex_index) vertex: u32) -> EdgeOut {
+    var out: EdgeOut;
+    out.position = vec4f(0.0, 0.0, -1.0, 1.0);
+    out.across = 0.0;
+    out.halfWidth = 1.0;
+    let segment = (vertex / 6u) % kChunkSegments;
+    let corner = (0x312210u >> ((vertex % 6u) * 4u)) & 0xFu; // 0 1 2, 2 1 3
+    let instance = edgeInstances[edgeSlots[vertex / kEdgeVertices]];
+    let o = occurrences[instance.x];
+    let d = definitions[o.definition];
+    let c = edgeChunks[d.edgeChunkBase + instance.y];
+    if (segment >= min(c.w, kChunkSegments)) {
+        return out;
+    }
+    let base = (d.edgeSegmentBase + c.z + segment) * 5u;
+    if ((edgeSegments[base + 3u] >> 30u) == kEdgeSmooth) {
+        return out; // tangent: inked only around a highlighted face
+    }
+    let last = max(d.vertexCount, 1u) - 1u;
+    let lift = -frame.forward * (2.0 * frame.pixelsPerPoint * frame.worldPerPixel);
+    let clipA = frame.viewProjection *
+                vec4f(transformPoint(o, decodePosition(d, min(edgeSegments[base], last))) + lift, 1.0);
+    let clipB = frame.viewProjection *
+                vec4f(transformPoint(o, decodePosition(d, min(edgeSegments[base + 1u], last))) + lift, 1.0);
+    let halfViewport = 0.5 * frame.viewport;
+    let screenA = clipA.xy / clipA.w * halfViewport;
+    let screenB = clipB.xy / clipB.w * halfViewport;
+    let span = screenB - screenA;
+    let spanLength = length(span);
+    let direction = select(vec2f(1.0, 0.0), span / spanLength, spanLength > 1e-4);
+    let normal = vec2f(-direction.y, direction.x);
+    let halfWidth = 0.5 * kCrease * frame.pixelsPerPoint + 1.0; // a pixel more, for the soft edge
+    let t = f32(corner >> 1u);
+    let side = select(-1.0, 1.0, (corner & 1u) != 0u);
+    let screen = mix(screenA, screenB, t) + direction * (t * 2.0 - 1.0) * halfWidth * 0.5 +
+                 normal * side * halfWidth;
+    let clip = mix(clipA, clipB, t);
+    out.position = vec4f(screen / halfViewport * clip.w, clip.z, clip.w);
+    out.across = side * halfWidth;
+    out.halfWidth = halfWidth;
+    return out;
+}
+
+fn lineCover(width: f32, distance: f32) -> f32 {
+    return 1.0 - smoothstep(0.5 * width - 0.5, 0.5 * width + 0.5, distance);
+}
+
+struct InkOut { @location(2) ink: vec4f }
+
+@fragment
+fn edgeFragment(in: EdgeOut) -> InkOut {
+    return InkOut(vec4f(lineCover(2.0 * (in.halfWidth - 1.0), abs(in.across))));
+}
+
+// ---- Ambient occlusion, at half resolution ----------------------------------------------------
+
+fn viewDepth(depth: f32) -> f32 {
+    return frame.depthFar - depth * (frame.depthFar - frame.depthNear);
+}
+
+// A pixel's position in view space, looking down -z. Orthographic.
+fn viewPosition(p: vec2i, depth: f32) -> vec3f {
+    let ndc = vec2f((f32(p.x) + 0.5) / frame.viewport.x * 2.0 - 1.0,
+                    1.0 - (f32(p.y) + 0.5) / frame.viewport.y * 2.0);
+    return vec3f(ndc * vec2f(frame.halfWidth, frame.halfHeight), -viewDepth(depth));
+}
+
+fn depthAt(q: vec2i) -> f32 {
+    return textureLoad(depthTexture, clamp(q, vec2i(0), vec2i(frame.viewport) - 1), 0);
+}
+
+// The neighbour on an axis that lies on the same surface is the one nearer in depth.
+fn tangent(p: vec2i, center: vec3f, axis: vec2i) -> vec3f {
+    let da = depthAt(p + axis);
+    let db = depthAt(p - axis);
+    let a = viewPosition(p + axis, da) - center;
+    let b = center - viewPosition(p - axis, db);
+    if (da <= 0.0) {
+        return b;
+    }
+    if (db <= 0.0) {
+        return a;
+    }
+    return select(b, a, abs(a.z) < abs(b.z));
+}
+
+// How much of the sky above each point nearby geometry hides, from depth alone. The normal comes
+// from whichever neighbour on each axis is on the same surface; samples lie on a spiral turned
+// per pixel.
+@fragment
+fn occlusion(in: FullOut) -> @location(0) vec4f {
+    let gid = vec2i(in.position.xy);
+    let p = gid * 2;
+    let d = depthAt(p);
+    let body = textureLoad(surfaceTexture, clamp(p, vec2i(0), vec2i(frame.viewport) - 1), 0).g;
+    if (d <= 0.0 || body == 0u) {
+        return vec4f(1.0);
+    }
+    let center = viewPosition(p, d);
+    var normal = normalize(cross(tangent(p, center, vec2i(1, 0)), tangent(p, center, vec2i(0, -1))));
+    if (normal.z < 0.0) {
+        normal = -normal;
+    }
+    let px = frame.pixelsPerPoint;
+    let reach = clamp(frame.aoRadius / frame.worldPerPixel, 4.0 * px, 48.0 * px);
+    let radius = reach * frame.worldPerPixel;
+    let turn = 6.2831853 * fract(52.9829189 * fract(dot(vec2f(gid) + 0.5, vec2f(0.06711056, 0.00583715))));
+    var occluded = 0.0;
+    for (var i = 0u; i < frame.aoSamples; i++) {
+        let t = (f32(i) + 0.5) / f32(frame.aoSamples);
+        let angle = turn + f32(i) * 2.3999632;
+        let q = p + vec2i(round(vec2f(cos(angle), sin(angle)) * t * reach));
+        let dq = depthAt(q);
+        if (dq <= 0.0) {
+            continue;
+        }
+        let v = viewPosition(q, dq) - center;
+        let distance = length(v);
+        let falloff = saturate(1.0 - (distance * distance) / (radius * radius));
+        occluded += max(dot(normal, v) / max(distance, 1e-6) - 0.05, 0.0) * falloff;
+    }
+    return vec4f(pow(saturate(1.0 - 2.6 * occluded / f32(frame.aoSamples)), 1.4));
 }
 
 // ---- Composite ---------------------------------------------------------------------------------
@@ -422,21 +649,94 @@ fn shade(n: vec3f, occurrence: u32) -> vec3f {
 
 const kInk = vec3f(0.12, 0.13, 0.15);
 
+// Outlines where the body changes, searched outward over the line's width, heavier against the
+// sheet; a fold where a body steps in depth in front of itself; occlusion blurred over neighbours
+// on the same surface; the feature edges' ink; and the cast shadow on the sheet.
 @fragment
 fn compositeIndexed(in: FullOut) -> @location(0) vec4f {
-    let size = vec2i(frame.viewport);
+    let last = vec2i(frame.viewport) - 1;
     let p = vec2i(in.position.xy);
-    let id = textureLoad(surfaceTexture, p, 0).rg;
-    if (id.x == 0u) {
-        return vec4f(sheetColor(in.position.y), 1.0);
+    let c = textureLoad(surfaceTexture, p, 0).rg; // pick id, body
+    let ppp = frame.pixelsPerPoint;
+    let silhouette = 2.0 * ppp;
+    let partLine = 1.25 * ppp;
+    var solid = 0.0;
+    let reach = 0.5 * max(silhouette, partLine) + 1.0;
+    for (var r = 1.0; r <= reach; r += 1.0) {
+        for (var k = 0u; k < 8u; k++) {
+            let angle = f32(k) * 0.78539816;
+            let o = vec2i(round(vec2f(cos(angle), sin(angle)) * r));
+            let n = textureLoad(surfaceTexture, clamp(p + o, vec2i(0), last), 0).g;
+            if (n != c.y) {
+                let background = c.y == 0u || n == 0u;
+                solid = max(solid, lineCover(select(partLine, silhouette, background),
+                                             length(vec2f(o)) - 0.5));
+            }
+        }
+    }
+
+    if (c.y == 0u) {
+        // The sheet, with the shadow blurred over its half-resolution neighbours.
+        var color = sheetColor(in.position.y);
+        if ((frame.features & kFeatureShadow) != 0u) {
+            let h = p / 2;
+            let lastHalf = vec2i(textureDimensions(shadowTexture)) - 1;
+            var shadow = 0.0;
+            for (var y = -1; y <= 1; y++) {
+                for (var x = -1; x <= 1; x++) {
+                    let w = select(1.0, 2.0, x == 0) * select(1.0, 2.0, y == 0);
+                    shadow += w * textureLoad(shadowTexture, clamp(h + vec2i(x, y) * 3, vec2i(0), lastHalf), 0).r;
+                }
+            }
+            color *= 1.0 - 0.28 * shadow / 16.0;
+        }
+        return vec4f(mix(color, kInk, solid), 1.0);
+    }
+
+    // A body folding in front of itself: a step in depth, not a kink.
+    let z = viewDepth(depthAt(p));
+    if (solid < 1.0) {
+        let s = max(1, i32(round(ppp)));
+        let zl = viewDepth(depthAt(p - vec2i(s, 0)));
+        let zr = viewDepth(depthAt(p + vec2i(s, 0)));
+        let zd = viewDepth(depthAt(p + vec2i(0, s)));
+        let zu = viewDepth(depthAt(p - vec2i(0, s)));
+        let threshold = 10.0 * frame.worldPerPixel * f32(s);
+        let stepX = abs(zl + zr - 2.0 * z);
+        let stepY = abs(zd + zu - 2.0 * z);
+        if ((stepX > threshold && stepX > 0.4 * abs(zr - zl)) ||
+            (stepY > threshold && stepY > 0.4 * abs(zu - zd))) {
+            solid = max(solid, 0.85);
+        }
+    }
+
+    // Occlusion, blurred over the half-resolution neighbours on the same surface.
+    var shadeAmount = 1.0;
+    if ((frame.features & kFeatureOcclusion) != 0u) {
+        let h = p / 2;
+        let lastHalf = vec2i(textureDimensions(occlusionTexture)) - 1;
+        let tolerance = 6.0 * frame.worldPerPixel + 1e-5;
+        var sum = 0.0;
+        var total = 0.0;
+        for (var y = -1; y <= 1; y++) {
+            for (var x = -1; x <= 1; x++) {
+                let q = clamp(h + vec2i(x, y), vec2i(0), lastHalf);
+                let dq = depthAt(q * 2);
+                let same = dq > 0.0 && abs(viewDepth(dq) - z) < tolerance;
+                let w = select(1.0, 2.0, x == 0) * select(1.0, 2.0, y == 0) * select(0.02, 1.0, same);
+                sum += w * textureLoad(occlusionTexture, q, 0).r;
+                total += w;
+            }
+        }
+        shadeAmount = mix(1.0, sum / total, 0.8);
+    }
+
+    var ink = solid;
+    if ((frame.features & kFeatureEdges) != 0u) {
+        ink = max(ink, textureLoad(inkTexture, p, 0).r);
     }
     let n = decodeViewNormal(textureLoad(normalTexture, p, 0).rg);
-    let right = textureLoad(surfaceTexture, min(p + vec2i(1, 0), size - 1), 0).g;
-    let down = textureLoad(surfaceTexture, min(p + vec2i(0, 1), size - 1), 0).g;
-    if (right != id.y || down != id.y) {
-        return vec4f(kInk, 1.0);
-    }
-    return vec4f(shade(n, id.y - 1u), 1.0);
+    return vec4f(mix(shade(n, c.y - 1u) * shadeAmount, kInk, ink), 1.0);
 }
 
 @fragment

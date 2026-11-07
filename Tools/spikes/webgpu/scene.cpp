@@ -67,6 +67,9 @@ bool buildScene(std::span<const u8> file, u32 copies, SceneData& scene, std::str
         out.vertexBase = u32(elements[kStreamVertices]);
         out.highBitsBase = u32(elements[kStreamHighBits]);
         out.triangleBase = u32(elements[kStreamTriangles]);
+        out.edgeChunkBase = u32(elements[kStreamEdgeChunks]);
+        out.edgeSegmentBase = u32(elements[kStreamEdgeSegments]);
+        out.faceCount = r->faceCount;
         std::copy_n(r->boundsMin.data(), 3, out.boundsMin);
         std::copy_n(r->decodeScale.data(), 3, out.decodeScale);
         std::copy_n(r->boundsScale.data(), 3, out.boundsScale);
@@ -87,10 +90,17 @@ bool buildScene(std::span<const u8> file, u32 copies, SceneData& scene, std::str
             add(kStreamHighBits, bytesOf(view.highBits, r->firstHighBits), r->vertexCount, 4);
         }
         add(kStreamTriangles, bytesOf(view.triangles, r->firstTriangle), r->triangleCount, 4);
+        add(kStreamEdgeChunks, bytesOf(view.edgeChunks, r->firstEdgeChunk), r->edgeChunkCount,
+            sizeof(EdgeChunk));
+        add(kStreamEdgeSegments, bytesOf(view.edgeSegments, r->firstEdgeSegment),
+            r->edgeSegmentCount, sizeof(EdgeSegment));
     }
     scene.streamBytes = {elements[kStreamMeshlets] * sizeof(Meshlet),
                          elements[kStreamVertices] * sizeof(PackedVertex),
-                         elements[kStreamHighBits] * 4, elements[kStreamTriangles] * 4};
+                         elements[kStreamHighBits] * 4,
+                         elements[kStreamTriangles] * 4,
+                         elements[kStreamEdgeChunks] * sizeof(EdgeChunk),
+                         elements[kStreamEdgeSegments] * sizeof(EdgeSegment)};
 
     // The model's bounds, from each occurrence's transformed definition bounds.
     std::array<float, 3> low = {INFINITY, INFINITY, INFINITY};
@@ -143,6 +153,9 @@ bool buildScene(std::span<const u8> file, u32 copies, SceneData& scene, std::str
                 scene.closedInstances += open ? 0 : 1;
             }
             scene.triangles += r->triangleCount;
+            for (u32 c = 0; c < r->edgeChunkCount; ++c) {
+                scene.edgeInstances.push_back({occurrence, c});
+            }
         }
     }
     scene.boundsMin = low;

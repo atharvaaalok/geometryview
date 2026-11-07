@@ -9,8 +9,11 @@ const width = Number(params.get("w") ?? 2880);
 const height = Number(params.get("h") ?? 1800);
 const copies = Number(params.get("copies") ?? 1);
 const mode = params.get("mode") === "indexed" ? "indexed" : "pulled";
+// Edges, shadow and occlusion, as bits; all by default. Line widths follow the backing scale.
+const features = Number(params.get("features") ?? 7);
+const pixelsPerPoint = Number(params.get("ppp") ?? devicePixelRatio);
 const label = `${params.get("label") ?? "unlabelled"}-${model}${copies > 1 ? `x${copies}` : ""}` +
-              `-${width}x${height}-${mode}`;
+              `-${width}x${height}-${mode}${mode === "indexed" && features !== 7 ? `-f${features}` : ""}`;
 const status = document.getElementById("status");
 const canvas = document.getElementById("canvas");
 canvas.width = width;
@@ -54,7 +57,8 @@ try {
   started = performance.now();
   const pointer = spike._malloc(bytes.length);
   spike.HEAPU8.set(bytes, pointer);
-  const loaded = spike._spike_load(pointer, bytes.length, copies, mode === "indexed" ? 1 : 0);
+  const loaded = spike._spike_load(pointer, bytes.length, copies, mode === "indexed" ? 1 : 0,
+                                   features, pixelsPerPoint);
   spike._free(pointer);
   if (loaded !== 0) {
     await until(spike, 99);
@@ -65,7 +69,8 @@ try {
   spike._spike_start();
   await until(spike, 3);
   const results = JSON.parse(spike.UTF8ToString(spike._spike_results()));
-  const report = { userAgent: navigator.userAgent, devicePixelRatio, model, copies, mode,
+  const report = { userAgent: navigator.userAgent, devicePixelRatio, model, copies, mode, features,
+                   pixelsPerPoint,
                    fileMB: +(bytes.length / 2 ** 20).toFixed(1), fetchMs: Math.round(fetchMs),
                    uploadMs: Math.round(uploadMs), ...results };
   status.textContent = JSON.stringify(report, null, 1);
