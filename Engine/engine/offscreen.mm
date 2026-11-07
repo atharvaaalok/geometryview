@@ -5,6 +5,8 @@
 #include "engine/look_state.h"
 #include "engine/png.h"
 #include "gpu/renderer.h"
+#include "model/face_state.h"
+#include "model/visibility.h"
 #include "nav/camera.h"
 #include "render/overlay.h"
 #include "render/view.h"
@@ -16,9 +18,12 @@
 #import <Metal/Metal.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <fcntl.h>
+#include <ranges>
 #include <string>
 #include <unistd.h>
 
@@ -28,10 +33,43 @@ using namespace geo;
 
 constexpr double kFitMargin = 1.12;
 
+bool containsIgnoringCase(std::string_view text, std::string_view part) {
+    return std::search(text.begin(), text.end(), part.begin(), part.end(), [](char a, char b) {
+               return std::tolower(u8(a)) == std::tolower(u8(b));
+           }) != text.end();
+}
+
+// Hides every occurrence outside the tree nodes whose names contain one of the comma-separated
+// `names`. Returns false if no node matches.
+bool isolateByName(const scene::Scene& scene, std::string_view names, model::FaceState& state) {
+    std::vector<u8> keep(scene.occurrenceCount(), 0);
+    bool any = false;
+    const format::SegmentView& model = scene.document(0).model();
+    for (const format::NodeRecord& node : model.nodes) {
+        const std::string_view name(model.strings.data() + node.nameOffset, node.nameLength);
+        for (auto part : std::views::split(names, ',')) {
+            const std::string_view filter(part.begin(), part.end());
+            if (filter.empty() || !containsIgnoringCase(name, filter)) {
+                continue;
+            }
+            for (u32 o = node.firstOccurrence; o < node.occurrenceEnd && o < keep.size(); ++o) {
+                keep[o] = 1;
+                any = true;
+            }
+        }
+    }
+    for (u32 o = 0; o < keep.size(); ++o) {
+        if (keep[o] == 0) {
+            state.set({o, model::Target::kWholeOccurrence}, kStateHidden, true);
+        }
+    }
+    return any;
+}
+
 } // namespace
 
 GeoRenderOptions geo_default_render_options(void) {
-    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look(), {}};
+    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look(), {}, nullptr};
 }
 
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
@@ -68,12 +106,22 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         }
         renderer->syncScene(scene);
         renderer->resize(width, height);
+        model::FaceState state;
+        state.resize(scene.faceCounts());
+        Aabb bounds = *sceneBounds;
+        if (options->isolate != nullptr && options->isolate[0] != '\0') {
+            if (!isolateByName(scene, options->isolate, state)) {
+                std::fprintf(stderr, "No part's name contains %s.\n", options->isolate);
+                return false;
+            }
+            bounds = model::visibleBounds(scene, state).value_or(bounds);
+        }
+        renderer->syncState(state);
         engine::LookState looks;
         looks.set(engine::lookSettings(options->look));
         looks.apply(*renderer, scene);
 
         const nav::Viewport viewport{double(width), double(height)};
-        const Aabb bounds = *sceneBounds;
         const double azimuth = options->azimuth_degrees * M_PI / 180.0;
         const double elevation = options->elevation_degrees * M_PI / 180.0;
         const Vec3 direction =
