@@ -455,20 +455,20 @@ std::array<u32, 3> bodyTexels(const Style& style, const Look& look) {
     return bandTexels(kCeramic);
 }
 
-Rgb swatch(const Style& style, const Look& look) {
+u32 swatch(const Style& style, const Look& look) {
     switch (style.name) {
     case StyleName::Illustration:
-        return illustrated(look).light;
+        return texel(illustrated(look).light);
     case StyleName::Metal:
-        return metalFinish(look).base;
+        return texel(metalFinish(look).base);
     case StyleName::Clay:
-        return clayFinish(look).base;
+        return texel(clayFinish(look).base);
     case StyleName::Blueprint:
-        return kBlueprintFace.light;
+        return texel(kBlueprintFace.light);
     case StyleName::Technical:
-        return kWhite;
+        return texel(kWhite);
     }
-    return kCeramic.light;
+    return texel(kCeramic.light);
 }
 
 StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
