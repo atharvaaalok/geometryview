@@ -265,8 +265,8 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
         }
 
         // Both rounding directions are covered by growing the radius, so bounds stay conservative.
-        const simd_float3 center = simd_make_float3(bounds.center[0], bounds.center[1],
-                                                    bounds.center[2]);
+        const simd_float3 center =
+            simd_make_float3(bounds.center[0], bounds.center[1], bounds.center[2]);
         const simd_float3 gridCenter = roundToGrid((center - context.lo) * context.toBoundsGrid);
         const float gridRadius = std::ceil(bounds.radius / context.boundsStep) + 1.0f;
 
@@ -329,8 +329,9 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     parallelSort(sortedTriangles, [](const SortedTriangle& t) { return t.key; });
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
-    const PackContext context{mesh, faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale,
-                              simd_reduce_max(boundsScale), wide};
+    const PackContext context{
+        mesh, faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale, simd_reduce_max(boundsScale),
+        wide};
     std::vector<UnitOutput> outputs(units.size());
     parallelFor(units.size(), [&](usize u) {
         const std::span<const SortedTriangle> range(sortedTriangles.data() + units[u].first,

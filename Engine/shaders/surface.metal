@@ -185,16 +185,17 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
     const float soft = clamp(1.5 * fwidth(d), 0.02, 0.18);
 
     const bool selected = in.id == frame.selectedId;
-    float3 color = selected ? band3(d, -0.15, -0.45, soft, kSelectedLight, kSelectedMid, kSelectedDark)
-                            : band3(d, -0.15, -0.45, soft, kMetalLight, kMetalMid, kMetalDark);
+    float3 color = selected
+                       ? band3(d, -0.15, -0.45, soft, kSelectedLight, kSelectedMid, kSelectedDark)
+                       : band3(d, -0.15, -0.45, soft, kMetalLight, kMetalMid, kMetalDark);
     if (in.id == frame.hoveredId) {
         color = mix(color, kHover, kHoverAmount * (selected ? 0.5 : 1.0));
     }
     return {float4(color, 1.0), in.id, in.position.z};
 }
 
-// Copies each pixel's ID and depth to memory the CPU reads directly, so hover and pivots need no GPU
-// round trip. The attachments themselves stay memoryless. Sample 0 is enough for picking.
+// Copies each pixel's ID and depth to memory the CPU reads directly, so hover and pivots need no
+// GPU round trip. The attachments themselves stay memoryless. Sample 0 is enough for picking.
 struct PickTile {
     uint id [[color(kAttachmentId)]];
     float depth [[color(kAttachmentDepth)]];

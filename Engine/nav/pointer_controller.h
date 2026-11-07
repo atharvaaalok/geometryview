@@ -65,8 +65,8 @@ public:
     PointerResponse move(double x, double y);
     PointerResponse release(Button button, double x, double y);
 
-    /// Zooms about the surface under the pointer. `delta` is positive to zoom in. The anchor is locked
-    /// for a burst of wheel events, because the depth buffer lags the camera while zooming.
+    /// Zooms about the surface under the pointer. `delta` is positive to zoom in. The anchor is
+    /// locked for a burst of wheel events, because the depth buffer lags the camera while zooming.
     PointerResponse scroll(double delta, double x, double y, double time);
 
 private:

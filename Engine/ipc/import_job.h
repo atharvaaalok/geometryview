@@ -24,8 +24,8 @@ std::string cachePathFor(const std::string& sourcePath, const ImportPaths& paths
 
 /// Imports `sourcePath` unless it is already cached. Blocks, so it runs off the engine thread.
 ///
-/// The helper writes to a temporary file, which is renamed only after it succeeds. A reader therefore
-/// never sees a partial file, and a mapping of an older version stays valid.
+/// The helper writes to a temporary file, which is renamed only after it succeeds. A reader
+/// therefore never sees a partial file, and a mapping of an older version stays valid.
 ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths);
 
 } // namespace geo::ipc

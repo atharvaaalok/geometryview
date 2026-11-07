@@ -2,6 +2,7 @@ import AppKit
 import GeometryEngine
 import Metal
 import QuartzCore
+import UniformTypeIdentifiers
 
 /// The full-bleed 3D surface. It owns the CAMetalLayer and forwards input to the engine; the engine
 /// does all the drawing, on its own thread.
@@ -9,12 +10,18 @@ import QuartzCore
 final class ViewportView: NSView {
     private let engine: EngineHandle
     private var attached = false
+    private var spaceHeld = false
+    private var trackingArea: NSTrackingArea?
+
+    /// Called with the file URLs dropped on the viewport.
+    var onDropFiles: (([URL]) -> Void)?
 
     init(engine: EngineHandle) {
         self.engine = engine
         super.init(frame: .zero)
         wantsLayer = true
         layerContentsRedrawPolicy = .never
+        registerForDraggedTypes([.fileURL])
     }
 
     @available(*, unavailable)
@@ -43,6 +50,13 @@ final class ViewportView: NSView {
 
     override var isOpaque: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+        window?.makeFirstResponder(self)
+    }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
@@ -54,6 +68,20 @@ final class ViewportView: NSView {
         updateDrawableSize()
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
     private func updateDrawableSize() {
         guard let window, bounds.width > 0, bounds.height > 0 else {
             return
@@ -63,10 +91,130 @@ final class ViewportView: NSView {
         let height = (bounds.height * scale).rounded()
         metalLayer.contentsScale = scale
         metalLayer.drawableSize = CGSize(width: width, height: height)
+        engine.resize(width: UInt32(width), height: UInt32(height), scale: Float(scale))
         if !attached {
             attached = true
             engine.attach(layer: metalLayer)
         }
-        engine.resize(width: UInt32(width), height: UInt32(height), scale: Float(scale))
+    }
+
+    // MARK: Pointer input
+
+    private func post(_ kind: GeoPointerKind, _ button: GeoPointerButton, _ event: NSEvent) {
+        post(kind, button, event, delta: 0)
+    }
+
+    private func post(
+        _ kind: GeoPointerKind,
+        _ button: GeoPointerButton,
+        _ event: NSEvent,
+        delta: Float
+    ) {
+        let point = convert(event.locationInWindow, from: nil)
+        let scale = window?.backingScaleFactor ?? 1
+        engine.post(
+            GeoPointerEvent(
+                kind: kind,
+                button: button,
+                x: Float(point.x * scale),
+                y: Float((bounds.height - point.y) * scale),
+                delta: delta,
+                modifiers: modifiers(of: event),
+                timestamp: event.timestamp
+            )
+        )
+    }
+
+    private func modifiers(of event: NSEvent) -> UInt32 {
+        let flags = event.modifierFlags
+        var result: UInt32 = 0
+        if flags.contains(.shift) { result |= 1 << 0 }
+        if flags.contains(.control) { result |= 1 << 1 }
+        if flags.contains(.option) { result |= 1 << 2 }
+        if flags.contains(.command) { result |= 1 << 3 }
+        if spaceHeld { result |= 1 << 4 }
+        return result
+    }
+
+    override func mouseMoved(with event: NSEvent) { post(GeoPointerMove, GeoButtonNone, event) }
+    override func mouseDragged(with event: NSEvent) { post(GeoPointerMove, GeoButtonNone, event) }
+    override func rightMouseDragged(with event: NSEvent) {
+        post(GeoPointerMove, GeoButtonNone, event)
+    }
+    override func otherMouseDragged(with event: NSEvent) {
+        post(GeoPointerMove, GeoButtonNone, event)
+    }
+    override func mouseDown(with event: NSEvent) { post(GeoPointerDown, GeoButtonLeft, event) }
+    override func mouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonLeft, event) }
+    override func rightMouseDown(with event: NSEvent) {
+        post(GeoPointerDown, GeoButtonRight, event)
+    }
+    override func rightMouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonRight, event) }
+    override func otherMouseDown(with event: NSEvent) {
+        post(GeoPointerDown, GeoButtonMiddle, event)
+    }
+    override func otherMouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonMiddle, event) }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Momentum would keep zooming after the fingers lift, which is the inertia this viewer avoids.
+        guard event.momentumPhase.isEmpty else {
+            return
+        }
+        let perLine: CGFloat = event.hasPreciseScrollingDeltas ? 2 : 30
+        post(GeoPointerScroll, GeoButtonNone, event, delta: Float(event.scrollingDeltaY * perLine))
+    }
+
+    override func magnify(with event: NSEvent) {
+        post(GeoPointerMagnify, GeoButtonNone, event, delta: Float(event.magnification * 400))
+    }
+
+    // MARK: Keyboard
+
+    private static let spaceKeyCode: UInt16 = 49
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == Self.spaceKeyCode {
+            spaceHeld = true
+            return
+        }
+        guard !event.isARepeat, let key = event.charactersIgnoringModifiers?.lowercased() else {
+            super.keyDown(with: event)
+            return
+        }
+        switch key {
+        case "f": engine.perform(GeoActionFit)
+        case "p": engine.perform(GeoActionToggleProjection)
+        case "\u{1B}": engine.perform(GeoActionClearSelection)
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if event.keyCode == Self.spaceKeyCode {
+            spaceHeld = false
+        } else {
+            super.keyUp(with: event)
+        }
+    }
+
+    // MARK: Dropping files
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = fileURLs(from: sender)
+        guard !urls.isEmpty else {
+            return false
+        }
+        onDropFiles?(urls)
+        return true
+    }
+
+    private func fileURLs(from info: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        return info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options)
+            as? [URL] ?? []
     }
 }

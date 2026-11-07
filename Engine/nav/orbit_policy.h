@@ -1,8 +1,8 @@
 // Chooses the point the camera rotates around.
 //
 // Far away, rotation should turn the whole model about its centre. Close up, that centre may be far
-// off screen and the model swings out of view, so the pivot moves to a surface near the middle of the
-// view. Hysteresis stops it flipping between the two near the threshold.
+// off screen and the model swings out of view, so the pivot moves to a surface near the middle of
+// the view. Hysteresis stops it flipping between the two near the threshold.
 #pragma once
 
 #include "math/geometry.h"
@@ -34,8 +34,8 @@ public:
     /// Updates what is visible. The pivot re-centres, because a surface it sat on may be gone.
     void setVisibleBounds(const Aabb& bounds);
 
-    /// Marks that the view changed by something other than rotation. Successive rotations keep their
-    /// pivot, so only pan, zoom and fit call this.
+    /// Marks that the view changed by something other than rotation. Successive rotations keep
+    /// their pivot, so only pan, zoom and fit call this.
     void navigated() { evaluate_ = true; }
 
     /// Returns the pivot for a new drag. `pointerNdc` is used only in Pointer mode: adaptive mode

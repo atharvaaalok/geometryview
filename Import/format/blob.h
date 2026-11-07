@@ -1,8 +1,8 @@
 // The on-disk cache format. A blob is mapped read-only and its GPU sections are wrapped directly in
 // Metal buffers, so geometry exists once in memory and is backed by a clean file.
 //
-// Layout: a 16 KB header, then sections aligned to 16 KB, the page size on Apple silicon. Everything
-// is little-endian.
+// Layout: a 16 KB header, then sections aligned to 16 KB, the page size on Apple silicon.
+// Everything is little-endian.
 #pragma once
 
 #include "base/types.h"

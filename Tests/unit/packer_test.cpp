@@ -130,8 +130,8 @@ TEST_CASE("bounds contain every vertex of their meshlet") {
             float(m.centerX) * packed.boundsScale[0] + packed.boundsMin[0],
             float(m.centerY) * packed.boundsScale[1] + packed.boundsMin[1],
             float(m.centerZ) * packed.boundsScale[2] + packed.boundsMin[2]};
-        const float step = std::max({packed.boundsScale[0], packed.boundsScale[1],
-                                     packed.boundsScale[2]});
+        const float step =
+            std::max({packed.boundsScale[0], packed.boundsScale[1], packed.boundsScale[2]});
         const float radius = float(m.radius) * step;
         for (u32 v = 0; v < m.vertexCount; ++v) {
             const std::array<float, 3> p = decodePosition(packed, m.vertexOffset + v);

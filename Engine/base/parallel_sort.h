@@ -13,8 +13,8 @@ namespace geo {
 /// Sorts `items` by the u64 returned by `keyOf`. The result does not depend on the thread count.
 ///
 /// Splitters drawn from a sample divide items into buckets that can be sorted independently, which
-/// stays balanced however keys are distributed. Splitting on top bits would not, because a mesh with
-/// one face has identical high key bits.
+/// stays balanced however keys are distributed. Splitting on top bits would not, because a mesh
+/// with one face has identical high key bits.
 template <typename T, typename KeyOf>
 void parallelSort(std::vector<T>& items, KeyOf&& keyOf) {
     constexpr usize kSerialLimit = 1 << 15;

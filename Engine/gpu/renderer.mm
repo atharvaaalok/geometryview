@@ -41,6 +41,7 @@ struct Renderer::State {
     id<MTL4CommandQueue> queue;
     id<MTL4CommandBuffer> commandBuffer;
     std::array<id<MTL4CommandAllocator>, kFramesInFlight> allocators;
+    MTL4RenderPassDescriptor* pass = nil;
     id<MTLSharedEvent> frameFinished;
     u64 frameCount = 0;
 
@@ -167,8 +168,14 @@ struct Renderer::State {
         return true;
     }
 
+    // Built once per size. Each frame only changes the resolve target, so a frame allocates
+    // nothing.
     MTL4RenderPassDescriptor* passDescriptor(id<MTLTexture> resolveTarget) {
-        MTL4RenderPassDescriptor* pass = [MTL4RenderPassDescriptor new];
+        if (pass != nil) {
+            pass.colorAttachments[kAttachmentColor].resolveTexture = resolveTarget;
+            return pass;
+        }
+        pass = [MTL4RenderPassDescriptor new];
         pass.colorAttachments[kAttachmentColor].texture = colorMsaa;
         pass.colorAttachments[kAttachmentColor].resolveTexture = resolveTarget;
         pass.colorAttachments[kAttachmentColor].loadAction = MTLLoadActionClear;
@@ -308,14 +315,13 @@ void Renderer::setScene(scene::MappedBlob& blob) {
 
     // Geometry stays in the mapped file: this buffer wraps the mapping without copying, and it owns
     // the mapping from here on. See ADR 0002.
-    id<MTLBuffer> buffer = [s.device
-        newBufferWithBytesNoCopy:blob.data()
-                          length:blob.size()
-                         options:MTLResourceStorageModeShared |
-                                 MTLResourceHazardTrackingModeUntracked
-                     deallocator:^(void* pointer, NSUInteger length) {
-                         munmap(pointer, length);
-                     }];
+    id<MTLBuffer> buffer = [s.device newBufferWithBytesNoCopy:blob.data()
+                                                       length:blob.size()
+                                                      options:MTLResourceStorageModeShared |
+                                                              MTLResourceHazardTrackingModeUntracked
+                                                  deallocator:^(void* pointer, NSUInteger length) {
+                                                      munmap(pointer, length);
+                                                  }];
     GEO_ASSERT(buffer != nil);
     blob.releaseOwnership();
 
@@ -333,12 +339,12 @@ void Renderer::setScene(scene::MappedBlob& blob) {
         out.vertices = addressOf(view.vertices.data());
         out.highBits = view.highBits.empty() ? 0 : addressOf(view.highBits.data());
         out.triangles = addressOf(view.triangles.data());
-        out.boundsMin = simd_make_float3(record.boundsMin[0], record.boundsMin[1],
-                                         record.boundsMin[2]);
-        out.decodeScale = simd_make_float3(record.decodeScale[0], record.decodeScale[1],
-                                           record.decodeScale[2]);
-        out.boundsScale = simd_make_float3(record.boundsScale[0], record.boundsScale[1],
-                                           record.boundsScale[2]);
+        out.boundsMin =
+            simd_make_float3(record.boundsMin[0], record.boundsMin[1], record.boundsMin[2]);
+        out.decodeScale =
+            simd_make_float3(record.decodeScale[0], record.decodeScale[1], record.decodeScale[2]);
+        out.boundsScale =
+            simd_make_float3(record.boundsScale[0], record.boundsScale[1], record.boundsScale[2]);
         out.boundsStep = simd_reduce_max(out.boundsScale);
         out.flags = record.flags;
     }
@@ -366,9 +372,9 @@ void Renderer::setScene(scene::MappedBlob& blob) {
                 corner & 1 ? definition.boundsMax[0] : definition.boundsMin[0],
                 corner & 2 ? definition.boundsMax[1] : definition.boundsMin[1],
                 corner & 4 ? definition.boundsMax[2] : definition.boundsMin[2], 1.0f);
-            const Vec3 world = simd_make_double3(simd_dot(out.rows[0], local),
-                                                 simd_dot(out.rows[1], local),
-                                                 simd_dot(out.rows[2], local));
+            const Vec3 world =
+                simd_make_double3(simd_dot(out.rows[0], local), simd_dot(out.rows[1], local),
+                                  simd_dot(out.rows[2], local));
             bounds.min = simd_min(bounds.min, world);
             bounds.max = simd_max(bounds.max, world);
         }
@@ -401,8 +407,8 @@ void Renderer::setScene(scene::MappedBlob& blob) {
                                                                 timeoutMS:kFrameTimeoutMs];
             GEO_ASSERT(finished);
         }
-        for (id<MTLBuffer> old in @[ s.blobBuffer, s.definitions, s.occurrences, s.batches,
-                                     s.drawBases ]) {
+        for (id<MTLBuffer> old in
+             @[ s.blobBuffer, s.definitions, s.occurrences, s.batches, s.drawBases ]) {
             [s.residency removeAllocation:old];
         }
     }
@@ -419,16 +425,19 @@ void Renderer::setScene(scene::MappedBlob& blob) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];
-    [s.residency requestResidency];
+
+    // Residency wires pages synchronously, which takes tens of milliseconds for a large file, and
+    // it must not stall the engine thread. A frame arriving first simply waits for the pages it
+    // needs.
+    id<MTLResidencySet> residency = s.residency;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        [residency requestResidency];
+    });
 }
 
-bool Renderer::hasScene() const {
-    return state_->hasScene;
-}
+bool Renderer::hasScene() const { return state_->hasScene; }
 
-Aabb Renderer::sceneBounds() const {
-    return state_->bounds;
-}
+Aabb Renderer::sceneBounds() const { return state_->bounds; }
 
 void Renderer::resize(u32 width, u32 height) {
     State& s = *state_;
@@ -442,11 +451,13 @@ void Renderer::resize(u32 width, u32 height) {
     }
     s.width = width;
     s.height = height;
+    s.pass = nil;
 
     const MTLTextureUsage target = MTLTextureUsageRenderTarget;
     s.colorMsaa = s.makeTarget(kColorFormat, kSampleCount, MTLStorageModeMemoryless, target);
     s.idMsaa = s.makeTarget(kIdFormat, kSampleCount, MTLStorageModeMemoryless, target);
-    s.depthCopyMsaa = s.makeTarget(kDepthCopyFormat, kSampleCount, MTLStorageModeMemoryless, target);
+    s.depthCopyMsaa =
+        s.makeTarget(kDepthCopyFormat, kSampleCount, MTLStorageModeMemoryless, target);
     s.depthMsaa = s.makeTarget(kDepthFormat, kSampleCount, MTLStorageModeMemoryless, target);
     s.offscreenColor = s.makeTarget(kColorFormat, 1, MTLStorageModeShared, target);
 

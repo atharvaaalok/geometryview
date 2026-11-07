@@ -129,8 +129,8 @@ u32 denseLabels(DisjointSets& sets, usize count, std::vector<u32>& labels) {
 }
 
 struct EdgeTable {
-    std::vector<u32> edgeOfCorner;  // edge id per triangle corner
-    std::vector<u32> firstCorner;   // one corner per edge, the same on every run
+    std::vector<u32> edgeOfCorner; // edge id per triangle corner
+    std::vector<u32> firstCorner;  // one corner per edge, the same on every run
     u32 edgeCount = 0;
 };
 
@@ -199,11 +199,11 @@ std::vector<u64> collectBorders(const EdgeTable& edges, const Regions& regions,
 
 // Merges groups below `minTriangles` into neighbours, preferring the longest shared border.
 //
-// A size cap on the merged region is what keeps faces from chaining together: without it, every small
-// region's best neighbour soon becomes the one large region, and a whole surface collapses into a
-// single face. The cap starts near `minTriangles`, so regions end up similar in size, and it doubles
-// each pass, so a region left stranded between large neighbours is still absorbed. The last pass has
-// no cap, which guarantees the bound on the number of faces.
+// A size cap on the merged region is what keeps faces from chaining together: without it, every
+// small region's best neighbour soon becomes the one large region, and a whole surface collapses
+// into a single face. The cap starts near `minTriangles`, so regions end up similar in size, and it
+// doubles each pass, so a region left stranded between large neighbours is still absorbed. The last
+// pass has no cap, which guarantees the bound on the number of faces.
 void mergeSmallGroups(const EdgeTable& edges, Regions& regions, u32 minTriangles) {
     constexpr int kMaxPasses = 6;
     DisjointSets faces(regions.groupCount);
@@ -280,8 +280,8 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
             }
             const u32 a = u32(corner / 3), b = firstCorner / 3;
             // A zero-area triangle has no normal, and it joins whatever it touches.
-            const bool degenerate = simd_length_squared(normals[a]) == 0.0f ||
-                                    simd_length_squared(normals[b]) == 0.0f;
+            const bool degenerate =
+                simd_length_squared(normals[a]) == 0.0f || simd_length_squared(normals[b]) == 0.0f;
             if (degenerate || simd_dot(normals[a], normals[b]) >= cosCrease) {
                 groups.unite(a, b);
             }
@@ -316,9 +316,9 @@ float cornerAngle(simd_float3 corner, simd_float3 toNext, simd_float3 toPrevious
 }
 
 // Sums each triangle's unit normal into its vertices, weighted by the corner's angle. Weighting by
-// angle makes the result independent of how a surface was split into triangles: two 45 degree corners
-// count the same as one 90 degree corner, whereas area weighting favours the side split in two and
-// shows up as faint bands on smooth surfaces. Normals here are left unnormalised.
+// angle makes the result independent of how a surface was split into triangles: two 45 degree
+// corners count the same as one 90 degree corner, whereas area weighting favours the side split in
+// two and shows up as faint bands on smooth surfaces. Normals here are left unnormalised.
 void accumulateAngleWeightedNormals(IndexedMesh& mesh) {
     struct Contribution {
         simd_float3 normal;
@@ -334,9 +334,8 @@ void accumulateAngleWeightedNormals(IndexedMesh& mesh) {
             const simd_float3 n = simd_cross(b - a, c - a);
             const float length = simd_length(n);
             if (length > 0.0f) {
-                contributions[t] = {n / length,
-                                    {cornerAngle(a, b, c), cornerAngle(b, c, a),
-                                     cornerAngle(c, a, b)}};
+                contributions[t] = {
+                    n / length, {cornerAngle(a, b, c), cornerAngle(b, c, a), cornerAngle(c, a, b)}};
             } else {
                 contributions[t] = {};
             }

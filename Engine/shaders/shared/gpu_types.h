@@ -1,5 +1,5 @@
-// Runtime records shared by the renderer and its shaders. This header compiles as both C++ and Metal
-// Shading Language, so the two can never disagree about a layout.
+// Runtime records shared by the renderer and its shaders. This header compiles as both C++ and
+// Metal Shading Language, so the two can never disagree about a layout.
 #pragma once
 
 #include "format/gpu_records.h"
@@ -73,11 +73,11 @@ struct FrameUniforms {
     simd_float3 right;
     simd_float3 up;
     simd_float3 forward;
-    float halfWidth;   // orthographic half extents
+    float halfWidth; // orthographic half extents
     float halfHeight;
-    float tanHalfX;    // perspective half-angle tangents
+    float tanHalfX; // perspective half-angle tangents
     float tanHalfY;
-    float secHalfX;    // reciprocal cosines, for sphere tests
+    float secHalfX; // reciprocal cosines, for sphere tests
     float secHalfY;
     uint32_t perspective;
     uint32_t hoveredId;

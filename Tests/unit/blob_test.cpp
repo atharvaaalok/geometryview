@@ -1,5 +1,5 @@
-#include "format/blob.h"
 #include "cache/blob_writer.h"
+#include "format/blob.h"
 
 #include <cstdio>
 #include <cstring>

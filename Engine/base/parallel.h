@@ -16,7 +16,8 @@ void parallelFor(usize count, Body&& body) {
     auto trampoline = [](void* context, size_t index) {
         (*static_cast<std::remove_reference_t<Body>*>(context))(usize(index));
     };
-    dispatch_apply_f(count, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), &body, trampoline);
+    dispatch_apply_f(count, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), &body,
+                     trampoline);
 }
 
 /// The number of ranges `parallelRanges` uses for these arguments, for sizing per-range state.

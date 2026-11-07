@@ -145,8 +145,7 @@ Vec3 PointerController::anchorAt(double x, double y) {
 }
 
 PointerResponse PointerController::scroll(double delta, double x, double y, double time) {
-    const bool newBurst =
-        time - lastZoomTime_ > kZoomBurstSeconds || x != zoomX_ || y != zoomY_;
+    const bool newBurst = time - lastZoomTime_ > kZoomBurstSeconds || x != zoomX_ || y != zoomY_;
     if (newBurst) {
         zoomAnchor_ = anchorAt(x, y);
         zoomX_ = x;

@@ -47,8 +47,8 @@ float parseSlow(const char* first, const char* last) {
     return strtof_l(buffer.data(), nullptr, cLocale);
 }
 
-// Parses a decimal float. When the mantissa fits in 2^53 and the exponent is within 10^22, one double
-// operation gives the correctly rounded result, which covers nearly all STL files.
+// Parses a decimal float. When the mantissa fits in 2^53 and the exponent is within 10^22, one
+// double operation gives the correctly rounded result, which covers nearly all STL files.
 const char* parseFloat(const char* p, const char* end, float& value) {
     static constexpr std::array<double, 23> kPowersOfTen = {
         1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
@@ -261,10 +261,9 @@ bool readStl(std::span<const u8> file, TriangleSoup& soup, std::string& error) {
     }
 
     const usize declared = file.size() >= kBinaryHeaderSize ? readCount(file) : 0;
-    const bool exactBinary =
-        file.size() >= kBinaryHeaderSize &&
-        (file.size() - kBinaryHeaderSize) / kBinaryRecordSize == declared &&
-        (file.size() - kBinaryHeaderSize) % kBinaryRecordSize == 0;
+    const bool exactBinary = file.size() >= kBinaryHeaderSize &&
+                             (file.size() - kBinaryHeaderSize) / kBinaryRecordSize == declared &&
+                             (file.size() - kBinaryHeaderSize) % kBinaryRecordSize == 0;
 
     if (exactBinary) {
         parseBinary(file, declared, soup.corners);

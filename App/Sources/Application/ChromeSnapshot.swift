@@ -18,9 +18,14 @@ enum ChromeSnapshot {
         let height = Int(root.bounds.height * scale)
         guard
             let context = CGContext(
-                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
         else {
             return
         }

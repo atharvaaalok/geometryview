@@ -57,8 +57,8 @@ void tumble(Camera& camera, Vec3 pivot, double dxN, double dyN, double rotateSpe
 void zoomAbout(Camera& camera, double factor, Vec3 anchor, double ndcX, double ndcY,
                const Viewport& viewport) {
     if (camera.perspective) {
-        // Moving along the anchor's ray keeps it on the same pixel. Focus scales too, so dollying in
-        // never stalls at the old target.
+        // Moving along the anchor's ray keeps it on the same pixel. Focus scales too, so dollying
+        // in never stalls at the old target.
         camera.position += (anchor - camera.position) * (1.0 - factor);
         camera.focusDistance *= factor;
         return;
@@ -66,8 +66,8 @@ void zoomAbout(Camera& camera, double factor, Vec3 anchor, double ndcX, double n
     const double oldHalfHeight = camera.orthoHalfHeight;
     camera.orthoHalfHeight *= factor;
     const double shrink = oldHalfHeight - camera.orthoHalfHeight;
-    camera.position += camera.right() * (ndcX * viewport.aspect() * shrink) +
-                       camera.up() * (ndcY * shrink);
+    camera.position +=
+        camera.right() * (ndcX * viewport.aspect() * shrink) + camera.up() * (ndcY * shrink);
 }
 
 void pan(Camera& camera, double pixelsX, double pixelsY, double depth, const Viewport& viewport) {
@@ -88,13 +88,12 @@ void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double ma
     const double extentRight = extentAlong(right);
     const double extentUp = extentAlong(up);
     const double extentDepth = extentAlong(forward);
-    const double halfHeight =
-        std::max({extentUp, extentRight / viewport.aspect(), 1e-9}) * margin;
+    const double halfHeight = std::max({extentUp, extentRight / viewport.aspect(), 1e-9}) * margin;
 
     camera.orthoHalfHeight = halfHeight;
-    const double distance =
-        camera.perspective ? halfHeight / std::tan(camera.fovY * 0.5) + extentDepth
-                           : extentDepth + halfHeight;
+    const double distance = camera.perspective
+                                ? halfHeight / std::tan(camera.fovY * 0.5) + extentDepth
+                                : extentDepth + halfHeight;
     camera.focusDistance = distance;
     camera.position = center - forward * distance;
 }

@@ -44,8 +44,8 @@ public:
     /// Renders and returns BGRA pixels, for tests and `gcli render`. Blocks until done.
     std::vector<u8> renderOffscreen(const render::ViewState& view);
 
-    /// Reads the most recent frame's ID and depth from CPU-visible memory. No GPU round trip. Pixels
-    /// outside the viewport, or with nothing drawn, return nothing.
+    /// Reads the most recent frame's ID and depth from CPU-visible memory. No GPU round trip.
+    /// Pixels outside the viewport, or with nothing drawn, return nothing.
     std::optional<PixelHit> readPixel(int x, int y, const render::DepthDecoder& depth) const;
 
 private:

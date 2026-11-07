@@ -5,6 +5,8 @@ import GeometryEngine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow?
+    // A file opened from Finder arrives before launch finishes, while there is no window yet.
+    private var pendingURL: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         geo_trace_memory("did finish launching")
@@ -21,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         NSApp.activate()
         geo_trace_memory("window shown")
+        if let pendingURL {
+            window.open(pendingURL)
+            self.pendingURL = nil
+        }
 
         if ChromeSnapshot.isRequested {
             window.contentView?.layoutSubtreeIfNeeded()
@@ -29,6 +35,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ChromeSnapshot.capture(window)
                 NSApp.terminate(nil)
             }
+        }
+    }
+
+    @objc func openDocument(_ sender: Any?) {
+        window?.chooseFile()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else {
+            return
+        }
+        if let window {
+            window.open(url)
+        } else {
+            pendingURL = url
         }
     }
 

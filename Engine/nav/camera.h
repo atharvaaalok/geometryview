@@ -21,8 +21,8 @@ struct NdcPoint {
 struct Camera {
     Vec3 position = simd_make_double3(0.0, 0.0, 1.0);
     simd_quatd orientation = simd_quaternion(0.0, 0.0, 0.0, 1.0);
-    double focusDistance = 1.0;   // distance to the target, which rotation orbits by default
-    double orthoHalfHeight = 1.0; // half the view height, in world units
+    double focusDistance = 1.0;       // distance to the target, which rotation orbits by default
+    double orthoHalfHeight = 1.0;     // half the view height, in world units
     double fovY = 0.5235987755982988; // 30 degrees
     bool perspective = false;
 
@@ -47,13 +47,14 @@ struct Camera {
 
 /// Rotates the camera about `pivot`, like a trackball.
 ///
-/// `dxN` and `dyN` are the drag in trackball units: pixels times 2 / viewport width, with y negated,
-/// so a full-width drag is 2 units. The axis is built from the view, so a drag feels the same wherever
-/// the pivot is, and because position and orientation turn together, panned framing is preserved.
+/// `dxN` and `dyN` are the drag in trackball units: pixels times 2 / viewport width, with y
+/// negated, so a full-width drag is 2 units. The axis is built from the view, so a drag feels the
+/// same wherever the pivot is, and because position and orientation turn together, panned framing
+/// is preserved.
 void tumble(Camera& camera, Vec3 pivot, double dxN, double dyN, double rotateSpeed);
 
-/// Scales the view by `factor` (below 1 zooms in) while keeping `anchor`, shown at (`ndcX`, `ndcY`),
-/// on that same pixel.
+/// Scales the view by `factor` (below 1 zooms in) while keeping `anchor`, shown at (`ndcX`,
+/// `ndcY`), on that same pixel.
 void zoomAbout(Camera& camera, double factor, Vec3 anchor, double ndcX, double ndcY,
                const Viewport& viewport);
 

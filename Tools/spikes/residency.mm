@@ -96,8 +96,8 @@ int main(int argc, const char** argv) {
                 id<MTLBuffer> buffer =
                     [device newBufferWithBytesNoCopy:mapping
                                               length:length
-                                             options:MTLResourceStorageModeShared
-                                                     | MTLResourceHazardTrackingModeUntracked
+                                             options:MTLResourceStorageModeShared |
+                                                     MTLResourceHazardTrackingModeUntracked
                                          deallocator:^(void* pointer, NSUInteger size) {
                                              munmap(pointer, size);
                                          }];
@@ -124,8 +124,9 @@ int main(int argc, const char** argv) {
                     const char* name;
                     id<MTLBuffer> buffer;
                 };
-                for (const Case& c : {Case{"16 KB anonymous", tiny}, Case{"500 MB anonymous", large},
-                                      Case{"500 MB file-backed", buffer}}) {
+                for (const Case& c :
+                     {Case{"16 KB anonymous", tiny}, Case{"500 MB anonymous", large},
+                      Case{"500 MB file-backed", buffer}}) {
                     for (int idleSeconds : {1, 4}) {
                         for (int repeat = 0; repeat < 2; ++repeat) {
                             usleep(useconds_t(idleSeconds) * 1'000'000);
@@ -135,8 +136,9 @@ int main(int argc, const char** argv) {
                             resume = [NSDate date];
                             touch(queue, c.buffer, scratch);
                             double second = -resume.timeIntervalSinceNow * 1e3;
-                            std::println("  {:<20} {} s idle: first read {:6.2f} ms, next {:5.2f} ms",
-                                         c.name, idleSeconds, first, second);
+                            std::println(
+                                "  {:<20} {} s idle: first read {:6.2f} ms, next {:5.2f} ms",
+                                c.name, idleSeconds, first, second);
                         }
                     }
                 }

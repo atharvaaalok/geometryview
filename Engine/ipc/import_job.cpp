@@ -13,8 +13,8 @@
 #include <fcntl.h>
 #include <format>
 #include <spawn.h>
-#include <sys/stat.h>
 #include <string_view>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -60,8 +60,9 @@ std::string readAll(int fd) {
     }
 }
 
-// Starts the helper with exactly three inherited descriptors beyond stderr. POSIX_SPAWN_CLOEXEC_DEFAULT
-// closes everything else, so it cannot reach any other file this process has open.
+// Starts the helper with exactly three inherited descriptors beyond stderr.
+// POSIX_SPAWN_CLOEXEC_DEFAULT closes everything else, so it cannot reach any other file this
+// process has open.
 bool spawnHelper(const std::string& helper, int sourceFd, int outputFd, int resultFd, pid_t& pid,
                  std::string& error) {
     posix_spawn_file_actions_t actions;
@@ -96,13 +97,14 @@ std::string cachePathFor(const std::string& sourcePath, const ImportPaths& paths
                          std::string& error) {
     struct stat info{};
     if (stat(sourcePath.c_str(), &info) != 0) {
-        error = "This file could not be found.";
+        error = errno == ENOENT
+                    ? "This file could not be found."
+                    : std::format("This file could not be read: {}.", std::strerror(errno));
         return {};
     }
-    const std::string identity =
-        std::format("{}|{}|{}|{}|{}.{}|{}", sourcePath, u64(info.st_dev), u64(info.st_ino),
-                    i64(info.st_size), i64(info.st_mtimespec.tv_sec),
-                    i64(info.st_mtimespec.tv_nsec), format::kVersion);
+    const std::string identity = std::format(
+        "{}|{}|{}|{}|{}.{}|{}", sourcePath, u64(info.st_dev), u64(info.st_ino), i64(info.st_size),
+        i64(info.st_mtimespec.tv_sec), i64(info.st_mtimespec.tv_nsec), format::kVersion);
     const u64 key = XXH3_64bits(identity.data(), identity.size());
     return std::format("{}/{:016x}.geoblob", paths.cacheDirectory, key);
 }

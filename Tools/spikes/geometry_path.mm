@@ -34,8 +34,7 @@ struct Mesh {
     std::vector<uint32_t> indices;
 };
 
-template <typename T>
-bool readAll(FILE* f, std::vector<T>& out, size_t count) {
+template <typename T> bool readAll(FILE* f, std::vector<T>& out, size_t count) {
     out.resize(count);
     return std::fread(out.data(), sizeof(T), count, f) == count;
 }
@@ -103,9 +102,7 @@ bool loadBinaryStl(const char* path, Mesh& mesh) {
     return true;
 }
 
-int16_t snorm16(float v) {
-    return int16_t(std::lround(std::clamp(v, -1.0f, 1.0f) * 32767.0f));
-}
+int16_t snorm16(float v) { return int16_t(std::lround(std::clamp(v, -1.0f, 1.0f) * 32767.0f)); }
 
 void encodeOctahedral(const float* normal, int16_t& x, int16_t& y) {
     simd_float3 n = simd_make_float3(normal[0], normal[1], normal[2]);
@@ -175,10 +172,10 @@ Scene buildScene(const Mesh& mesh, int instanceCount, unsigned maxVertices) {
     std::vector<meshopt_Meshlet> built(bound);
     std::vector<unsigned> builtVertices(bound * maxVertices);
     std::vector<unsigned char> builtTriangles(bound * kMeshletMaxTriangles * 3);
-    size_t meshletCount = meshopt_buildMeshlets(
-        built.data(), builtVertices.data(), builtTriangles.data(), mesh.indices.data(),
-        mesh.indices.size(), mesh.positions.data(), vertexCount, 12, maxVertices,
-        kMeshletMaxTriangles, 0.25f);
+    size_t meshletCount =
+        meshopt_buildMeshlets(built.data(), builtVertices.data(), builtTriangles.data(),
+                              mesh.indices.data(), mesh.indices.size(), mesh.positions.data(),
+                              vertexCount, 12, maxVertices, kMeshletMaxTriangles, 0.25f);
 
     scene.meshlets.reserve(meshletCount);
     for (size_t i = 0; i < meshletCount; ++i) {
@@ -472,8 +469,7 @@ public:
             for (size_t first = 0, draw = 0; first < scene_.batches.size();
                  first += kMaxBatchesPerDraw, ++draw) {
                 [table setAddress:bases_.gpuAddress + draw * sizeof(uint32_t) atIndex:kBufferBase];
-                [e setArgumentTable:table
-                           atStages:MTLRenderStageObject | MTLRenderStageMesh];
+                [e setArgumentTable:table atStages:MTLRenderStageObject | MTLRenderStageMesh];
                 size_t groups = std::min<size_t>(kMaxBatchesPerDraw, scene_.batches.size() - first);
                 [e drawMeshThreadgroups:MTLSizeMake(groups, 1, 1)
                     threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
@@ -507,7 +503,8 @@ public:
     // Makes the most recent image the reference that later runs are compared against.
     void captureBaseline() {
         baseline_.assign(static_cast<const uint8_t*>(readback_.contents),
-                         static_cast<const uint8_t*>(readback_.contents) + size_t(kWidth) * kHeight * 4);
+                         static_cast<const uint8_t*>(readback_.contents) +
+                             size_t(kWidth) * kHeight * 4);
     }
 
     void clearBaseline() { baseline_.clear(); }
@@ -576,8 +573,8 @@ private:
         };
         colorMsaa_ = make(MTLPixelFormatBGRA8Unorm, 4, MTLStorageModeMemoryless,
                           MTLTextureUsageRenderTarget);
-        idMsaa_ = make(MTLPixelFormatR32Uint, 4, MTLStorageModeMemoryless,
-                       MTLTextureUsageRenderTarget);
+        idMsaa_ =
+            make(MTLPixelFormatR32Uint, 4, MTLStorageModeMemoryless, MTLTextureUsageRenderTarget);
         depthMsaa_ = make(MTLPixelFormatDepth32Float, 4, MTLStorageModeMemoryless,
                           MTLTextureUsageRenderTarget);
         colorResolve_ = make(MTLPixelFormatBGRA8Unorm, 1, MTLStorageModePrivate,
@@ -703,7 +700,8 @@ void printRow(const char* name, const Result& r, const Result& baseline) {
 int main(int argc, const char** argv) {
     @autoreleasepool {
         if (argc < 3) {
-            std::println(stderr, "usage: spike_geometry <metallib> <file.mesh|file.stl> [instances]");
+            std::println(stderr,
+                         "usage: spike_geometry <metallib> <file.mesh|file.stl> [instances]");
             return 2;
         }
         std::string path = argv[2];
@@ -733,15 +731,16 @@ int main(int argc, const char** argv) {
         double duplication =
             double(scene.meshletVertices.size()) / double(mesh.positions.size() / 3);
         std::println("{} triangles x{} instances = {:.1f} Mtri, {} meshlets, built in {:.2f} s",
-                     scene.triangleCount, instances,
-                     double(scene.triangleCount) * instances / 1e6, meshletCount, buildSeconds);
-        std::println("meshlet fill: triangles {:.1f}%, vertices {:.1f}%, vertex duplication {:.2f}x",
-                     triangleFill * 100, vertexFill * 100, duplication);
+                     scene.triangleCount, instances, double(scene.triangleCount) * instances / 1e6,
+                     meshletCount, buildSeconds);
+        std::println(
+            "meshlet fill: triangles {:.1f}%, vertices {:.1f}%, vertex duplication {:.2f}x",
+            triangleFill * 100, vertexFill * 100, duplication);
 
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         NSError* error = nil;
-        id<MTLLibrary> library =
-            [device newLibraryWithURL:[NSURL fileURLWithPath:@(argv[1])] error:&error];
+        id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(argv[1])]
+                                                     error:&error];
         if (!library) {
             std::println(stderr, "library: {}", error.localizedDescription.UTF8String);
             return 1;
@@ -762,7 +761,8 @@ int main(int argc, const char** argv) {
             printRow("classic indexed (Metal 3)", baseline, baseline);
             printRow("mesh wide, no culling (Metal 3)", bench.runMesh(meshAll), baseline);
             printRow("mesh wide, culling (Metal 3)", bench.runMesh(meshCull), baseline);
-            printRow("mesh wide, no culling (Metal 4)", bench.runMeshMetal4(@"objectAll"), baseline);
+            printRow("mesh wide, no culling (Metal 4)", bench.runMeshMetal4(@"objectAll"),
+                     baseline);
             printRow("mesh wide, culling (Metal 4)", bench.runMeshMetal4(@"objectCull"), baseline);
         }
     }

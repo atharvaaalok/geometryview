@@ -1,5 +1,5 @@
-// Stage timing for performance work. Prints only when GEOMETRY_TRACE is set, so it stays in the code
-// and costs one branch otherwise.
+// Stage timing for performance work. Prints only when GEOMETRY_TRACE is set, so it stays in the
+// code and costs one branch otherwise.
 #pragma once
 
 #include "base/time.h"

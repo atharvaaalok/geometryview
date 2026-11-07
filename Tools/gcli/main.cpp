@@ -116,7 +116,8 @@ int renderCommand(int argc, const char** argv) {
     const double azimuth = argc > 7 ? std::atof(argv[7]) : 35.0;
     const double elevation = argc > 8 ? std::atof(argv[8]) : 25.0;
     const bool perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
-    return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation, perspective)
+    return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation,
+                                  perspective)
                ? 0
                : 1;
 }

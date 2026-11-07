@@ -65,8 +65,8 @@ private:
 
 } // namespace
 
-bool writeBlob(int fd, const PackedDefinition& definition,
-               const std::array<u8, 16>& sourceHash, std::string& error) {
+bool writeBlob(int fd, const PackedDefinition& definition, const std::array<u8, 16>& sourceHash,
+               std::string& error) {
     Header header{};
     header.magic = kMagic;
     header.version = kVersion;

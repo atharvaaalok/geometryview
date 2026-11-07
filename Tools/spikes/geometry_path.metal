@@ -123,8 +123,8 @@ void meshWide(MeshOut out, object_data const Payload& payload [[payload]],
     }
     if (index < m.vertexCount) {
         float3 translate = instances[payload.instance].xyz;
-        out.set_vertex(index, transformVertex(vertices[m.vertexOffset + index], frame, translate,
-                                              m.faceBase));
+        out.set_vertex(
+            index, transformVertex(vertices[m.vertexOffset + index], frame, translate, m.faceBase));
     }
     if (index < m.triangleCount) {
         uchar4 t = triangles[m.triangleOffset + index];

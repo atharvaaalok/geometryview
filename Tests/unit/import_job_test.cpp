@@ -87,7 +87,8 @@ TEST_CASE("a bad file reports the helper's message and leaves no cache behind") 
 
 TEST_CASE("a missing file reports that it could not be found") {
     Workspace workspace;
-    const ImportOutcome outcome = importFile((workspace.root / "nope.stl").string(), workspace.paths);
+    const ImportOutcome outcome =
+        importFile((workspace.root / "nope.stl").string(), workspace.paths);
     CHECK_FALSE(outcome.ok);
     CHECK(outcome.message == "This file could not be found.");
 }

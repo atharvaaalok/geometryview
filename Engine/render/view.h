@@ -21,8 +21,8 @@ struct ViewState {
     DepthDecoder depth;
 };
 
-/// Builds the uniforms for a frame. Depth is reversed, because float precision is highest near zero:
-/// distant geometry then keeps its precision. Orthographic depth hugs the scene bounds.
+/// Builds the uniforms for a frame. Depth is reversed, because float precision is highest near
+/// zero: distant geometry then keeps its precision. Orthographic depth hugs the scene bounds.
 ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
                    const Aabb& sceneBounds);
 

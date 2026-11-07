@@ -2,6 +2,10 @@
 //
 // Rendering is on demand. The source stops completely when nothing needs drawing, so an idle window
 // costs no CPU or GPU time, and it can be restarted from any point in the engine thread's loop.
+//
+// Frames start just before the commit deadline rather than as soon as the display link fires.
+// Encoding takes well under a millisecond, so starting at once would leave a finished frame waiting
+// while newer input arrives. ADR 0005 has the measurements.
 #pragma once
 
 #ifdef __OBJC__
@@ -14,7 +18,8 @@ namespace geo::gpu {
 
 struct FrameTick {
     id<CAMetalDrawable> drawable;
-    double targetPresentationTime;
+    double commitDeadline;   // work must be committed by now to make `presentationTime`
+    double presentationTime; // when the frame is intended to reach the display
 };
 
 class DisplayLinkFrameSource {

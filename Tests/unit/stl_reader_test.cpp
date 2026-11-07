@@ -91,9 +91,15 @@ TEST_CASE("ASCII parsing rounds like the standard library") {
     TriangleSoup soup;
     std::string error;
     REQUIRE(readStl(bytes(text), soup, error));
-    const std::vector<float> expected = {
-        0.1f, 3.14159265358979f, 123456789012345678901234567890.0f, 1e-30f, -0.000001f,
-        1.17549435e-38f, 9007199254740993.0f, 2.5f, 0.30000000000000004f};
+    const std::vector<float> expected = {0.1f,
+                                         3.14159265358979f,
+                                         123456789012345678901234567890.0f,
+                                         1e-30f,
+                                         -0.000001f,
+                                         1.17549435e-38f,
+                                         9007199254740993.0f,
+                                         2.5f,
+                                         0.30000000000000004f};
     REQUIRE(soup.corners.size() == expected.size());
     for (usize i = 0; i < expected.size(); ++i) {
         CHECK(soup.corners[i] == doctest::Approx(expected[i]).epsilon(1e-6));

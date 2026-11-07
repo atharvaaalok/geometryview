@@ -78,16 +78,17 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         const Aabb bounds = renderer->sceneBounds();
         const double azimuth = azimuth_degrees * M_PI / 180.0;
         const double elevation = elevation_degrees * M_PI / 180.0;
-        const Vec3 direction = simd_make_double3(std::cos(elevation) * std::sin(azimuth),
-                                                 -std::cos(elevation) * std::cos(azimuth),
-                                                 std::sin(elevation));
+        const Vec3 direction =
+            simd_make_double3(std::cos(elevation) * std::sin(azimuth),
+                              -std::cos(elevation) * std::cos(azimuth), std::sin(elevation));
         nav::Camera camera;
         camera.perspective = perspective;
         camera.lookAt(bounds.center() + direction, bounds.center(),
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, bounds, viewport, kFitMargin);
 
-        const std::vector<u8> pixels = renderer->renderOffscreen(render::makeView(camera, viewport, bounds));
+        const std::vector<u8> pixels =
+            renderer->renderOffscreen(render::makeView(camera, viewport, bounds));
         if (!writePng(png_path, pixels, width, height)) {
             std::fprintf(stderr, "Could not write %s.\n", png_path);
             return false;

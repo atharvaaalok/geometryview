@@ -13,8 +13,8 @@ namespace geo::import {
 struct PackedDefinition {
     std::array<float, 3> boundsMin{};
     std::array<float, 3> boundsMax{};
-    std::array<float, 3> decodeScale{};  // grid units to definition space
-    std::array<float, 3> boundsScale{};  // 16-bit bounds grid to definition space
+    std::array<float, 3> decodeScale{}; // grid units to definition space
+    std::array<float, 3> boundsScale{}; // 16-bit bounds grid to definition space
     u32 flags = 0;
     u32 faceCount = 0;
     std::vector<PackedVertex> vertices;

@@ -8,8 +8,8 @@
 namespace geo::nav {
 namespace {
 
-// Size of the visible bounds on screen, where 1 means they exactly fill the view on that axis. The gap
-// between the two thresholds is the hysteresis.
+// Size of the visible bounds on screen, where 1 means they exactly fill the view on that axis. The
+// gap between the two thresholds is the hysteresis.
 constexpr double kEnterCloseUp = 1.5;
 constexpr double kExitCloseUp = 1.2;
 
