@@ -27,7 +27,11 @@ if(GEO_SANITIZE)
         $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-fsanitize=${GEO_SANITIZE}>
         $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-fno-omit-frame-pointer>
     )
-    target_link_options(geo_options INTERFACE -fsanitize=${GEO_SANITIZE})
+    # The app links with swiftc, which spells the flag differently.
+    target_link_options(geo_options INTERFACE
+        $<$<LINK_LANGUAGE:C,CXX,OBJCXX>:-fsanitize=${GEO_SANITIZE}>
+        $<$<LINK_LANGUAGE:Swift>:-sanitize=${GEO_SANITIZE}>
+    )
 endif()
 
 # Warnings apply to first-party code only, so vendored sources stay unmodified.
