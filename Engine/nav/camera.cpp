@@ -76,7 +76,13 @@ void pan(Camera& camera, double pixelsX, double pixelsY, double depth, const Vie
     camera.position += camera.up() * (pixelsY * worldPerPixel);
 }
 
-void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double margin) {
+void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double margin,
+         const Insets& insets) {
+    // Fit into the clear area, but never shrink it below a third of the view, so a small window
+    // full of chrome still shows the model.
+    const Viewport clear{
+        std::max(viewport.width - insets.left - insets.right, viewport.width / 3),
+        std::max(viewport.height - insets.top - insets.bottom, viewport.height / 3)};
     const Vec3 center = bounds.center();
     const Vec3 half = (bounds.max - bounds.min) * 0.5;
     const Vec3 right = camera.right(), up = camera.up(), forward = camera.forward();
@@ -88,14 +94,21 @@ void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double ma
     const double extentRight = extentAlong(right);
     const double extentUp = extentAlong(up);
     const double extentDepth = extentAlong(forward);
-    const double halfHeight = std::max({extentUp, extentRight / viewport.aspect(), 1e-9}) * margin;
+    // The half height that fits the clear area, scaled up to the whole viewport.
+    const double clearHalfHeight =
+        std::max({extentUp, extentRight / clear.aspect(), 1e-9}) * margin;
+    const double halfHeight = clearHalfHeight * viewport.height / clear.height;
 
     camera.orthoHalfHeight = halfHeight;
     const double distance = camera.perspective
                                 ? halfHeight / std::tan(camera.fovY * 0.5) + extentDepth
                                 : extentDepth + halfHeight;
     camera.focusDistance = distance;
-    camera.position = center - forward * distance;
+    // Shift sideways so the model's centre lands in the middle of the clear area.
+    const double worldPerPixel = 2.0 * halfHeight / viewport.height;
+    const double shiftRight = (insets.left - insets.right) * 0.5 * worldPerPixel;
+    const double shiftUp = (insets.bottom - insets.top) * 0.5 * worldPerPixel;
+    camera.position = center - forward * distance - right * shiftRight - up * shiftUp;
 }
 
 } // namespace geo::nav

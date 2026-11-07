@@ -194,6 +194,11 @@ void geo_engine_request_frame(GeoEngine* engine);
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 
+/// Tells the engine which edges of the view the interface covers, in points, so framing keeps the
+/// model in the part left clear.
+void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
+                                float bottom);
+
 /// Prints input-to-present latency to stderr when GEOMETRY_LATENCY is set.
 void geo_engine_report_latency(GeoEngine* engine);
 

@@ -31,6 +31,6 @@ enum class StandardView { Front, Back, Left, Right, Top, Bottom, Iso };
 
 /// The camera looking at `bounds` from `view`, fitted, keeping the projection.
 Camera standardView(const Camera& current, StandardView view, const Aabb& bounds,
-                    const Viewport& viewport, double margin);
+                    const Viewport& viewport, double margin, const Insets& insets = {});
 
 } // namespace geo::nav

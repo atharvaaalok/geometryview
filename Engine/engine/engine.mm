@@ -95,6 +95,7 @@ struct Command {
         SetTool,
         SelectNode,
         HoverNode,
+        SetInsets,
         RequestFrame,
         Stop
     };
@@ -108,6 +109,7 @@ struct Command {
         GeoSelectionMode mode;
         GeoTool tool;
         NodeCommand node;
+        nav::Insets insets;
     };
 };
 
@@ -205,8 +207,10 @@ struct GeoEngine {
     nav::Flight flight;
     nav::Viewport viewport;
     float pixelsPerPoint = 2.0f;
-    u32 cubeHover = 0;   // face index plus one, or zero
-    u32 cubePressed = 0; // the face a press began on, plus one
+    nav::Insets insetPoints; // as the app gives them
+    nav::Insets insets;      // in pixels
+    u32 cubeHover = 0;       // face index plus one, or zero
+    u32 cubePressed = 0;     // the face a press began on, plus one
     nav::OrbitPolicy orbit;
     nav::PointerController pointer;
     render::DepthDecoder depthDecoder;
@@ -320,7 +324,8 @@ struct GeoEngine {
         if (!scene.hasGeometry()) {
             return;
         }
-        const nav::Camera target = nav::standardView(camera, view, bounds, viewport, kFitMargin);
+        const nav::Camera target =
+            nav::standardView(camera, view, bounds, viewport, kFitMargin, insets);
         flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
         requestFrame();
     }
@@ -333,7 +338,7 @@ struct GeoEngine {
             return;
         }
         nav::Camera target = camera;
-        nav::fit(target, *selected, viewport, kFitMargin);
+        nav::fit(target, *selected, viewport, kFitMargin, insets);
         flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
         requestFrame();
     }
@@ -445,7 +450,7 @@ struct GeoEngine {
             -std::cos(kDefaultElevation) * std::cos(kDefaultAzimuth), std::sin(kDefaultElevation));
         camera.lookAt(bounds.center() + direction, bounds.center(),
                       simd_make_double3(0.0, 0.0, 1.0));
-        nav::fit(camera, bounds, viewport, kFitMargin);
+        nav::fit(camera, bounds, viewport, kFitMargin, insets);
         orbit.setVisibleBounds(bounds);
     }
 
@@ -454,7 +459,7 @@ struct GeoEngine {
         switch (action) {
         case GeoActionFit:
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin);
+                nav::fit(camera, bounds, viewport, kFitMargin, insets);
                 orbit.navigated();
                 scheduleRefinement();
             }
@@ -462,7 +467,7 @@ struct GeoEngine {
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin);
+                nav::fit(camera, bounds, viewport, kFitMargin, insets);
             }
             orbit.navigated();
             scheduleRefinement();
@@ -656,7 +661,7 @@ struct GeoEngine {
             resetCamera();
             hasFramed = true;
         } else if (!userMovedCamera) {
-            nav::fit(camera, bounds, viewport, kFitMargin);
+            nav::fit(camera, bounds, viewport, kFitMargin, insets);
             orbit.setVisibleBounds(bounds);
         }
     }
@@ -683,6 +688,11 @@ struct GeoEngine {
                          [](const OpenDocument& open) { return open.importing; })) {
             emit(GeoEventSceneReady, "", *index);
         }
+    }
+
+    void applyInsets() {
+        insets = {insetPoints.left * pixelsPerPoint, insetPoints.top * pixelsPerPoint,
+                  insetPoints.right * pixelsPerPoint, insetPoints.bottom * pixelsPerPoint};
     }
 
     void scheduleRefinement() {
@@ -810,6 +820,7 @@ struct GeoEngine {
                 viewport = {double(command->resize.width), double(command->resize.height)};
                 pointer.setPixelsPerPoint(command->resize.scale);
                 pixelsPerPoint = command->resize.scale;
+                applyInsets();
                 renderer->resize(command->resize.width, command->resize.height);
                 orbit.navigated();
                 requestFrame();
@@ -854,6 +865,10 @@ struct GeoEngine {
                     hoveredNode = model::NodeRef{command->node.document, command->node.node};
                 }
                 refreshHover();
+                break;
+            case Command::Kind::SetInsets:
+                insetPoints = command->insets;
+                applyInsets();
                 break;
             case Command::Kind::RequestFrame:
                 requestFrame();
@@ -1101,6 +1116,14 @@ void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) 
     Command command{};
     command.kind = Command::Kind::HoverNode;
     command.node = {document, node, false};
+    engine->post(command);
+}
+
+void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
+                                float bottom) {
+    Command command{};
+    command.kind = Command::Kind::SetInsets;
+    command.insets = {left, top, right, bottom};
     engine->post(command);
 }
 

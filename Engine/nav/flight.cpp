@@ -70,7 +70,7 @@ Camera Flight::at(double now) {
 }
 
 Camera standardView(const Camera& current, StandardView view, const Aabb& bounds,
-                    const Viewport& viewport, double margin) {
+                    const Viewport& viewport, double margin, const Insets& insets) {
     Vec3 from{0, -1, 0}, up{0, 0, 1};
     switch (view) {
     case StandardView::Front:
@@ -99,7 +99,7 @@ Camera standardView(const Camera& current, StandardView view, const Aabb& bounds
     }
     Camera camera = current;
     camera.lookAt(bounds.center() + from, bounds.center(), up);
-    fit(camera, bounds, viewport, margin);
+    fit(camera, bounds, viewport, margin, insets);
     return camera;
 }
 
