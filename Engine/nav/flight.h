@@ -14,6 +14,8 @@ public:
     /// Starts a flight from `from` to `to` lasting `seconds`. A duration of zero jumps.
     void start(const Camera& from, const Camera& to, double now, double seconds);
     bool active() const { return active_; }
+    /// Where the flight ends.
+    const Camera& destination() const { return to_; }
     void cancel() { active_ = false; }
 
     /// The camera at `now`. The last call, at or after the end, returns `to` exactly and ends the
