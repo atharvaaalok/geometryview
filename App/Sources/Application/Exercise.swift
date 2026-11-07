@@ -12,7 +12,8 @@ final class Exercise {
 
     private static let dragSeconds = 6.0
     private static let pixelsPerSecond = 500.0
-    private static let refineWaitSeconds = 3.0
+    private static let refineWaitSeconds =
+        Double(ProcessInfo.processInfo.environment["EXERCISE_WAIT"] ?? "") ?? 3.0
 
     private let engine: EngineHandle
     private let center: CGPoint

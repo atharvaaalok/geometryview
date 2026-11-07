@@ -22,10 +22,14 @@ struct SurfaceOutput {
     float depth [[color(kAttachmentDepth)]];
 };
 
+// Indices only, to keep the payload small: in a run batch they are meshlets of `occurrence`, and
+// in a packed batch they index the MeshletRefs.
 struct Payload {
-    uint meshlets[kBatchMeshlets];
-    uint occurrence;
+    uint visible[kBatchMeshlets];
+    uint occurrence; // kNoOccurrence for a packed batch
 };
+
+constant uint kNoOccurrence = 0xFFFFFFFF;
 
 static inline float3 transformPoint(const device GpuOccurrence& occurrence, float3 p) {
     const float4 h = float4(p, 1.0);
@@ -102,23 +106,35 @@ void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_propertie
                    const device Batch* batches [[buffer(kBufferBatches)]],
                    constant uint& drawBase [[buffer(kBufferDrawBase)]],
                    const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
+                   const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                    uint group [[threadgroup_position_in_grid]]) {
     const device Batch& batch = batches[drawBase + group];
-    const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
-    const device GpuDefinition& definition = definitions[occurrence.definition];
-
     uint count = 0;
-    if (!passKeeps(states[batch.occurrence].flags)) {
-        grid.set_threadgroups_per_grid(uint3(0, 1, 1));
-        return;
-    }
-    for (uint i = 0; i < batch.meshletCount; ++i) {
-        const uint index = batch.firstMeshlet + i;
-        if (isVisible(definition.meshlets[index], definition, occurrence, frame)) {
-            payload.meshlets[count++] = index;
+    if (batch.kind == kBatchRun) {
+        if (passKeeps(states[batch.occurrence].flags)) {
+            const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
+            const device GpuDefinition& definition = definitions[occurrence.definition];
+            for (uint i = 0; i < batch.count; ++i) {
+                const uint index = batch.first + i;
+                if (isVisible(definition.meshlets[index], definition, occurrence, frame)) {
+                    payload.visible[count++] = index;
+                }
+            }
+        }
+    } else {
+        for (uint i = 0; i < batch.count; ++i) {
+            const MeshletRef ref = refs[batch.first + i];
+            if (!passKeeps(states[ref.occurrence].flags)) {
+                continue;
+            }
+            const device GpuOccurrence& occurrence = occurrences[ref.occurrence];
+            const device GpuDefinition& definition = definitions[occurrence.definition];
+            if (isVisible(definition.meshlets[ref.meshlet], definition, occurrence, frame)) {
+                payload.visible[count++] = batch.first + i;
+            }
         }
     }
-    payload.occurrence = batch.occurrence;
+    payload.occurrence = batch.kind == kBatchRun ? batch.occurrence : kNoOccurrence;
     grid.set_threadgroups_per_grid(uint3(count, 1, 1));
 }
 
@@ -170,12 +186,16 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
                  const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
                  const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                  const device uchar* faceStates [[buffer(kBufferFaceState)]],
+                 const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                  uint index [[thread_index_in_threadgroup]],
                  uint group [[threadgroup_position_in_grid]]) {
-    const device GpuOccurrence& occurrence = occurrences[payload.occurrence];
+    const MeshletRef ref = payload.occurrence != kNoOccurrence
+                               ? MeshletRef{payload.occurrence, payload.visible[group]}
+                               : refs[payload.visible[group]];
+    const device GpuOccurrence& occurrence = occurrences[ref.occurrence];
     const device GpuDefinition& definition = definitions[occurrence.definition];
-    const device Meshlet& m = definition.meshlets[payload.meshlets[group]];
-    const OccurrenceState state = states[payload.occurrence];
+    const device Meshlet& m = definition.meshlets[ref.meshlet];
+    const OccurrenceState state = states[ref.occurrence];
 
     if (index == 0) {
         out.set_primitive_count(m.triangleCount);

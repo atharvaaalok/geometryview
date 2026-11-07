@@ -26,6 +26,7 @@ enum BufferIndex : unsigned {
     kBufferDrawBase = 4,
     kBufferOccurrenceState = 5,
     kBufferFaceState = 6,
+    kBufferMeshletRefs = 7,
 };
 
 enum TextureIndex : unsigned {
@@ -78,12 +79,25 @@ struct OccurrenceState {
     uint32_t facePage;
 };
 
-// Up to kBatchMeshlets meshlets of one occurrence, culled together by one object thread.
+// Up to kBatchMeshlets meshlets, culled together by one object thread. A large definition's
+// batches cover consecutive meshlets of one occurrence. Small definitions' meshlets are packed from
+// many occurrences into shared batches through MeshletRefs, so a million one-meshlet parts need
+// 31k object threadgroups rather than a million, and the driver memory that scales with them.
+enum BatchKind : uint32_t {
+    kBatchRun = 0,    // meshlets [first, first + count) of `occurrence`
+    kBatchPacked = 1, // MeshletRefs [first, first + count)
+};
+
 struct Batch {
+    uint32_t kind;
     uint32_t occurrence;
-    uint32_t firstMeshlet;
-    uint32_t meshletCount;
-    uint32_t pad;
+    uint32_t first;
+    uint32_t count;
+};
+
+struct MeshletRef {
+    uint32_t occurrence;
+    uint32_t meshlet;
 };
 
 struct FrameUniforms {

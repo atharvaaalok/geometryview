@@ -19,6 +19,8 @@ constexpr usize kFramesInFlight = 2;
 constexpr u64 kFrameTimeoutMs = 2000;
 constexpr NSUInteger kSampleCount = 4;
 constexpr NSUInteger kPayloadBytes = sizeof(u32) * (kBatchMeshlets + 1);
+// Definitions with fewer meshlets than this share packed batches with others.
+constexpr u32 kPackedMeshletLimit = kBatchMeshlets / 2;
 
 // Paper, #f2efe7, written as encoded sRGB because colours composite in encoded space.
 const MTLClearColor kPaper = MTLClearColorMake(242.0 / 255.0, 239.0 / 255.0, 231.0 / 255.0, 1.0);
@@ -76,7 +78,7 @@ struct Renderer::State {
         id<MTLResidencySet> set;
     };
     std::unordered_map<const scene::MappedSegment*, SegmentResidency> segmentBuffers;
-    id<MTLBuffer> definitions, occurrences, batches, drawBases;
+    id<MTLBuffer> definitions, occurrences, batches, drawBases, meshletRefs;
     usize batchCount = 0;
     usize openBatchStart = 0;
     bool hasScene = false;
@@ -304,6 +306,7 @@ struct Renderer::State {
             [surfaceTable setAddress:definitions.gpuAddress atIndex:kBufferDefinitions];
             [surfaceTable setAddress:occurrences.gpuAddress atIndex:kBufferOccurrences];
             [surfaceTable setAddress:batches.gpuAddress atIndex:kBufferBatches];
+            [surfaceTable setAddress:meshletRefs.gpuAddress atIndex:kBufferMeshletRefs];
             [surfaceTable setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
             [surfaceTable setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
 
@@ -456,7 +459,21 @@ void Renderer::syncScene(const scene::Scene& scene) {
     id<MTLBuffer> occurrences = s.makeShared(occurrenceCount * sizeof(GpuOccurrence));
     auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
     auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
-    std::vector<Batch> closedBatches, openBatches;
+    // Closed and open surfaces draw with different culling, so each has its own batches.
+    struct BatchList {
+        std::vector<Batch> batches;
+        std::vector<MeshletRef> refs; // packed meshlets not yet in a batch
+    };
+    BatchList closed, open;
+    std::vector<MeshletRef> allRefs;
+    const auto flushPacked = [&](BatchList& list, bool all) {
+        while (list.refs.size() >= kBatchMeshlets || (all && !list.refs.empty())) {
+            const u32 count = u32(std::min<usize>(kBatchMeshlets, list.refs.size()));
+            list.batches.push_back({kBatchPacked, 0, u32(allRefs.size()), count});
+            allRefs.insert(allRefs.end(), list.refs.begin(), list.refs.begin() + count);
+            list.refs.erase(list.refs.begin(), list.refs.begin() + count);
+        }
+    };
 
     u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
@@ -510,11 +527,17 @@ void Renderer::syncScene(const scene::Scene& scene) {
             if (geometry == nullptr) {
                 continue;
             }
-            std::vector<Batch>& target =
-                (geometry->flags & kDefinitionOpen) != 0 ? openBatches : closedBatches;
+            BatchList& target = (geometry->flags & kDefinitionOpen) != 0 ? open : closed;
+            if (geometry->meshletCount < kPackedMeshletLimit) {
+                for (u32 m = 0; m < geometry->meshletCount; ++m) {
+                    target.refs.push_back({global, m});
+                }
+                flushPacked(target, false);
+                continue;
+            }
             for (u32 first = 0; first < geometry->meshletCount; first += kBatchMeshlets) {
                 const u32 count = std::min<u32>(kBatchMeshlets, geometry->meshletCount - first);
-                target.push_back({global, first, count, 0});
+                target.batches.push_back({kBatchRun, global, first, count});
             }
         }
         definitionBase += u32(model.definitionInfos.size());
@@ -522,11 +545,17 @@ void Renderer::syncScene(const scene::Scene& scene) {
         idBase += document.idCount();
     }
 
+    flushPacked(closed, true);
+    flushPacked(open, true);
+    const std::vector<Batch>& closedBatches = closed.batches;
+    const std::vector<Batch>& openBatches = open.batches;
     const usize batchCount = closedBatches.size() + openBatches.size();
     id<MTLBuffer> batches = s.makeShared(batchCount * sizeof(Batch));
     auto* gpuBatches = static_cast<Batch*>(batches.contents);
     std::copy(closedBatches.begin(), closedBatches.end(), gpuBatches);
     std::copy(openBatches.begin(), openBatches.end(), gpuBatches + closedBatches.size());
+    id<MTLBuffer> meshletRefs = s.makeShared(allRefs.size() * sizeof(MeshletRef));
+    std::copy(allRefs.begin(), allRefs.end(), static_cast<MeshletRef*>(meshletRefs.contents));
 
     const usize drawCount = batchCount / kMaxBatchesPerDraw + 2;
     id<MTLBuffer> drawBases = s.makeShared(drawCount * sizeof(u32));
@@ -538,7 +567,8 @@ void Renderer::syncScene(const scene::Scene& scene) {
     // The last frame may still read the old tables, so they go when it finishes.
     State::Retired retired;
     retired.frame = s.frameCount;
-    for (id<MTLBuffer> old : {s.definitions, s.occurrences, s.batches, s.drawBases}) {
+    for (id<MTLBuffer> old :
+         {s.definitions, s.occurrences, s.batches, s.drawBases, s.meshletRefs}) {
         if (old != nil) {
             retired.buffers.push_back(old);
         }
@@ -556,11 +586,12 @@ void Renderer::syncScene(const scene::Scene& scene) {
     s.definitions = definitions;
     s.occurrences = occurrences;
     s.batches = batches;
+    s.meshletRefs = meshletRefs;
     s.drawBases = drawBases;
     s.batchCount = batchCount;
     s.openBatchStart = closedBatches.size();
     s.hasScene = batchCount != 0;
-    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases}) {
+    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases, meshletRefs}) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];

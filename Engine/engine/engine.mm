@@ -654,6 +654,11 @@ struct GeoEngine {
 
     void startRefinement(u32 index, u32 level, std::vector<u32> definitions) {
         refining = true;
+        if (traceLaunch) {
+            std::fprintf(stderr, "trace: refining %zu definitions to level %u\n",
+                         definitions.size(), level);
+            geo_trace_memory("refinement started");
+        }
         refineCancel = std::make_shared<ipc::ImportCancel>();
         const std::shared_ptr<ipc::ImportCancel> cancel = refineCancel;
         const u64 token = documents[index].token;
@@ -670,6 +675,7 @@ struct GeoEngine {
                 }
                 refining = false;
                 if (traceLaunch) {
+                    geo_trace_memory("refinement finished");
                     std::fprintf(stderr,
                                  "trace: refined %zu definitions to level %u in %.1f ms%s\n",
                                  definitions.size(), level, (nowSeconds() - start) * 1e3,
@@ -783,6 +789,9 @@ struct GeoEngine {
             if (sceneChanged) {
                 sceneChanged = false;
                 renderer->syncScene(scene);
+                if (traceLaunch) {
+                    geo_trace_memory("scene synced");
+                }
             }
             renderer->syncState(interaction.state());
             publishState();
