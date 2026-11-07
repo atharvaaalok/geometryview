@@ -102,6 +102,7 @@ wgpu::Texture Renderer::texture(u32 width, u32 height, wgpu::TextureFormat forma
     u64 texel = 4;
     switch (format) {
     case wgpu::TextureFormat::R8Unorm:
+    case wgpu::TextureFormat::R8Uint:
         texel = 1;
         break;
     case wgpu::TextureFormat::RG32Uint:
@@ -255,17 +256,18 @@ void Renderer::createPipelines() {
     wgpu::BlendState keepLarger{};
     keepLarger.color = {wgpu::BlendOperation::Max, wgpu::BlendFactor::One, wgpu::BlendFactor::One};
     keepLarger.alpha = keepLarger.color;
-    wgpu::ColorTargetState visTargets[3] = {};
+    wgpu::ColorTargetState visTargets[4] = {};
     visTargets[0].format = indexed ? wgpu::TextureFormat::RG32Uint : wgpu::TextureFormat::R32Uint;
     visTargets[1].format = wgpu::TextureFormat::RG16Float;
     visTargets[2].format = wgpu::TextureFormat::R8Unorm;
     visTargets[2].writeMask = wgpu::ColorWriteMask::None;
     visTargets[2].blend = &keepLarger;
+    visTargets[3].format = wgpu::TextureFormat::R8Uint;
 
     wgpu::FragmentState visFragment{};
     visFragment.module = module_;
     visFragment.entryPoint = indexed ? "visIndexedFragment" : "visFragment";
-    visFragment.targetCount = indexed ? 3 : 1;
+    visFragment.targetCount = indexed ? 4 : 1;
     visFragment.targets = visTargets;
     wgpu::RenderPipelineDescriptor vis{};
     vis.vertex.module = module_;
@@ -282,10 +284,12 @@ void Renderer::createPipelines() {
     visOpen_ = device_.CreateRenderPipeline(&vis);
 
     if (features_.edges) {
-        wgpu::ColorTargetState edgeTargets[3] = {visTargets[0], visTargets[1], visTargets[2]};
+        wgpu::ColorTargetState edgeTargets[4] = {visTargets[0], visTargets[1], visTargets[2],
+                                                 visTargets[3]};
         edgeTargets[0].writeMask = wgpu::ColorWriteMask::None;
         edgeTargets[1].writeMask = wgpu::ColorWriteMask::None;
         edgeTargets[2].writeMask = wgpu::ColorWriteMask::Red;
+        edgeTargets[3].writeMask = wgpu::ColorWriteMask::None;
         wgpu::FragmentState fragment = visFragment;
         fragment.entryPoint = "edgeFragment";
         fragment.targets = edgeTargets;
@@ -322,6 +326,7 @@ void Renderer::createPipelines() {
     fullscreen.vertex.entryPoint = "fullscreen";
     fullscreen.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
     if (features_.occlusion) {
+        mask.format = wgpu::TextureFormat::RG16Float; // occlusion, and the view depth it was at
         maskFragment.entryPoint = "occlusion";
         fullscreen.label = "occlusion";
         fullscreen.fragment = &maskFragment;
@@ -364,7 +369,9 @@ void Renderer::createTargets() {
         // The composite reads these whether or not they are drawn, so they always exist.
         ink_ = texture(width_, height_, F::R8Unorm, "ink");
         inkView_ = ink_.CreateView();
-        occlusionTarget_ = texture(halfWidth, halfHeight, F::R8Unorm, "occlusion");
+        tag_ = texture(width_, height_, F::R8Uint, "tag");
+        tagView_ = tag_.CreateView();
+        occlusionTarget_ = texture(halfWidth, halfHeight, F::RG16Float, "occlusion");
         occlusionView_ = occlusionTarget_.CreateView();
         shadowMask_ = texture(halfWidth, halfHeight, F::R8Unorm, "shadow");
         shadowView_ = shadowMask_.CreateView();
@@ -437,12 +444,13 @@ void Renderer::createBindGroups() {
                                      b(19, chunks), b(20, segments), b(23, edgeSlots_)});
     }
     if (features_.occlusion) {
-        occlusionGroup_ = group(occlusion_, {b(0, frameBuffer_), t(16, visView_),
-                                             t(28, depthView_)});
+        occlusionGroup_ = group(occlusion_, {b(0, frameBuffer_), t(28, depthView_),
+                                             t(32, tagView_)});
     }
     compositeGroup_ = group(composite_, {b(0, frameBuffer_), t(16, visView_), t(17, normalView_),
                                          t(28, depthView_), t(29, inkView_),
-                                         t(30, occlusionView_), t(31, shadowView_)});
+                                         t(30, occlusionView_), t(31, shadowView_),
+                                         t(32, tagView_)});
 }
 
 void Renderer::frame(const View& view, wgpu::TextureView target) {
@@ -581,15 +589,15 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     }
 
     // Visibility: surfaces, closed then open, then the feature edges over them.
-    const wgpu::RenderPassColorAttachment visColor[3] = {
-        attachment(visView_), attachment(normalView_), attachment(inkView_)};
+    const wgpu::RenderPassColorAttachment visColor[4] = {
+        attachment(visView_), attachment(normalView_), attachment(inkView_), attachment(tagView_)};
     wgpu::RenderPassDepthStencilAttachment visDepth{};
     visDepth.view = depthView_;
     visDepth.depthLoadOp = wgpu::LoadOp::Clear;
     visDepth.depthStoreOp = wgpu::StoreOp::Store;
     visDepth.depthClearValue = 0.f;
     wgpu::RenderPassDescriptor visPass{};
-    visPass.colorAttachmentCount = indexed ? 3 : 1;
+    visPass.colorAttachmentCount = indexed ? 4 : 1;
     visPass.colorAttachments = visColor;
     visPass.depthStencilAttachment = &visDepth;
     visPass.timestampWrites = timed(kPassVis);
@@ -667,7 +675,7 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     const Features features = features_;
     readback->buffer.MapAsync(
         wgpu::MapMode::Read, 0, kReadbackBytes, callbackMode_,
-        [this, readback, indexed, features, tag = tag_](wgpu::MapAsyncStatus status,
+        [this, readback, indexed, features, tag = frameTag_](wgpu::MapAsyncStatus status,
                                                         wgpu::StringView) {
             if (status == wgpu::MapAsyncStatus::Success) {
                 const auto* bytes =

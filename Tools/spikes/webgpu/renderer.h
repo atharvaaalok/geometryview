@@ -55,7 +55,7 @@ public:
     std::deque<FrameTiming>& timings() { return timings_; }
     bool timestamps() const { return querySet_ != nullptr; }
     /// Marks the frames submitted from now on, so late timings land in the right phase.
-    void setTag(u32 tag) { tag_ = tag; }
+    void setTag(u32 tag) { frameTag_ = tag; }
     u32 width() const { return width_; }
     u32 height() const { return height_; }
     /// GPU memory the renderer holds, in bytes, for buffers and for targets.
@@ -99,8 +99,9 @@ private:
     wgpu::BindGroup visClosedGroup_, visOpenGroup_, edgesGroup_, shadowGroup_, occlusionGroup_;
     wgpu::BindGroup compositeGroup_;
 
-    wgpu::Texture vis_, normal_, depth_, ink_, occlusionTarget_, shadowMask_;
-    wgpu::TextureView visView_, normalView_, depthView_, inkView_, occlusionView_, shadowView_;
+    wgpu::Texture vis_, normal_, depth_, ink_, tag_, occlusionTarget_, shadowMask_;
+    wgpu::TextureView visView_, normalView_, depthView_, inkView_, tagView_, occlusionView_;
+    wgpu::TextureView shadowView_;
 
     wgpu::QuerySet querySet_;
     wgpu::Buffer resolve_;
@@ -113,7 +114,7 @@ private:
     float radius_ = 1.f;
     u64 bufferBytes_ = 0, targetBytes_ = 0;
     std::deque<FrameTiming> timings_;
-    u32 tag_ = 0;
+    u32 frameTag_ = 0;
 };
 
 } // namespace geo::spike

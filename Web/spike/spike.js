@@ -12,8 +12,12 @@ const mode = params.get("mode") === "indexed" ? "indexed" : "pulled";
 // Edges, shadow and occlusion, as bits; all by default. Line widths follow the backing scale.
 const features = Number(params.get("features") ?? 7);
 const pixelsPerPoint = Number(params.get("ppp") ?? devicePixelRatio);
+// Frames per display refresh. Above 1 the GPU never idles, so its clocks stay at their highest and
+// GPU times measure capacity rather than how far the clocks were lowered to fit the display.
+const burst = Number(params.get("burst") ?? 1);
 const label = `${params.get("label") ?? "unlabelled"}-${model}${copies > 1 ? `x${copies}` : ""}` +
-              `-${width}x${height}-${mode}${mode === "indexed" && features !== 7 ? `-f${features}` : ""}`;
+              `-${width}x${height}-${mode}${mode === "indexed" && features !== 7 ? `-f${features}` : ""}` +
+              `${burst > 1 ? `-burst${burst}` : ""}`;
 const status = document.getElementById("status");
 const canvas = document.getElementById("canvas");
 canvas.width = width;
@@ -66,11 +70,11 @@ try {
   const uploadMs = performance.now() - started;
 
   status.textContent = `Orbiting ${model} at ${width}×${height}…`;
-  spike._spike_start();
+  spike._spike_start(burst);
   await until(spike, 3);
   const results = JSON.parse(spike.UTF8ToString(spike._spike_results()));
   const report = { userAgent: navigator.userAgent, devicePixelRatio, model, copies, mode, features,
-                   pixelsPerPoint,
+                   pixelsPerPoint, burst,
                    fileMB: +(bytes.length / 2 ** 20).toFixed(1), fetchMs: Math.round(fetchMs),
                    uploadMs: Math.round(uploadMs), ...results };
   status.textContent = JSON.stringify(report, null, 1);

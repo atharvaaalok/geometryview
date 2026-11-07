@@ -85,6 +85,8 @@ struct IndexedArgs { indexCount: atomic<u32>, instanceCount: u32, firstIndex: u3
 @group(0) @binding(29) var inkTexture: texture_2d<f32>;
 @group(0) @binding(30) var occlusionTexture: texture_2d<f32>;
 @group(0) @binding(31) var shadowTexture: texture_2d<f32>;
+// Which body a pixel shows, as a byte that differs between neighbours: what outlines search.
+@group(0) @binding(32) var tagTexture: texture_2d<u32>;
 
 const kFeatureEdges = 1u;
 const kFeatureShadow = 2u;
@@ -371,12 +373,17 @@ fn decodeViewNormal(e: vec2f) -> vec3f {
     return normalize(n);
 }
 
-struct SurfaceTargets { @location(0) id: vec2u, @location(1) normal: vec2f }
+struct SurfaceTargets { @location(0) id: vec2u, @location(1) normal: vec2f, @location(3) tag: u32 }
+
+// Neighbouring bodies get different tags unless their indices differ by a multiple of 255.
+fn tagOf(body: u32) -> u32 {
+    return 1u + (body - 1u) % 255u;
+}
 
 @fragment
 fn visIndexedFragment(in: SurfaceOut) -> SurfaceTargets {
     let n = (frame.viewRotation * vec4f(normalize(in.normal), 0.0)).xyz;
-    return SurfaceTargets(in.id, encodeNormal(n));
+    return SurfaceTargets(in.id, encodeNormal(n), tagOf(in.id.y));
 }
 
 @fragment
@@ -534,9 +541,9 @@ fn occlusion(in: FullOut) -> @location(0) vec4f {
     let gid = vec2i(in.position.xy);
     let p = gid * 2;
     let d = depthAt(p);
-    let body = textureLoad(surfaceTexture, clamp(p, vec2i(0), vec2i(frame.viewport) - 1), 0).g;
-    if (d <= 0.0 || body == 0u) {
-        return vec4f(1.0);
+    let tag = textureLoad(tagTexture, clamp(p, vec2i(0), vec2i(frame.viewport) - 1), 0).r;
+    if (d <= 0.0 || tag == 0u) {
+        return vec4f(1.0, 0.0, 0.0, 0.0);
     }
     let center = viewPosition(p, d);
     var normal = normalize(cross(tangent(p, center, vec2i(1, 0)), tangent(p, center, vec2i(0, -1))));
@@ -561,7 +568,8 @@ fn occlusion(in: FullOut) -> @location(0) vec4f {
         let falloff = saturate(1.0 - (distance * distance) / (radius * radius));
         occluded += max(dot(normal, v) / max(distance, 1e-6) - 0.05, 0.0) * falloff;
     }
-    return vec4f(pow(saturate(1.0 - 2.6 * occluded / f32(frame.aoSamples)), 1.4));
+    // With its view depth, so the composite's blur needs no depth reads of its own.
+    return vec4f(pow(saturate(1.0 - 2.6 * occluded / f32(frame.aoSamples)), 1.4), -center.z, 0.0, 0.0);
 }
 
 // ---- Composite ---------------------------------------------------------------------------------
@@ -657,20 +665,29 @@ fn compositeIndexed(in: FullOut) -> @location(0) vec4f {
     let last = vec2i(frame.viewport) - 1;
     let p = vec2i(in.position.xy);
     let c = textureLoad(surfaceTexture, p, 0).rg; // pick id, body
+    let tag = textureLoad(tagTexture, p, 0).r;
     let ppp = frame.pixelsPerPoint;
     let silhouette = 2.0 * ppp;
     let partLine = 1.25 * ppp;
     var solid = 0.0;
     let reach = 0.5 * max(silhouette, partLine) + 1.0;
     for (var r = 1.0; r <= reach; r += 1.0) {
-        for (var k = 0u; k < 8u; k++) {
-            let angle = f32(k) * 0.78539816;
-            let o = vec2i(round(vec2f(cos(angle), sin(angle)) * r));
-            let n = textureLoad(surfaceTexture, clamp(p + o, vec2i(0), last), 0).g;
-            if (n != c.y) {
-                let background = c.y == 0u || n == 0u;
+        // Eight directions, along the axes and the diagonals.
+        let a = i32(r);
+        let d = i32(round(0.70710678 * r));
+        let axisDistance = r - 0.5;
+        let diagonalDistance = 1.41421356 * f32(d) - 0.5;
+        for (var k = 0; k < 8; k++) {
+            let diagonal = (k & 1) == 1;
+            let step = select(a, d, diagonal);
+            // k: 0 +x, 1 +x+y, 2 +y, 3 -x+y, 4 -x, 5 -x-y, 6 -y, 7 +x-y
+            let sx = select(select(0, 1, k == 0 || k == 1 || k == 7), -1, k >= 3 && k <= 5);
+            let sy = select(select(0, 1, k >= 1 && k <= 3), -1, k >= 5);
+            let n = textureLoad(tagTexture, clamp(p + vec2i(sx, sy) * step, vec2i(0), last), 0).r;
+            if (n != tag) {
+                let background = tag == 0u || n == 0u;
                 solid = max(solid, lineCover(select(partLine, silhouette, background),
-                                             length(vec2f(o)) - 0.5));
+                                             select(axisDistance, diagonalDistance, diagonal)));
             }
         }
     }
@@ -720,11 +737,10 @@ fn compositeIndexed(in: FullOut) -> @location(0) vec4f {
         var total = 0.0;
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
-                let q = clamp(h + vec2i(x, y), vec2i(0), lastHalf);
-                let dq = depthAt(q * 2);
-                let same = dq > 0.0 && abs(viewDepth(dq) - z) < tolerance;
+                let a = textureLoad(occlusionTexture, clamp(h + vec2i(x, y), vec2i(0), lastHalf), 0).rg;
+                let same = a.y > 0.0 && abs(a.y - z) < tolerance;
                 let w = select(1.0, 2.0, x == 0) * select(1.0, 2.0, y == 0) * select(0.02, 1.0, same);
-                sum += w * textureLoad(occlusionTexture, q, 0).r;
+                sum += w * a.x;
                 total += w;
             }
         }

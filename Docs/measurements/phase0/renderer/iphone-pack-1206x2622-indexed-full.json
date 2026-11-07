@@ -1,0 +1,96 @@
+{
+    "copies": 1,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "instances": 3289,
+    "triangles": 331520,
+    "bufferMB": 10.9,
+    "width": 1206,
+    "thermalState": "nominal",
+    "fileMB": 1.6,
+    "zooms": [
+        {
+            "frames": 360,
+            "gpuMs": {
+                "p50": 8.752,
+                "p99": 15.128
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 18
+            },
+            "cpuSubmitMs": {
+                "p50": 0.34,
+                "p99": 0.54
+            },
+            "passMsP50": {
+                "occlusion": 1.4,
+                "shadow": 0.99,
+                "composite": 5.535,
+                "vis": 2.999
+            },
+            "zoom": 1,
+            "clustersP50": 3071,
+            "timedFrames": 361
+        },
+        {
+            "frames": 359,
+            "gpuMs": {
+                "p50": 8.573,
+                "p99": 14.367
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 20
+            },
+            "cpuSubmitMs": {
+                "p50": 0.34,
+                "p99": 0.48
+            },
+            "passMsP50": {
+                "occlusion": 1.683,
+                "shadow": 0.77,
+                "composite": 5.696,
+                "vis": 2.859
+            },
+            "zoom": 2,
+            "clustersP50": 2848,
+            "timedFrames": 360
+        },
+        {
+            "frames": 359,
+            "gpuMs": {
+                "p50": 8.447,
+                "p99": 14.568
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 18
+            },
+            "cpuSubmitMs": {
+                "p50": 0.32,
+                "p99": 0.48
+            },
+            "passMsP50": {
+                "occlusion": 2.201,
+                "shadow": 0.627,
+                "composite": 6.13,
+                "vis": 2.492
+            },
+            "zoom": 4,
+            "clustersP50": 1800,
+            "timedFrames": 360
+        }
+    ],
+    "uploadMs": 3,
+    "model": "pack",
+    "height": 2622,
+    "targetMB": 58.1,
+    "label": "iphone-loopback-c-pack-1206x2622-indexed",
+    "fetchMs": 4,
+    "features": 7,
+    "mode": "indexed",
+    "pixelsPerPoint": 3,
+    "adapter": "apple apple",
+    "timestamps": true,
+    "devicePixelRatio": 3
+}

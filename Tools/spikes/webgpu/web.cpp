@@ -4,7 +4,8 @@
 //                                        builds and uploads the scene from a cache file in memory,
 //                                        to draw pulled or indexed, with edges (1), shadow (2) and
 //                                        occlusion (4)
-//   spike_start()                        runs the scripted orbit; spike_state() turns 3 when done
+//   spike_start(burst)                   runs the scripted orbit, rendering `burst` frames per
+//                                        display refresh; spike_state() turns 3 when done
 //   spike_results()                      the timings, as JSON
 // A negative state is an error, which spike_error() describes.
 
@@ -42,6 +43,7 @@ struct App {
     std::string error, results, adapterName;
 
     int phase = -1; // -1 warming up, then one per zoom
+    u32 burst = 1;  // frames rendered per display refresh; more keeps the GPU at full clock
     double phaseStart = 0, lastFrame = 0;
     std::vector<double> intervals[3], cpu[3];
     std::vector<FrameTiming> timings[3];
@@ -133,7 +135,10 @@ bool frame(double now, void*) {
     app.surface.GetCurrentTexture(&surfaceTexture);
     const double started = emscripten_get_now();
     app.renderer.setTag(u32(app.phase + 1));
-    app.renderer.frame(view, surfaceTexture.texture.CreateView());
+    const wgpu::TextureView target = surfaceTexture.texture.CreateView();
+    for (u32 i = 0; i < app.burst; ++i) {
+        app.renderer.frame(view, target);
+    }
     if (app.phase >= 0) {
         app.cpu[app.phase].push_back(emscripten_get_now() - started);
     }
@@ -236,7 +241,10 @@ EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies, u32 i
     return 0;
 }
 
-EMSCRIPTEN_KEEPALIVE void spike_start() { emscripten_request_animation_frame_loop(frame, nullptr); }
+EMSCRIPTEN_KEEPALIVE void spike_start(u32 burst) {
+    app.burst = std::max(burst, 1u);
+    emscripten_request_animation_frame_loop(frame, nullptr);
+}
 
 EMSCRIPTEN_KEEPALIVE const char* spike_results() { return app.results.c_str(); }
 

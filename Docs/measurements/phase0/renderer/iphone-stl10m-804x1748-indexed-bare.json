@@ -1,0 +1,96 @@
+{
+    "targetMB": 25.8,
+    "instances": 86595,
+    "model": "stl10m",
+    "width": 804,
+    "height": 1748,
+    "copies": 1,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "zooms": [
+        {
+            "frames": 359,
+            "gpuMs": {
+                "p50": 13.874,
+                "p99": 14.554
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 17
+            },
+            "cpuSubmitMs": {
+                "p50": 0.16,
+                "p99": 0.28
+            },
+            "passMsP50": {
+                "occlusion": 0,
+                "shadow": 0,
+                "composite": 1.297,
+                "vis": 8.835
+            },
+            "zoom": 1,
+            "clustersP50": 77334,
+            "timedFrames": 360
+        },
+        {
+            "frames": 355,
+            "gpuMs": {
+                "p50": 14.649,
+                "p99": 15.843
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 18
+            },
+            "cpuSubmitMs": {
+                "p50": 0.16,
+                "p99": 0.28
+            },
+            "passMsP50": {
+                "occlusion": 0,
+                "shadow": 0,
+                "composite": 1.964,
+                "vis": 9.979
+            },
+            "zoom": 2,
+            "clustersP50": 75695,
+            "timedFrames": 356
+        },
+        {
+            "frames": 359,
+            "gpuMs": {
+                "p50": 10.428,
+                "p99": 13.643
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 17
+            },
+            "cpuSubmitMs": {
+                "p50": 0.26,
+                "p99": 0.38
+            },
+            "passMsP50": {
+                "occlusion": 0,
+                "shadow": 0,
+                "composite": 2.391,
+                "vis": 6.763
+            },
+            "zoom": 4,
+            "clustersP50": 41579,
+            "timedFrames": 360
+        }
+    ],
+    "pixelsPerPoint": 2,
+    "devicePixelRatio": 3,
+    "fetchMs": 149,
+    "adapter": "apple apple",
+    "thermalState": "nominal",
+    "label": "iphone-loopback-stl10m-804x1748-indexed-f0",
+    "bufferMB": 274.7,
+    "fileMB": 150.8,
+    "triangles": 10000006,
+    "uploadMs": 52,
+    "timestamps": true,
+    "features": 0,
+    "mode": "indexed"
+}
