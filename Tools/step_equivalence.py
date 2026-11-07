@@ -32,9 +32,12 @@ TIMEOUT_SECONDS = 600
 
 def compare(ours: dict, truth: dict) -> list[str]:
     problems: list[str] = []
-    if abs(ours["faces"] - truth["faces"]) > FACE_COUNT_TOLERANCE * truth["faces"]:
+    # Faces OCCT drops entirely count as failed for us, since we keep every STEP face's id.
+    dropped = max(0, ours["faces"] - truth["faces"])
+    if (abs(ours["faces"] - truth["faces"]) > FACE_COUNT_TOLERANCE * truth["faces"]
+            and dropped != ours["failed"]):
         problems.append(f"faces {ours['faces']} vs {truth['faces']}")
-    if ours["failed"] > truth["unmeshed"]:
+    if ours["failed"] > truth["unmeshed"] + dropped:
         problems.append(f"{ours['failed']} faces failed, OCCT left {truth['unmeshed']}")
     if not math.isclose(ours["area"], truth["area"], rel_tol=AREA_TOLERANCE, abs_tol=1e-9):
         problems.append(f"area {ours['area']:.6g} vs {truth['area']:.6g}")

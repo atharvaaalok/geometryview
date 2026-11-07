@@ -29,6 +29,7 @@ struct Chunk {
     u32 definition = 0;
     u32 firstFace = 0; // into Definitions::faces
     u32 faceCount = 0;
+    bool wholeBody = false; // the chunk is the whole body, so it is read as the real solid
 };
 
 struct Definitions {

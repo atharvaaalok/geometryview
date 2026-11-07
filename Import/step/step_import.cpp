@@ -457,19 +457,20 @@ ModelData modelFrom(const Structure& structure, const Definitions& definitions) 
     return model;
 }
 
-// A run of a definition's faces to read, or the whole body as a last resort.
+// A run of a definition's faces to read, or the whole body.
 struct Job {
     u32 definition = 0;
     u32 firstFace = 0;
     u32 faceCount = 0;
     bool wholeBody = false;
+    bool retry = false; // a last attempt for faces still missing, at a finer tolerance
 };
 
 // One reply kept until its definition is complete.
 struct Result {
     std::vector<u8> payload;
     u32 firstFace = 0;
-    bool wholeBody = false;
+    bool retry = false;
 };
 
 struct DefinitionProgress {
@@ -564,7 +565,8 @@ private:
             progress_[d].pendingJobs.store(item.chunkCount, std::memory_order_relaxed);
             for (u32 c = 0; c < item.chunkCount; ++c) {
                 const Chunk& chunk = definitions_.chunks[item.firstChunk + c];
-                queue_.push_back({chunk.definition, chunk.firstFace, chunk.faceCount, false});
+                queue_.push_back(
+                    {chunk.definition, chunk.firstFace, chunk.faceCount, chunk.wholeBody, false});
             }
         }
         outstanding_ = queue_.size();
@@ -638,7 +640,7 @@ private:
             request.textBytes = text_.size();
             // A face that would not mesh is usually smaller than the minimum edge, so the retry of
             // a whole body works finer. Only the faces still missing are taken from it.
-            const double scale = job->wholeBody ? kRetryToleranceScale : 1.0;
+            const double scale = job->retry ? kRetryToleranceScale : 1.0;
             request.linearDeflection = tolerances_.linear * scale;
             request.angularDeflection = tolerances_.angular;
             request.minSize = tolerances_.minSize * scale;
@@ -672,15 +674,17 @@ private:
     // The failure ladder: halve the slice until one face is alone. `finishDefinition` then gives
     // any face still without triangles to OCCT as part of the whole body.
     void retry(const Job& job) {
-        if (job.wholeBody) {
+        if (job.retry) {
             failJob(job);
             return;
         }
         if (job.faceCount > 1) {
+            // A whole body that fails is split into faces, which no longer need its shell.
             const u32 half = job.faceCount / 2;
             progress_[job.definition].pendingJobs.fetch_add(1, std::memory_order_relaxed);
-            requeue({Job{job.definition, job.firstFace, half, false},
-                     Job{job.definition, job.firstFace + half, job.faceCount - half, false}});
+            requeue(
+                {Job{job.definition, job.firstFace, half, false, false},
+                 Job{job.definition, job.firstFace + half, job.faceCount - half, false, false}});
             finishJob();
             return;
         }
@@ -699,9 +703,9 @@ private:
         DefinitionProgress& state = progress_[job.definition];
         {
             std::lock_guard lock(state.mutex);
-            state.results.push_back({std::move(payload), job.firstFace, job.wholeBody});
+            state.results.push_back({std::move(payload), job.firstFace, job.retry});
         }
-        reportProgress(job.wholeBody ? 0 : job.faceCount);
+        reportProgress(job.retry ? 0 : job.faceCount);
         if (state.pendingJobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
             finishDefinition(job.definition);
         }
@@ -716,7 +720,7 @@ private:
             state.triedWholeBody = true;
             const Definition& definition = definitions_.items[d];
             state.pendingJobs.store(1, std::memory_order_relaxed);
-            requeue({Job{d, definition.firstFace, definition.faceCount, true}});
+            requeue({Job{d, definition.firstFace, definition.faceCount, true, true}});
             return;
         }
         packDefinition(d);
@@ -765,9 +769,8 @@ private:
         const std::vector<std::pair<u32, u32>> faceOfId = faceIds(definition);
 
         // Slices are read before any whole-body retry, so a retry only ever fills gaps.
-        std::stable_sort(
-            state.results.begin(), state.results.end(),
-            [](const Result& a, const Result& b) { return a.wholeBody < b.wholeBody; });
+        std::stable_sort(state.results.begin(), state.results.end(),
+                         [](const Result& a, const Result& b) { return a.retry < b.retry; });
 
         usize vertices = 0, triangles = 0;
         for (const Result& result : state.results) {

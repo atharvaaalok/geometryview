@@ -119,22 +119,38 @@ void addCurvedExtent(const Part21& index, u32 record, PointBounds& bounds) {
 }
 
 // Bounds of the points that shape `records`. Curves can bulge beyond their vertices, so this is an
-// estimate, good for framing and for choosing tolerances. With `curves`, circles and round surfaces
-// count too, which matters for a body with few vertices, such as a closed sphere.
+// estimate, good for framing and for choosing tolerances. With `curves`, round surfaces count too,
+// which matters for a body with few vertices, such as a closed sphere. Circles count only when they
+// are no larger than the vertices' own extent: a shallow arc of a huge circle is common, and its
+// whole circle would wildly overstate the body.
 PointBounds boundsOf(const Part21& index, std::span<const u32> records, bool curves) {
     PointBounds bounds;
     for (const u32 record : records) {
-        const Kind kind = index.kinds[record];
-        if (kind == Kind::VERTEX_POINT) {
+        if (index.kinds[record] == Kind::VERTEX_POINT) {
             const std::span<const u32> refs = index.refsOf(record);
             simd_double3 point;
             if (!refs.empty() && readPoint(index, refs[0], point)) {
                 bounds.add(point);
             }
-        } else if (curves && (kind == Kind::CIRCLE || kind == Kind::ELLIPSE ||
-                              kind == Kind::SPHERICAL_SURFACE || kind == Kind::TOROIDAL_SURFACE)) {
-            addCurvedExtent(index, record, bounds);
         }
+    }
+    if (curves) {
+        const double extent = bounds.empty() ? 0.0 : simd_length(bounds.hi - bounds.lo);
+        PointBounds rounded = bounds;
+        for (const u32 record : records) {
+            const Kind kind = index.kinds[record];
+            if (kind == Kind::SPHERICAL_SURFACE || kind == Kind::TOROIDAL_SURFACE) {
+                addCurvedExtent(index, record, rounded);
+            } else if (kind == Kind::CIRCLE || kind == Kind::ELLIPSE) {
+                PointBounds circle;
+                addCurvedExtent(index, record, circle);
+                if (!circle.empty() && simd_length(circle.hi - circle.lo) <= 2.0 * extent) {
+                    rounded.add(circle.lo);
+                    rounded.add(circle.hi);
+                }
+            }
+        }
+        bounds = rounded;
     }
     if (bounds.empty()) {
         // No vertices at all: use every point the body mentions.
@@ -359,7 +375,10 @@ Definitions buildDefinitions(const Part21& index, const Structure& structure, us
                 out.faces[definition.firstFace + f] = source[u32(keyed[f])];
             }
 
-            // Greedy chunks, measured by the text they will actually contain.
+            // Greedy chunks, measured by the text they will actually contain. A body that fits in
+            // one chunk is read whole instead, as the solid OCCT would see: a face cut off from its
+            // shell can be read differently, as when a spherical face takes the other side of its
+            // boundary.
             walker.begin();
             usize bytes = 0, seen = 0;
             u32 first = 0;
@@ -380,6 +399,9 @@ Definitions buildDefinitions(const Part21& index, const Structure& structure, us
             if (first < source.size()) {
                 chunks[d].push_back(
                     {u32(d), definition.firstFace + first, u32(source.size()) - first});
+            }
+            if (chunks[d].size() == 1) {
+                chunks[d][0].wholeBody = true;
             }
         }
     });
