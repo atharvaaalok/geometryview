@@ -108,17 +108,19 @@ public:
 
     // One function set serves every surface pass. Function constants choose the pass and the
     // lighting, so each pipeline is specialised and carries no branches for the others.
-    MTLFunctionConstantValues* surfaceConstants(bool ghost, bool physical, bool shadow) {
+    MTLFunctionConstantValues* surfaceConstants(bool ghost, bool physical, bool shadow,
+                                                bool section) {
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
         [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:kConstantGhostPass];
         [constants setConstantValue:&physical type:MTLDataTypeBool atIndex:kConstantPhysical];
         [constants setConstantValue:&shadow type:MTLDataTypeBool atIndex:kConstantShadowPass];
+        [constants setConstantValue:&section type:MTLDataTypeBool atIndex:kConstantSection];
         return constants;
     }
 
     // The shadow mask: surfaces flattened onto the ground, coverage only, at half resolution.
-    id<MTLRenderPipelineState> shadow() {
-        MTLFunctionConstantValues* constants = surfaceConstants(false, false, true);
+    id<MTLRenderPipelineState> shadow(bool section) {
+        MTLFunctionConstantValues* constants = surfaceConstants(false, false, true, section);
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
         mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
@@ -129,8 +131,8 @@ public:
         return build(mesh, "Could not create the shadow pipeline");
     }
 
-    id<MTLRenderPipelineState> surface(bool ghost, bool physical, Writes writes) {
-        MTLFunctionConstantValues* constants = surfaceConstants(ghost, physical, false);
+    id<MTLRenderPipelineState> surface(bool ghost, bool physical, bool section, Writes writes) {
+        MTLFunctionConstantValues* constants = surfaceConstants(ghost, physical, false, section);
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
         mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
@@ -144,9 +146,10 @@ public:
 
     // Feature edges, as screen-space quads. The ghost-lines pass draws the dashed edges of ghosts;
     // the other draws creases and highlights.
-    id<MTLRenderPipelineState> edges(bool ghostLines) {
+    id<MTLRenderPipelineState> edges(bool ghostLines, bool section) {
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
         [constants setConstantValue:&ghostLines type:MTLDataTypeBool atIndex:kConstantGhostLines];
+        [constants setConstantValue:&section type:MTLDataTypeBool atIndex:kConstantSection];
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"edgeObject", constants);
         mesh.meshFunctionDescriptor = function(@"edgeMesh", constants);
@@ -230,25 +233,32 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
     if (!builder.ok()) {
         return false;
     }
-    for (const bool physical : {false, true}) {
-        surface[physical] = builder.surface(false, physical, {.tags = MTLColorWriteMaskRed});
-        ghost[physical][false] = builder.surface(
-            true, physical, {.blended = true, .ids = false, .tags = MTLColorWriteMaskGreen});
-        ghost[physical][true] = builder.surface(
-            true, physical, {.blended = true, .ids = true, .tags = MTLColorWriteMaskGreen});
-        if (!surface[physical] || !ghost[physical][false] || !ghost[physical][true]) {
-            return false;
+    for (const bool section : {false, true}) {
+        for (const bool physical : {false, true}) {
+            surface[physical][section] =
+                builder.surface(false, physical, section, {.tags = MTLColorWriteMaskRed});
+            for (const bool pickable : {false, true}) {
+                ghost[physical][pickable][section] = builder.surface(
+                    true, physical, section,
+                    {.blended = true, .ids = pickable, .tags = MTLColorWriteMaskGreen});
+                if (!ghost[physical][pickable][section]) {
+                    return false;
+                }
+            }
+            if (!surface[physical][section]) {
+                return false;
+            }
+        }
+        shadow[section] = builder.shadow(section);
+        for (const bool ghostLines : {false, true}) {
+            edges[ghostLines][section] = builder.edges(ghostLines, section);
+            if (!edges[ghostLines][section]) {
+                return false;
+            }
         }
     }
-    shadow = builder.shadow();
     sheet = builder.classic(@"sheetVertex", @"sheetFragment", {.ids = false},
                             "Could not create the sheet pipeline");
-    for (const bool ghostLines : {false, true}) {
-        edges[ghostLines] = builder.edges(ghostLines);
-        if (!edges[ghostLines]) {
-            return false;
-        }
-    }
     // The cube writes pick ids, so it can be clicked; the scale bar's quads blend and do not.
     cube =
         builder.classic(@"cubeVertex", @"cubeFragment",
@@ -261,7 +271,8 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
     composite = builder.composite();
     ambientOcclusion =
         builder.compute(@"ambientOcclusion", "Could not create the occlusion kernel");
-    if (!shadow || !sheet || !cube || !quad || !resolveTile || !composite || !ambientOcclusion) {
+    if (!shadow[0] || !shadow[1] || !sheet || !cube || !quad || !resolveTile || !composite ||
+        !ambientOcclusion) {
         return false;
     }
 

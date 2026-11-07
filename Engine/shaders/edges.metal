@@ -12,6 +12,8 @@ using namespace metal;
 // The ghost-lines pass draws ghosts' dashed edges, after ghosts' skins. The other pass draws
 // creases and highlights, before them.
 constant bool kGhostLinePass [[function_constant(2)]];
+// Section planes are on, so lines are clipped with the surfaces.
+constant bool kSection [[function_constant(4)]];
 
 constant uint kNoOccurrence = 0xFFFFFFFF;
 // Edges of a chunk smaller than this on screen, in pixels of radius, would only blot it with ink,
@@ -28,8 +30,16 @@ struct EdgePayload {
 
 struct EdgeVertex {
     float4 position [[position]];
+    float clip [[clip_distance, function_constant(kSection)]][kMaxSectionPlanes];
     float across [[center_no_perspective]]; // pixels from the line's middle, signed
     float along [[center_no_perspective]];  // pixels along the edge's chain, for dashes
+    uint kind [[flat]];
+};
+
+struct EdgeFragmentIn {
+    float4 position [[position]];
+    float across [[center_no_perspective]];
+    float along [[center_no_perspective]];
     uint kind [[flat]];
 };
 
@@ -176,6 +186,11 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     v.across = 0.0;
     v.along = 0.0;
     v.kind = 0;
+    if (kSection) {
+        for (uint k = 0; k < kMaxSectionPlanes; ++k) {
+            v.clip[k] = 1.0;
+        }
+    }
 
     const float3 a =
         transformPoint(occurrence, decodePosition(definition, min(segment.a, lastVertex)));
@@ -234,11 +249,18 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
         v.position = float4(s / halfViewport * clip.w, clip.z, clip.w);
         v.across = side * halfWidth;
         v.along = mix(alongA / pixelWorld(a), alongB / pixelWorld(b), t);
+        if (kSection) {
+            const float3 at = mix(a, b, t);
+            for (uint p = 0; p < kMaxSectionPlanes; ++p) {
+                const float4 plane = frame.sectionPlanes[p];
+                v.clip[p] = p < frame.sectionPlaneCount ? -(dot(plane.xyz, at) + plane.w) : 1.0;
+            }
+        }
         out.set_vertex(first + k, v);
     }
 }
 
-fragment InkOutput edgeFragment(EdgeVertex in [[stage_in]],
+fragment InkOutput edgeFragment(EdgeFragmentIn in [[stage_in]],
                                 constant StyleUniforms& style [[buffer(kBufferStyle)]]) {
     const float distance = abs(in.across);
     const auto cover = [&](float width) {

@@ -89,7 +89,8 @@ struct Style {
         float alpha;
         float silhouette, part, crease, highlight; // widths in points
     } ink;
-    float ao; // ambient occlusion strength
+    float ao;     // ambient occlusion strength
+    float capInk; // 0 hatches section caps in the part's own dark tone, 1 in ink
     struct {
         Rgb color;
         float alpha;

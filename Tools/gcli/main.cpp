@@ -12,6 +12,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <print>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <sys/mman.h>
@@ -289,7 +290,8 @@ int statsCommand(const char* path) {
 }
 
 int renderCommand(int argc, const char** argv) {
-    // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour]
+    // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour
+    //                                      section plain]
     // Styles and colour modes are numbered as in engine.h.
     GeoRenderOptions options = geo_default_render_options();
     if (argc > 5) {
@@ -312,6 +314,25 @@ int renderCommand(int argc, const char** argv) {
     if (argc > 11) {
         options.look.color_mode = GeoColorMode(std::atoi(argv[11]));
     }
+    // A section as axis letters and fractions, such as "x0.5" or "x0.5,z-0.3", where a minus
+    // removes the low side.
+    if (argc > 12) {
+        for (std::string_view cut :
+             std::views::split(std::string_view(argv[12]), ',') | std::views::transform([](auto r) {
+                 return std::string_view(r.begin(), r.end());
+             })) {
+            if (cut.size() < 2 || cut[0] < 'x' || cut[0] > 'z') {
+                continue;
+            }
+            const int axis = cut[0] - 'x';
+            const bool flip = cut[1] == '-';
+            options.section.enabled[axis] = true;
+            options.section.flip[axis] = flip;
+            options.section.position[axis] =
+                std::strtof(std::string(cut.substr(flip ? 2 : 1)).c_str(), nullptr);
+        }
+    }
+    options.overlay = !(argc > 13 && std::string_view(argv[13]) == "plain");
     return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
 }
 

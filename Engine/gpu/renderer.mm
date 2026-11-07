@@ -70,6 +70,7 @@ struct Renderer::State {
 
     StyleUniforms style{};
     bool physical = false;
+    bool section = false; // this frame has section planes
 
     // Hidden, ghosted and selected flags. Uploaded only when they change.
     id<MTLBuffer> occurrenceStates, faceStates;
@@ -178,7 +179,7 @@ struct Renderer::State {
     void drawEdges(id<MTL4RenderCommandEncoder> encoder, bool ghostLines) {
         [surfaceTable setAddress:tables.edgeBatches().gpuAddress atIndex:kBufferBatches];
         [surfaceTable setAddress:tables.edgeRefs().gpuAddress atIndex:kBufferMeshletRefs];
-        [encoder setRenderPipelineState:pipelines.edges[ghostLines]];
+        [encoder setRenderPipelineState:pipelines.edges[ghostLines][section]];
         [encoder setDepthStencilState:pipelines.depthTest];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
@@ -186,8 +187,10 @@ struct Renderer::State {
         [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
     }
 
+    // Closed surfaces cull back faces, except while a section is open: the back faces seen
+    // through a cut are its caps.
     void drawSurfaces(id<MTL4RenderCommandEncoder> encoder) {
-        [encoder setCullMode:MTLCullModeBack];
+        [encoder setCullMode:section ? MTLCullModeNone : MTLCullModeBack];
         drawBatches(encoder, tables.closedBatches());
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.openBatches());
@@ -198,6 +201,7 @@ struct Renderer::State {
     // It ends by copying sample 0 of the ids and depths out of tile memory for picking.
     // Points every table at this frame's uniforms and the current scene.
     void bindFrame(const render::ViewState& view) {
+        section = view.uniforms.sectionPlaneCount > 0;
         const u64 frame = context.frameCount;
         const u64 frameAddress = frameUniforms.write(frame, &view.uniforms);
         const u64 styleAddress = styleUniforms.write(frame, &style);
@@ -229,7 +233,7 @@ struct Renderer::State {
         [encoder barrierAfterQueueStages:MTLStageFragment
                             beforeStages:MTLStageFragment
                        visibilityOptions:MTL4VisibilityOptionNone];
-        [encoder setRenderPipelineState:pipelines.shadow];
+        [encoder setRenderPipelineState:pipelines.shadow[section]];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.closedBatches());
         drawBatches(encoder, tables.openBatches());
@@ -247,7 +251,7 @@ struct Renderer::State {
 
         const bool hasScene = !tables.empty();
         if (hasScene) {
-            [encoder setRenderPipelineState:pipelines.surface[physical]];
+            [encoder setRenderPipelineState:pipelines.surface[physical][section]];
             [encoder setDepthStencilState:pipelines.depthWrite];
             drawSurfaces(encoder);
         }
@@ -265,7 +269,8 @@ struct Renderer::State {
 
         // Ghosts last, blended over everything opaque and writing no depth.
         if (hasScene && hasGhosts) {
-            [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]];
+            [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]
+                                                           [section]];
             [encoder setDepthStencilState:pipelines.depthTest];
             drawSurfaces(encoder);
             if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges) {

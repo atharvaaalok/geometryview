@@ -99,6 +99,7 @@ struct Command {
         HoverNode,
         SetInsets,
         SetLook,
+        SetSection,
         Snapshot,
         RequestFrame,
         Stop
@@ -115,6 +116,7 @@ struct Command {
         NodeCommand node;
         nav::Insets insets;
         GeoLook look;
+        GeoSection section;
     };
 };
 
@@ -215,6 +217,7 @@ struct GeoEngine {
     nav::Insets insetPoints; // as the app gives them
     nav::Insets insets;      // in pixels
     engine::LookState look;
+    render::Section section;
     u32 cubeHover = 0;   // face index plus one, or zero
     u32 cubePressed = 0; // the face a press began on, plus one
     nav::OrbitPolicy orbit;
@@ -895,6 +898,14 @@ struct GeoEngine {
                 }
                 refreshHover();
                 break;
+            case Command::Kind::SetSection:
+                for (int axis = 0; axis < 3; ++axis) {
+                    section.enabled[axis] = command->section.enabled[axis];
+                    section.position[axis] = command->section.position[axis];
+                    section.flip[axis] = command->section.flip[axis];
+                }
+                requestFrame();
+                break;
             case Command::Kind::SetLook:
                 look.set(engine::lookSettings(command->look));
                 requestFrame();
@@ -986,6 +997,7 @@ struct GeoEngine {
         view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
         view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
         view.uniforms.aoSamples = 12;
+        render::applySection(section, bounds, view.uniforms);
         return view;
     }
 
@@ -1213,6 +1225,13 @@ void geo_engine_set_look(GeoEngine* engine, const GeoLook* look) {
     Command command{};
     command.kind = Command::Kind::SetLook;
     command.look = *look;
+    engine->post(command);
+}
+
+void geo_engine_set_section(GeoEngine* engine, const GeoSection* section) {
+    Command command{};
+    command.kind = Command::Kind::SetSection;
+    command.section = *section;
     engine->post(command);
 }
 

@@ -60,12 +60,14 @@ fragment float4 compositeFragment(float4 position [[position]],
             const int2 o = int2(round(kDirections[k] * r));
             const uint2 n = tags.read(at(p + o)).rg;
             const float distance = length(float2(o)) - 0.5;
-            // Against the background a line is as heavy as the silhouette; between bodies, the
-            // lighter part line.
+            // Against the background a line is as heavy as the silhouette, and so is a cut face
+            // against an uncut surface, as on a drafted section. Between bodies it is the lighter
+            // part line, so two cut parts side by side keep their colour between the lines.
             if (n.r != c.r) {
                 const bool background = c.r == 0 || n.r == 0;
-                solid =
-                    max(solid, lineCover(background ? style.silhouette : style.partLine, distance));
+                const bool cut = ((c.r ^ n.r) & kTagCap) != 0;
+                solid = max(solid, lineCover(background || cut ? style.silhouette : style.partLine,
+                                             distance));
             }
             if (n.g != c.g) {
                 const bool background = c.g == 0 || n.g == 0;
@@ -78,7 +80,7 @@ fragment float4 compositeFragment(float4 position [[position]],
     // A body folding in front of itself, such as a boss before its own plate: a step in depth
     // within one body. A step, not a kink: the second difference must be large in world terms and
     // large against the slope, so a curved surface seen edge on does not ink its facets.
-    if (c.r != 0 && solid < 1.0) {
+    if (c.r != 0 && (c.r & kTagCap) == 0 && solid < 1.0) {
         const int s = max(1, int(round(style.pixelsPerPoint)));
         const int2 left = p - int2(s, 0), right = p + int2(s, 0);
         const int2 down = p + int2(0, s), up = p - int2(0, s);
@@ -110,7 +112,7 @@ fragment float4 compositeFragment(float4 position [[position]],
     // Ambient occlusion, blurred over the half-resolution neighbours on the same surface. A ghost
     // in front dims it.
     float shade = 1.0;
-    if (style.ao > 0.0 && c.r != 0) {
+    if (style.ao > 0.0 && c.r != 0 && (c.r & kTagCap) == 0) {
         const int2 h = p / 2;
         const int2 lastHalf = int2(occlusion.get_width(), occlusion.get_height()) - 1;
         const float z = viewDepth(depths.read(at(p)).r, frame);

@@ -38,8 +38,9 @@ kernel void ambientOcclusion(texture2d<float> depths [[texture(kTexturePickDepth
 
     const int2 p = int2(gid) * 2;
     const float d = depthAt(p);
-    if (d <= 0.0 || tags.read(uint2(clamp(p, int2(0), last))).r == 0) {
-        occlusion.write(float4(1.0), gid); // the sheet, or only a ghost
+    const uint tag = tags.read(uint2(clamp(p, int2(0), last))).r;
+    if (d <= 0.0 || tag == 0 || (tag & kTagCap) != 0) {
+        occlusion.write(float4(1.0), gid); // the sheet, only a ghost, or a section cap
         return;
     }
     const float3 center = viewPosition(p, d, frame);

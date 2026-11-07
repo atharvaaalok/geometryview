@@ -18,6 +18,17 @@ enum SurfaceLimits : unsigned {
     kTileSize = 16, // 4x MSAA does not support 32x32 tiles
 };
 
+// Section planes cut the model; caps are drawn where the cut opens a closed part.
+enum SectionLimits : unsigned {
+    kMaxSectionPlanes = 6,
+};
+
+// The body tag's top bit, set on section caps, so outlines can tell a cut face from its part.
+enum TagBits : unsigned {
+    kTagCap = 0x80,
+    kTagValues = 127, // tags run from 1 to this
+};
+
 enum BufferIndex : unsigned {
     kBufferFrame = 0,
     kBufferDefinitions = 1,
@@ -208,6 +219,7 @@ struct StyleUniforms {
     float contrast;
     uint32_t ghostStyle;
     uint32_t shadowOn;
+    float capInk; // 0 hatches caps in the part's own dark tone, 1 in ink
 };
 
 struct FrameUniforms {
@@ -243,4 +255,7 @@ struct FrameUniforms {
     simd_float3 lightTravel; // unit direction the light travels
     float ground;            // height of the ground along z
     float shadowVisibility;  // full from above, gone from below the ground
+    // World planes: where dot(xyz, p) + w > 0 is cut away.
+    simd_float4 sectionPlanes[kMaxSectionPlanes];
+    uint32_t sectionPlaneCount;
 };

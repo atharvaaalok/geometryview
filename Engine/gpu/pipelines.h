@@ -12,18 +12,21 @@ enum FunctionConstant : NSUInteger {
     kConstantPhysical = 1,
     kConstantGhostLines = 2,
     kConstantShadowPass = 3,
+    kConstantSection = 4,
 };
 
 struct Pipelines {
+    // The last index of each of these is whether section planes are on.
+    //
     // Opaque surfaces, by lighting: flat bands or the studio.
-    id<MTLRenderPipelineState> surface[2];
+    id<MTLRenderPipelineState> surface[2][2];
     // Ghosts by lighting, then by whether they write pick ids, which they do while the ghost tool
     // is held so a click can bring one back.
-    id<MTLRenderPipelineState> ghost[2][2];
-    id<MTLRenderPipelineState> shadow; // solid faces flattened onto the ground
+    id<MTLRenderPipelineState> ghost[2][2][2];
+    id<MTLRenderPipelineState> shadow[2]; // solid faces flattened onto the ground
     id<MTLRenderPipelineState> sheet;
     // Feature edges into the ink attachment: creases and highlights, or ghosts' dashed lines.
-    id<MTLRenderPipelineState> edges[2];
+    id<MTLRenderPipelineState> edges[2][2];
     id<MTLRenderPipelineState> cube, quad;
     // Inks the colour, then copies sample 0 of ids, depth and tags out of tile memory.
     id<MTLRenderPipelineState> resolveTile;

@@ -13,6 +13,11 @@ constant bool kGhostPass [[function_constant(0)]];
 constant bool kPhysical [[function_constant(1)]];
 // The cast shadow: every solid face flattened onto the ground along the light.
 constant bool kShadowPass [[function_constant(3)]];
+// Section planes are on: geometry is clipped, and back faces seen through a cut are caps.
+constant bool kSection [[function_constant(4)]];
+
+// Set in a vertex's flags when its definition is not closed, so a cut through it has no cap.
+constant uint kFlagOpen = 0x80;
 
 // Where a point's shadow lands on the ground.
 static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
@@ -22,9 +27,18 @@ static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
 
 struct SurfaceVertex {
     float4 position [[position]];
+    float clip [[clip_distance, function_constant(kSection)]][kMaxSectionPlanes];
     float3 normal;
     uint id [[flat]];
     uint flags [[flat]]; // state flags in the low byte, the body's tag in the next, its look above
+};
+
+// What the fragment stage sees: the vertex without its clip distances.
+struct SurfaceFragmentIn {
+    float4 position [[position]];
+    float3 normal;
+    uint id [[flat]];
+    uint flags [[flat]];
 };
 
 struct SurfaceOutput {
@@ -146,9 +160,16 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     out.position = frame.viewProjection * float4(world, 1.0);
     out.normal = frame.viewRotation * normal;
     out.id = occurrence.idBase + face + 1;
-    // Neighbouring bodies have different tags, unless their indices differ by a multiple of 255.
-    const uint tag = 1 + occurrenceIndex % 255;
-    out.flags = flags | tag << 8 | look << 16;
+    // Neighbouring bodies have different tags, unless their indices differ by a multiple of 127.
+    const uint tag = 1 + occurrenceIndex % kTagValues;
+    const uint open = (definition.flags & kDefinitionOpen) != 0 ? kFlagOpen : 0;
+    out.flags = flags | open | tag << 8 | look << 16;
+    if (kSection) {
+        for (uint k = 0; k < kMaxSectionPlanes; ++k) {
+            const float4 plane = frame.sectionPlanes[k];
+            out.clip[k] = k < frame.sectionPlaneCount ? -(dot(plane.xyz, world) + plane.w) : 1.0;
+        }
+    }
     // Faces never share vertices, so moving all of a face's vertices to one point outside the view
     // removes exactly that face, with no discard and no per-primitive data.
     const bool ghost = (flags & kStateGhost) != 0;
@@ -290,13 +311,82 @@ static inline float3 texelColor(uint texel) {
     return unpack_unorm4x8_to_float(texel).rgb;
 }
 
-fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
+// ---- Section caps, after step_viewer ---------------------------------------------------------
+// A back face seen through a cut is exactly where the view ray crossed the plane inside a closed
+// part, so it is shaded as the cut surface, hatched in the plane's own coordinates.
+
+// The view ray through a pixel, in world space.
+static inline void viewRay(float2 pixel, constant FrameUniforms& frame, thread float3& origin,
+                           thread float3& direction) {
+    const float2 ndc =
+        float2(pixel.x / frame.viewport.x * 2.0 - 1.0, 1.0 - pixel.y / frame.viewport.y * 2.0);
+    if (frame.perspective != 0) {
+        origin = frame.eye;
+        direction = normalize(frame.forward + frame.right * ndc.x * frame.tanHalfX +
+                              frame.up * ndc.y * frame.tanHalfY);
+    } else {
+        origin =
+            frame.eye + frame.right * ndc.x * frame.halfWidth + frame.up * ndc.y * frame.halfHeight;
+        direction = frame.forward;
+    }
+}
+
+// Coverage of one family of hatch lines, `q` counting lines. Lines crowded closer than a few
+// pixels fade out rather than turn to moiré.
+static inline float hatchLines(float q, float pixelsPerPoint) {
+    const float perPixel = max(length(float2(dfdx(q), dfdy(q))), 1e-6);
+    const float pixels = abs(fract(q) - 0.5) / perPixel;
+    const float crowding = smoothstep(3.5 * pixelsPerPoint, 5.5 * pixelsPerPoint, 1.0 / perPixel);
+    return crowding * saturate(0.4 * pixelsPerPoint + 0.5 - pixels);
+}
+
+// Hatch coverage at a pixel, on the plane the view ray entered the kept region through: 45 degree
+// lines about 0.8 points wide. Each body's tag varies their direction and spacing, and crosses
+// some, so cut parts side by side differ.
+static float capHatch(float2 pixel, uint tag, constant FrameUniforms& frame,
+                      constant StyleUniforms& style) {
+    float3 origin, direction;
+    viewRay(pixel, frame, origin, direction);
+    uint entry = 0;
+    float entryT = -INFINITY;
+    for (uint k = 0; k < frame.sectionPlaneCount; ++k) {
+        const float4 plane = frame.sectionPlanes[k];
+        const float denominator = dot(plane.xyz, direction);
+        if (denominator < 0.0) { // from the cut side into the kept side
+            const float t = -(dot(plane.xyz, origin) + plane.w) / denominator;
+            if (t > entryT) {
+                entryT = t;
+                entry = k;
+            }
+        }
+    }
+    const float3 normal = frame.sectionPlanes[entry].xyz;
+    const float t = isfinite(entryT) ? entryT : 0.0;
+    const float3 world = origin + direction * t;
+    const float3 u =
+        normalize(cross(normal, abs(normal.z) < 0.9 ? float3(0, 0, 1) : float3(1, 0, 0)));
+    const float3 v = cross(normal, u);
+    const float depth =
+        frame.perspective != 0 ? max(dot(world - frame.eye, frame.forward), 1e-6) : 1.0;
+    const float pixelWorld = frame.worldPerPixel * depth;
+    const float sense = (tag & 1) != 0 ? 1.0 : -1.0;
+    const float spacing =
+        (6.0 + 2.0 * float(tag % 3)) * style.pixelsPerPoint * pixelWorld * 1.41421356;
+    const float a = dot(world, u), b = dot(world, v);
+    const float lines = hatchLines((a + sense * b) / spacing, style.pixelsPerPoint);
+    const float crossing = hatchLines((a - sense * b) / spacing, style.pixelsPerPoint);
+    return max(lines, tag % 4 == 0 ? crossing : 0.0);
+}
+
+fragment SurfaceOutput surfaceFragment(SurfaceFragmentIn in [[stage_in]],
                                        bool frontFacing [[front_facing]],
                                        constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                                        constant StyleUniforms& style [[buffer(kBufferStyle)]],
                                        const device uint* palette [[buffer(kBufferPalette)]]) {
-    const uint flags = in.flags & 0xFFu;
-    const uint tag = (in.flags >> 8) & 0xFFu;
+    const uint flags = in.flags & 0x7Fu;
+    uint tag = (in.flags >> 8) & 0xFFu;
+    // Computed before any branch, since hatch width comes from screen derivatives.
+    const float hatch = kSection ? capHatch(in.position.xy, tag, frame, style) : 0.0;
     const uint look = in.flags >> 16;
     const bool selected = (flags & kStateSelected) != 0;
     const uint3 texels =
@@ -321,6 +411,15 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                             : band3(inside, 0.6, 0.05, softInside, t0, t1, t2);
     }
 
+    // A cut through a closed part: the cap, hatched, and tagged so outlines mark the cut.
+    if (kSection && !frontFacing && (in.flags & kFlagOpen) == 0 && frame.sectionPlaneCount > 0) {
+        const float3 fill = kPhysical ? t2 : t0;
+        const float3 line = kPhysical ? mix(t2 * 0.6, style.ink, max(style.capInk, 0.15))
+                                      : mix(t2, style.ink, max(style.capInk, 0.3));
+        color = mix(fill, line, hatch);
+        tag |= kTagCap;
+    }
+
     const bool hovered = in.id >= frame.hoverFirst && in.id < frame.hoverEnd;
     if (kGhostPass) {
         // A faint skin over what lies behind, or none at all for a ghost drawn as lines only.
@@ -343,7 +442,7 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
 }
 
 // The shadow mask: coverage only.
-fragment float4 shadowFragment(SurfaceVertex in [[stage_in]]) {
+fragment float4 shadowFragment(SurfaceFragmentIn in [[stage_in]]) {
     return float4(1.0);
 }
 
