@@ -1,6 +1,7 @@
 // Measures what this browser or app pane offers the universal viewer: WebGPU features and limits,
-// WebAssembly features, threads, frame pacing, private file storage, WebGPU in a worker, and,
-// when asked with ?mode=gpu-memory or ?mode=wasm-memory, how much memory it really grants.
+// WebAssembly features, threads, frame pacing, private file storage, WebGPU in a worker, how fast
+// the iOS shell streams a file, and, when asked with ?mode=gpu-memory, ?mode=wasm-memory or
+// ?mode=shared-memory, how much memory it really grants.
 // Each finished step is posted to the census server, so a page the system kills still reports.
 
 const params = new URLSearchParams(location.search);
@@ -214,6 +215,70 @@ async function workerGpu() {
   return inWorker({ task: "gpu", canvas }, [canvas]);
 }
 
+// ---- Threads: compiled modules shared with workers, and shared memory between them ------------
+
+async function threads() {
+  // A module compiled once and posted to a worker, which instantiates it without compiling.
+  const module = await WebAssembly.compileStreaming(fetch("tiny.wasm"));
+  const result = {
+    postedModule: await inWorker({ task: "instantiate", module }),
+    workerCompileStreaming: await inWorker({ task: "compile" }),
+  };
+  // Two workers taking turns through a shared WebAssembly memory with Atomics.wait and notify,
+  // the way pthreads hand work over. Without cross-origin isolation the memory cannot be posted.
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const rounds = 20000;
+  const workers = [0, 1].map(() => new Worker("worker.js", { type: "module" }));
+  try {
+    const replies = await Promise.race([
+      Promise.all(workers.map((worker, role) => new Promise((resolve) => {
+        worker.onmessage = (event) => resolve(event.data);
+        worker.onerror = (event) => resolve({ error: event.message ?? "worker error" });
+        worker.postMessage({ task: "atomics", memory, role, rounds });
+      }))),
+      new Promise((resolve) => setTimeout(() => resolve([{ error: "timed out" }]), 20000)),
+    ]);
+    result.atomics = replies[0];
+  } catch (error) {
+    result.atomics = { error: String(error) };
+  } finally {
+    workers.forEach((worker) => worker.terminate());
+  }
+  return result;
+}
+
+// ---- Streaming a large file from the iOS shell ---------------------------------------------------
+
+async function streaming() {
+  const started = performance.now();
+  const response = await fetch("files/stream.bin");
+  if (!response.ok) {
+    return { error: `HTTP ${response.status}` };
+  }
+  const reader = response.body.getReader();
+  let bytes = 0;
+  let firstByteMs = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    firstByteMs ??= +(performance.now() - started).toFixed(1);
+    bytes += value.byteLength;
+  }
+  const seconds = (performance.now() - started) / 1000;
+  // What each small request costs, as the page's many small files will.
+  const requests = [];
+  for (let index = 0; index < 21; ++index) {
+    const start = performance.now();
+    await (await fetch("tiny.wasm")).arrayBuffer();
+    requests.push(performance.now() - start);
+  }
+  requests.sort((a, b) => a - b);
+  return { bytesMB: bytes / MB, firstByteMs, MBps: Math.round(bytes / MB / seconds),
+           smallRequestMs: { median: +requests[10].toFixed(2), max: +requests[20].toFixed(2) } };
+}
+
 // ---- Memory ceilings, on request ---------------------------------------------------------------
 
 const MB = 1024 * 1024;
@@ -246,13 +311,28 @@ async function gpuMemory() {
   return result;
 }
 
-// Grows one WebAssembly memory 64 MB at a time, touching every page, up to the wasm32 limit.
-async function wasmMemory() {
-  const result = { stepMB: 64, grantedMB: 0, stoppedBy: null };
+// Grows one WebAssembly memory 64 MB at a time, touching every page, up to its maximum. A memory
+// reserves its maximum's address space when it is made, which iOS can refuse, so it is made with
+// the largest maximum that is granted. A threaded engine's memory is shared, which must declare it.
+async function wasmMemory(shared) {
+  const result = { stepMB: 64, maximumMB: null, refusedMaximumMB: [], grantedMB: 0, shared,
+                   stoppedBy: null };
   report.wasmMemory = result;
   const pagesPerStep = 64 * MB / 65536;
-  const memory = new WebAssembly.Memory({ initial: 0, maximum: 65536 });
-  for (let total = 0; total < 4096; total += 64) {
+  let memory = null;
+  for (const maximumMB of [4096, 3072, 2048, 1536, 1024, 512]) {
+    try {
+      memory = new WebAssembly.Memory({ initial: 0, maximum: maximumMB * 16, shared });
+      result.maximumMB = maximumMB;
+      break;
+    } catch {
+      result.refusedMaximumMB.push(maximumMB);
+    }
+  }
+  if (!memory) {
+    return result;
+  }
+  for (let total = 0; total < result.maximumMB; total += 64) {
     try {
       const previous = memory.grow(pagesPerStep) * 65536;
       new Uint8Array(memory.buffer, previous, 64 * MB).fill(1);
@@ -274,11 +354,15 @@ await step("webgpu", webgpu);
 await step("framePacing", framePacing);
 await step("storage", storage);
 await step("workerGpu", workerGpu);
+await step("threads", threads);
+if (window.webkit?.messageHandlers?.census) {
+  await step("streaming", streaming);
+}
 if (mode === "gpu-memory" && device) {
   await step("gpuMemory", gpuMemory);
 }
-if (mode === "wasm-memory") {
-  await step("wasmMemory", wasmMemory);
+if (mode === "wasm-memory" || mode === "shared-memory") {
+  await step("wasmMemory", () => wasmMemory(mode === "shared-memory"));
 }
 report.finishedAt = new Date().toISOString();
 await post(false);

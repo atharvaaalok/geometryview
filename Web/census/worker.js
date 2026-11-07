@@ -1,5 +1,5 @@
-// The census's work off the main thread: private file storage throughput, and whether WebGPU and
-// frame callbacks work in a worker with an OffscreenCanvas.
+// The census's work off the main thread: private file storage throughput, whether WebGPU and
+// frame callbacks work in a worker with an OffscreenCanvas, and how workers share WebAssembly.
 
 const MB = 1024 * 1024;
 
@@ -65,10 +65,46 @@ async function gpu(canvas) {
   return { available: true, presented: true, workerAnimationFrame: frames };
 }
 
+// Instantiates a module the page compiled and posted here.
+async function instantiate(module) {
+  const start = performance.now();
+  const instance = await WebAssembly.instantiate(module);
+  return { works: instance.exports.add(2, 3) === 5,
+           instantiateMs: +(performance.now() - start).toFixed(2) };
+}
+
+async function compile() {
+  const module = await WebAssembly.compileStreaming(fetch("tiny.wasm"));
+  return { works: new WebAssembly.Instance(module).exports.add(2, 3) === 5 };
+}
+
+// Takes turns with the other worker: each waits for its turn, then hands the turn over. Role 0
+// times the rounds; each round is two hand-overs.
+function atomics({ memory, role, rounds }) {
+  const turn = new Int32Array(memory.buffer, 0, 1);
+  const start = performance.now();
+  for (let round = 0; round < rounds; ++round) {
+    while (Atomics.load(turn, 0) !== role) {
+      Atomics.wait(turn, 0, 1 - role);
+    }
+    Atomics.store(turn, 0, 1 - role);
+    Atomics.notify(turn, 0);
+  }
+  const ms = performance.now() - start;
+  return { rounds, handOverMicroseconds: +((ms * 1000) / (2 * rounds)).toFixed(2) };
+}
+
+const tasks = {
+  opfs: () => opfs(),
+  gpu: ({ canvas }) => gpu(canvas),
+  instantiate: ({ module }) => instantiate(module),
+  compile: () => compile(),
+  atomics: (message) => atomics(message),
+};
+
 self.onmessage = async (event) => {
-  const { task, canvas } = event.data;
   try {
-    self.postMessage(task === "opfs" ? await opfs() : await gpu(canvas));
+    self.postMessage(await tasks[event.data.task](event.data));
   } catch (error) {
     self.postMessage({ error: String(error) });
   }
