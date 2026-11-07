@@ -307,6 +307,7 @@ int renderCommand(int argc, const char** argv) {
     options.perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
     if (argc > 10) {
         options.look.style = GeoStyle(std::atoi(argv[10]));
+        options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
     }
     if (argc > 11) {
         options.look.color_mode = GeoColorMode(std::atoi(argv[11]));

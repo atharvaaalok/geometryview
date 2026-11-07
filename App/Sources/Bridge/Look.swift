@@ -19,7 +19,7 @@ struct Look: Equatable {
         /// Blueprint and Technical draw every part alike.
         var usesColour: Bool { self != .blueprint && self != .technical }
         /// The style casts a shadow unless asked not to.
-        var castsShadow: Bool { self != .blueprint && self != .technical }
+        var castsShadow: Bool { geo_style_casts_shadow(GeoStyle(rawValue: UInt32(rawValue))) }
         var hasGrain: Bool { self == .illustration || self == .blueprint }
         var canWobble: Bool { self == .illustration }
     }

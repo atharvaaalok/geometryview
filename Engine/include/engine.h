@@ -77,6 +77,9 @@ typedef struct GeoLook {
 /// The look a new engine starts with: Illustration, by material, shell ghosts, a shadow.
 GeoLook geo_default_look(void);
 
+/// Whether a style casts a shadow unless asked not to. Blueprint and Technical do not.
+bool geo_style_casts_shadow(GeoStyle style);
+
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {
     GeoActionFit = 0,

@@ -128,6 +128,7 @@ TEST_CASE("every style and colour mode matches its golden image") {
                 options.height = kHeight;
                 options.overlay = false;
                 options.look.style = GeoStyle(style);
+                options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
                 options.look.color_mode = GeoColorMode(mode);
                 const std::string rendered = (fs::temp_directory_path() / name).string();
                 REQUIRE(geo_render_blob_to_png(GEO_TEST_SHADER_LIBRARY, blob.c_str(),

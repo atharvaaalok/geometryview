@@ -1205,6 +1205,10 @@ GeoLook geo_default_look(void) {
     return {GeoStyleIllustration, GeoColorMaterial, GeoGhostShell, true, 1.0f, 0.0f};
 }
 
+bool geo_style_casts_shadow(GeoStyle style) {
+    return render::styleNamed(render::StyleName(std::min<u32>(u32(style), 4))).shadow.on;
+}
+
 void geo_engine_set_look(GeoEngine* engine, const GeoLook* look) {
     Command command{};
     command.kind = Command::Kind::SetLook;
