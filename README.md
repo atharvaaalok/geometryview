@@ -30,7 +30,7 @@ parts you zoom into are retessellated more finely once the view settles.
 |---|---|
 | Hover | Highlight the face, body or part under the pointer |
 | Left click | Select it. Click empty space to clear. Shift or ⌘ adds to the selection |
-| 1, 2, 3 | Select faces, bodies or parts |
+| 1, 2, 3, or Face, Body, Part in the toolbar | What a click selects: one face, a whole body or a whole part |
 | Hold H and click | Hide what you click. Repeated clicks peel away layers |
 | Hold G and click | Ghost what you click. Clicking a ghost with G held brings it back |
 | ⇧H, ⇧G | Show everything hidden, unghost everything |
@@ -47,6 +47,7 @@ parts you zoom into are retessellated more finely once the view settles.
 | S | Cut a section across X; the scissors button opens all three axes |
 | Click the view cube | Turn to that face's view. Standard views are also in the View menu |
 | ? | Show every shortcut |
+| Drag the top edge or the file's name | Move the window. Double-click to zoom it, as with a title bar |
 
 The palette button in the toolbar, or ⇧⌘L, opens the look: five drawing styles (Illustration,
 Metal, Clay, Blueprint and Technical), what decides each part's colour (its material, read from
@@ -61,8 +62,10 @@ The left card switches between Library and Structure. Connect Folder (⌥⌘O) a
 library, which lists their STEP and STL files and remembers them across launches. Open files that
 change on disk reload. Settings (⌘,) rebinds every key and what each mouse button drags.
 
-The Structure card lists each open file's assembly tree. Click a row to select it, hover
-a row to highlight it, and type in the search field to find parts by name. ⇧⌘O adds a file to what
+The Structure card lists each open file's assembly tree. Each part shows a swatch of the colour it
+is drawn in, each assembly how many parts it holds, and a part of several bodies how many it has.
+Click a row to select it, hover a row to highlight it, and type in the search field to find parts
+by name. ⇧⌘O adds a file to what
 is shown, and ⌘-dropping files does the same.
 
 ## Development

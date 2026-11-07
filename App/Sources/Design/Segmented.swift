@@ -25,7 +25,8 @@ final class SegmentedPill: NSView {
     private let border = Outline()
     private var segments: [Segment] = []
 
-    init(_ options: [String], selected: Int, help: String) {
+    /// `tips`, when given, explain each option on its own, in place of the pill's `help`.
+    init(_ options: [String], selected: Int, help: String, tips: [String]? = nil) {
         self.selected = selected
         super.init(frame: .zero)
         wantsLayer = true
@@ -42,6 +43,7 @@ final class SegmentedPill: NSView {
         var previous: NSView?
         for (index, option) in options.enumerated() {
             let segment = Segment(title: option, divider: index > 0)
+            segment.toolTip = tips?[index]
             segment.onPress = { [weak self] in
                 guard let self, self.selected != index else {
                     return
