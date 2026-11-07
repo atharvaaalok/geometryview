@@ -72,6 +72,8 @@ public:
     /// Mean GPU time per frame so far, from Metal's commit feedback, which is gathered only when
     /// tracing. Safe to call from any thread.
     double meanGpuSeconds() const;
+    /// The given fraction's percentile of the latest 2048 frames' GPU times, likewise.
+    double gpuPercentileSeconds(double fraction) const;
 
     /// A glyph's advance in the overlay atlas, in atlas pixels.
     float glyphAdvance() const;

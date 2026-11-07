@@ -90,6 +90,7 @@ struct Renderer::State {
     // GPU time, from commit feedback while tracing.
     std::atomic<double> gpuSeconds{0.0};
     std::atomic<u64> gpuFrames{0};
+    std::array<std::atomic<float>, 2048> gpuRecent{}; // the latest frames' times, for percentiles
 
     // GEOMETRY_NO_EDGES leaves feature edges out, to measure what they cost.
     bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
@@ -405,7 +406,8 @@ struct Renderer::State {
             const double seconds = feedback.GPUEndTime - feedback.GPUStartTime;
             gpuSeconds.store(gpuSeconds.load(std::memory_order_relaxed) + seconds,
                              std::memory_order_relaxed);
-            gpuFrames.fetch_add(1, std::memory_order_relaxed);
+            const u64 index = gpuFrames.fetch_add(1, std::memory_order_relaxed);
+            gpuRecent[index % gpuRecent.size()].store(float(seconds), std::memory_order_relaxed);
         }];
         [context.queue commit:buffers count:1 options:options];
     }
@@ -582,6 +584,22 @@ OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 s
 }
 
 float Renderer::glyphAdvance() const { return state_->atlas.glyphAdvance; }
+
+double Renderer::gpuPercentileSeconds(double fraction) const {
+    const State& s = *state_;
+    const usize count =
+        std::min<usize>(s.gpuFrames.load(std::memory_order_relaxed), s.gpuRecent.size());
+    if (count == 0) {
+        return 0.0;
+    }
+    std::vector<float> times(count);
+    for (usize i = 0; i < count; ++i) {
+        times[i] = s.gpuRecent[i].load(std::memory_order_relaxed);
+    }
+    const usize at = std::min(count - 1, usize(fraction * double(count)));
+    std::nth_element(times.begin(), times.begin() + std::ptrdiff_t(at), times.end());
+    return times[at];
+}
 
 double Renderer::meanGpuSeconds() const {
     const u64 frames = state_->gpuFrames.load(std::memory_order_relaxed);

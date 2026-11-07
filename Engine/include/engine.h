@@ -203,6 +203,7 @@ typedef struct GeoEngineStats {
     uint32_t selected_count;         // occurrences with anything selected
     uint32_t hidden_count;           // occurrences with anything hidden
     double gpu_frame_seconds;        // mean GPU time per frame, measured only when tracing
+    double gpu_frame_p99_seconds;    // the 99th percentile of the latest frames, likewise
 } GeoEngineStats;
 
 /// Returns the engine version as a static string.

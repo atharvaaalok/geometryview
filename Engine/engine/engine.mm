@@ -1487,5 +1487,6 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine) {
             engine->publishedHover.load(std::memory_order_relaxed),
             engine->selectedCount.load(std::memory_order_relaxed),
             engine->hiddenCount.load(std::memory_order_relaxed),
-            engine->renderer ? engine->renderer->meanGpuSeconds() : 0.0};
+            engine->renderer ? engine->renderer->meanGpuSeconds() : 0.0,
+            engine->renderer ? engine->renderer->gpuPercentileSeconds(0.99) : 0.0};
 }

@@ -10,7 +10,8 @@ import GeometryEngine
 final class Exercise {
     static var isRequested: Bool { CommandLine.arguments.contains("--exercise") }
 
-    private static let dragSeconds = 6.0
+    private static let dragSeconds =
+        Double(ProcessInfo.processInfo.environment["EXERCISE_SECONDS"] ?? "") ?? 6.0
     private static let pixelsPerSecond = 500.0
     private static let refineWaitSeconds =
         Double(ProcessInfo.processInfo.environment["EXERCISE_WAIT"] ?? "") ?? 3.0
@@ -168,12 +169,13 @@ final class Exercise {
             String(
                 format:
                     "exercise: %llu frames in %.2f s, %.1f fps, last CPU encode %.2f ms, "
-                    + "mean GPU %.2f ms, %llu allocations in the last frame",
+                    + "mean GPU %.2f ms, p99 %.2f ms, %llu allocations in the last frame",
                 frames,
                 elapsed,
                 Double(frames) / elapsed,
                 stats.last_frame_seconds * 1000,
                 stats.gpu_frame_seconds * 1000,
+                stats.gpu_frame_p99_seconds * 1000,
                 stats.last_frame_allocations
             )
         )
