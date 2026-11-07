@@ -70,6 +70,13 @@ bool validateDefinition(const SegmentView& view, const DefinitionRecord& d, std:
         error = "A definition points outside its face table.";
         return false;
     }
+    if (d.firstEdgeChunk > view.edgeChunks.size() ||
+        d.edgeChunkCount > view.edgeChunks.size() - d.firstEdgeChunk ||
+        d.firstEdgeSegment > view.edgeSegments.size() ||
+        d.edgeSegmentCount > view.edgeSegments.size() - d.firstEdgeSegment) {
+        error = "A definition points outside its edges.";
+        return false;
+    }
     if ((d.flags & kDefinitionWide) != 0 &&
         (d.firstHighBits > view.highBits.size() ||
          d.vertexCount > view.highBits.size() - d.firstHighBits)) {
@@ -84,6 +91,16 @@ bool validateDefinition(const SegmentView& view, const DefinitionRecord& d, std:
             m.triangleCount > d.triangleCount - m.triangleOffset ||
             (m.vertexCount == 0 && m.triangleCount != 0)) {
             error = "A meshlet points outside its geometry.";
+            return false;
+        }
+    }
+    // Segments' vertices and faces are clamped by the shaders instead, because checking them here
+    // would read every page of edges.
+    for (u32 i = 0; i < d.edgeChunkCount; ++i) {
+        const EdgeChunk& c = view.edgeChunks[d.firstEdgeChunk + i];
+        if (c.segmentCount > kEdgeChunkSegments || c.firstSegment > d.edgeSegmentCount ||
+            c.segmentCount > d.edgeSegmentCount - c.firstSegment) {
+            error = "An edge chunk points outside its edges.";
             return false;
         }
     }
@@ -148,7 +165,9 @@ bool parseSegment(std::span<const u8> bytes, SegmentView& view, std::string& err
         readSection(bytes, *header, SectionKind::Vertices, view.vertices, error) &&
         readSection(bytes, *header, SectionKind::HighBits, view.highBits, error) &&
         readSection(bytes, *header, SectionKind::Triangles, view.triangles, error) &&
-        readSection(bytes, *header, SectionKind::Faces, view.faces, error);
+        readSection(bytes, *header, SectionKind::Faces, view.faces, error) &&
+        readSection(bytes, *header, SectionKind::EdgeSegments, view.edgeSegments, error) &&
+        readSection(bytes, *header, SectionKind::EdgeChunks, view.edgeChunks, error);
     if (!sections || !validateModel(view, error)) {
         return false;
     }

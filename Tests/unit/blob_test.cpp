@@ -96,6 +96,10 @@ TEST_CASE("a written file reads back as a model and geometry") {
     CHECK(geometry.triangles.size() == 1);
     CHECK(geometry.definitions[0].meshletCount == geometry.meshlets.size());
     CHECK(geometry.faces.size() == geometry.definitions[0].faceCount);
+    // A lone triangle is an open surface, bounded by its three sides.
+    CHECK(geometry.edgeSegments.size() == 3);
+    CHECK(geometry.edgeChunks.size() == 1);
+    CHECK(geometry.definitions[0].edgeSegmentCount == 3);
     CHECK(sample.file.size() % kAlignment == 0);
 }
 
@@ -176,6 +180,20 @@ TEST_CASE("a meshlet pointing outside its geometry is rejected") {
 
     sample = writeSample();
     sample.first<Meshlet>(1, SectionKind::Meshlets).vertexCount = 200;
+    CHECK_FALSE(sample.parses(1));
+}
+
+TEST_CASE("an edge chunk pointing outside its edges is rejected") {
+    Sample sample = writeSample();
+    sample.first<EdgeChunk>(1, SectionKind::EdgeChunks).firstSegment = 2;
+    CHECK_FALSE(sample.parses(1));
+
+    sample = writeSample();
+    sample.first<EdgeChunk>(1, SectionKind::EdgeChunks).segmentCount = kEdgeChunkSegments + 1;
+    CHECK_FALSE(sample.parses(1));
+
+    sample = writeSample();
+    sample.first<DefinitionRecord>(1, SectionKind::Definitions).edgeChunkCount = 2;
     CHECK_FALSE(sample.parses(1));
 }
 

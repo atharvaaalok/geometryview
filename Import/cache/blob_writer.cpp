@@ -153,8 +153,11 @@ bool BlobStream::flush() {
     if (pending_.empty()) {
         return true;
     }
-    usize meshlets = 0, vertices = 0, highBits = 0, triangles = 0, faces = 0;
+    usize meshlets = 0, vertices = 0, highBits = 0, triangles = 0, faces = 0, segments = 0,
+          chunks = 0;
     for (const Pending& item : pending_) {
+        segments += item.definition.edgeSegments.size();
+        chunks += item.definition.edgeChunks.size();
         meshlets += item.definition.meshlets.size();
         vertices += item.definition.vertices.size();
         highBits += item.definition.highBits.size();
@@ -169,6 +172,8 @@ bool BlobStream::flush() {
     segment.reserve<u32>(SectionKind::HighBits, highBits);
     segment.reserve<u32>(SectionKind::Triangles, triangles);
     segment.reserve<FaceRecord>(SectionKind::Faces, faces);
+    segment.reserve<EdgeSegment>(SectionKind::EdgeSegments, segments);
+    segment.reserve<EdgeChunk>(SectionKind::EdgeChunks, chunks);
     segment.allocate();
 
     auto* records = segment.at<DefinitionRecord>(SectionKind::Definitions);
@@ -177,8 +182,11 @@ bool BlobStream::flush() {
     auto* highOut = segment.at<u32>(SectionKind::HighBits);
     auto* triangleOut = segment.at<u32>(SectionKind::Triangles);
     auto* faceOut = segment.at<FaceRecord>(SectionKind::Faces);
+    auto* segmentOut = segment.at<EdgeSegment>(SectionKind::EdgeSegments);
+    auto* chunkOut = segment.at<EdgeChunk>(SectionKind::EdgeChunks);
 
-    u32 meshletAt = 0, vertexAt = 0, highAt = 0, triangleAt = 0, faceAt = 0;
+    u32 meshletAt = 0, vertexAt = 0, highAt = 0, triangleAt = 0, faceAt = 0, segmentAt = 0,
+        chunkAt = 0;
     for (usize i = 0; i < pending_.size(); ++i) {
         const Pending& item = pending_[i];
         const PackedDefinition& d = item.definition;
@@ -199,17 +207,25 @@ bool BlobStream::flush() {
         record.firstTriangle = triangleAt;
         record.triangleCount = u32(d.triangles.size());
         record.firstFace = faceAt;
+        record.firstEdgeChunk = chunkAt;
+        record.edgeChunkCount = u32(d.edgeChunks.size());
+        record.firstEdgeSegment = segmentAt;
+        record.edgeSegmentCount = u32(d.edgeSegments.size());
 
         std::copy(d.meshlets.begin(), d.meshlets.end(), meshletOut + meshletAt);
         std::copy(d.vertices.begin(), d.vertices.end(), vertexOut + vertexAt);
         std::copy(d.highBits.begin(), d.highBits.end(), highOut + highAt);
         std::copy(d.triangles.begin(), d.triangles.end(), triangleOut + triangleAt);
         std::copy(item.faces.begin(), item.faces.end(), faceOut + faceAt);
+        std::copy(d.edgeSegments.begin(), d.edgeSegments.end(), segmentOut + segmentAt);
+        std::copy(d.edgeChunks.begin(), d.edgeChunks.end(), chunkOut + chunkAt);
         meshletAt += u32(d.meshlets.size());
         vertexAt += u32(d.vertices.size());
         highAt += u32(d.highBits.size());
         triangleAt += u32(d.triangles.size());
         faceAt += u32(item.faces.size());
+        segmentAt += u32(d.edgeSegments.size());
+        chunkAt += u32(d.edgeChunks.size());
     }
 
     const std::vector<u8>& bytes = segment.bytes();

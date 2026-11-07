@@ -233,6 +233,7 @@ int statsCommand(const char* path) {
 
     double area = 0.0, volume = 0.0;
     u64 triangles = 0, faces = 0;
+    std::array<u64, 3> edges{}; // segments by class, counting every occurrence
     double lo[3] = {INFINITY, INFINITY, INFINITY}, hi[3] = {-INFINITY, -INFINITY, -INFINITY};
     for (const format::OccurrenceRecord& occurrence : model->occurrences) {
         faces += model->definitionInfos[occurrence.definition].faceCount;
@@ -241,6 +242,11 @@ int statsCommand(const char* path) {
             continue;
         }
         const format::DefinitionRecord& d = *g.record;
+        for (u32 s = 0; s < d.edgeSegmentCount; ++s) {
+            const u32 edgeClass =
+                g.view->edgeSegments[d.firstEdgeSegment + s].faceB >> kEdgeClassShift;
+            ++edges[std::min<u32>(edgeClass, 2)];
+        }
         const std::array<float, 12>& t = occurrence.transform;
         const auto toWorld = [&](u32 vertex) {
             const std::array<float, 3> p = decodeVertex(*g.view, d, vertex);
@@ -275,8 +281,10 @@ int statsCommand(const char* path) {
         }
     }
     std::println("{{\"faces\": {}, \"triangles\": {}, \"area\": {}, \"signedVolume\": {}, "
-                 "\"min\": [{}, {}, {}], \"max\": [{}, {}, {}]}}",
-                 faces, triangles, area, volume, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+                 "\"min\": [{}, {}, {}], \"max\": [{}, {}, {}], "
+                 "\"edges\": {{\"crease\": {}, \"smooth\": {}, \"boundary\": {}}}}}",
+                 faces, triangles, area, volume, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
+                 edges[kEdgeCrease], edges[kEdgeSmooth], edges[kEdgeBoundary]);
     return 0;
 }
 
