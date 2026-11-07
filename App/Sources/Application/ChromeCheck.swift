@@ -31,7 +31,8 @@ final class ChromeCheck {
             return
         }
         root.layoutSubtreeIfNeeded()
-        for segment in Self.pills(in: root).flatMap(\.subviews) where !segment.isHidden {
+        for segment in Self.pills(in: root).flatMap(\.subviews)
+        where segment is ChromeControl && !segment.isHidden {
             let y = segment.bounds.midY
             for x in [segment.bounds.midX, segment.bounds.minX + 3] {
                 targets.append((segment, segment.convert(NSPoint(x: x, y: y), to: nil)))
