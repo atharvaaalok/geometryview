@@ -15,7 +15,14 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <libproc.h>
+#include <mach/mach.h>
 #include <pthread.h>
+#include <sys/proc_info.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 namespace {
 
@@ -25,6 +32,18 @@ using namespace geo;
 // last input, which keeps the next interaction at full rate.
 constexpr double kLingerSeconds = 0.25;
 constexpr usize kCommandCapacity = 4096;
+
+// Seconds since this process started, for measuring launch.
+double secondsSinceProcessStart() {
+    proc_bsdinfo info{};
+    if (proc_pidinfo(getpid(), PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != sizeof(info)) {
+        return -1.0;
+    }
+    timeval now{};
+    gettimeofday(&now, nullptr);
+    return double(now.tv_sec - i64(info.pbi_start_tvsec)) +
+           double(now.tv_usec - i32(info.pbi_start_tvusec)) * 1e-6;
+}
 
 struct ResizeCommand {
     u32 width, height;
@@ -56,6 +75,7 @@ struct GeoEngine {
 
     bool needsFrame = false;
     bool stopping = false;
+    const bool traceLaunch = std::getenv("GEOMETRY_TRACE") != nullptr;
     double lastActivity = 0.0;
 
     std::atomic<u64> framesRendered{0};
@@ -105,7 +125,22 @@ struct GeoEngine {
         if (needsFrame) {
             needsFrame = false;
             const double start = nowSeconds();
+            if (traceLaunch && framesRendered.load(std::memory_order_relaxed) == 0) {
+                [tick.drawable addPresentedHandler:^(id<MTLDrawable> drawable) {
+                    (void)drawable;
+                    std::fprintf(stderr, "trace: first frame presented %.1f ms after process start\n",
+                                 secondsSinceProcessStart() * 1e3);
+                    geo_trace_memory("first frame presented");
+                }];
+            }
+            const bool firstFrame = traceLaunch && framesRendered.load(std::memory_order_relaxed) == 0;
+            if (firstFrame) {
+                geo_trace_memory("before first render");
+            }
             renderer->render(tick.drawable);
+            if (firstFrame) {
+                geo_trace_memory("after first render");
+            }
             lastFrameSeconds.store(nowSeconds() - start, std::memory_order_relaxed);
             framesRendered.fetch_add(1, std::memory_order_relaxed);
         } else if (nowSeconds() - lastActivity > kLingerSeconds) {
@@ -203,6 +238,17 @@ void geo_engine_request_frame(GeoEngine* engine) {
     Command command{};
     command.kind = Command::Kind::RequestFrame;
     engine->post(command);
+}
+
+void geo_trace_memory(const char* label) {
+    if (std::getenv("GEOMETRY_TRACE") == nullptr) {
+        return;
+    }
+    task_vm_info_data_t info{};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count);
+    std::fprintf(stderr, "trace: %-28s footprint %7.1f MB, peak %7.1f MB\n", label,
+                 double(info.phys_footprint) / 1e6, double(info.ledger_phys_footprint_peak) / 1e6);
 }
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine) {

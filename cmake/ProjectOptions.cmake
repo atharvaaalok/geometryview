@@ -12,9 +12,10 @@ target_compile_options(geo_options INTERFACE
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,$<CONFIG:Release>>:-O3>
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,$<CONFIG:Release>>:-flto=thin>
 )
+# Scoped by linker language, because swiftc rejects these clang driver flags.
 target_link_options(geo_options INTERFACE
-    $<$<CONFIG:Release>:-flto=thin>
-    $<$<CONFIG:Release>:-Wl,-dead_strip>
+    $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-flto=thin>
+    $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-Wl,-dead_strip>
 )
 
 if(GEO_SANITIZE)

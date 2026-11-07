@@ -245,7 +245,7 @@ Each is a vertical slice. All budgets are targets. **Visual review pauses:** M1,
 | 792 MB | ≤180 ms | ≤250 ms | ≤0.5 s (Tier 0) | <15 ms | 134.6 s, 16.7 GB |
 | Binary STL 500 MB | n/a | ≤250 ms | ≤1.5 s | <15 ms | n/a |
 
-Viewer memory target: about 134 MB render targets at 3456×2234 plus under 150 MB other anonymous memory, with geometry in clean file-backed pages. Frame target: p99 ≤8.33 ms at 120 Hz on this machine.
+Viewer memory target: about 134 MB render targets at 3456×2234 plus under 150 MB other anonymous memory, with geometry in clean file-backed pages. While actively rendering, add about 240 MB of driver memory, which is released a few seconds after rendering stops (measured, see ADR 0003). Frame target: p99 ≤8.33 ms at 120 Hz on this machine.
 
 **Deferred (not dropped):** measurement (face data stays in the blob), H/G drag painting, version-sibling files, PNG export, explode, turntable mode, thumbnails, dark theme beyond Blueprint, IGES, BREP, OBJ, PLY, 3MF, glTF, multi-window, Tier 1 cylinder/cone tessellator.
 

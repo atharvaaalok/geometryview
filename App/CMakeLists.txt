@@ -14,6 +14,9 @@ target_compile_options(Geometry PRIVATE
     "$<$<AND:$<COMPILE_LANGUAGE:Swift>,$<CONFIG:Release>>:-O>"
 )
 target_link_libraries(Geometry PRIVATE engine "-framework AppKit")
+target_link_options(Geometry PRIVATE
+    "$<$<CONFIG:Release>:SHELL:-Xlinker -dead_strip>"
+)
 add_dependencies(Geometry engine_shaders)
 
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")

@@ -69,6 +69,9 @@ void geo_engine_request_frame(GeoEngine* engine);
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 
+/// Prints current and peak memory footprint to stderr when GEOMETRY_TRACE is set.
+void geo_trace_memory(const char* label);
+
 #ifdef __cplusplus
 }
 #endif
