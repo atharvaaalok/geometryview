@@ -196,6 +196,12 @@ enum MainMenu {
         )
         menu.addItem(.separator())
         menu.addItem(
+            withTitle: "Settings…",
+            action: #selector(AppDelegate.showSettings(_:)),
+            keyEquivalent: ","
+        )
+        menu.addItem(.separator())
+        menu.addItem(
             withTitle: "Hide Geometry",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"

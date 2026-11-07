@@ -213,22 +213,21 @@ final class ViewportView: NSView {
             }
             return
         }
-        let modifiers = event.modifierFlags.intersection(KeyBindings.relevant)
-        if modifiers.isEmpty, let held = KeyBindings.held.first(where: { $0.key == key }) {
-            heldKeyCode = event.keyCode
-            engine.setTool(held.tool)
-            onToolChange?(held.tool)
-            return
-        }
         guard
-            let binding = KeyBindings.pressed.first(where: {
-                $0.key == key && $0.modifiers == modifiers
-            })
+            let action = KeyMap.shared.action(
+                for: KeyChord(key: key, modifiers: event.modifierFlags)
+            )
         else {
             super.keyDown(with: event)
             return
         }
-        onKeyCommand?(binding.command)
+        if let tool = action.heldTool {
+            heldKeyCode = event.keyCode
+            engine.setTool(tool)
+            onToolChange?(tool)
+        } else if let command = action.command {
+            onKeyCommand?(command)
+        }
     }
 
     override func keyUp(with event: NSEvent) {

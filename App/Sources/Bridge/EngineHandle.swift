@@ -115,6 +115,11 @@ final class EngineHandle {
         geo_engine_set_tool(engine, tool)
     }
 
+    func setMouse(_ mouse: MouseSettings) {
+        var settings = mouse.engineSettings
+        geo_engine_set_mouse(engine, &settings)
+    }
+
     func setSection(_ section: GeoSection) {
         var copy = section
         geo_engine_set_section(engine, &copy)
