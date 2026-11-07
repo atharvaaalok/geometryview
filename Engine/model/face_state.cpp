@@ -85,6 +85,7 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
             word.flags = (word.flags & ~u32(kFaceFlags)) | after;
             ++version_;
             visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
+            selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
         }
         return;
     }
@@ -113,6 +114,7 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
     }
     ++version_;
     visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
+    selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
 }
 
 void FaceState::clear(u8 mask, std::vector<Change>* changes) {

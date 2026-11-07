@@ -219,6 +219,9 @@ struct GeoEngine {
     // What framing and rotation treat as the model: everything not wholly hidden.
     Aabb visible{};
     u64 seenVisibility = ~u64(0);
+    u64 seenSelection = ~u64(0);
+    std::optional<model::NodeRef> seenFocus;
+    u32 hiddenBodies = 0; // bodies with anything hidden
     // The view to return to when an isolate ends, kept from the first of nested isolates.
     std::optional<nav::Camera> cameraBeforeIsolate;
 
@@ -429,7 +432,14 @@ struct GeoEngine {
         if (interaction.state().visibilityVersion() != seenVisibility) {
             visibilityChanged();
         }
-        if (const std::optional<model::NodeRef> focus = interaction.focus()) {
+        // Only a change of selection, so hiding from the tree does not scroll it to the selection.
+        const std::optional<model::NodeRef> focus = interaction.focus();
+        if (interaction.state().selectionVersion() == seenSelection && focus == seenFocus) {
+            return;
+        }
+        seenSelection = interaction.state().selectionVersion();
+        seenFocus = focus;
+        if (focus) {
             emit(GeoEventSelectionChanged, "", focus->document, focus->node);
         } else {
             emit(GeoEventSelectionChanged, "", 0, GEO_NO_NODE);
@@ -467,6 +477,7 @@ struct GeoEngine {
             hidden += state.anyFace(o, kStateHidden) ? 1 : 0;
             ghosted += state.anyFace(o, kStateGhost) ? 1 : 0;
         }
+        hiddenBodies = hidden;
         if (cameraBeforeIsolate && hidden == 0) {
             flyTo(*cameraBeforeIsolate);
             cameraBeforeIsolate.reset();
@@ -513,6 +524,9 @@ struct GeoEngine {
     // Isolating frames what is kept, as if it alone had been opened, and remembers the view to
     // return to when everything is shown again.
     void frameIsolated() {
+        if (hiddenBodies == 0) {
+            return; // everything was kept, so nothing was isolated
+        }
         if (!cameraBeforeIsolate) {
             cameraBeforeIsolate = flight.active() ? flight.destination() : camera;
         }
@@ -727,6 +741,9 @@ struct GeoEngine {
         hasFramed = false;
         userMovedCamera = false;
         cameraBeforeIsolate.reset();
+        seenVisibility = ~u64(0);
+        seenSelection = ~u64(0);
+        seenFocus.reset();
         {
             std::lock_guard lock(nodeStateMutex);
             publishedNodeStates.clear();

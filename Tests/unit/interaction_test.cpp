@@ -175,13 +175,17 @@ TEST_CASE("tree rows report hidden, ghosted and partly hidden") {
     CHECK(states[3] == NodeVisibility::Mixed);
 }
 
-TEST_CASE("selecting does not count as a change to what is shown") {
+TEST_CASE("selecting and hiding count as changes of their own kind") {
     Rig rig;
-    const u64 before = rig.interaction.state().visibilityVersion();
+    const u64 shown = rig.interaction.state().visibilityVersion();
+    const u64 selected = rig.interaction.state().selectionVersion();
     rig.interaction.click(5, Tool::Select, false);
-    CHECK(rig.interaction.state().visibilityVersion() == before);
+    CHECK(rig.interaction.state().visibilityVersion() == shown);
+    CHECK(rig.interaction.state().selectionVersion() != selected);
+    const u64 afterSelecting = rig.interaction.state().selectionVersion();
     rig.interaction.hideSelection();
-    CHECK(rig.interaction.state().visibilityVersion() != before);
+    CHECK(rig.interaction.state().visibilityVersion() != shown);
+    CHECK(rig.interaction.state().selectionVersion() == afterSelecting);
 }
 
 TEST_CASE("a tree node hides and shows, faces included, in one step to undo") {

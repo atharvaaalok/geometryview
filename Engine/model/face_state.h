@@ -61,6 +61,8 @@ public:
     u64 version() const { return version_; }
     /// Counts changes to what is hidden or ghosted only, so selecting costs no visibility work.
     u64 visibilityVersion() const { return visibilityVersion_; }
+    /// Counts changes to what is selected only.
+    u64 selectionVersion() const { return selectionVersion_; }
 
 private:
     u32 pageFor(u32 occurrence); // allocates one if needed
@@ -74,6 +76,7 @@ private:
     u32 zeroPageSize_ = 0;
     u64 version_ = 0;
     u64 visibilityVersion_ = 0;
+    u64 selectionVersion_ = 0;
 };
 
 } // namespace geo::model
