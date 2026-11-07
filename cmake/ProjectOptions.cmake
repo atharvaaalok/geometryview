@@ -4,9 +4,13 @@ set(GEO_SANITIZE "" CACHE STRING "Comma-separated sanitizers, for example addres
 
 add_library(geo_options INTERFACE)
 
+# A target sets GEO_ALLOW_EXCEPTIONS to opt out: tests, because doctest throws to stop a test case,
+# and the OCCT adapter, because OCCT reports errors with exceptions.
+set(geo_no_exceptions "$<NOT:$<BOOL:$<TARGET_PROPERTY:GEO_ALLOW_EXCEPTIONS>>>")
+
 target_compile_options(geo_options INTERFACE
-    $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-exceptions>
-    $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-rtti>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,${geo_no_exceptions}>:-fno-exceptions>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,${geo_no_exceptions}>:-fno-rtti>
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
     $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-mcpu=apple-m1>
     $<$<AND:$<COMPILE_LANGUAGE:CXX,OBJCXX>,$<CONFIG:Release>>:-O3>

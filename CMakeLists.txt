@@ -21,6 +21,7 @@ enable_testing()
 
 add_subdirectory(ThirdParty)
 add_subdirectory(Engine)
+add_subdirectory(Import)
 add_subdirectory(Tools)
 add_subdirectory(App)
 add_subdirectory(Tests)
