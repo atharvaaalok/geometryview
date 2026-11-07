@@ -16,6 +16,15 @@ struct View {
     float azimuth = 35.f;   // degrees around z
     float elevation = 25.f; // degrees above the xy plane
     float zoom = 1.f;       // 1 fits the model
+    i32 pickX = -1, pickY = -1; // a pixel to read the ids of, as hover does, or none
+};
+
+/// What the pixel under the cursor showed, and how long the answer took to come back.
+struct PickResult {
+    u32 id = 0, body = 0;
+    u32 frames = 0; // frames submitted after the one it was read in
+    double ms = 0;  // from submitting that frame to having the answer
+    u32 tag = 0;
 };
 
 /// GPU milliseconds of one frame's passes, and how much it drew. Apple GPUs overlap consecutive
@@ -53,6 +62,8 @@ public:
     void frame(const View& view, wgpu::TextureView target);
     /// Timings of finished frames, oldest first.
     std::deque<FrameTiming>& timings() { return timings_; }
+    /// Answers to picks, oldest first.
+    std::deque<PickResult>& picks() { return picks_; }
     bool timestamps() const { return querySet_ != nullptr; }
     /// Marks the frames submitted from now on, so late timings land in the right phase.
     void setTag(u32 tag) { frameTag_ = tag; }
@@ -68,7 +79,8 @@ private:
         bool busy = false;
     };
     wgpu::Buffer buffer(u64 size, wgpu::BufferUsage usage, const char* label);
-    wgpu::Texture texture(u32 width, u32 height, wgpu::TextureFormat format, const char* label);
+    wgpu::Texture texture(u32 width, u32 height, wgpu::TextureFormat format, const char* label,
+                          wgpu::TextureUsage extra = wgpu::TextureUsage::None);
     void createPipelines();
     void createTargets();
     void createBindGroups();
@@ -106,10 +118,14 @@ private:
     wgpu::QuerySet querySet_;
     wgpu::Buffer resolve_;
     Readback readbacks_[4];
+    Readback pickReadbacks_[3]; // the hover probe's ring, so a pick never waits on the last
+    u64 frameCount_ = 0;
+    std::deque<PickResult> picks_;
 
     u32 width_ = 0, height_ = 0;
     u32 instanceCount_ = 0, edgeInstanceCount_ = 0;
-    u32 openStart_ = 0; // where open surfaces' clusters or slots begin
+    u32 openStart_ = 0;      // where open surfaces' clusters or slots begin
+    u32 openIndexStart_ = 0; // and their indices, in the indexed mode
     std::array<float, 3> center_{}, boundsMin_{};
     float radius_ = 1.f;
     u64 bufferBytes_ = 0, targetBytes_ = 0;

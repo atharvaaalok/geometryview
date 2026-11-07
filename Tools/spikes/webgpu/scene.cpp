@@ -151,6 +151,7 @@ bool buildScene(std::span<const u8> file, u32 copies, SceneData& scene, std::str
                 const u64 clusters = (meshlets[m].triangleCount + 15u) / 16u;
                 (open ? scene.openClusters : scene.closedClusters) += clusters;
                 scene.closedInstances += open ? 0 : 1;
+                (open ? scene.openIndices : scene.closedIndices) += meshlets[m].triangleCount * 3u;
             }
             scene.triangles += r->triangleCount;
             for (u32 c = 0; c < r->edgeChunkCount; ++c) {

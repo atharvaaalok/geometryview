@@ -63,6 +63,7 @@ struct SceneData {
     // 16-triangle clusters the cull pass can emit at most, for closed and for open surfaces.
     u64 closedClusters = 0, openClusters = 0;
     u64 closedInstances = 0; // meshlet instances of closed surfaces
+    u64 closedIndices = 0, openIndices = 0; // three per triangle, counting every instance
     u64 triangles = 0; // counting every occurrence
     std::array<float, 3> boundsMin{}, boundsMax{};
 };

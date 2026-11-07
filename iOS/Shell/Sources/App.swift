@@ -107,6 +107,8 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         view.isInspectable = true
         webView = view
         try? FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+        // Measurements run for minutes with nobody touching the phone; keep it awake meanwhile.
+        UIApplication.shared.isIdleTimerDisabled = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(memoryWarning),
             name: UIApplication.didReceiveMemoryWarningNotification, object: nil)

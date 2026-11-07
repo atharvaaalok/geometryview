@@ -3,6 +3,7 @@
 #include "shaders.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -39,14 +40,13 @@ struct FrameUniforms {
     float aoRadius;
     u32 aoSamples;
     u32 features;
-    u32 pad0;
+    u32 openIndexStart;
 };
 static_assert(sizeof(FrameUniforms) == 272);
 
 enum Pass : u32 { kPassCull, kPassShadow, kPassVis, kPassOcclusion, kPassComposite, kPasses };
 constexpr u32 kQueries = kPasses * 2;
 constexpr u64 kReadbackBytes = kQueries * 8 + 40; // timestamps, then the surface draws' arguments
-constexpr u32 kSlotIndices = 372;                 // a meshlet's indices in the indexed mode
 
 using Vec3 = std::array<float, 3>;
 
@@ -92,13 +92,14 @@ wgpu::Buffer Renderer::buffer(u64 size, wgpu::BufferUsage usage, const char* lab
 }
 
 wgpu::Texture Renderer::texture(u32 width, u32 height, wgpu::TextureFormat format,
-                                const char* label) {
+                                const char* label, wgpu::TextureUsage extra) {
     wgpu::TextureDescriptor descriptor{};
     descriptor.label = label;
     descriptor.size = {std::max(width, 1u), std::max(height, 1u), 1};
     descriptor.dimension = wgpu::TextureDimension::e2D;
     descriptor.format = format;
-    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    descriptor.usage =
+        wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | extra;
     u64 texel = 4;
     switch (format) {
     case wgpu::TextureFormat::R8Unorm:
@@ -143,7 +144,8 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, Mode mode, Feat
 
     wgpu::Limits limits{};
     device.GetLimits(&limits);
-    const u64 indexBytes = u64(instanceCount_) * kSlotIndices * 4;
+    openIndexStart_ = u32(scene.closedIndices);
+    const u64 indexBytes = (scene.closedIndices + scene.openIndices) * 4;
     for (u32 s = 0; s < kStreams; ++s) {
         if (scene.streamBytes[s] > limits.maxStorageBufferBindingSize) {
             error = "A geometry stream is larger than the device can bind.";
@@ -170,11 +172,11 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, Mode mode, Feat
     if (indexed) {
         slots_ = buffer(u64(instanceCount_) * 4, U::Storage, "slots");
         indices_ = buffer(indexBytes, U::Storage | U::Index, "indices");
-        indexedArgs_ = buffer(40, arguments, "indexed args");
+        indexedArgs_ = buffer(48, arguments, "indexed args"); // two draws, then two slot counters
         if (features_.shadow) {
             shadowSlots_ = buffer(u64(instanceCount_) * 4, U::Storage, "shadow slots");
             shadowIndices_ = buffer(indexBytes, U::Storage | U::Index, "shadow indices");
-            shadowArgs_ = buffer(40, arguments, "shadow args"); // as the shader declares, though one is used
+            shadowArgs_ = buffer(48, arguments, "shadow args"); // laid out as the camera's
         }
         if (features_.edges) {
             edgeInstances_ = buffer(u64(edgeInstanceCount_) * 8, input, "edge instances");
@@ -213,6 +215,9 @@ bool Renderer::init(wgpu::Device device, const SceneData& scene, Mode mode, Feat
     }
     for (Readback& readback : readbacks_) {
         readback.buffer = buffer(kReadbackBytes, U::MapRead | U::CopyDst, "readback");
+    }
+    for (Readback& readback : pickReadbacks_) {
+        readback.buffer = buffer(256, U::MapRead | U::CopyDst, "pick");
     }
     return true;
 }
@@ -359,7 +364,8 @@ void Renderer::createTargets() {
     targetBytes_ = 0;
     const bool indexed = mode_ == Mode::Indexed;
     const u32 halfWidth = (width_ + 1) / 2, halfHeight = (height_ + 1) / 2;
-    vis_ = texture(width_, height_, indexed ? F::RG32Uint : F::R32Uint, "vis");
+    vis_ = texture(width_, height_, indexed ? F::RG32Uint : F::R32Uint, "vis",
+                   wgpu::TextureUsage::CopySrc); // the hover probe copies from it
     visView_ = vis_.CreateView();
     depth_ = texture(width_, height_, F::Depth32Float, "depth");
     depthView_ = depth_.CreateView();
@@ -517,11 +523,13 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     u.aoSamples = 12;
     u.features = (features_.edges ? 1u : 0u) | (features_.shadow ? 2u : 0u) |
                  (features_.occlusion ? 4u : 0u);
+    u.openIndexStart = openIndexStart_;
     queue_.WriteBuffer(frameBuffer_, 0, &u, sizeof(u));
 
     const bool indexed = mode_ == Mode::Indexed;
     if (indexed) {
-        const u32 args[10] = {0, 1, 0, 0, 0, 0, 1, openStart_ * kSlotIndices, 0, 0};
+        // Both draws empty, the open one's indices after the closed ones', and no slots taken.
+        const u32 args[12] = {0, 1, 0, 0, 0, 0, 1, openIndexStart_, 0, 0, 0, 0};
         queue_.WriteBuffer(indexedArgs_, 0, args, sizeof(args));
         if (features_.shadow) {
             queue_.WriteBuffer(shadowArgs_, 0, args, sizeof(args));
@@ -649,6 +657,28 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     compositeEncoder.Draw(3);
     compositeEncoder.End();
 
+    // The hover probe: the ids under the cursor, copied out for the CPU to read when it can.
+    Readback* pick = nullptr;
+    if (indexed && view.pickX >= 0 && view.pickY >= 0 && u32(view.pickX) < width_ &&
+        u32(view.pickY) < height_) {
+        for (Readback& candidate : pickReadbacks_) {
+            if (!candidate.busy) {
+                pick = &candidate;
+                break;
+            }
+        }
+    }
+    if (pick != nullptr) {
+        wgpu::TexelCopyTextureInfo source{};
+        source.texture = vis_;
+        source.origin = {u32(view.pickX), u32(view.pickY), 0};
+        wgpu::TexelCopyBufferInfo destination{};
+        destination.buffer = pick->buffer;
+        destination.layout.bytesPerRow = 256;
+        const wgpu::Extent3D one = {1, 1, 1};
+        encoder.CopyTextureToBuffer(&source, &destination, &one);
+    }
+
     // Read the timings back through a free buffer of the ring; a frame with none free goes untimed.
     Readback* readback = nullptr;
     for (Readback& candidate : readbacks_) {
@@ -667,6 +697,32 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
     }
     const wgpu::CommandBuffer commands = encoder.Finish();
     queue_.Submit(1, &commands);
+    const u64 submitted = ++frameCount_;
+    const auto submittedAt = std::chrono::steady_clock::now();
+
+    if (pick != nullptr) {
+        pick->busy = true;
+        pick->buffer.MapAsync(
+            wgpu::MapMode::Read, 0, 8, callbackMode_,
+            [this, pick, submitted, submittedAt, tag = frameTag_](wgpu::MapAsyncStatus status,
+                                                                  wgpu::StringView) {
+                if (status == wgpu::MapAsyncStatus::Success) {
+                    u32 ids[2];
+                    std::memcpy(ids, pick->buffer.GetConstMappedRange(0, 8), sizeof(ids));
+                    PickResult result;
+                    result.id = ids[0];
+                    result.body = ids[1];
+                    result.frames = u32(frameCount_ - submitted);
+                    result.ms = std::chrono::duration<double, std::milli>(
+                                    std::chrono::steady_clock::now() - submittedAt)
+                                    .count();
+                    result.tag = tag;
+                    picks_.push_back(result);
+                    pick->buffer.Unmap();
+                }
+                pick->busy = false;
+            });
+    }
 
     if (readback == nullptr) {
         return;
@@ -697,8 +753,8 @@ void Renderer::frame(const View& view, wgpu::TextureView target) {
                     timing.composite = span(kPassComposite);
                     timing.total = double(t[kPassComposite * 2 + 1] - t[kPassCull * 2]) * 1e-6;
                 }
-                // Pulled: 16-triangle clusters. Indexed: visible meshlets, of up to 124.
-                timing.clusters = indexed ? (u64(args[0]) + u64(args[5])) / kSlotIndices
+                // Pulled: 16-triangle clusters. Indexed: visible triangles.
+                timing.clusters = indexed ? (u64(args[0]) + u64(args[5])) / 3
                                           : (u64(args[0]) + u64(args[4])) / 48;
                 if (std::getenv("SPIKE_RAW_TIMESTAMPS") != nullptr) {
                     for (u64 value : t) {

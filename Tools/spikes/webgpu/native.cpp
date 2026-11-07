@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <cstdio>
 #include <cstdlib>
@@ -234,7 +235,12 @@ int main(int argc, char** argv) {
     const float zooms[] = {1.f, 2.f, 4.f};
     for (u32 z = 0; z < 3; ++z) {
         for (u32 f = 0; f < frames; ++f) {
-            render({35.f + 360.f * float(f) / float(frames), 25.f, zooms[z]});
+            const float turn = float(f) / float(frames);
+            View view{35.f + 360.f * turn, 25.f, zooms[z]};
+            // A hover sweep across the middle of the view.
+            view.pickX = i32(float(width) * (0.5f + 0.35f * std::sin(turn * 25.f)));
+            view.pickY = i32(height / 2);
+            render(view);
         }
         instance.ProcessEvents();
         std::vector<double> cull, shadow, vis, occlusion, composite, total, clusters;
@@ -248,10 +254,20 @@ int main(int argc, char** argv) {
             clusters.push_back(double(t.clusters));
         }
         renderer.timings().clear();
-        std::println("  {{\"zoom\": {}, \"frames\": {}, \"gpuMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
+        std::vector<double> pickFrames, pickMs;
+        for (const PickResult& p : renderer.picks()) {
+            pickFrames.push_back(double(p.frames));
+            pickMs.push_back(p.ms);
+        }
+        renderer.picks().clear();
+        std::println("  {{\"zoom\": {}, \"picks\": {}, \"pickFrames\": {{\"p50\": {}, \"p99\": {}}}, "
+                     "\"pickMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}},",
+                     zooms[z], pickFrames.size(), percentile(pickFrames, 0.5),
+                     percentile(pickFrames, 0.99), percentile(pickMs, 0.5), percentile(pickMs, 0.99));
+        std::println("   \"frames\": {}, \"gpuMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
                      "\"cullMs\": {:.3f}, \"shadowMs\": {:.3f}, \"visMs\": {:.3f}, "
                      "\"occlusionMs\": {:.3f}, \"compositeMs\": {:.3f}, \"clustersP50\": {:.0f}}}{}",
-                     zooms[z], total.size(), percentile(total, 0.5), percentile(total, 0.99),
+                     total.size(), percentile(total, 0.5), percentile(total, 0.99),
                      percentile(cull, 0.5), percentile(shadow, 0.5), percentile(vis, 0.5),
                      percentile(occlusion, 0.5), percentile(composite, 0.5),
                      percentile(clusters, 0.5), z < 2 ? "," : "");

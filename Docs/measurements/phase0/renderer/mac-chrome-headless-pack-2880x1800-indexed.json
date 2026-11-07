@@ -1,0 +1,126 @@
+{
+  "label": "mac-chrome-headless-pack-2880x1800-indexed",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "model": "pack",
+  "copies": 1,
+  "mode": "indexed",
+  "features": 7,
+  "pixelsPerPoint": 2,
+  "burst": 1,
+  "fileMB": 1.6,
+  "fetchMs": 6,
+  "uploadMs": 4,
+  "adapter": "apple metal-3",
+  "width": 2880,
+  "height": 1800,
+  "triangles": 331520,
+  "instances": 3289,
+  "timestamps": true,
+  "bufferMB": 10.9,
+  "targetMB": 95.2,
+  "zooms": [
+    {
+      "zoom": 1,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 3.903,
+        "p99": 4.285
+      },
+      "frameIntervalMs": {
+        "p50": 16.665,
+        "p99": 16.67
+      },
+      "cpuSubmitMs": {
+        "p50": 0.11,
+        "p99": 0.35
+      },
+      "clustersP50": 3071,
+      "passMsP50": {
+        "shadow": 0.448,
+        "vis": 1.24,
+        "occlusion": 0.821,
+        "composite": 2.217
+      },
+      "picks": 361,
+      "pickHits": 162,
+      "pickFrames": {
+        "p50": 0,
+        "p99": 0
+      },
+      "pickMs": {
+        "p50": 4.75,
+        "p99": 5.27
+      }
+    },
+    {
+      "zoom": 2,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 4.564,
+        "p99": 5.124
+      },
+      "frameIntervalMs": {
+        "p50": 16.665,
+        "p99": 16.67
+      },
+      "cpuSubmitMs": {
+        "p50": 0.105,
+        "p99": 0.425
+      },
+      "clustersP50": 3071,
+      "passMsP50": {
+        "shadow": 0.465,
+        "vis": 1.38,
+        "occlusion": 1.196,
+        "composite": 2.718
+      },
+      "picks": 361,
+      "pickHits": 318,
+      "pickFrames": {
+        "p50": 0,
+        "p99": 0
+      },
+      "pickMs": {
+        "p50": 5.39,
+        "p99": 6.13
+      }
+    },
+    {
+      "zoom": 4,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 4.974,
+        "p99": 5.65
+      },
+      "frameIntervalMs": {
+        "p50": 16.665,
+        "p99": 16.67
+      },
+      "cpuSubmitMs": {
+        "p50": 0.105,
+        "p99": 0.185
+      },
+      "clustersP50": 2182,
+      "passMsP50": {
+        "shadow": 0.381,
+        "vis": 1.364,
+        "occlusion": 1.445,
+        "composite": 3.178
+      },
+      "picks": 361,
+      "pickHits": 361,
+      "pickFrames": {
+        "p50": 0,
+        "p99": 0
+      },
+      "pickMs": {
+        "p50": 5.83,
+        "p99": 6.67
+      }
+    }
+  ]
+}

@@ -22,7 +22,7 @@ struct Frame {
     secHalfY: f32, instanceCount: u32, openClusterStart: u32, edgeInstanceCount: u32,
     lightTravel: vec3f, ground: f32,
     worldPerPixel: f32, pixelsPerPoint: f32, depthNear: f32, depthFar: f32,
-    aoRadius: f32, aoSamples: u32, features: u32, pad0: u32,
+    aoRadius: f32, aoSamples: u32, features: u32, openIndexStart: u32,
 }
 
 struct Definition {
@@ -68,7 +68,10 @@ struct IndexedArgs { indexCount: atomic<u32>, instanceCount: u32, firstIndex: u3
                      firstInstance: u32 }
 @group(0) @binding(12) var<storage, read_write> slotsOut: array<u32>;
 @group(0) @binding(13) var<storage, read_write> indicesOut: array<u32>;
-@group(0) @binding(14) var<storage, read_write> indexedArgs: array<IndexedArgs, 2>;
+// The two draws' arguments, then the slot counters, in one buffer to stay within eight storage
+// buffers per stage.
+struct CullCounters { draws: array<IndexedArgs, 2>, slots: array<atomic<u32>, 2> }
+@group(0) @binding(14) var<storage, read_write> indexedArgs: CullCounters;
 @group(0) @binding(15) var<storage, read> slots: array<u32>;
 @group(0) @binding(16) var surfaceTexture: texture_2d<u32>;
 @group(0) @binding(17) var normalTexture: texture_2d<f32>;
@@ -259,43 +262,54 @@ fn visFragment(in: VisOut) -> @location(0) u32 {
 
 // ---- Indexed mode: cull, expand and draw with vertex reuse ------------------------------------
 
-// Every slot holds a whole meshlet's worth of indices, with unused triangles left degenerate.
-const kSlotIndices = 372u; // 124 triangles
-const kSlotShift = 7u;     // an index is slot << 7 | vertex within the meshlet
+const kSlotShift = 7u; // an index is slot << 7 | vertex within the meshlet
 
 var<workgroup> slotCount: array<atomic<u32>, 2>;
+var<workgroup> indexCount: array<atomic<u32>, 2>;
 var<workgroup> slotBase: array<u32, 2>;
-var<workgroup> wantSlot: array<u32, 64>;     // the global slot each thread's meshlet got, or none
+var<workgroup> indexBase: array<u32, 2>;
+var<workgroup> wantSlot: array<u32, 64>;  // the global slot each thread's meshlet got, or none
+var<workgroup> wantIndex: array<u32, 64>; // where its indices start
 var<workgroup> wantInstance: array<u32, 64>;
 
+// Each visible meshlet gets a slot, which the vertex stage looks it up by, and exactly as many
+// indices as its triangles need, so small parts cost no more than their triangles.
 @compute @workgroup_size(64)
 fn cullIndexed(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
                @builtin(num_workgroups) groups: vec3u) {
     let index = (group.y * groups.x + group.x) * 64u + lid;
     if (lid < 2u) {
         atomicStore(&slotCount[lid], 0u);
+        atomicStore(&indexCount[lid], 0u);
     }
     workgroupBarrier();
     var kind = 0u;
     var local = 0xFFFFFFFFu;
+    var localIndex = 0u;
     if (index < frame.instanceCount) {
         let instance = instances[index];
         let o = occurrences[instance.x];
         let d = definitions[o.definition];
-        if (isVisible(meshlets[d.meshletBase + instance.y], d, o)) {
+        let m = meshlets[d.meshletBase + instance.y];
+        if (isVisible(m, d, o)) {
             // A shadow shows both sides, so open and closed surfaces draw together.
             kind = select((d.flags & kDefinitionOpen) >> 1u, 0u, kShadow);
             local = atomicAdd(&slotCount[kind], 1u);
+            localIndex = atomicAdd(&indexCount[kind], ((m.b.y >> 8u) & 0xFFu) * 3u);
         }
     }
     workgroupBarrier();
     if (lid < 2u) {
-        let total = atomicLoad(&slotCount[lid]);
+        let slots = atomicLoad(&slotCount[lid]);
+        let indices = atomicLoad(&indexCount[lid]);
         var base = 0u;
-        if (total > 0u) {
-            base = atomicAdd(&indexedArgs[lid].indexCount, total * kSlotIndices) / kSlotIndices;
+        var first = 0u;
+        if (slots > 0u) {
+            base = atomicAdd(&indexedArgs.slots[lid], slots);
+            first = atomicAdd(&indexedArgs.draws[lid].indexCount, indices);
         }
         slotBase[lid] = base + select(0u, frame.openClusterStart, lid == 1u);
+        indexBase[lid] = first + select(0u, frame.openIndexStart, lid == 1u);
     }
     workgroupBarrier();
     var slot = 0xFFFFFFFFu;
@@ -304,6 +318,7 @@ fn cullIndexed(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id)
         slotsOut[slot] = index;
     }
     wantSlot[lid] = slot;
+    wantIndex[lid] = indexBase[kind] + localIndex;
     wantInstance[lid] = index;
     workgroupBarrier();
 
@@ -316,16 +331,13 @@ fn cullIndexed(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id)
         let instance = instances[wantInstance[v]];
         let d = definitions[occurrences[instance.x].definition];
         let m = meshlets[d.meshletBase + instance.y];
-        let triangleCount = (m.b.y >> 8u) & 0xFFu;
+        let count = ((m.b.y >> 8u) & 0xFFu) * 3u;
         let last = (m.b.y & 0xFFu) - 1u;
-        for (var j = lid; j < kSlotIndices; j += 64u) {
-            let t = j / 3u;
-            var vertex = 0u;
-            if (t < triangleCount) {
-                let packed = triangles[d.triangleBase + m.a.w + t];
-                vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
-            }
-            indicesOut[slotIndex * kSlotIndices + j] = (slotIndex << kSlotShift) | vertex;
+        let first = wantIndex[v];
+        for (var j = lid; j < count; j += 64u) {
+            let packed = triangles[d.triangleBase + m.a.w + j / 3u];
+            let vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
+            indicesOut[first + j] = (slotIndex << kSlotShift) | vertex;
         }
     }
 }

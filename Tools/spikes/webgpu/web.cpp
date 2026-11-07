@@ -4,8 +4,9 @@
 //                                        builds and uploads the scene from a cache file in memory,
 //                                        to draw pulled or indexed, with edges (1), shadow (2) and
 //                                        occlusion (4)
-//   spike_start(burst)                   runs the scripted orbit, rendering `burst` frames per
-//                                        display refresh; spike_state() turns 3 when done
+//   spike_start(burst, phaseSeconds)     runs the scripted orbit for `phaseSeconds` at each zoom,
+//                                        rendering `burst` frames per display refresh;
+//                                        spike_state() turns 3 when done
 //   spike_results()                      the timings, as JSON
 // A negative state is an error, which spike_error() describes.
 
@@ -17,6 +18,7 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <string>
 #include <vector>
@@ -27,7 +29,6 @@ using namespace geo::spike;
 namespace {
 
 constexpr double kWarmupMs = 2000;
-constexpr double kPhaseMs = 6000;
 constexpr float kZooms[] = {1.f, 2.f, 4.f};
 
 struct App {
@@ -44,9 +45,11 @@ struct App {
 
     int phase = -1; // -1 warming up, then one per zoom
     u32 burst = 1;  // frames rendered per display refresh; more keeps the GPU at full clock
+    double phaseMs = 6000; // one orbit per zoom; a soak test makes it minutes
     double phaseStart = 0, lastFrame = 0;
     std::vector<double> intervals[3], cpu[3];
     std::vector<FrameTiming> timings[3];
+    std::vector<PickResult> picks[3];
 };
 
 App app;
@@ -71,6 +74,12 @@ void collect() {
         }
     }
     app.renderer.timings().clear();
+    for (const PickResult& p : app.renderer.picks()) {
+        if (p.tag >= 1 && p.tag <= 3) {
+            app.picks[p.tag - 1].push_back(p);
+        }
+    }
+    app.renderer.picks().clear();
 }
 
 void finish() {
@@ -83,6 +92,13 @@ void finish() {
         app.renderer.timestamps(), double(app.renderer.bufferBytes()) / 1048576.0,
         double(app.renderer.targetBytes()) / 1048576.0);
     for (u32 z = 0; z < 3; ++z) {
+        std::vector<double> pickFrames, pickMs;
+        u32 hits = 0;
+        for (const PickResult& p : app.picks[z]) {
+            pickFrames.push_back(double(p.frames));
+            pickMs.push_back(p.ms);
+            hits += p.id != 0 ? 1 : 0;
+        }
         std::vector<double> total, clusters, shadow, vis, occlusion, composite;
         for (const FrameTiming& t : app.timings[z]) {
             total.push_back(t.total);
@@ -98,12 +114,16 @@ void finish() {
             "\"frameIntervalMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, "
             "\"cpuSubmitMs\": {{\"p50\": {:.3f}, \"p99\": {:.3f}}}, \"clustersP50\": {:.0f}, "
             "\"passMsP50\": {{\"shadow\": {:.3f}, \"vis\": {:.3f}, \"occlusion\": {:.3f}, "
-            "\"composite\": {:.3f}}}}}",
+            "\"composite\": {:.3f}}}, \"picks\": {}, \"pickHits\": {}, "
+            "\"pickFrames\": {{\"p50\": {}, \"p99\": {}}}, "
+            "\"pickMs\": {{\"p50\": {:.2f}, \"p99\": {:.2f}}}}}",
             z ? ", " : "", kZooms[z], app.intervals[z].size(), total.size(),
             percentile(total, 0.5), percentile(total, 0.99), percentile(app.intervals[z], 0.5),
             percentile(app.intervals[z], 0.99), percentile(app.cpu[z], 0.5),
             percentile(app.cpu[z], 0.99), percentile(clusters, 0.5), percentile(shadow, 0.5),
-            percentile(vis, 0.5), percentile(occlusion, 0.5), percentile(composite, 0.5));
+            percentile(vis, 0.5), percentile(occlusion, 0.5), percentile(composite, 0.5),
+            pickFrames.size(), hits, percentile(pickFrames, 0.5), percentile(pickFrames, 0.99),
+            percentile(pickMs, 0.5), percentile(pickMs, 0.99));
     }
     app.results = out + "]}";
     app.state = 3;
@@ -114,7 +134,7 @@ bool frame(double now, void*) {
         app.phaseStart = now;
     }
     const double elapsed = now - app.phaseStart;
-    if ((app.phase == -1 && elapsed >= kWarmupMs) || (app.phase >= 0 && elapsed >= kPhaseMs)) {
+    if ((app.phase == -1 && elapsed >= kWarmupMs) || (app.phase >= 0 && elapsed >= app.phaseMs)) {
         ++app.phase;
         app.phaseStart = now;
         app.lastFrame = 0;
@@ -124,8 +144,11 @@ bool frame(double now, void*) {
         }
     }
     const int zoom = std::max(app.phase, 0);
-    const float turn = float((now - app.phaseStart) / kPhaseMs);
-    const View view{35.f + 360.f * turn, 25.f, kZooms[zoom]};
+    const float turn = float((now - app.phaseStart) / 6000.0); // a turn every 6 s
+    View view{35.f + 360.f * turn, 25.f, kZooms[zoom]};
+    // A hover sweep across the middle of the view.
+    view.pickX = i32(float(app.width) * (0.5f + 0.35f * std::sin(turn * 25.f)));
+    view.pickY = i32(app.height / 2);
     if (app.phase >= 0 && app.lastFrame != 0) {
         app.intervals[app.phase].push_back(now - app.lastFrame);
     }
@@ -241,8 +264,9 @@ EMSCRIPTEN_KEEPALIVE int spike_load(const u8* bytes, u32 size, u32 copies, u32 i
     return 0;
 }
 
-EMSCRIPTEN_KEEPALIVE void spike_start(u32 burst) {
+EMSCRIPTEN_KEEPALIVE void spike_start(u32 burst, double phaseSeconds) {
     app.burst = std::max(burst, 1u);
+    app.phaseMs = phaseSeconds > 0 ? phaseSeconds * 1000 : 6000;
     emscripten_request_animation_frame_loop(frame, nullptr);
 }
 

@@ -1,0 +1,10 @@
+{"adapter": "Apple M4 Max", "backend": "Dawn native", "width": 2880, "height": 1800, "intervalMs": 8.333, "mode": "indexed",
+ "edges": true, "shadow": true, "occlusion": true, "bufferMB": 362.4, "targetMB": 95.2,
+ "triangles": 12000000, "instances": 1000000, "timestamps": true, "zooms": [
+  {"zoom": 1, "picks": 480, "pickFrames": {"p50": 0, "p99": 0}, "pickMs": {"p50": 6.472, "p99": 24.739},
+   "frames": 480, "gpuMs": {"p50": 5.629, "p99": 8.285}, "cullMs": 1.662, "shadowMs": 1.396, "visMs": 2.386, "occlusionMs": 0.341, "compositeMs": 0.625, "clustersP50": 12000000},
+  {"zoom": 2, "picks": 480, "pickFrames": {"p50": 0, "p99": 0}, "pickMs": {"p50": 5.483, "p99": 24.980},
+   "frames": 480, "gpuMs": {"p50": 4.725, "p99": 10.034}, "cullMs": 1.404, "shadowMs": 0.017, "visMs": 2.667, "occlusionMs": 0.700, "compositeMs": 1.211, "clustersP50": 6630552},
+  {"zoom": 4, "picks": 480, "pickFrames": {"p50": 0, "p99": 0}, "pickMs": {"p50": 6.011, "p99": 20.505},
+   "frames": 480, "gpuMs": {"p50": 4.235, "p99": 8.530}, "cullMs": 1.334, "shadowMs": 0.021, "visMs": 1.886, "occlusionMs": 0.675, "compositeMs": 1.342, "clustersP50": 3320676}
+]}
