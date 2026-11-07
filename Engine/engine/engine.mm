@@ -94,6 +94,7 @@ struct ResizeCommand {
 struct NodeCommand {
     u32 document, node;
     bool extend;
+    GeoNodeAction action;
 };
 
 struct Command {
@@ -108,6 +109,7 @@ struct Command {
         SetTool,
         SelectNode,
         HoverNode,
+        NodeAction,
         SetInsets,
         SetLook,
         SetSection,
@@ -277,6 +279,9 @@ struct GeoEngine {
     std::mutex swatchMutex;
     std::vector<u32> publishedSwatches;
     std::vector<u32> swatchBases;
+    // Each tree node's state, per document, published for the app's thread.
+    std::mutex nodeStateMutex;
+    std::vector<std::vector<model::NodeVisibility>> publishedNodeStates;
     GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
     std::optional<std::pair<model::NodeRef, u32>> hoveredPart;
 
@@ -457,14 +462,52 @@ struct GeoEngine {
         seenVisibility = state.visibilityVersion();
         visible = model::visibleBounds(scene, state).value_or(bounds);
         orbit.setVisibleBounds(visible);
-        bool anyHidden = false;
-        for (u32 o = 0; o < state.occurrenceCount() && !anyHidden; ++o) {
-            anyHidden = state.anyFace(o, kStateHidden);
+        u32 hidden = 0, ghosted = 0;
+        for (u32 o = 0; o < state.occurrenceCount(); ++o) {
+            hidden += state.anyFace(o, kStateHidden) ? 1 : 0;
+            ghosted += state.anyFace(o, kStateGhost) ? 1 : 0;
         }
-        if (cameraBeforeIsolate && !anyHidden) {
+        if (cameraBeforeIsolate && hidden == 0) {
             flyTo(*cameraBeforeIsolate);
             cameraBeforeIsolate.reset();
         }
+        std::vector<std::vector<model::NodeVisibility>> states(scene.documentCount());
+        for (u32 d = 0; d < states.size(); ++d) {
+            states[d] = model::nodeStates(scene, state, d);
+        }
+        {
+            std::lock_guard lock(nodeStateMutex);
+            publishedNodeStates = std::move(states);
+        }
+        emit(GeoEventVisibilityChanged, "", 0, GEO_NO_NODE, hidden, ghosted);
+    }
+
+    // A tree row's button.
+    void nodeAction(model::NodeRef node, GeoNodeAction action) {
+        switch (action) {
+        case GeoNodeHide:
+            interaction.setNode(node, kStateHidden, true);
+            break;
+        case GeoNodeShow:
+            interaction.setNode(node, kStateHidden, false);
+            break;
+        case GeoNodeGhost:
+            interaction.setNode(node, kStateGhost, true);
+            break;
+        case GeoNodeUnghost:
+            interaction.setNode(node, kStateGhost, false);
+            break;
+        case GeoNodeIsolate: {
+            const u64 before = interaction.state().visibilityVersion();
+            interaction.isolateNode(node);
+            stateChanged();
+            if (interaction.state().visibilityVersion() != before) {
+                frameIsolated();
+            }
+            return;
+        }
+        }
+        stateChanged();
     }
 
     // Isolating frames what is kept, as if it alone had been opened, and remembers the view to
@@ -684,6 +727,10 @@ struct GeoEngine {
         hasFramed = false;
         userMovedCamera = false;
         cameraBeforeIsolate.reset();
+        {
+            std::lock_guard lock(nodeStateMutex);
+            publishedNodeStates.clear();
+        }
         hoveredId = 0;
         hoveredNode.reset();
         hover = {0, 0};
@@ -991,6 +1038,14 @@ struct GeoEngine {
                     interaction.selectNode({command->node.document, command->node.node},
                                            command->node.extend);
                     stateChanged();
+                }
+                break;
+            case Command::Kind::NodeAction:
+                if (command->node.document < scene.documentCount() &&
+                    scene.document(command->node.document).hasModel() &&
+                    command->node.node <
+                        scene.document(command->node.document).model().nodes.size()) {
+                    nodeAction({command->node.document, command->node.node}, command->node.action);
                 }
                 break;
             case Command::Kind::HoverNode:
@@ -1422,14 +1477,35 @@ void geo_engine_set_tool(GeoEngine* engine, GeoTool tool) {
 void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend) {
     Command command{};
     command.kind = Command::Kind::SelectNode;
-    command.node = {document, node, extend};
+    command.node = {document, node, extend, GeoNodeHide};
     engine->post(command);
+}
+
+void geo_engine_node_action(GeoEngine* engine, uint32_t document, uint32_t node,
+                            GeoNodeAction action) {
+    Command command{};
+    command.kind = Command::Kind::NodeAction;
+    command.node = {document, node, false, action};
+    engine->post(command);
+}
+
+static_assert(u32(model::NodeVisibility::Hidden) == GeoNodeHidden &&
+              u32(model::NodeVisibility::Ghosted) == GeoNodeGhosted &&
+              u32(model::NodeVisibility::Mixed) == GeoNodeMixed);
+
+GeoNodeState geo_engine_node_state(GeoEngine* engine, uint32_t document, uint32_t node) {
+    std::lock_guard lock(engine->nodeStateMutex);
+    if (document >= engine->publishedNodeStates.size() ||
+        node >= engine->publishedNodeStates[document].size()) {
+        return GeoNodeShown;
+    }
+    return GeoNodeState(engine->publishedNodeStates[document][node]);
 }
 
 void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) {
     Command command{};
     command.kind = Command::Kind::HoverNode;
-    command.node = {document, node, false};
+    command.node = {document, node, false, GeoNodeHide};
     engine->post(command);
 }
 
