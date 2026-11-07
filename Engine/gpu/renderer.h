@@ -7,6 +7,7 @@
 
 #include "base/types.h"
 #include "math/geometry.h"
+#include "model/face_state.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -34,6 +35,10 @@ public:
     /// Brings GPU tables up to date with `scene`. Never waits for the GPU: tables a frame may still
     /// be reading stay alive until that frame finishes, and mapped geometry stays alive with them.
     void syncScene(const scene::Scene& scene);
+
+    /// Uploads hidden, ghosted and selected flags if they changed since the last call. Ghosts write
+    /// pick ids only when `ghostsPickable`, so normally a click passes through them.
+    void syncState(const model::FaceState& state);
 
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);

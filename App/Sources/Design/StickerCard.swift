@@ -47,6 +47,7 @@ class StickerCard: NSView {
 final class StatusCard: StickerCard {
     private let heading = NSTextField(labelWithString: "")
     private let body = NSTextField(wrappingLabelWithString: "")
+    private var loadingName = ""
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -77,7 +78,17 @@ final class StatusCard: StickerCard {
     }
 
     func showLoading(_ name: String) {
+        loadingName = name
         show("Opening \(name)", "This only takes a moment.")
+    }
+
+    /// Progress is in units only the ratio of which matters.
+    func showProgress(done: UInt32, total: UInt32) {
+        guard total > 0, !isHidden else {
+            return
+        }
+        let percent = Int((Double(done) / Double(total) * 100).rounded())
+        show("Opening \(loadingName)", "\(percent)% of its surfaces are in.")
     }
 
     func showFailure(_ message: String) {

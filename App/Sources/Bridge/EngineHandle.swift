@@ -3,10 +3,14 @@ import GeometryEngine
 import QuartzCore
 
 /// What the engine reports back to the interface.
-enum EngineEvent {
-    case loading(String)
+enum EngineEvent: Sendable {
+    case loading(document: UInt32, name: String)
+    case progress(document: UInt32, done: UInt32, total: UInt32)
+    case modelReady(document: UInt32)
     case sceneReady
-    case failed(String)
+    case failed(document: UInt32, message: String)
+    /// The tree row a selection belongs to, so the tree can reveal it, or nil when cleared.
+    case selectionChanged(document: UInt32, node: UInt32?)
 }
 
 /// Owns the engine's lifetime on the Swift side. All calls are non-blocking.
@@ -93,23 +97,102 @@ final class EngineHandle {
         geo_engine_open_file(engine, path)
     }
 
+    func add(path: String) {
+        geo_engine_add_file(engine, path)
+    }
+
     func perform(_ action: GeoAction) {
         geo_engine_perform(engine, action)
+    }
+
+    func setSelectionMode(_ mode: GeoSelectionMode) {
+        geo_engine_set_selection_mode(engine, mode)
+    }
+
+    func setTool(_ tool: GeoTool) {
+        geo_engine_set_tool(engine, tool)
+    }
+
+    func selectNode(document: UInt32, node: UInt32, extend: Bool) {
+        geo_engine_select_node(engine, document, node, extend)
+    }
+
+    func hoverNode(document: UInt32, node: UInt32?) {
+        geo_engine_hover_node(engine, document, node ?? UInt32.max)
+    }
+
+    /// The document's tree, or nil until its model has arrived.
+    func model(document: UInt32) -> TreeModel? {
+        geo_engine_copy_model(engine, document).map(TreeModel.init)
+    }
+}
+
+/// A document's assembly tree. It keeps the file mapped, so it stays readable after the document
+/// closes, until this is released.
+final class TreeModel {
+    private let model: OpaquePointer
+    let count: Int
+    let nodes: UnsafeBufferPointer<GeoNode>
+    private let names: UnsafePointer<CChar>?
+
+    init(_ model: OpaquePointer) {
+        self.model = model
+        count = Int(geo_model_node_count(model))
+        nodes = UnsafeBufferPointer(start: geo_model_nodes(model), count: count)
+        names = geo_model_names(model)
+    }
+
+    deinit {
+        geo_model_release(model)
+    }
+
+    func name(_ node: Int) -> String {
+        let record = nodes[node]
+        guard let names, record.name_length > 0 else {
+            return ""
+        }
+        let start = UnsafeRawPointer(names + Int(record.name_offset))
+        let bytes = UnsafeRawBufferPointer(start: start, count: Int(record.name_length))
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    /// Nodes whose names contain `query`, ignoring case, in tree order.
+    func search(_ query: String, limit: Int = 4096) -> (matches: [Int], total: Int) {
+        var results = [UInt32](repeating: 0, count: limit)
+        let total = query.withCString { text in
+            geo_model_search(model, text, &results, UInt32(limit))
+        }
+        return (results.prefix(min(Int(total), limit)).map(Int.init), Int(total))
     }
 }
 
 /// Runs on the engine thread. It must stay at file scope: a closure written inside `EngineHandle` would
 /// inherit main-actor isolation, and calling it from another thread is a runtime trap.
-private func receiveEngineEvent(
-    context: UnsafeMutableRawPointer?,
-    kind: GeoEventKind,
-    message: UnsafePointer<CChar>?
-) {
-    guard let context else {
+private func receiveEngineEvent(context: UnsafeMutableRawPointer?, event: UnsafePointer<GeoEvent>?)
+{
+    guard let context, let event = event?.pointee else {
         return
     }
     let box = Unmanaged<EventBox>.fromOpaque(context).takeUnretainedValue()
-    box.deliver(kind, message.map { String(cString: $0) } ?? "")
+    let message = event.message.map { String(cString: $0) } ?? ""
+    let translated: EngineEvent?
+    switch event.kind {
+    case GeoEventLoading: translated = .loading(document: event.document, name: message)
+    case GeoEventProgress:
+        translated = .progress(document: event.document, done: event.done, total: event.total)
+    case GeoEventModelReady: translated = .modelReady(document: event.document)
+    case GeoEventSceneReady: translated = .sceneReady
+    case GeoEventFailed: translated = .failed(document: event.document, message: message)
+    case GeoEventSelectionChanged:
+        translated = .selectionChanged(
+            document: event.document,
+            node: event.node == UInt32.max ? nil : event.node
+        )
+    default: translated = nil
+    }
+    if let translated {
+        box.deliver(translated)
+    }
 }
 
 /// Carries events from the engine thread to the main thread.
@@ -117,14 +200,9 @@ private final class EventBox: @unchecked Sendable {
     // Only touched on the main thread, which is why the type can be Sendable.
     nonisolated(unsafe) var handler: ((EngineEvent) -> Void)?
 
-    func deliver(_ kind: GeoEventKind, _ message: String) {
+    func deliver(_ event: EngineEvent) {
         DispatchQueue.main.async { [self] in
-            switch kind {
-            case GeoEventLoading: handler?(.loading(message))
-            case GeoEventSceneReady: handler?(.sceneReady)
-            case GeoEventFailed: handler?(.failed(message))
-            default: break
-            }
+            handler?(event)
         }
     }
 }

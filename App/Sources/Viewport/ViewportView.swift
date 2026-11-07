@@ -171,6 +171,8 @@ final class ViewportView: NSView {
     // MARK: Keyboard
 
     private static let spaceKeyCode: UInt16 = 49
+    // The key holding a tool, remembered by code so its release is caught whatever is typed since.
+    private var heldKeyCode: UInt16?
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == Self.spaceKeyCode {
@@ -178,23 +180,54 @@ final class ViewportView: NSView {
             return
         }
         guard !event.isARepeat, let key = event.charactersIgnoringModifiers?.lowercased() else {
+            if !event.isARepeat {
+                super.keyDown(with: event)
+            }
+            return
+        }
+        let modifiers = event.modifierFlags.intersection(KeyBindings.relevant)
+        if modifiers.isEmpty, let held = KeyBindings.held.first(where: { $0.key == key }) {
+            heldKeyCode = event.keyCode
+            engine.setTool(held.tool)
+            return
+        }
+        guard
+            let binding = KeyBindings.pressed.first(where: {
+                $0.key == key && $0.modifiers == modifiers
+            })
+        else {
             super.keyDown(with: event)
             return
         }
-        switch key {
-        case "f": engine.perform(GeoActionFit)
-        case "p": engine.perform(GeoActionToggleProjection)
-        case "\u{1B}": engine.perform(GeoActionClearSelection)
-        default: super.keyDown(with: event)
+        switch binding.command {
+        case .perform(let action): engine.perform(action)
+        case .selectionMode(let mode): engine.setSelectionMode(mode)
         }
     }
 
     override func keyUp(with event: NSEvent) {
         if event.keyCode == Self.spaceKeyCode {
             spaceHeld = false
+        } else if event.keyCode == heldKeyCode {
+            releaseHeldTool()
         } else {
             super.keyUp(with: event)
         }
+    }
+
+    /// Drops a held tool, as when the window loses focus while its key is down.
+    func releaseHeldTool() {
+        guard heldKeyCode != nil else {
+            return
+        }
+        heldKeyCode = nil
+        engine.setTool(GeoToolSelect)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        releaseHeldTool()
+        spaceHeld = false
+        return super.resignFirstResponder()
     }
 
     // MARK: Dropping files

@@ -5,8 +5,8 @@ import GeometryEngine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow?
-    // A file opened from Finder arrives before launch finishes, while there is no window yet.
-    private var pendingURL: URL?
+    // Files opened from Finder arrive before launch finishes, while there is no window yet.
+    private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         geo_trace_memory("did finish launching")
@@ -23,12 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         NSApp.activate()
         geo_trace_memory("window shown")
-        if let pendingURL {
-            window.open(pendingURL)
-            self.pendingURL = nil
-        }
+        let openingFile = !pendingURLs.isEmpty
+        open(pendingURLs, in: window)
+        pendingURLs = []
 
-        if ChromeSnapshot.isRequested {
+        // With a file, the window takes its snapshot once the file has loaded.
+        if ChromeSnapshot.isRequested, !openingFile {
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -39,17 +39,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openDocument(_ sender: Any?) {
-        window?.chooseFile()
+        window?.chooseFile(adding: false)
+    }
+
+    @objc func addDocument(_ sender: Any?) {
+        window?.chooseFile(adding: true)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else {
-            return
-        }
         if let window {
-            window.open(url)
+            open(urls, in: window)
         } else {
-            pendingURL = url
+            pendingURLs += urls
+        }
+    }
+
+    /// Several files opened together are shown together.
+    private func open(_ urls: [URL], in window: MainWindow) {
+        for (index, url) in urls.enumerated() {
+            if index == 0 {
+                window.open(url)
+            } else {
+                window.add(url)
+            }
         }
     }
 

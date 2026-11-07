@@ -19,6 +19,8 @@ constexpr usize kFramesInFlight = 2;
 constexpr u64 kFrameTimeoutMs = 2000;
 constexpr NSUInteger kSampleCount = 4;
 constexpr NSUInteger kPayloadBytes = sizeof(u32) * (kBatchMeshlets + 1);
+// Definitions with fewer meshlets than this share packed batches with others.
+constexpr u32 kPackedMeshletLimit = kBatchMeshlets / 2;
 
 // Paper, #f2efe7, written as encoded sRGB because colours composite in encoded space.
 const MTLClearColor kPaper = MTLClearColorMake(242.0 / 255.0, 239.0 / 255.0, 231.0 / 255.0, 1.0);
@@ -46,8 +48,11 @@ struct Renderer::State {
     u64 frameCount = 0;
 
     id<MTLRenderPipelineState> surfacePipeline;
+    id<MTLRenderPipelineState> ghostPipeline;     // blended, writes no ids
+    id<MTLRenderPipelineState> ghostPickPipeline; // blended, writes ids so a ghost can be clicked
     id<MTLRenderPipelineState> pickPipeline;
     id<MTLDepthStencilState> depthState;
+    id<MTLDepthStencilState> ghostDepthState; // tests depth but does not write it
     id<MTL4ArgumentTable> surfaceTable;
     id<MTL4ArgumentTable> tileTable;
     id<MTLResidencySet> residency;
@@ -61,9 +66,19 @@ struct Renderer::State {
     id<MTLTexture> pickIds, pickDepths;
     NSUInteger pickIdRowBytes = 0, pickDepthRowBytes = 0;
 
-    // Scene.
-    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segmentBuffers;
-    id<MTLBuffer> definitions, occurrences, batches, drawBases;
+    // Hidden, ghosted and selected flags. Uploaded only when they change.
+    id<MTLBuffer> occurrenceStates, faceStates;
+    u64 stateVersion = ~u64(0);
+    bool hasGhosts = false;
+
+    // Scene. Each segment of geometry has its own residency set, filled once and never written
+    // again, so wiring its pages on another thread cannot race with anything.
+    struct SegmentResidency {
+        id<MTLBuffer> buffer;
+        id<MTLResidencySet> set;
+    };
+    std::unordered_map<const scene::MappedSegment*, SegmentResidency> segmentBuffers;
+    id<MTLBuffer> definitions, occurrences, batches, drawBases, meshletRefs;
     usize batchCount = 0;
     usize openBatchStart = 0;
     bool hasScene = false;
@@ -71,7 +86,8 @@ struct Renderer::State {
     // Buffers a frame may still read. They leave residency and memory once it has finished.
     struct Retired {
         u64 frame = 0;
-        std::vector<id<MTLBuffer>> buffers;
+        std::vector<id<MTLBuffer>> buffers;    // in the shared residency set
+        std::vector<id<MTLResidencySet>> sets; // a segment's own set
     };
     std::vector<Retired> retired;
 
@@ -88,6 +104,9 @@ struct Renderer::State {
             }
             for (id<MTLBuffer> buffer : entry.buffers) {
                 [residency removeAllocation:buffer];
+            }
+            for (id<MTLResidencySet> set : entry.sets) {
+                [queue removeResidencySet:set];
             }
         }
         if (kept != retired.size()) {
@@ -132,21 +151,11 @@ struct Renderer::State {
             return false;
         }
 
-        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
-        mesh.objectFunctionDescriptor = function(@"surfaceObject");
-        mesh.meshFunctionDescriptor = function(@"surfaceMesh");
-        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment");
-        mesh.payloadMemoryLength = kPayloadBytes;
-        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
-        mesh.rasterSampleCount = kSampleCount;
-        mesh.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
-        mesh.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
-        mesh.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
-        surfacePipeline = [compiler newRenderPipelineStateWithDescriptor:mesh
-                                                     compilerTaskOptions:nil
-                                                                   error:&error];
-        if (!surfacePipeline) {
-            reportFailure("Could not create the surface pipeline", error);
+        surfacePipeline = makeSurfacePipeline(compiler, false, false, &error);
+        ghostPipeline = makeSurfacePipeline(compiler, true, false, &error);
+        ghostPickPipeline = makeSurfacePipeline(compiler, true, true, &error);
+        if (!surfacePipeline || !ghostPipeline || !ghostPickPipeline) {
+            reportFailure("Could not create the surface pipelines", error);
             return false;
         }
 
@@ -169,7 +178,49 @@ struct Renderer::State {
         depth.depthCompareFunction = MTLCompareFunctionGreater; // reversed depth
         depth.depthWriteEnabled = YES;
         depthState = [device newDepthStencilStateWithDescriptor:depth];
+        depth.depthWriteEnabled = NO;
+        ghostDepthState = [device newDepthStencilStateWithDescriptor:depth];
         return true;
+    }
+
+    // One function set serves both passes. The ghost pass is chosen by a function constant, so
+    // each pipeline is specialised and the opaque one keeps no ghost branches.
+    id<MTLRenderPipelineState> makeSurfacePipeline(id<MTL4Compiler> compiler, bool ghost,
+                                                   bool ghostWritesIds, NSError** error) {
+        MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:0];
+        const auto specialized = [&](NSString* name) {
+            MTL4SpecializedFunctionDescriptor* function = [MTL4SpecializedFunctionDescriptor new];
+            function.functionDescriptor = this->function(name);
+            function.constantValues = constants;
+            return function;
+        };
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = specialized(@"surfaceObject");
+        mesh.meshFunctionDescriptor = specialized(@"surfaceMesh");
+        mesh.fragmentFunctionDescriptor = specialized(@"surfaceFragment");
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = kSampleCount;
+        mesh.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        mesh.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        mesh.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        if (ghost) {
+            MTL4RenderPipelineColorAttachmentDescriptor* color =
+                mesh.colorAttachments[kAttachmentColor];
+            color.blendingState = MTL4BlendStateEnabled;
+            color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+            color.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+            color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            if (!ghostWritesIds) {
+                mesh.colorAttachments[kAttachmentId].writeMask = MTLColorWriteMaskNone;
+                mesh.colorAttachments[kAttachmentDepth].writeMask = MTLColorWriteMaskNone;
+            }
+        }
+        return [compiler newRenderPipelineStateWithDescriptor:mesh
+                                          compilerTaskOptions:nil
+                                                        error:error];
     }
 
     bool createTables() {
@@ -255,12 +306,26 @@ struct Renderer::State {
             [surfaceTable setAddress:definitions.gpuAddress atIndex:kBufferDefinitions];
             [surfaceTable setAddress:occurrences.gpuAddress atIndex:kBufferOccurrences];
             [surfaceTable setAddress:batches.gpuAddress atIndex:kBufferBatches];
+            [surfaceTable setAddress:meshletRefs.gpuAddress atIndex:kBufferMeshletRefs];
+            [surfaceTable setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
+            [surfaceTable setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
 
             // Closed surfaces first, with back faces culled. Open ones show both sides.
             [encoder setCullMode:MTLCullModeBack];
             drawBatches(encoder, 0, openBatchStart);
             [encoder setCullMode:MTLCullModeNone];
             drawBatches(encoder, openBatchStart, batchCount);
+
+            // Ghosts last, blended over everything opaque and writing no depth.
+            if (hasGhosts) {
+                [encoder setRenderPipelineState:view.uniforms.ghostPickable != 0 ? ghostPickPipeline
+                                                                                 : ghostPipeline];
+                [encoder setDepthStencilState:ghostDepthState];
+                [encoder setCullMode:MTLCullModeBack];
+                drawBatches(encoder, 0, openBatchStart);
+                [encoder setCullMode:MTLCullModeNone];
+                drawBatches(encoder, openBatchStart, batchCount);
+            }
         }
 
         [encoder setRenderPipelineState:pickPipeline];
@@ -331,6 +396,10 @@ std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* lib
     }
     s.frameUniforms = s.makeShared(sizeof(FrameUniforms) * kFramesInFlight);
     [s.residency addAllocation:s.frameUniforms];
+    s.occurrenceStates = s.makeShared(sizeof(OccurrenceState));
+    s.faceStates = s.makeShared(16);
+    [s.residency addAllocation:s.occurrenceStates];
+    [s.residency addAllocation:s.faceStates];
     return renderer;
 }
 
@@ -343,8 +412,7 @@ void Renderer::syncScene(const scene::Scene& scene) {
 
     // Geometry stays in the mapped file: each buffer wraps its segment without copying. See ADR
     // 0002. The deallocator holds the mapping for as long as Metal holds the buffer.
-    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segments;
-    bool residencyChanged = false;
+    std::unordered_map<const scene::MappedSegment*, State::SegmentResidency> segments;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
         for (const std::shared_ptr<scene::MappedSegment>& segment : scene.document(d).segments()) {
             if (const auto it = s.segmentBuffers.find(segment.get());
@@ -362,9 +430,20 @@ void Renderer::syncScene(const scene::Scene& scene) {
                                            (void)owner;
                                        }];
             GEO_ASSERT(buffer != nil);
-            [s.residency addAllocation:buffer];
-            segments.emplace(segment.get(), buffer);
-            residencyChanged = true;
+            NSError* error = nil;
+            id<MTLResidencySet> set =
+                [s.device newResidencySetWithDescriptor:[MTLResidencySetDescriptor new]
+                                                  error:&error];
+            GEO_ASSERT(set != nil);
+            [set addAllocation:buffer];
+            [set commit];
+            [s.queue addResidencySet:set];
+            // Wiring takes tens of milliseconds for a large segment, and must not stall the engine
+            // thread. A frame arriving first simply waits for the pages it needs.
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                [set requestResidency];
+            });
+            segments.emplace(segment.get(), State::SegmentResidency{buffer, set});
         }
     }
 
@@ -380,7 +459,21 @@ void Renderer::syncScene(const scene::Scene& scene) {
     id<MTLBuffer> occurrences = s.makeShared(occurrenceCount * sizeof(GpuOccurrence));
     auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
     auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
-    std::vector<Batch> closedBatches, openBatches;
+    // Closed and open surfaces draw with different culling, so each has its own batches.
+    struct BatchList {
+        std::vector<Batch> batches;
+        std::vector<MeshletRef> refs; // packed meshlets not yet in a batch
+    };
+    BatchList closed, open;
+    std::vector<MeshletRef> allRefs;
+    const auto flushPacked = [&](BatchList& list, bool all) {
+        while (list.refs.size() >= kBatchMeshlets || (all && !list.refs.empty())) {
+            const u32 count = u32(std::min<usize>(kBatchMeshlets, list.refs.size()));
+            list.batches.push_back({kBatchPacked, 0, u32(allRefs.size()), count});
+            allRefs.insert(allRefs.end(), list.refs.begin(), list.refs.begin() + count);
+            list.refs.erase(list.refs.begin(), list.refs.begin() + count);
+        }
+    };
 
     u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
@@ -397,7 +490,7 @@ void Renderer::syncScene(const scene::Scene& scene) {
                 continue;
             }
             const scene::MappedSegment* segment = document.geometrySegment(i);
-            id<MTLBuffer> buffer = segments.at(segment);
+            id<MTLBuffer> buffer = segments.at(segment).buffer;
             const format::SegmentView& view = segment->view();
             const auto* base = static_cast<const u8*>(segment->data());
             const auto addressOf = [&](const void* pointer) -> u64 {
@@ -434,11 +527,17 @@ void Renderer::syncScene(const scene::Scene& scene) {
             if (geometry == nullptr) {
                 continue;
             }
-            std::vector<Batch>& target =
-                (geometry->flags & kDefinitionOpen) != 0 ? openBatches : closedBatches;
+            BatchList& target = (geometry->flags & kDefinitionOpen) != 0 ? open : closed;
+            if (geometry->meshletCount < kPackedMeshletLimit) {
+                for (u32 m = 0; m < geometry->meshletCount; ++m) {
+                    target.refs.push_back({global, m});
+                }
+                flushPacked(target, false);
+                continue;
+            }
             for (u32 first = 0; first < geometry->meshletCount; first += kBatchMeshlets) {
                 const u32 count = std::min<u32>(kBatchMeshlets, geometry->meshletCount - first);
-                target.push_back({global, first, count, 0});
+                target.batches.push_back({kBatchRun, global, first, count});
             }
         }
         definitionBase += u32(model.definitionInfos.size());
@@ -446,11 +545,17 @@ void Renderer::syncScene(const scene::Scene& scene) {
         idBase += document.idCount();
     }
 
+    flushPacked(closed, true);
+    flushPacked(open, true);
+    const std::vector<Batch>& closedBatches = closed.batches;
+    const std::vector<Batch>& openBatches = open.batches;
     const usize batchCount = closedBatches.size() + openBatches.size();
     id<MTLBuffer> batches = s.makeShared(batchCount * sizeof(Batch));
     auto* gpuBatches = static_cast<Batch*>(batches.contents);
     std::copy(closedBatches.begin(), closedBatches.end(), gpuBatches);
     std::copy(openBatches.begin(), openBatches.end(), gpuBatches + closedBatches.size());
+    id<MTLBuffer> meshletRefs = s.makeShared(allRefs.size() * sizeof(MeshletRef));
+    std::copy(allRefs.begin(), allRefs.end(), static_cast<MeshletRef*>(meshletRefs.contents));
 
     const usize drawCount = batchCount / kMaxBatchesPerDraw + 2;
     id<MTLBuffer> drawBases = s.makeShared(drawCount * sizeof(u32));
@@ -462,17 +567,18 @@ void Renderer::syncScene(const scene::Scene& scene) {
     // The last frame may still read the old tables, so they go when it finishes.
     State::Retired retired;
     retired.frame = s.frameCount;
-    for (id<MTLBuffer> old : {s.definitions, s.occurrences, s.batches, s.drawBases}) {
+    for (id<MTLBuffer> old :
+         {s.definitions, s.occurrences, s.batches, s.drawBases, s.meshletRefs}) {
         if (old != nil) {
             retired.buffers.push_back(old);
         }
     }
-    for (const auto& [segment, buffer] : s.segmentBuffers) {
+    for (const auto& [segment, residency] : s.segmentBuffers) {
         if (!segments.contains(segment)) {
-            retired.buffers.push_back(buffer);
+            retired.sets.push_back(residency.set);
         }
     }
-    if (!retired.buffers.empty()) {
+    if (!retired.buffers.empty() || !retired.sets.empty()) {
         s.retired.push_back(std::move(retired));
     }
 
@@ -480,23 +586,52 @@ void Renderer::syncScene(const scene::Scene& scene) {
     s.definitions = definitions;
     s.occurrences = occurrences;
     s.batches = batches;
+    s.meshletRefs = meshletRefs;
     s.drawBases = drawBases;
     s.batchCount = batchCount;
     s.openBatchStart = closedBatches.size();
     s.hasScene = batchCount != 0;
-    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases}) {
+    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases, meshletRefs}) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];
+}
 
-    // Residency wires pages synchronously, which takes tens of milliseconds for a large file, and
-    // it must not stall the engine thread. A frame arriving first simply waits for the pages it
-    // needs.
-    if (residencyChanged) {
-        id<MTLResidencySet> residency = s.residency;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            [residency requestResidency];
-        });
+void Renderer::syncState(const model::FaceState& state) {
+    State& s = *state_;
+    if (state.version() == s.stateVersion) {
+        return;
+    }
+    s.stateVersion = state.version();
+    const std::span<const OccurrenceState> words = state.occurrenceWords();
+    const std::span<const u8> faces = state.faceBytes();
+
+    // Grown buffers replace the old ones, which a frame in flight may still read, so those retire.
+    State::Retired retired;
+    retired.frame = s.frameCount;
+    const auto ensure = [&](id<MTLBuffer> __strong& buffer, usize bytes) {
+        if (buffer.length >= bytes) {
+            return;
+        }
+        retired.buffers.push_back(buffer);
+        buffer = s.makeShared(std::max<usize>(bytes, buffer.length * 2));
+        [s.residency addAllocation:buffer];
+    };
+    ensure(s.occurrenceStates, words.size_bytes());
+    ensure(s.faceStates, faces.size_bytes());
+    if (!retired.buffers.empty()) {
+        s.retired.push_back(std::move(retired));
+        [s.residency commit];
+    }
+    std::memcpy(s.occurrenceStates.contents, words.data(), words.size_bytes());
+    std::memcpy(s.faceStates.contents, faces.data(), faces.size_bytes());
+
+    s.hasGhosts = false;
+    for (const OccurrenceState& word : words) {
+        if ((word.flags & (kStateGhost | kStateFaceGhost)) != 0) {
+            s.hasGhosts = true;
+            break;
+        }
     }
 }
 

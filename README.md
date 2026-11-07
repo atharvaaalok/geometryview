@@ -28,8 +28,14 @@ parts you zoom into are retessellated more finely once the view settles.
 
 | Input | Action |
 |---|---|
-| Hover | Highlight the surface under the pointer |
-| Left click | Select a surface. Click empty space to clear |
+| Hover | Highlight the face, body or part under the pointer |
+| Left click | Select it. Click empty space to clear. Shift or ⌘ adds to the selection |
+| 1, 2, 3 | Select faces, bodies or parts |
+| Hold H and click | Hide what you click. Repeated clicks peel away layers |
+| Hold G and click | Ghost what you click. Clicking a ghost with G held brings it back |
+| ⇧H, ⇧G | Show everything hidden, unghost everything |
+| I | Isolate the selection |
+| ⌘Z, ⇧⌘Z | Undo and redo hiding and ghosting |
 | Left drag | Rotate |
 | Scroll, pinch | Zoom toward the pointer |
 | Middle drag, or Shift or Space with left drag | Pan |
@@ -37,6 +43,10 @@ parts you zoom into are retessellated more finely once the view settles.
 | F | Fit to view |
 | P | Switch between orthographic and perspective |
 | Esc | Clear the selection |
+
+The Structure card on the left lists each open file's assembly tree. Click a row to select it, hover
+a row to highlight it, and type in the search field to find parts by name. ⇧⌘O adds a file to what
+is shown, and ⌘-dropping files does the same.
 
 ## Development
 

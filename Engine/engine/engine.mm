@@ -13,6 +13,8 @@
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
 #include "ipc/import_job.h"
+#include "model/interaction.h"
+#include "model/name_index.h"
 #include "nav/camera.h"
 #include "nav/orbit_policy.h"
 #include "nav/pointer_controller.h"
@@ -24,6 +26,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -32,6 +35,7 @@
 #include <fcntl.h>
 #include <libproc.h>
 #include <mach/mach.h>
+#include <mutex>
 #include <pthread.h>
 #include <string>
 #include <sys/proc_info.h>
@@ -69,8 +73,26 @@ struct ResizeCommand {
     float scale;
 };
 
+struct NodeCommand {
+    u32 document, node;
+    bool extend;
+};
+
 struct Command {
-    enum class Kind : u8 { AttachLayer, Resize, Pointer, OpenFile, Action, RequestFrame, Stop };
+    enum class Kind : u8 {
+        AttachLayer,
+        Resize,
+        Pointer,
+        OpenFile,
+        AddFile,
+        Action,
+        SetMode,
+        SetTool,
+        SelectNode,
+        HoverNode,
+        RequestFrame,
+        Stop
+    };
     Kind kind;
     union {
         void* layer;
@@ -78,6 +100,9 @@ struct Command {
         GeoPointerEvent pointer;
         char* path; // owned, released by the engine thread
         GeoAction action;
+        GeoSelectionMode mode;
+        GeoTool tool;
+        NodeCommand node;
     };
 };
 
@@ -95,7 +120,37 @@ nav::Button toButton(GeoPointerButton button) {
     return nav::Button::None;
 }
 
+model::Tool toTool(GeoTool tool) {
+    switch (tool) {
+    case GeoToolHide:
+        return model::Tool::Hide;
+    case GeoToolGhost:
+        return model::Tool::Ghost;
+    case GeoToolSelect:
+        return model::Tool::Select;
+    }
+    return model::Tool::Select;
+}
+
+model::SelectionMode toMode(GeoSelectionMode mode) {
+    switch (mode) {
+    case GeoSelectBodies:
+        return model::SelectionMode::Body;
+    case GeoSelectParts:
+        return model::SelectionMode::Part;
+    case GeoSelectFaces:
+        return model::SelectionMode::Face;
+    }
+    return model::SelectionMode::Face;
+}
+
 } // namespace
+
+/// A document's tree, shared with the app's thread. It holds the model's mapping.
+struct GeoModel {
+    std::shared_ptr<scene::MappedSegment> segment;
+    std::unique_ptr<model::NameIndex> names; // built on the first search
+};
 
 struct GeoEngine {
     SpscRing<Command, kCommandCapacity> commands;
@@ -111,24 +166,35 @@ struct GeoEngine {
     ipc::ImportPaths importPaths;
     GeoEventCallback eventCallback = nullptr;
     void* eventContext = nullptr;
-    u64 openGeneration = 0; // a newer open supersedes one still importing
+
+    // One per open file, parallel to the scene's documents. Results carry their document's token,
+    // so those of a closed document are dropped.
+    struct OpenDocument {
+        u64 token = 0;
+        std::string path;
+        bool importing = true;
+        double started = 0.0;
+        std::shared_ptr<ipc::ImportCancel> cancel;
+        std::vector<u32> requestedLevels; // the finest level asked for, per definition
+    };
+    std::vector<OpenDocument> documents;
+    u64 nextToken = 1;
 
     scene::Scene scene;
+    model::Interaction interaction{scene};
     Aabb bounds{simd_make_double3(-1, -1, -1), simd_make_double3(1, 1, 1)};
     bool sceneChanged = false;
     bool hasFramed = false;
     bool userMovedCamera = false;
-    std::shared_ptr<ipc::ImportCancel> activeImport;
-    std::string openedPath;
-    bool importing = false;
+
+    // Models published for the app's thread, which reads trees and searches them.
+    std::mutex modelsMutex;
+    std::vector<std::shared_ptr<scene::MappedSegment>> publishedModels;
 
     // Finer geometry for what the view shows closely. One job runs at a time.
-    struct Refinement {
-        CFRunLoopTimerRef timer = nullptr;
-        bool running = false;
-        std::vector<u32> requested; // the finest level asked for, per definition
-        std::shared_ptr<ipc::ImportCancel> cancel;
-    } refinement;
+    CFRunLoopTimerRef refineTimer = nullptr;
+    bool refining = false;
+    std::shared_ptr<ipc::ImportCancel> refineCancel;
 
     nav::Camera camera;
     nav::Viewport viewport;
@@ -139,7 +205,10 @@ struct GeoEngine {
     float cursorX = -1, cursorY = -1;
     bool cursorInside = false;
     u32 hoveredId = 0;
-    u32 selectedId = 0;
+    std::pair<u32, u32> hover{0, 0};
+    std::optional<model::NodeRef> hoveredNode;
+    GeoTool tool = GeoToolSelect;
+    u64 publishedStateVersion = ~u64(0);
 
     bool needsFrame = false;
     bool stopping = false;
@@ -152,7 +221,8 @@ struct GeoEngine {
     std::atomic<double> lastFrameSeconds{0.0};
     std::atomic<u64> frameAllocations{0};
     std::atomic<u32> publishedHover{0};
-    std::atomic<u32> publishedSelection{0};
+    std::atomic<u32> selectedCount{0};
+    std::atomic<u32> hiddenCount{0};
 
     GeoEngine()
         : pointer(camera, viewport, orbit, [this](double x, double y) { return pickAt(x, y); }) {}
@@ -164,12 +234,14 @@ struct GeoEngine {
         }
     }
 
-    void emit(GeoEventKind kind, const char* message) {
-        if (traceLaunch) {
+    void emit(GeoEventKind kind, const char* message = "", u32 document = 0, u32 node = GEO_NO_NODE,
+              u32 done = 0, u32 total = 0) {
+        if (traceLaunch && kind != GeoEventProgress) {
             std::fprintf(stderr, "trace: event %d: %s\n", int(kind), message);
         }
         if (eventCallback != nullptr) {
-            eventCallback(eventContext, kind, message);
+            const GeoEvent event{kind, document, node, done, total, message};
+            eventCallback(eventContext, &event);
         }
     }
 
@@ -191,6 +263,16 @@ struct GeoEngine {
                                pixel->viewDepth};
     }
 
+    // What hover lights up: a tree row the pointer is over, or else the surface under the pointer.
+    void refreshHover() {
+        const std::pair<u32, u32> range =
+            hoveredNode ? interaction.nodeRange(*hoveredNode) : interaction.hoverRange(hoveredId);
+        if (range != hover) {
+            hover = range;
+            requestFrame();
+        }
+    }
+
     // Reading the ID buffer costs nanoseconds and no GPU work. A frame is drawn only if the surface
     // under the pointer actually changed.
     void updateHover() {
@@ -205,7 +287,18 @@ struct GeoEngine {
         }
         if (id != hoveredId) {
             hoveredId = id;
-            requestFrame();
+            refreshHover();
+        }
+    }
+
+    // After anything changes what is hidden, ghosted or selected.
+    void stateChanged() {
+        refreshHover();
+        requestFrame();
+        if (const std::optional<model::NodeRef> focus = interaction.focus()) {
+            emit(GeoEventSelectionChanged, "", focus->document, focus->node);
+        } else {
+            emit(GeoEventSelectionChanged, "", 0, GEO_NO_NODE);
         }
     }
 
@@ -240,8 +333,10 @@ struct GeoEngine {
             requestFrame();
         }
         if (response.clicked) {
-            selectedId = response.clickedId.value_or(0);
-            requestFrame();
+            const bool extend =
+                (event.modifiers & (nav::kModifierShift | nav::kModifierCommand)) != 0;
+            interaction.click(response.clickedId.value_or(0), toTool(tool), extend);
+            stateChanged();
         }
     }
 
@@ -257,16 +352,13 @@ struct GeoEngine {
 
     void perform(GeoAction action) {
         lastActivity = nowSeconds();
-        scheduleRefinement();
         switch (action) {
         case GeoActionFit:
             if (scene.hasGeometry()) {
                 nav::fit(camera, bounds, viewport, kFitMargin);
                 orbit.navigated();
+                scheduleRefinement();
             }
-            break;
-        case GeoActionClearSelection:
-            selectedId = 0;
             break;
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
@@ -274,26 +366,50 @@ struct GeoEngine {
                 nav::fit(camera, bounds, viewport, kFitMargin);
             }
             orbit.navigated();
+            scheduleRefinement();
+            break;
+        case GeoActionClearSelection:
+            interaction.clearSelection();
+            break;
+        case GeoActionShowAll:
+            interaction.showAll();
+            break;
+        case GeoActionUnghostAll:
+            interaction.unghostAll();
+            break;
+        case GeoActionIsolate:
+            interaction.isolate();
+            break;
+        case GeoActionHideSelection:
+            interaction.hideSelection();
+            break;
+        case GeoActionGhostSelection:
+            interaction.ghostSelection();
+            break;
+        case GeoActionUndo:
+            interaction.undo();
+            break;
+        case GeoActionRedo:
+            interaction.redo();
             break;
         }
-        requestFrame();
+        stateChanged();
     }
 
-    // Delivers import results to the engine thread, tagged so a superseded import is ignored.
+    // Delivers import results to the engine thread, tagged so a closed document's are ignored.
     class ImportBridge final : public ipc::ImportListener {
     public:
-        ImportBridge(GeoEngine* engine, u64 generation)
-            : engine_(engine), generation_(generation) {}
+        ImportBridge(GeoEngine* engine, u64 token) : engine_(engine), token_(token) {}
 
         void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
             GeoEngine* engine = engine_;
-            const u64 generation = generation_;
-            engine->perform([=] { engine->addSegment(generation, segment); });
+            const u64 token = token_;
+            engine->perform([=] { engine->addSegment(token, segment); });
         }
         void progress(u32 done, u32 total) override {
             GeoEngine* engine = engine_;
-            const u64 generation = generation_;
-            engine->perform([=] { engine->reportProgress(generation, done, total); });
+            const u64 token = token_;
+            engine->perform([=] { engine->reportProgress(token, done, total); });
         }
         void warning(const std::string& text) override {
             std::fprintf(stderr, "import: %s\n", text.c_str());
@@ -301,7 +417,7 @@ struct GeoEngine {
 
     private:
         GeoEngine* engine_;
-        u64 generation_;
+        u64 token_;
     };
 
     // Runs `work` on the engine thread.
@@ -314,65 +430,107 @@ struct GeoEngine {
         CFRunLoopWakeUp(runLoop);
     }
 
-    // By value: a block copies C++ objects it captures, but only the reference if given one, and
-    // this block outlives the caller's string.
-    void openFile(std::string path) {
-        const u64 generation = ++openGeneration;
-        const std::string name = [@(path.c_str()) lastPathComponent].UTF8String;
-        emit(GeoEventLoading, name.c_str());
-        const double start = nowSeconds();
-
-        if (activeImport) {
-            activeImport->cancel();
+    std::optional<u32> documentOf(u64 token) const {
+        for (u32 d = 0; d < documents.size(); ++d) {
+            if (documents[d].token == token) {
+                return d;
+            }
         }
-        if (refinement.cancel) {
-            refinement.cancel->cancel();
-        }
-        activeImport = std::make_shared<ipc::ImportCancel>();
-        std::shared_ptr<ipc::ImportCancel> cancel = activeImport;
-        openedPath = path;
-        importing = true;
-        refinement.running = false;
-        refinement.requested.clear();
+        return std::nullopt;
+    }
 
+    void closeAll() {
+        for (OpenDocument& document : documents) {
+            if (document.cancel) {
+                document.cancel->cancel();
+            }
+        }
+        if (refineCancel) {
+            refineCancel->cancel();
+        }
+        refining = false;
+        documents.clear();
         scene.clear();
-        scene.addDocument();
-        sceneChanged = true;
+        interaction.reset();
+        {
+            std::lock_guard lock(modelsMutex);
+            publishedModels.clear();
+        }
         hasFramed = false;
         userMovedCamera = false;
         hoveredId = 0;
-        selectedId = 0;
+        hoveredNode.reset();
+        hover = {0, 0};
+    }
+
+    // By value: a block copies C++ objects it captures, but only the reference if given one, and
+    // this block outlives the caller's string.
+    void openFile(std::string path, bool add) {
+        if (!add) {
+            closeAll();
+        }
+        const std::string name = [@(path.c_str()) lastPathComponent].UTF8String;
+        const u32 index = scene.addDocument();
+        OpenDocument& document = documents.emplace_back();
+        document.token = nextToken++;
+        document.path = path;
+        document.started = nowSeconds();
+        document.cancel = std::make_shared<ipc::ImportCancel>();
+        emit(GeoEventLoading, name.c_str(), index);
+        sceneChanged = true;
         requestFrame();
 
         // The import can take seconds, and the engine thread must keep drawing.
+        const u64 token = document.token;
+        const std::shared_ptr<ipc::ImportCancel> cancel = document.cancel;
         const ipc::ImportPaths paths = importPaths;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            ImportBridge bridge(this, generation);
+            ImportBridge bridge(this, token);
             ipc::ImportOutcome outcome = ipc::importFile(path, paths, bridge, cancel.get());
-            perform([=, this] { finishOpen(generation, outcome, start); });
+            perform([=, this] { finishOpen(token, outcome); });
         });
     }
 
-    void addSegment(u64 generation, const std::shared_ptr<scene::MappedSegment>& segment) {
-        if (generation != openGeneration) {
+    void addSegment(u64 token, const std::shared_ptr<scene::MappedSegment>& segment) {
+        const std::optional<u32> index = documentOf(token);
+        if (!index) {
             return;
         }
+        scene::Document& document = scene.document(*index);
+        const bool hadModel = document.hasModel();
         std::string error;
-        if (!scene.document(0).add(segment, error)) {
-            emit(GeoEventFailed, error.c_str());
+        if (!document.add(segment, error)) {
+            emit(GeoEventFailed, error.c_str(), *index);
             return;
         }
-        const bool hadBounds = hasFramed;
         sceneChanged = true;
-        if (!hadBounds) {
+        if (!hadModel && document.hasModel()) {
+            interaction.sceneChanged();
+            publishModel(*index);
+        }
+        if (!hasFramed) {
             frameScene(true);
         }
         requestFrame();
     }
 
-    void reportProgress(u64 generation, u32 done, u32 total) {
-        if (generation == openGeneration && traceLaunch) {
-            std::fprintf(stderr, "trace: imported %u of %u\n", done, total);
+    void publishModel(u32 index) {
+        {
+            std::lock_guard lock(modelsMutex);
+            publishedModels.resize(std::max<usize>(publishedModels.size(), index + 1));
+            for (const std::shared_ptr<scene::MappedSegment>& segment :
+                 scene.document(index).segments()) {
+                if (segment->view().hasModel()) {
+                    publishedModels[index] = segment;
+                }
+            }
+        }
+        emit(GeoEventModelReady, "", index);
+    }
+
+    void reportProgress(u64 token, u32 done, u32 total) {
+        if (const std::optional<u32> index = documentOf(token)) {
+            emit(GeoEventProgress, "", *index, GEO_NO_NODE, done, total);
         }
     }
 
@@ -392,46 +550,59 @@ struct GeoEngine {
         }
     }
 
-    void finishOpen(u64 generation, const ipc::ImportOutcome& outcome, double start) {
-        if (generation != openGeneration) {
-            return; // the user has already opened something else
+    void finishOpen(u64 token, const ipc::ImportOutcome& outcome) {
+        const std::optional<u32> index = documentOf(token);
+        if (!index) {
+            return; // closed, or replaced by another file
         }
-        importing = false;
+        OpenDocument& document = documents[*index];
+        document.importing = false;
         scheduleRefinement();
         if (!outcome.ok) {
-            emit(GeoEventFailed, outcome.message.c_str());
+            emit(GeoEventFailed, outcome.message.c_str(), *index);
             return;
         }
         frameScene(false); // estimated bounds become exact now that all geometry is here
         requestFrame();
         if (traceLaunch) {
             std::fprintf(stderr, "trace: scene ready %.1f ms after opening\n",
-                         (nowSeconds() - start) * 1e3);
+                         (nowSeconds() - document.started) * 1e3);
         }
-        emit(GeoEventSceneReady, "");
+        if (std::none_of(documents.begin(), documents.end(),
+                         [](const OpenDocument& open) { return open.importing; })) {
+            emit(GeoEventSceneReady, "", *index);
+        }
     }
 
     void scheduleRefinement() {
-        if (refinement.timer != nullptr) {
-            CFRunLoopTimerSetNextFireDate(refinement.timer,
+        if (refineTimer != nullptr) {
+            CFRunLoopTimerSetNextFireDate(refineTimer,
                                           CFAbsoluteTimeGetCurrent() + kRefineDelaySeconds);
         }
     }
 
     // Asks for finer geometry where the settled view shows more than half a pixel of chord error.
     void refine() {
-        if (importing || refinement.running || scene.documentCount() == 0) {
+        if (refining) {
             return;
         }
-        const scene::Document& document = scene.document(0);
+        for (u32 index = 0; index < documents.size(); ++index) {
+            if (!documents[index].importing && refineDocument(index)) {
+                return;
+            }
+        }
+    }
+
+    bool refineDocument(u32 index) {
+        const scene::Document& document = scene.document(index);
         if (!document.hasModel() || document.model().modelInfo.empty()) {
-            return;
+            return false;
         }
         const format::SegmentView& model = document.model();
         const format::ModelInfo& info = model.modelInfo[0];
         const render::RefinementPolicy policy{info.linearDeflection, info.maxLevel, 0.5};
         if (policy.linearDeflection <= 0.0) {
-            return;
+            return false;
         }
 
         std::vector<render::PlacedExtent> placed;
@@ -452,12 +623,13 @@ struct GeoEngine {
         const std::vector<u32> needed =
             render::neededLevels(placed, model.definitionInfos.size(), camera, viewport, policy);
 
-        refinement.requested.resize(needed.size(), 0);
+        std::vector<u32>& requested = documents[index].requestedLevels;
+        requested.resize(needed.size(), 0);
         u32 level = 0;
         std::vector<u32> definitions;
         for (u32 d = 0; d < needed.size(); ++d) {
             const format::DefinitionRecord* geometry = document.geometry(d);
-            const u32 have = std::max(refinement.requested[d], geometry ? geometry->level : 0);
+            const u32 have = std::max(requested[d], geometry ? geometry->level : 0);
             if (needed[d] <= have) {
                 continue;
             }
@@ -471,32 +643,39 @@ struct GeoEngine {
             }
         }
         if (definitions.empty()) {
-            return;
+            return false;
         }
         for (const u32 d : definitions) {
-            refinement.requested[d] = level;
+            requested[d] = level;
         }
-        startRefinement(level, std::move(definitions));
+        startRefinement(index, level, std::move(definitions));
+        return true;
     }
 
-    void startRefinement(u32 level, std::vector<u32> definitions) {
-        refinement.running = true;
-        refinement.cancel = std::make_shared<ipc::ImportCancel>();
-        std::shared_ptr<ipc::ImportCancel> cancel = refinement.cancel;
-        const u64 generation = openGeneration;
-        const std::string path = openedPath;
+    void startRefinement(u32 index, u32 level, std::vector<u32> definitions) {
+        refining = true;
+        if (traceLaunch) {
+            std::fprintf(stderr, "trace: refining %zu definitions to level %u\n",
+                         definitions.size(), level);
+            geo_trace_memory("refinement started");
+        }
+        refineCancel = std::make_shared<ipc::ImportCancel>();
+        const std::shared_ptr<ipc::ImportCancel> cancel = refineCancel;
+        const u64 token = documents[index].token;
+        const std::string path = documents[index].path;
         const ipc::ImportPaths paths = importPaths;
         const double start = nowSeconds();
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            ImportBridge bridge(this, generation);
+            ImportBridge bridge(this, token);
             const ipc::ImportOutcome outcome =
                 ipc::refineFile(path, paths, level, definitions, bridge, cancel.get());
             perform([=, this] {
-                if (generation != openGeneration) {
+                if (!documentOf(token)) {
                     return;
                 }
-                refinement.running = false;
+                refining = false;
                 if (traceLaunch) {
+                    geo_trace_memory("refinement finished");
                     std::fprintf(stderr,
                                  "trace: refined %zu definitions to level %u in %.1f ms%s\n",
                                  definitions.size(), level, (nowSeconds() - start) * 1e3,
@@ -528,11 +707,41 @@ struct GeoEngine {
                 pointerMoved = true;
                 break;
             case Command::Kind::OpenFile:
-                openFile(command->path);
+            case Command::Kind::AddFile:
+                openFile(command->path, command->kind == Command::Kind::AddFile);
                 std::free(command->path);
                 break;
             case Command::Kind::Action:
                 perform(command->action);
+                break;
+            case Command::Kind::SetMode:
+                interaction.setMode(toMode(command->mode));
+                refreshHover();
+                break;
+            case Command::Kind::SetTool:
+                tool = command->tool;
+                requestFrame(); // ghosts become clickable, or stop being
+                break;
+            case Command::Kind::SelectNode:
+                if (command->node.document < scene.documentCount() &&
+                    scene.document(command->node.document).hasModel() &&
+                    command->node.node <
+                        scene.document(command->node.document).model().nodes.size()) {
+                    interaction.selectNode({command->node.document, command->node.node},
+                                           command->node.extend);
+                    stateChanged();
+                }
+                break;
+            case Command::Kind::HoverNode:
+                hoveredNode.reset();
+                if (command->node.node != GEO_NO_NODE &&
+                    command->node.document < scene.documentCount() &&
+                    scene.document(command->node.document).hasModel() &&
+                    command->node.node <
+                        scene.document(command->node.document).model().nodes.size()) {
+                    hoveredNode = model::NodeRef{command->node.document, command->node.node};
+                }
+                refreshHover();
                 break;
             case Command::Kind::RequestFrame:
                 requestFrame();
@@ -554,6 +763,22 @@ struct GeoEngine {
         requestFrame();
     }
 
+    // Counts for the app, refreshed when the state changes rather than every frame.
+    void publishState() {
+        const model::FaceState& state = interaction.state();
+        if (state.version() == publishedStateVersion) {
+            return;
+        }
+        publishedStateVersion = state.version();
+        u32 selected = 0, hidden = 0;
+        for (u32 o = 0; o < state.occurrenceCount(); ++o) {
+            selected += state.anyFace(o, kStateSelected) ? 1 : 0;
+            hidden += state.anyFace(o, kStateHidden) ? 1 : 0;
+        }
+        selectedCount.store(selected, std::memory_order_relaxed);
+        hiddenCount.store(hidden, std::memory_order_relaxed);
+    }
+
     void onFrame(const gpu::FrameTick& tick) {
         // The surface under a still pointer changes as the camera moves, so hover is checked here
         // too.
@@ -564,12 +789,17 @@ struct GeoEngine {
             if (sceneChanged) {
                 sceneChanged = false;
                 renderer->syncScene(scene);
+                if (traceLaunch) {
+                    geo_trace_memory("scene synced");
+                }
             }
+            renderer->syncState(interaction.state());
+            publishState();
             render::ViewState view = render::makeView(camera, viewport, bounds);
-            view.uniforms.hoveredId = hoveredId;
-            view.uniforms.selectedId = selectedId;
+            view.uniforms.hoverFirst = hover.first;
+            view.uniforms.hoverEnd = hover.second;
+            view.uniforms.ghostPickable = tool == GeoToolGhost ? 1 : 0;
             publishedHover.store(hoveredId, std::memory_order_relaxed);
-            publishedSelection.store(selectedId, std::memory_order_relaxed);
             depthDecoder = view.depth;
 
             const bool firstFrame =
@@ -616,13 +846,13 @@ struct GeoEngine {
             };
             source = CFRunLoopSourceCreate(nullptr, 0, &context);
             CFRunLoopAddSource(runLoop, source, kCFRunLoopCommonModes);
-            refinement.timer = CFRunLoopTimerCreateWithHandler(
-                nullptr, CFAbsoluteTimeGetCurrent() + 1e9, 1e9, 0, 0, ^(CFRunLoopTimerRef) {
-                    @autoreleasepool {
-                        refine();
-                    }
-                });
-            CFRunLoopAddTimer(runLoop, refinement.timer, kCFRunLoopCommonModes);
+            refineTimer = CFRunLoopTimerCreateWithHandler(nullptr, CFAbsoluteTimeGetCurrent() + 1e9,
+                                                          1e9, 0, 0, ^(CFRunLoopTimerRef) {
+                                                              @autoreleasepool {
+                                                                  refine();
+                                                              }
+                                                          });
+            CFRunLoopAddTimer(runLoop, refineTimer, kCFRunLoopCommonModes);
             ready.store(true, std::memory_order_release);
             ready.notify_one();
             while (!stopping) {
@@ -630,8 +860,8 @@ struct GeoEngine {
             }
             CFRunLoopRemoveSource(runLoop, source, kCFRunLoopCommonModes);
             CFRelease(source);
-            CFRunLoopTimerInvalidate(refinement.timer);
-            CFRelease(refinement.timer);
+            CFRunLoopTimerInvalidate(refineTimer);
+            CFRelease(refineTimer);
         }
     }
 };
@@ -706,10 +936,45 @@ void geo_engine_open_file(GeoEngine* engine, const char* path) {
     engine->post(command);
 }
 
+void geo_engine_add_file(GeoEngine* engine, const char* path) {
+    Command command{};
+    command.kind = Command::Kind::AddFile;
+    command.path = strdup(path);
+    engine->post(command);
+}
+
 void geo_engine_perform(GeoEngine* engine, GeoAction action) {
     Command command{};
     command.kind = Command::Kind::Action;
     command.action = action;
+    engine->post(command);
+}
+
+void geo_engine_set_selection_mode(GeoEngine* engine, GeoSelectionMode mode) {
+    Command command{};
+    command.kind = Command::Kind::SetMode;
+    command.mode = mode;
+    engine->post(command);
+}
+
+void geo_engine_set_tool(GeoEngine* engine, GeoTool tool) {
+    Command command{};
+    command.kind = Command::Kind::SetTool;
+    command.tool = tool;
+    engine->post(command);
+}
+
+void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend) {
+    Command command{};
+    command.kind = Command::Kind::SelectNode;
+    command.node = {document, node, extend};
+    engine->post(command);
+}
+
+void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) {
+    Command command{};
+    command.kind = Command::Kind::HoverNode;
+    command.node = {document, node, false};
     engine->post(command);
 }
 
@@ -720,6 +985,37 @@ void geo_engine_request_frame(GeoEngine* engine) {
 }
 
 void geo_engine_report_latency(GeoEngine* engine) { engine->latency.report(); }
+
+GeoModel* geo_engine_copy_model(GeoEngine* engine, uint32_t document) {
+    std::lock_guard lock(engine->modelsMutex);
+    if (document >= engine->publishedModels.size() || !engine->publishedModels[document]) {
+        return nullptr;
+    }
+    auto* model = new GeoModel;
+    model->segment = engine->publishedModels[document];
+    return model;
+}
+
+void geo_model_release(GeoModel* model) { delete model; }
+
+uint32_t geo_model_node_count(const GeoModel* model) {
+    return uint32_t(model->segment->view().nodes.size());
+}
+
+const GeoNode* geo_model_nodes(const GeoModel* model) {
+    static_assert(sizeof(GeoNode) == sizeof(format::NodeRecord));
+    return reinterpret_cast<const GeoNode*>(model->segment->view().nodes.data());
+}
+
+const char* geo_model_names(const GeoModel* model) { return model->segment->view().strings.data(); }
+
+uint32_t geo_model_search(GeoModel* model, const char* query, uint32_t* results,
+                          uint32_t capacity) {
+    if (!model->names) {
+        model->names = std::make_unique<model::NameIndex>(model->segment->view());
+    }
+    return model->names->search(query, std::span(results, capacity));
+}
 
 void geo_trace_memory(const char* label) {
     if (!traceEnabled()) {
@@ -737,5 +1033,6 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine) {
             engine->lastFrameSeconds.load(std::memory_order_relaxed),
             engine->frameAllocations.load(std::memory_order_relaxed),
             engine->publishedHover.load(std::memory_order_relaxed),
-            engine->publishedSelection.load(std::memory_order_relaxed)};
+            engine->selectedCount.load(std::memory_order_relaxed),
+            engine->hiddenCount.load(std::memory_order_relaxed)};
 }

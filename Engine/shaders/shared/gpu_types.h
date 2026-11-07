@@ -24,6 +24,9 @@ enum BufferIndex : unsigned {
     kBufferOccurrences = 2,
     kBufferBatches = 3,
     kBufferDrawBase = 4,
+    kBufferOccurrenceState = 5,
+    kBufferFaceState = 6,
+    kBufferMeshletRefs = 7,
 };
 
 enum TextureIndex : unsigned {
@@ -58,12 +61,43 @@ struct GpuOccurrence {
     uint32_t pad[2];
 };
 
-// Up to kBatchMeshlets meshlets of one occurrence, culled together by one object thread.
+// Flags shared by occurrences and faces. A face shows its own flags combined with its occurrence's.
+enum StateFlags : uint32_t {
+    kStateHidden = 1u << 0,
+    kStateGhost = 1u << 1,
+    kStateSelected = 1u << 2,
+    // Occurrence only: some face has its own flag, so the per-face page must be read.
+    kStateFaceHidden = 1u << 4,
+    kStateFaceGhost = 1u << 5,
+    kStateFaceSelected = 1u << 6,
+};
+
+// Per occurrence: its own flags, and where its per-face bytes start. Occurrences with no face-level
+// change point at a shared page of zeros.
+struct OccurrenceState {
+    uint32_t flags;
+    uint32_t facePage;
+};
+
+// Up to kBatchMeshlets meshlets, culled together by one object thread. A large definition's
+// batches cover consecutive meshlets of one occurrence. Small definitions' meshlets are packed from
+// many occurrences into shared batches through MeshletRefs, so a million one-meshlet parts need
+// 31k object threadgroups rather than a million, and the driver memory that scales with them.
+enum BatchKind : uint32_t {
+    kBatchRun = 0,    // meshlets [first, first + count) of `occurrence`
+    kBatchPacked = 1, // MeshletRefs [first, first + count)
+};
+
 struct Batch {
+    uint32_t kind;
     uint32_t occurrence;
-    uint32_t firstMeshlet;
-    uint32_t meshletCount;
-    uint32_t pad;
+    uint32_t first;
+    uint32_t count;
+};
+
+struct MeshletRef {
+    uint32_t occurrence;
+    uint32_t meshlet;
 };
 
 struct FrameUniforms {
@@ -80,7 +114,8 @@ struct FrameUniforms {
     float secHalfX; // reciprocal cosines, for sphere tests
     float secHalfY;
     uint32_t perspective;
-    uint32_t hoveredId;
-    uint32_t selectedId;
-    uint32_t pad;
+    // Hover covers a range of ids, so a whole body or part lights up in those selection modes.
+    uint32_t hoverFirst;
+    uint32_t hoverEnd;
+    uint32_t ghostPickable; // ghosts write ids, while the ghost tool is held, so a click restores
 };

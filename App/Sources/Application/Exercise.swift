@@ -12,7 +12,8 @@ final class Exercise {
 
     private static let dragSeconds = 6.0
     private static let pixelsPerSecond = 500.0
-    private static let refineWaitSeconds = 3.0
+    private static let refineWaitSeconds =
+        Double(ProcessInfo.processInfo.environment["EXERCISE_WAIT"] ?? "") ?? 3.0
 
     private let engine: EngineHandle
     private let center: CGPoint
@@ -76,7 +77,9 @@ final class Exercise {
         post(GeoPointerDown, GeoButtonLeft, x: x, y: y)
         post(GeoPointerUp, GeoButtonLeft, x: x, y: y)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-            print("exercise: hovered face \(hovered), selected \(engine.stats().selected_id)")
+            print(
+                "exercise: hovered face \(hovered), selected \(engine.stats().selected_count)"
+            )
             zoomIn(x: x, y: y)
         }
     }
