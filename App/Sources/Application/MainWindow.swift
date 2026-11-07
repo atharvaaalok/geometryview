@@ -19,6 +19,8 @@ final class MainWindow: NSWindow {
     private let hoverChip = Chip()
     private let dropZone = DropZone()
     private let shortcuts = ShortcutsSheet()
+    private let lookCard = LookCard()
+    private var look = Look.saved()
     private var exercise: Exercise?
     private var accessedURLs: [URL] = []
 
@@ -69,8 +71,8 @@ final class MainWindow: NSWindow {
         let root = NSView()
         root.wantsLayer = true
         let views: [NSView] = [
-            viewport, masthead, structure, selection, toolBar, holdHint, hoverChip, status,
-            dropZone, shortcuts,
+            viewport, masthead, structure, selection, toolBar, lookCard, holdHint, hoverChip,
+            status, dropZone, shortcuts,
         ]
         for view in views {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -110,6 +112,8 @@ final class MainWindow: NSWindow {
                 equalTo: root.bottomAnchor,
                 constant: -Self.toolbarBottom
             ),
+            lookCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
+            lookCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
             holdHint.centerXAnchor.constraint(equalTo: free.centerXAnchor),
             holdHint.bottomAnchor.constraint(
                 equalTo: root.bottomAnchor,
@@ -131,6 +135,7 @@ final class MainWindow: NSWindow {
             shortcuts.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
         hoverChip.isHidden = true
+        lookCard.isHidden = true
         return root
     }
 
@@ -153,6 +158,16 @@ final class MainWindow: NSWindow {
 
         toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
+        toolBar.onShowLook = { [weak self] in
+            guard let self else {
+                return
+            }
+            lookCard.isHidden.toggle()
+        }
+        lookCard.onChange = { [weak self] look in self?.apply(look) }
+        lookCard.show(look)
+        masthead.setOnDarkSheet(look.style == .blueprint)
+        engine.setLook(look)
         toolBar.pick.onChange = { [weak self] index in
             self?.engine.setSelectionMode(GeoSelectionMode(rawValue: UInt32(index)))
             self?.refreshSelection()
@@ -246,6 +261,71 @@ final class MainWindow: NSWindow {
         run(.toggleProjection)
     }
 
+    // MARK: Look
+
+    private func apply(_ newLook: Look) {
+        look = newLook
+        look.save()
+        lookCard.show(look)
+        masthead.setOnDarkSheet(look.style == .blueprint)
+        engine.setLook(look)
+    }
+
+    @objc func chooseStyle(_ sender: NSMenuItem) {
+        guard let style = Look.Style(rawValue: sender.tag) else {
+            return
+        }
+        var next = look
+        next.choose(style)
+        apply(next)
+    }
+
+    @objc func chooseColour(_ sender: NSMenuItem) {
+        guard let colour = Look.Colour(rawValue: sender.tag) else {
+            return
+        }
+        var next = look
+        next.colour = colour
+        apply(next)
+    }
+
+    @objc func chooseGhosts(_ sender: NSMenuItem) {
+        guard let ghosts = Look.Ghosts(rawValue: sender.tag) else {
+            return
+        }
+        var next = look
+        next.ghosts = ghosts
+        apply(next)
+    }
+
+    @objc func toggleShadow(_ sender: Any?) {
+        var next = look
+        next.shadow.toggle()
+        apply(next)
+    }
+
+    @objc func toggleLookCard(_ sender: Any?) {
+        lookCard.isHidden.toggle()
+    }
+
+    /// Ticks the menu's look items.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(chooseStyle(_:)):
+            item.state = item.tag == look.style.rawValue ? .on : .off
+        case #selector(chooseColour(_:)):
+            item.state = item.tag == look.colour.rawValue ? .on : .off
+            return look.style.usesColour
+        case #selector(chooseGhosts(_:)):
+            item.state = item.tag == look.ghosts.rawValue ? .on : .off
+        case #selector(toggleShadow(_:)):
+            item.state = look.shadow ? .on : .off
+        default:
+            return super.validateMenuItem(item)
+        }
+        return true
+    }
+
     @objc func showShortcuts(_ sender: Any?) {
         shortcuts.isHidden = false
     }
@@ -280,6 +360,7 @@ final class MainWindow: NSWindow {
         if !shortcuts.isHidden {
             shortcuts.isHidden = true
         }
+        lookCard.isHidden = true
     }
 
     // MARK: Pointer and tools
@@ -438,6 +519,18 @@ final class MainWindow: NSWindow {
             // With GEOMETRY_SNAPSHOT_HOLD set, the hide tool's hint shows, as while H is held.
             if environment["GEOMETRY_SNAPSHOT_HOLD"] != nil {
                 toolChanged(GeoToolHide)
+            }
+            // GEOMETRY_SNAPSHOT_STYLE picks a style by number, and GEOMETRY_SNAPSHOT_LOOK opens
+            // the look card.
+            if let style = environment["GEOMETRY_SNAPSHOT_STYLE"].flatMap(Int.init)
+                .flatMap(Look.Style.init(rawValue:))
+            {
+                var next = look
+                next.choose(style)
+                apply(next)
+            }
+            if environment["GEOMETRY_SNAPSHOT_LOOK"] != nil {
+                lookCard.isHidden = false
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
                 ChromeSnapshot.capture(self, engine: engine)

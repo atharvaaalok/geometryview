@@ -28,10 +28,12 @@ final class Toolbar: StickerCard {
         help: "Fit to view (F)"
     )
     private let views = PillButton(symbol: "cube", help: "Standard views")
+    private let look = PillButton(symbol: "paintpalette", help: "Style and colour")
     private let shortcuts = PillButton(title: "?", style: .ghostly, help: "Shortcuts (?)")
 
     var onAction: ((GeoAction) -> Void)?
     var onShowShortcuts: (() -> Void)?
+    var onShowLook: (() -> Void)?
 
     init() {
         super.init(frame: .zero)
@@ -45,10 +47,11 @@ final class Toolbar: StickerCard {
         }
         views.onPress = { [weak self] in self?.showViewsMenu() }
         shortcuts.onPress = { [weak self] in self?.onShowShortcuts?() }
+        look.onPress = { [weak self] in self?.onShowLook?() }
 
         let stack = NSStackView(views: [
-            pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), projection,
-            views, fit, shortcuts,
+            pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), look,
+            projection, views, fit, shortcuts,
         ])
         stack.orientation = .horizontal
         stack.spacing = 8

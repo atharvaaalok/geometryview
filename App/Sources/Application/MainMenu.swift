@@ -68,6 +68,21 @@ enum MainMenu {
         return item
     }
 
+    // A submenu of exclusive choices, each item tagged with its value.
+    private static func submenu(_ title: String, _ entries: [(String, Int)], _ action: Selector)
+        -> NSMenuItem
+    {
+        let menu = NSMenu(title: title)
+        for (name, value) in entries {
+            let item = NSMenuItem(title: name, action: action, keyEquivalent: "")
+            item.tag = value
+            menu.addItem(item)
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        return item
+    }
+
     private static func viewMenu() -> NSMenuItem {
         let menu = NSMenu(title: "View")
         menu.addItem(actionItem("Fit to View", GeoActionFit))
@@ -90,6 +105,42 @@ enum MainMenu {
         let viewsItem = NSMenuItem(title: "Standard Views", action: nil, keyEquivalent: "")
         viewsItem.submenu = views
         menu.addItem(viewsItem)
+        menu.addItem(.separator())
+        menu.addItem(
+            submenu(
+                "Style",
+                Look.Style.allCases.map { ($0.title, $0.rawValue) },
+                #selector(MainWindow.chooseStyle(_:))
+            )
+        )
+        menu.addItem(
+            submenu(
+                "Colour",
+                Look.Colour.allCases.map { ($0.title, $0.rawValue) },
+                #selector(MainWindow.chooseColour(_:))
+            )
+        )
+        menu.addItem(
+            submenu(
+                "Ghosts",
+                Look.Ghosts.allCases.map { ($0.title, $0.rawValue) },
+                #selector(MainWindow.chooseGhosts(_:))
+            )
+        )
+        menu.addItem(
+            NSMenuItem(
+                title: "Cast Shadow",
+                action: #selector(MainWindow.toggleShadow(_:)),
+                keyEquivalent: ""
+            )
+        )
+        let lookItem = NSMenuItem(
+            title: "Show Look Options",
+            action: #selector(MainWindow.toggleLookCard(_:)),
+            keyEquivalent: "l"
+        )
+        lookItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(lookItem)
         menu.addItem(actionItem("Fit to Selection", GeoActionFitSelection))
         menu.addItem(.separator())
         menu.addItem(actionItem("Hide Selection", GeoActionHideSelection))
