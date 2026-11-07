@@ -111,11 +111,13 @@ bool BlobStream::recordSegment(u64 offset, u64 size) {
 bool BlobStream::writeModel(const ModelData& model) {
     std::lock_guard lock(mutex_);
     SegmentBuilder segment;
+    segment.reserve<ModelInfo>(SectionKind::ModelInfo, 1);
     segment.reserve<DefinitionInfo>(SectionKind::DefinitionInfos, model.definitions.size());
     segment.reserve<OccurrenceRecord>(SectionKind::Occurrences, model.occurrences.size());
     segment.reserve<NodeRecord>(SectionKind::Nodes, model.nodes.size());
     segment.reserve<char>(SectionKind::Strings, model.strings.size());
     segment.allocate();
+    segment.copy<ModelInfo>(SectionKind::ModelInfo, {&model.info, 1});
     segment.copy<DefinitionInfo>(SectionKind::DefinitionInfos, model.definitions);
     segment.copy<OccurrenceRecord>(SectionKind::Occurrences, model.occurrences);
     segment.copy<NodeRecord>(SectionKind::Nodes, model.nodes);

@@ -14,6 +14,7 @@ namespace geo::import {
 
 /// The model of a file: what it contains and how it is arranged.
 struct ModelData {
+    format::ModelInfo info{};
     std::vector<format::DefinitionInfo> definitions;
     std::vector<format::OccurrenceRecord> occurrences;
     std::vector<format::NodeRecord> nodes;

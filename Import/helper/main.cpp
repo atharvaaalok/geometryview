@@ -3,12 +3,15 @@
 // Untrusted files are parsed here, in a process of its own, so a malformed file can only crash this
 // process, its memory returns to the system when it exits, and the viewer never links a parser.
 //
-// Usage: geometry-import <source-fd> <output-fd>. Results are framed messages on stdout, in
-// format/helper_messages.h. OCCT runs in a further process, next to this executable.
+// Usage: geometry-import <source-fd> <output-fd> [--level <n> --definitions <i,j,...>]. The
+// options refine a STEP file: only those definitions, at that level, without the model. Results are
+// framed messages on stdout, in format/helper_messages.h. OCCT runs in a further process, next to
+// this executable.
 #include "format/helper_messages.h"
 #include "import.h"
 
 #include <cerrno>
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -66,6 +69,21 @@ private:
     std::mutex mutex_;
 };
 
+bool parseList(std::string_view text, std::vector<u32>& values) {
+    while (!text.empty()) {
+        const usize comma = text.find(',');
+        const std::string_view item = text.substr(0, comma);
+        u32 value = 0;
+        const auto [end, status] = std::from_chars(item.data(), item.data() + item.size(), value);
+        if (status != std::errc() || end != item.data() + item.size()) {
+            return false;
+        }
+        values.push_back(value);
+        text = comma == std::string_view::npos ? std::string_view() : text.substr(comma + 1);
+    }
+    return !values.empty();
+}
+
 std::string siblingPath(const char* executable, std::string_view name) {
     std::string path(executable);
     const usize slash = path.rfind('/');
@@ -83,11 +101,20 @@ int fail(MessageWriter& writer, std::string_view message) {
 
 int main(int argc, const char** argv) {
     MessageWriter writer;
-    if (argc != 3) {
+    if (argc != 3 && argc != 7) {
         return fail(writer, "The helper was started incorrectly.");
     }
     const int sourceFd = std::atoi(argv[1]);
     const int outputFd = std::atoi(argv[2]);
+    u32 level = 0;
+    std::vector<u32> definitions;
+    if (argc == 7) {
+        if (std::string_view(argv[3]) != "--level" ||
+            std::string_view(argv[5]) != "--definitions" || !parseList(argv[6], definitions)) {
+            return fail(writer, "The helper was started incorrectly.");
+        }
+        level = u32(std::atoi(argv[4]));
+    }
 
     struct stat info{};
     if (fstat(sourceFd, &info) != 0 || info.st_size <= 0) {
@@ -106,6 +133,8 @@ int main(int argc, const char** argv) {
         import::StepOptions options;
         options.workerPath = siblingPath(argv[0], "geometry-occt-worker");
         options.sourceFd = sourceFd;
+        options.level = level;
+        options.definitions = std::move(definitions);
         import::StepStats stats;
         if (!import::importStep(file, outputFd, &writer, options, stats, error)) {
             return fail(writer, error);

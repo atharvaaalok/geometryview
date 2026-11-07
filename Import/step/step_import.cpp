@@ -50,6 +50,8 @@ constexpr double kMinAngular = 0.05;
 // Rounding to the vertex grid must stay well inside the tessellation's own error.
 constexpr double kGridStepOfDeflection = 0.5;
 constexpr double kRetryToleranceScale = 0.125;
+// Each level halves the chord error, so four levels are sixteen times finer.
+constexpr u32 kMaxLevel = 4;
 
 constexpr int kWatchIntervalMs = 200;
 constexpr double kSliceTimeoutSeconds = 120.0;
@@ -872,6 +874,7 @@ bool importWholeFile(int outputFd, SegmentListener* listener, const StepOptions&
         error = "This file needs a full read, but its source is not available.";
         return false;
     }
+    // ModelInfo stays zeroed: a whole-file read has no tolerances to refine from.
     Descriptor source(fcntl(options.sourceFd, F_DUPFD_CLOEXEC, kFirstHighFd));
     WorkerProcess process;
     if (!process.start(options.workerPath, source.get(), error)) {
@@ -995,6 +998,10 @@ bool importStep(std::span<const u8> file, int outputFd, SegmentListener* listene
     stage(stats.structureSeconds);
 
     if (index.needsWholeFile || structure.needsWholeFile || structure.occurrences.empty()) {
+        if (!options.definitions.empty()) {
+            error = "This file cannot be refined.";
+            return false;
+        }
         return importWholeFile(outputFd, listener, options, hashContents(file), stats, error);
     }
 
@@ -1011,9 +1018,16 @@ bool importStep(std::span<const u8> file, int outputFd, SegmentListener* listene
     stats.minSize = tolerances.minSize;
 
     BlobStream stream(outputFd, listener);
-    if (options.definitions.empty() && !stream.writeModel(modelFrom(structure, definitions))) {
-        error = stream.error();
-        return false;
+    if (options.definitions.empty()) {
+        ModelData model = modelFrom(structure, definitions);
+        const Tolerances base = tolerancesFor(worldDiagonal(structure, definitions), 0);
+        model.info.linearDeflection = base.linear;
+        model.info.angularDeflection = base.angular;
+        model.info.maxLevel = kMaxLevel;
+        if (!stream.writeModel(model)) {
+            error = stream.error();
+            return false;
+        }
     }
 
     SliceImporter importer(index, structure, definitions, stream, listener, options, tolerances,

@@ -31,6 +31,10 @@ bool readSection(std::span<const u8> segment, const SegmentHeader& header, Secti
 }
 
 bool validateModel(const SegmentView& view, std::string& error) {
+    if (view.modelInfo.size() > 1) {
+        error = "A segment has two models.";
+        return false;
+    }
     for (const OccurrenceRecord& o : view.occurrences) {
         if (o.definition >= view.definitionInfos.size() || o.node >= view.nodes.size()) {
             error = "An occurrence points to something that does not exist.";
@@ -134,6 +138,7 @@ bool parseSegment(std::span<const u8> bytes, SegmentView& view, std::string& err
 
     view = {};
     const bool sections =
+        readSection(bytes, *header, SectionKind::ModelInfo, view.modelInfo, error) &&
         readSection(bytes, *header, SectionKind::DefinitionInfos, view.definitionInfos, error) &&
         readSection(bytes, *header, SectionKind::Occurrences, view.occurrences, error) &&
         readSection(bytes, *header, SectionKind::Nodes, view.nodes, error) &&

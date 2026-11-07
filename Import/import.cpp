@@ -25,7 +25,7 @@ namespace {
 
 // A mesh file holds one nameless part, with no structure.
 ModelData singlePartModel(const PackedDefinition& packed) {
-    ModelData model;
+    ModelData model; // a mesh has no tolerances, so its info stays zero and it is never refined
     format::DefinitionInfo info{};
     info.boundsMin = packed.boundsMin;
     info.boundsMax = packed.boundsMax;

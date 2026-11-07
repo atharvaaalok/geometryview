@@ -18,7 +18,7 @@ namespace geo::format {
 
 inline constexpr std::array<char, 8> kMagic = {'G', 'E', 'O', 'B', 'L', 'O', 'B', '\0'};
 inline constexpr std::array<char, 8> kSegmentMagic = {'G', 'E', 'O', 'S', 'E', 'G', 'M', '\0'};
-inline constexpr u32 kVersion = 2;
+inline constexpr u32 kVersion = 3;
 inline constexpr usize kAlignment = 16384;
 inline constexpr usize kMaxSegments = 512;
 inline constexpr usize kMaxSections = 12;
@@ -38,6 +38,7 @@ enum class SectionKind : u32 {
     HighBits = 8,
     Triangles = 9,
     Faces = 10,
+    ModelInfo = 11,
 };
 
 struct SegmentEntry {
@@ -72,6 +73,15 @@ struct SegmentHeader {
     u64 size;
     std::array<SectionEntry, kMaxSections> sections;
 };
+
+/// Facts about the whole model. Zero tolerances mean the geometry cannot be refined, as for a mesh.
+struct ModelInfo {
+    double linearDeflection; // of level 0, in model units
+    double angularDeflection;
+    u32 maxLevel;
+    u32 reserved[3];
+};
+static_assert(sizeof(ModelInfo) == 32);
 
 /// What the model knows about a definition before its geometry exists. The face count fixes pick
 /// ids up front, so they stay valid as geometry arrives in any order.
@@ -138,6 +148,7 @@ static_assert(sizeof(FaceRecord) == 8);
 
 /// A validated view of a segment. Every span points into it.
 struct SegmentView {
+    std::span<const ModelInfo> modelInfo; // one record, in the model's segment
     std::span<const DefinitionInfo> definitionInfos;
     std::span<const OccurrenceRecord> occurrences;
     std::span<const NodeRecord> nodes;
@@ -150,7 +161,7 @@ struct SegmentView {
     std::span<const u32> triangles;
     std::span<const FaceRecord> faces;
 
-    bool hasModel() const { return !definitionInfos.empty() || !nodes.empty(); }
+    bool hasModel() const { return !modelInfo.empty(); }
 };
 
 /// Validates a finished file's header and returns its segment table.
