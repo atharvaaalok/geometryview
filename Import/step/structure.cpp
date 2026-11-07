@@ -1,6 +1,8 @@
 #include "step/structure.h"
 
 #include "base/parallel.h"
+#include "base/parallel_sort.h"
+#include "base/trace.h"
 
 #include <algorithm>
 #include <array>
@@ -19,7 +21,14 @@ constexpr int kMaxStyleDepth = 10;
 class Relation {
 public:
     void add(u32 key, u32 value) { pairs_.push_back(u64(key) << 32 | value); }
-    void finish() { std::stable_sort(pairs_.begin(), pairs_.end(), compareKeys); }
+    // Sorting whole pairs keeps each key's values in file order, as a stable sort by key would.
+    void finish() {
+        parallelSort(pairs_, [](u64 pair) { return pair; });
+    }
+
+    std::span<const u64> all() const { return pairs_; }
+    /// Where a pair from `find` sits in `all`, so callers can keep data beside each pair.
+    usize indexOf(const u64& pair) const { return usize(&pair - pairs_.data()); }
 
     std::span<const u64> find(u32 key) const {
         const u64 probe = u64(key) << 32;
@@ -232,10 +241,14 @@ public:
     explicit StructureReader(const Part21& index) : index_(index), styles_(index) {}
 
     Structure read() {
+        StageTrace trace("structure");
         collect();
+        trace.lap("collect");
+        computePlacements();
+        trace.lap("placements");
         std::vector<u32> rootDefinitions;
         for (const u32 definition : productDefinitions_) {
-            if (!isChild_.contains(definition)) {
+            if (!isChild_[definition]) {
                 rootDefinitions.push_back(definition);
             }
         }
@@ -248,12 +261,16 @@ public:
         if (out_.nodes.empty()) {
             walkLooseRepresentations();
         }
+        trace.lap("walk");
         collapseSingleBodies();
+        trace.lap("collapse");
         return std::move(out_);
     }
 
 private:
     void collect() {
+        isChild_.assign(index_.recordCount(), false);
+        placementRelationships_.assign(index_.recordCount(), false);
         for (u32 r = 0; r < index_.recordCount(); ++r) {
             const Kind kind = index_.kinds[r];
             const std::span<const u32> refs = index_.refsOf(r);
@@ -262,7 +279,7 @@ private:
             } else if (kind == Kind::NEXT_ASSEMBLY_USAGE_OCCURRENCE && refs.size() >= 2 &&
                        refs[0] != kNoRecord && refs[1] != kNoRecord) {
                 usagesOfParent_.add(refs[0], r);
-                isChild_.insert(refs[1]);
+                isChild_[refs[1]] = true;
             } else if (kind == Kind::PRODUCT_DEFINITION_SHAPE && !refs.empty() &&
                        refs[0] != kNoRecord) {
                 shapesOfDefinition_.add(refs[0], r);
@@ -273,7 +290,7 @@ private:
             } else if (kind == Kind::CONTEXT_DEPENDENT_SHAPE_REPRESENTATION && refs.size() >= 2 &&
                        refs[0] != kNoRecord && refs[1] != kNoRecord) {
                 relationshipsOfShape_.add(refs[1], refs[0]);
-                placementRelationships_.insert(refs[0]);
+                placementRelationships_[refs[0]] = true;
             } else if (isRepresentation(kind)) {
                 representations_.push_back(r);
             }
@@ -282,7 +299,7 @@ private:
         // others position a component, which CDSRs and usages already describe.
         for (u32 r = 0; r < index_.recordCount(); ++r) {
             if (index_.kinds[r] == Kind::SHAPE_REPRESENTATION_RELATIONSHIP &&
-                !placementRelationships_.contains(r)) {
+                !placementRelationships_[r]) {
                 const std::span<const u32> refs = index_.refsOf(r);
                 if (refs.size() >= 2 && refs[0] != kNoRecord && refs[1] != kNoRecord) {
                     linkedRepresentations_.add(refs[0], refs[1]);
@@ -296,6 +313,26 @@ private:
         ownerOfRepresentation_.finish();
         relationshipsOfShape_.finish();
         linkedRepresentations_.finish();
+    }
+
+    // Every usage's placement, read in parallel before the walk. Reading placements means parsing
+    // text, and in a large assembly that is most of the work.
+    void computePlacements() {
+        // Units are read once up front, so the parallel reads below only look them up.
+        for (u32 r = 0; r < index_.recordCount(); ++r) {
+            if (index_.kinds[r] == Kind::GEOMETRIC_REPRESENTATION_CONTEXT) {
+                lengthFactors_.emplace(r, lengthFactor(index_, r));
+            }
+        }
+        const std::span<const u64> usages = usagesOfParent_.all();
+        usagePlacements_.resize(usages.size());
+        parallelRanges(usages.size(), 1024, [&](usize first, usize last, usize) {
+            for (usize i = first; i < last; ++i) {
+                const u32 parent = u32(usages[i] >> 32);
+                const u32 usage = valueOf(usages[i]);
+                usagePlacements_[i] = placementOf(usage, parent, index_.refsOf(usage)[1]);
+            }
+        });
     }
 
     std::string productName(u32 definition) const {
@@ -341,11 +378,18 @@ private:
     }
 
     void walkProduct(u32 definition, const Affine& world, u32 parent, int depth) {
-        if (depth > kMaxDepth || !onPath_.insert(definition).second) {
+        // The path is as deep as the tree, so a scan of it beats a hash set.
+        if (depth > kMaxDepth ||
+            std::find(onPath_.begin(), onPath_.end(), definition) != onPath_.end()) {
             out_.warnings.push_back("A product contains itself, so the repeat was skipped.");
             return;
         }
-        const u32 node = addNode(NodeKind::Assembly, productName(definition), parent);
+        onPath_.push_back(definition);
+        auto [name, inserted] = productNames_.try_emplace(definition);
+        if (inserted) {
+            name->second = productName(definition);
+        }
+        const u32 node = addNode(NodeKind::Assembly, name->second, parent);
 
         for (const u64 shapePair : shapesOfDefinition_.find(definition)) {
             for (const u64 repPair : representationsOfShape_.find(valueOf(shapePair))) {
@@ -354,19 +398,20 @@ private:
             }
         }
         bool hasComponents = false;
-        for (const u64 usagePair : usagesOfParent_.find(definition)) {
+        for (const u64& usagePair : usagesOfParent_.find(definition)) {
             const u32 usage = valueOf(usagePair);
             const u32 child = index_.refsOf(usage)[1];
             if (!isProductDefinition(index_.kinds[child])) {
                 continue;
             }
-            const Affine placed = compose(world, placementOf(usage, definition, child));
+            const Affine placed =
+                compose(world, usagePlacements_[usagesOfParent_.indexOf(usagePair)]);
             walkProduct(child, placed, node, depth + 1);
             hasComponents = true;
         }
         out_.nodes[node].kind = hasComponents ? NodeKind::Assembly : NodeKind::Part;
         closeNode(node);
-        onPath_.erase(definition);
+        onPath_.pop_back();
     }
 
     bool representationBelongsTo(u32 representation, u32 definition) const {
@@ -445,17 +490,13 @@ private:
         return compose(to, inverse(from));
     }
 
+    // Every context's factor is read before anything runs in parallel, so this only looks up.
     double lengthFactorOf(u32 context) const {
         if (context == kNoRecord) {
             return 1.0;
         }
         const auto it = lengthFactors_.find(context);
-        if (it != lengthFactors_.end()) {
-            return it->second;
-        }
-        const double factor = lengthFactor(index_, context);
-        lengthFactors_.emplace(context, factor);
-        return factor;
+        return it != lengthFactors_.end() ? it->second : lengthFactor(index_, context);
     }
 
     bool readVector(u32 record, simd_double3& value) const {
@@ -588,9 +629,11 @@ private:
 
     void walkRepresentation(u32 representation, const Affine& world, u32 node, int depth) {
         if (representation == kNoRecord || depth > kMaxDepth ||
-            !visitedRepresentations_.insert(representation).second) {
+            std::find(visitedRepresentations_.begin(), visitedRepresentations_.end(),
+                      representation) != visitedRepresentations_.end()) {
             return;
         }
+        visitedRepresentations_.push_back(representation);
         const std::span<const u32> items = index_.refsOf(representation);
         const u32 context = contextOf(representation);
         for (usize i = 0; i + 1 < items.size(); ++i) {
@@ -615,7 +658,7 @@ private:
                 const Affine placed =
                     compose(world, mappedItemTransform(item, mapping, map[1], representation));
                 // A mapped representation can be reached again with another placement.
-                std::unordered_set<u32> outer;
+                std::vector<u32> outer;
                 std::swap(outer, visitedRepresentations_);
                 walkRepresentation(map[1], placed, node, depth + 1);
                 std::swap(outer, visitedRepresentations_);
@@ -638,13 +681,15 @@ private:
     }
 
     u32 addBodyNode(u32 bodyRecord, u32 parent) {
-        ParamCursor cursor(index_.text(bodyRecord));
-        std::string name;
-        cursor.readString(name);
-        if (isPlaceholderName(name)) {
-            name.clear();
+        auto [name, inserted] = bodyNames_.try_emplace(bodyRecord);
+        if (inserted) {
+            ParamCursor cursor(index_.text(bodyRecord));
+            cursor.readString(name->second);
+            if (isPlaceholderName(name->second)) {
+                name->second.clear();
+            }
         }
-        return addNode(NodeKind::Body, name, parent);
+        return addNode(NodeKind::Body, name->second, parent);
     }
 
     u32 internBody(u32 record, u32 context) {
@@ -827,8 +872,8 @@ private:
 
     std::vector<u32> productDefinitions_;
     std::vector<u32> representations_;
-    std::unordered_set<u32> isChild_;
-    std::unordered_set<u32> placementRelationships_;
+    std::vector<bool> isChild_;                // by record
+    std::vector<bool> placementRelationships_; // by record
     Relation usagesOfParent_;
     Relation shapesOfDefinition_;
     Relation representationsOfShape_;
@@ -836,10 +881,13 @@ private:
     Relation relationshipsOfShape_;
     Relation linkedRepresentations_;
 
-    std::unordered_set<u32> onPath_;
-    std::unordered_set<u32> visitedRepresentations_;
+    std::vector<u32> onPath_;                 // products from the root to here
+    std::vector<u32> visitedRepresentations_; // a part has only a few
     std::unordered_map<u64, u32> bodyOfRecord_;
-    mutable std::unordered_map<u32, double> lengthFactors_;
+    std::unordered_map<u32, double> lengthFactors_;
+    std::vector<Affine> usagePlacements_; // parallel to usagesOfParent_.all()
+    std::unordered_map<u32, std::string> productNames_;
+    std::unordered_map<u32, std::string> bodyNames_;
 };
 
 // A unit's size in millimetres, or zero if it is not a length unit.
