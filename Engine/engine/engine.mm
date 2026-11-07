@@ -9,6 +9,8 @@
 #include "base/time.h"
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
+#include "nav/camera.h"
+#include "render/view.h"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -73,6 +75,9 @@ struct GeoEngine {
     std::unique_ptr<gpu::Renderer> renderer;
     gpu::DisplayLinkFrameSource frames;
 
+    nav::Camera camera;
+    nav::Viewport viewport;
+
     bool needsFrame = false;
     bool stopping = false;
     const bool traceLaunch = std::getenv("GEOMETRY_TRACE") != nullptr;
@@ -101,6 +106,10 @@ struct GeoEngine {
                 attachLayer((__bridge_transfer CAMetalLayer*)command->layer);
                 break;
             case Command::Kind::Resize:
+                viewport = {double(command->resize.width), double(command->resize.height)};
+                renderer->resize(command->resize.width, command->resize.height);
+                requestFrame();
+                break;
             case Command::Kind::RequestFrame:
                 requestFrame();
                 break;
@@ -125,6 +134,7 @@ struct GeoEngine {
         if (needsFrame) {
             needsFrame = false;
             const double start = nowSeconds();
+            const render::ViewState view = render::makeView(camera, viewport, renderer->sceneBounds());
             if (traceLaunch && framesRendered.load(std::memory_order_relaxed) == 0) {
                 [tick.drawable addPresentedHandler:^(id<MTLDrawable> drawable) {
                     (void)drawable;
@@ -137,7 +147,7 @@ struct GeoEngine {
             if (firstFrame) {
                 geo_trace_memory("before first render");
             }
-            renderer->render(tick.drawable);
+            renderer->render(tick.drawable, view);
             if (firstFrame) {
                 geo_trace_memory("after first render");
             }
@@ -177,9 +187,10 @@ const char* geo_engine_version(void) {
     return "0.1.0";
 }
 
-GeoEngine* geo_engine_create(void) {
+GeoEngine* geo_engine_create(const char* shader_library_path) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    std::unique_ptr<gpu::Renderer> renderer = device ? gpu::Renderer::create(device) : nullptr;
+    std::unique_ptr<gpu::Renderer> renderer =
+        device ? gpu::Renderer::create(device, shader_library_path) : nullptr;
     if (!renderer) {
         return nullptr;
     }

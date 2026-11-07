@@ -12,7 +12,9 @@ import sys
 from pathlib import Path
 
 # Each module may depend on itself and on modules listed earlier.
-ENGINE_LAYERS = ["base", "math", "format", "scene", "model", "nav", "pick", "render", "ipc", "gpu"]
+ENGINE_LAYERS = [
+    "base", "math", "format", "shaders", "scene", "model", "nav", "pick", "render", "ipc", "gpu",
+]
 IMPORT_ALLOWED = {"base", "format", "step", "stl", "mesh", "cache", "helper", "occt"}
 INCLUDE = re.compile(r'^\s*#\s*(?:include|import)\s+"([a-z_0-9]+)/', re.MULTILINE)
 SOURCE_SUFFIXES = {".h", ".hpp", ".cpp", ".mm", ".metal", ".inl"}
@@ -32,7 +34,8 @@ def main() -> int:
     errors: list[str] = []
 
     for index, module in enumerate(ENGINE_LAYERS):
-        allowed = set(ENGINE_LAYERS[: index + 1])
+        # `shared/` is the shaders module's own header directory.
+        allowed = set(ENGINE_LAYERS[: index + 1]) | ({"shared"} if module == "shaders" else set())
         for directory in (root / "Engine" / module, root / "Import" / module):
             if not directory.is_dir():
                 continue

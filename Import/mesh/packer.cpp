@@ -369,7 +369,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     std::copy_n(reinterpret_cast<const float*>(&bounds.hi), 3, packed.boundsMax.begin());
     std::copy_n(reinterpret_cast<const float*>(&scale), 3, packed.decodeScale.begin());
     std::copy_n(reinterpret_cast<const float*>(&boundsScale), 3, packed.boundsScale.begin());
-    packed.flags = wide ? u32(kDefinitionWide) : 0;
+    packed.flags = (wide ? u32(kDefinitionWide) : 0) | (mesh.closed ? 0 : u32(kDefinitionOpen));
     packed.faceCount = mesh.faceCount;
     packed.originalFace = faces.originalOfPacked;
     trace.lap("concatenate");

@@ -297,6 +297,18 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
     return regions;
 }
 
+// A surface is closed when every edge is used by exactly two triangles.
+bool isClosed(const EdgeTable& edges) {
+    std::vector<u8> uses(edges.edgeCount, 0);
+    for (const u32 edge : edges.edgeOfCorner) {
+        if (uses[edge] == 2) {
+            return false;
+        }
+        ++uses[edge];
+    }
+    return std::all_of(uses.begin(), uses.end(), [](u8 count) { return count == 2; });
+}
+
 float cornerAngle(simd_float3 corner, simd_float3 toNext, simd_float3 toPrevious) {
     const simd_float3 u = simd_normalize(toNext - corner);
     const simd_float3 v = simd_normalize(toPrevious - corner);
@@ -377,6 +389,7 @@ IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& opti
 
     IndexedMesh mesh;
     mesh.faceCount = regions.faceCount;
+    mesh.closed = isClosed(edges);
     mesh.indices = std::move(finalIds);
     mesh.positions.resize(usize(vertexCount) * 3);
     mesh.normals.assign(usize(vertexCount) * 3, 0.0f);

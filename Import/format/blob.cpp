@@ -36,7 +36,8 @@ bool validateMeshlets(const BlobView& view, std::string& error) {
         if (m.vertexCount > kMeshletMaxVertices || m.triangleCount > kMeshletMaxTriangles ||
             m.vertexOffset > vertexCount || m.vertexCount > vertexCount - m.vertexOffset ||
             m.triangleOffset > triangleCount ||
-            m.triangleCount > triangleCount - m.triangleOffset) {
+            m.triangleCount > triangleCount - m.triangleOffset ||
+            (m.vertexCount == 0 && m.triangleCount != 0)) {
             error = "A meshlet points outside its geometry.";
             return false;
         }

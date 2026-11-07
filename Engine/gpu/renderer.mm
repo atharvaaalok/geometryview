@@ -1,9 +1,14 @@
 #include "gpu/renderer.h"
 
 #include "base/assert.h"
+#include "base/trace.h"
+#include "shaders/shared/gpu_types.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
+#include <sys/mman.h>
 
 namespace geo::gpu {
 namespace {
@@ -11,25 +16,258 @@ namespace {
 // With two drawables, a third frame cannot start until an earlier one finishes, so two allocators
 // are enough: reusing one only waits for the frame that last used it.
 constexpr usize kFramesInFlight = 2;
+constexpr u64 kFrameTimeoutMs = 2000;
+constexpr NSUInteger kSampleCount = 4;
+constexpr NSUInteger kPayloadBytes = sizeof(u32) * (kBatchMeshlets + 1);
 
 // Paper, #f2efe7, written as encoded sRGB because colours composite in encoded space.
 const MTLClearColor kPaper = MTLClearColorMake(242.0 / 255.0, 239.0 / 255.0, 231.0 / 255.0, 1.0);
+
+const MTLPixelFormat kColorFormat = MTLPixelFormatBGRA8Unorm;
+const MTLPixelFormat kIdFormat = MTLPixelFormatR32Uint;
+const MTLPixelFormat kDepthCopyFormat = MTLPixelFormatR32Float;
+const MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float;
+
+void reportFailure(const char* what, NSError* error) {
+    std::fprintf(stderr, "%s: %s\n", what,
+                 error ? error.localizedDescription.UTF8String : "unknown error");
+}
 
 } // namespace
 
 struct Renderer::State {
     id<MTLDevice> device;
+    id<MTLLibrary> library;
     id<MTL4CommandQueue> queue;
     id<MTL4CommandBuffer> commandBuffer;
     std::array<id<MTL4CommandAllocator>, kFramesInFlight> allocators;
     id<MTLSharedEvent> frameFinished;
     u64 frameCount = 0;
+
+    id<MTLRenderPipelineState> surfacePipeline;
+    id<MTLRenderPipelineState> pickPipeline;
+    id<MTLDepthStencilState> depthState;
+    id<MTL4ArgumentTable> surfaceTable;
+    id<MTL4ArgumentTable> tileTable;
+    id<MTLResidencySet> residency;
+
+    id<MTLBuffer> frameUniforms;
+
+    // Render targets. Everything multisampled is memoryless, so it costs no memory at all.
+    u32 width = 0, height = 0;
+    id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, depthMsaa, offscreenColor;
+    id<MTLBuffer> pickIdBuffer, pickDepthBuffer;
+    id<MTLTexture> pickIds, pickDepths;
+    NSUInteger pickIdRowBytes = 0, pickDepthRowBytes = 0;
+
+    // Scene.
+    id<MTLBuffer> blobBuffer, definitions, occurrences, batches, drawBases;
+    usize batchCount = 0;
+    usize openBatchStart = 0;
+    Aabb bounds{};
+    bool hasScene = false;
+
+    id<MTLBuffer> makeShared(usize length) {
+        return [device newBufferWithLength:std::max<usize>(length, 16)
+                                   options:MTLResourceStorageModeShared |
+                                           MTLResourceHazardTrackingModeUntracked];
+    }
+
+    id<MTLTexture> makeTarget(MTLPixelFormat format, NSUInteger samples, MTLStorageMode storage,
+                              MTLTextureUsage usage) {
+        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                     width:width
+                                                                                    height:height
+                                                                                 mipmapped:NO];
+        d.textureType = samples > 1 ? MTLTextureType2DMultisample : MTLTextureType2D;
+        d.sampleCount = samples;
+        d.storageMode = storage;
+        d.usage = usage;
+        return [device newTextureWithDescriptor:d];
+    }
+
+    MTL4LibraryFunctionDescriptor* function(NSString* name) {
+        MTL4LibraryFunctionDescriptor* f = [MTL4LibraryFunctionDescriptor new];
+        f.library = library;
+        f.name = name;
+        return f;
+    }
+
+    bool createPipelines() {
+        NSError* error = nil;
+        MTL4CompilerDescriptor* compilerDescriptor = [MTL4CompilerDescriptor new];
+        id<MTL4Compiler> compiler = [device newCompilerWithDescriptor:compilerDescriptor
+                                                                error:&error];
+        if (!compiler) {
+            reportFailure("Could not create the shader compiler", error);
+            return false;
+        }
+
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = function(@"surfaceObject");
+        mesh.meshFunctionDescriptor = function(@"surfaceMesh");
+        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment");
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = kSampleCount;
+        mesh.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        mesh.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        mesh.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        surfacePipeline = [compiler newRenderPipelineStateWithDescriptor:mesh
+                                                     compilerTaskOptions:nil
+                                                                   error:&error];
+        if (!surfacePipeline) {
+            reportFailure("Could not create the surface pipeline", error);
+            return false;
+        }
+
+        MTL4TileRenderPipelineDescriptor* tile = [MTL4TileRenderPipelineDescriptor new];
+        tile.tileFunctionDescriptor = function(@"resolvePick");
+        tile.rasterSampleCount = kSampleCount;
+        tile.threadgroupSizeMatchesTileSize = YES;
+        tile.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        tile.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        tile.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        pickPipeline = [compiler newRenderPipelineStateWithDescriptor:tile
+                                                  compilerTaskOptions:nil
+                                                                error:&error];
+        if (!pickPipeline) {
+            reportFailure("Could not create the pick pipeline", error);
+            return false;
+        }
+
+        MTLDepthStencilDescriptor* depth = [MTLDepthStencilDescriptor new];
+        depth.depthCompareFunction = MTLCompareFunctionGreater; // reversed depth
+        depth.depthWriteEnabled = YES;
+        depthState = [device newDepthStencilStateWithDescriptor:depth];
+        return true;
+    }
+
+    bool createTables() {
+        NSError* error = nil;
+        MTL4ArgumentTableDescriptor* surface = [MTL4ArgumentTableDescriptor new];
+        surface.maxBufferBindCount = 8;
+        surfaceTable = [device newArgumentTableWithDescriptor:surface error:&error];
+
+        MTL4ArgumentTableDescriptor* tile = [MTL4ArgumentTableDescriptor new];
+        tile.maxTextureBindCount = 2;
+        tileTable = [device newArgumentTableWithDescriptor:tile error:&error];
+        if (!surfaceTable || !tileTable) {
+            reportFailure("Could not create argument tables", error);
+            return false;
+        }
+
+        MTLResidencySetDescriptor* set = [MTLResidencySetDescriptor new];
+        residency = [device newResidencySetWithDescriptor:set error:&error];
+        if (!residency) {
+            reportFailure("Could not create a residency set", error);
+            return false;
+        }
+        [queue addResidencySet:residency];
+        return true;
+    }
+
+    MTL4RenderPassDescriptor* passDescriptor(id<MTLTexture> resolveTarget) {
+        MTL4RenderPassDescriptor* pass = [MTL4RenderPassDescriptor new];
+        pass.colorAttachments[kAttachmentColor].texture = colorMsaa;
+        pass.colorAttachments[kAttachmentColor].resolveTexture = resolveTarget;
+        pass.colorAttachments[kAttachmentColor].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[kAttachmentColor].storeAction = MTLStoreActionMultisampleResolve;
+        pass.colorAttachments[kAttachmentColor].clearColor = kPaper;
+        pass.colorAttachments[kAttachmentId].texture = idMsaa;
+        pass.colorAttachments[kAttachmentId].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[kAttachmentId].storeAction = MTLStoreActionDontCare;
+        pass.colorAttachments[kAttachmentId].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        pass.colorAttachments[kAttachmentDepth].texture = depthCopyMsaa;
+        pass.colorAttachments[kAttachmentDepth].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[kAttachmentDepth].storeAction = MTLStoreActionDontCare;
+        pass.colorAttachments[kAttachmentDepth].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        pass.depthAttachment.texture = depthMsaa;
+        pass.depthAttachment.loadAction = MTLLoadActionClear;
+        pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+        pass.depthAttachment.clearDepth = 0.0; // reversed depth
+        pass.tileWidth = kTileSize;
+        pass.tileHeight = kTileSize;
+        return pass;
+    }
+
+    // Draws up to kMaxBatchesPerDraw batches at a time from [first, last).
+    void drawBatches(id<MTL4RenderCommandEncoder> encoder, usize first, usize last) {
+        for (usize start = first; start < last; start += kMaxBatchesPerDraw) {
+            const usize groups = std::min<usize>(kMaxBatchesPerDraw, last - start);
+            [surfaceTable setAddress:drawBases.gpuAddress + start / kMaxBatchesPerDraw * sizeof(u32)
+                             atIndex:kBufferDrawBase];
+            [encoder setArgumentTable:surfaceTable
+                             atStages:MTLRenderStageObject | MTLRenderStageMesh |
+                                      MTLRenderStageFragment];
+            [encoder drawMeshThreadgroups:MTLSizeMake(groups, 1, 1)
+                threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
+                  threadsPerMeshThreadgroup:MTLSizeMake(kMeshletMaxTriangles, 1, 1)];
+        }
+    }
+
+    void encodeScene(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
+                     usize frame) {
+        const usize uniformOffset = (frame % kFramesInFlight) * sizeof(FrameUniforms);
+        std::memcpy(static_cast<u8*>(frameUniforms.contents) + uniformOffset, &view.uniforms,
+                    sizeof(FrameUniforms));
+
+        [surfaceTable setAddress:frameUniforms.gpuAddress + uniformOffset atIndex:kBufferFrame];
+        if (hasScene) {
+            [encoder setRenderPipelineState:surfacePipeline];
+            [encoder setDepthStencilState:depthState];
+            [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+            [surfaceTable setAddress:definitions.gpuAddress atIndex:kBufferDefinitions];
+            [surfaceTable setAddress:occurrences.gpuAddress atIndex:kBufferOccurrences];
+            [surfaceTable setAddress:batches.gpuAddress atIndex:kBufferBatches];
+
+            // Closed surfaces first, with back faces culled. Open ones show both sides.
+            [encoder setCullMode:MTLCullModeBack];
+            drawBatches(encoder, 0, openBatchStart);
+            [encoder setCullMode:MTLCullModeNone];
+            drawBatches(encoder, openBatchStart, batchCount);
+        }
+
+        [encoder setRenderPipelineState:pickPipeline];
+        [encoder setArgumentTable:tileTable atStages:MTLRenderStageTile];
+        [encoder dispatchThreadsPerTile:MTLSizeMake(kTileSize, kTileSize, 1)];
+    }
+
+    void beginFrame() {
+        // Reusing an allocator requires the frame that last used it to have finished.
+        const u64 frame = ++frameCount;
+        if (frame > kFramesInFlight) {
+            const bool finished = [frameFinished waitUntilSignaledValue:frame - kFramesInFlight
+                                                              timeoutMS:kFrameTimeoutMs];
+            GEO_ASSERT(finished);
+        }
+        id<MTL4CommandAllocator> allocator = allocators[frame % kFramesInFlight];
+        [allocator reset];
+        [commandBuffer beginCommandBufferWithAllocator:allocator];
+    }
+
+    void commitAndSignal() {
+        id<MTL4CommandBuffer> buffers[] = {commandBuffer};
+        if (!traceEnabled()) {
+            [queue commit:buffers count:1];
+            return;
+        }
+        // Feedback allocates per frame, so it runs only when tracing.
+        MTL4CommitOptions* options = [MTL4CommitOptions new];
+        [options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
+            if (feedback.error) {
+                std::fprintf(stderr, "GPU error: %s\n",
+                             feedback.error.localizedDescription.UTF8String);
+            }
+        }];
+        [queue commit:buffers count:1 options:options];
+    }
 };
 
 Renderer::Renderer() : state_(std::make_unique<State>()) {}
 Renderer::~Renderer() = default;
 
-std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device) {
+std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* libraryPath) {
     if (![device supportsFamily:MTLGPUFamilyMetal4]) {
         std::fprintf(stderr, "Geometry needs a GPU that supports Metal 4.\n");
         return nullptr;
@@ -37,12 +275,26 @@ std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device) {
     std::unique_ptr<Renderer> renderer(new Renderer);
     State& s = *renderer->state_;
     s.device = device;
+
+    NSError* error = nil;
+    NSURL* url = [NSURL fileURLWithPath:@(libraryPath)];
+    s.library = [device newLibraryWithURL:url error:&error];
+    if (!s.library) {
+        reportFailure("Could not load the shader library", error);
+        return nullptr;
+    }
+
     s.queue = [device newMTL4CommandQueue];
     s.commandBuffer = [device newCommandBuffer];
     s.frameFinished = [device newSharedEvent];
     for (usize i = 0; i < kFramesInFlight; ++i) {
         s.allocators[i] = [device newCommandAllocator];
     }
+    if (!s.createPipelines() || !s.createTables()) {
+        return nullptr;
+    }
+    s.frameUniforms = s.makeShared(sizeof(FrameUniforms) * kFramesInFlight);
+    [s.residency addAllocation:s.frameUniforms];
     return renderer;
 }
 
@@ -50,37 +302,233 @@ void Renderer::attachLayer(CAMetalLayer* layer) {
     [state_->queue addResidencySet:layer.residencySet];
 }
 
-void Renderer::render(id<CAMetalDrawable> drawable) {
+void Renderer::setScene(scene::MappedBlob& blob) {
     State& s = *state_;
+    const format::BlobView& view = blob.view();
 
-    // Reusing an allocator requires the frame that last used it to have finished.
-    const u64 frame = ++s.frameCount;
-    if (frame > kFramesInFlight) {
-        constexpr u64 kTimeoutMs = 1000;
-        const bool finished = [s.frameFinished waitUntilSignaledValue:frame - kFramesInFlight
-                                                            timeoutMS:kTimeoutMs];
-        GEO_ASSERT(finished);
+    // Geometry stays in the mapped file: this buffer wraps the mapping without copying, and it owns
+    // the mapping from here on. See ADR 0002.
+    id<MTLBuffer> buffer = [s.device
+        newBufferWithBytesNoCopy:blob.data()
+                          length:blob.size()
+                         options:MTLResourceStorageModeShared |
+                                 MTLResourceHazardTrackingModeUntracked
+                     deallocator:^(void* pointer, NSUInteger length) {
+                         munmap(pointer, length);
+                     }];
+    GEO_ASSERT(buffer != nil);
+    blob.releaseOwnership();
+
+    const auto* base = static_cast<const u8*>(buffer.contents);
+    const auto addressOf = [&](const void* pointer) -> u64 {
+        return buffer.gpuAddress + u64(static_cast<const u8*>(pointer) - base);
+    };
+
+    id<MTLBuffer> definitions = s.makeShared(view.definitions.size() * sizeof(GpuDefinition));
+    auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
+    for (usize i = 0; i < view.definitions.size(); ++i) {
+        const format::DefinitionRecord& record = view.definitions[i];
+        GpuDefinition& out = gpuDefinitions[i];
+        out.meshlets = addressOf(view.meshlets.data());
+        out.vertices = addressOf(view.vertices.data());
+        out.highBits = view.highBits.empty() ? 0 : addressOf(view.highBits.data());
+        out.triangles = addressOf(view.triangles.data());
+        out.boundsMin = simd_make_float3(record.boundsMin[0], record.boundsMin[1],
+                                         record.boundsMin[2]);
+        out.decodeScale = simd_make_float3(record.decodeScale[0], record.decodeScale[1],
+                                           record.decodeScale[2]);
+        out.boundsScale = simd_make_float3(record.boundsScale[0], record.boundsScale[1],
+                                           record.boundsScale[2]);
+        out.boundsStep = simd_reduce_max(out.boundsScale);
+        out.flags = record.flags;
     }
-    id<MTL4CommandAllocator> allocator = s.allocators[frame % kFramesInFlight];
-    [allocator reset];
 
-    MTL4RenderPassDescriptor* pass = [MTL4RenderPassDescriptor new];
-    pass.colorAttachments[0].texture = drawable.texture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].clearColor = kPaper;
+    Aabb bounds{simd_make_double3(INFINITY, INFINITY, INFINITY),
+                simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
+    id<MTLBuffer> occurrences = s.makeShared(view.occurrences.size() * sizeof(GpuOccurrence));
+    auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
+    std::vector<Batch> closedBatches, openBatches;
+    u32 idBase = 0;
+    for (usize i = 0; i < view.occurrences.size(); ++i) {
+        const format::OccurrenceRecord& record = view.occurrences[i];
+        const format::DefinitionRecord& definition = view.definitions[record.definition];
+        const std::array<float, 12>& t = record.transform;
+        GpuOccurrence& out = gpuOccurrences[i];
+        out.rows[0] = simd_make_float4(t[0], t[3], t[6], t[9]);
+        out.rows[1] = simd_make_float4(t[1], t[4], t[7], t[10]);
+        out.rows[2] = simd_make_float4(t[2], t[5], t[8], t[11]);
+        out.definition = record.definition;
+        out.idBase = idBase;
+        idBase += definition.faceCount;
 
-    [s.commandBuffer beginCommandBufferWithAllocator:allocator];
-    id<MTL4RenderCommandEncoder> encoder = [s.commandBuffer renderCommandEncoderWithDescriptor:pass];
+        for (int corner = 0; corner < 8; ++corner) {
+            const simd_float4 local = simd_make_float4(
+                corner & 1 ? definition.boundsMax[0] : definition.boundsMin[0],
+                corner & 2 ? definition.boundsMax[1] : definition.boundsMin[1],
+                corner & 4 ? definition.boundsMax[2] : definition.boundsMin[2], 1.0f);
+            const Vec3 world = simd_make_double3(simd_dot(out.rows[0], local),
+                                                 simd_dot(out.rows[1], local),
+                                                 simd_dot(out.rows[2], local));
+            bounds.min = simd_min(bounds.min, world);
+            bounds.max = simd_max(bounds.max, world);
+        }
+
+        std::vector<Batch>& target =
+            (definition.flags & kDefinitionOpen) != 0 ? openBatches : closedBatches;
+        for (u32 first = 0; first < definition.meshletCount; first += kBatchMeshlets) {
+            const u32 count = std::min<u32>(kBatchMeshlets, definition.meshletCount - first);
+            target.push_back({u32(i), definition.firstMeshlet + first, count, 0});
+        }
+    }
+
+    const usize batchCount = closedBatches.size() + openBatches.size();
+    id<MTLBuffer> batches = s.makeShared(batchCount * sizeof(Batch));
+    auto* gpuBatches = static_cast<Batch*>(batches.contents);
+    std::copy(closedBatches.begin(), closedBatches.end(), gpuBatches);
+    std::copy(openBatches.begin(), openBatches.end(), gpuBatches + closedBatches.size());
+
+    const usize drawCount = batchCount / kMaxBatchesPerDraw + 2;
+    id<MTLBuffer> drawBases = s.makeShared(drawCount * sizeof(u32));
+    auto* bases = static_cast<u32*>(drawBases.contents);
+    for (usize i = 0; i < drawCount; ++i) {
+        bases[i] = u32(i * kMaxBatchesPerDraw);
+    }
+
+    if (s.hasScene) {
+        // The GPU may still be reading the old scene, and residency must outlast that.
+        if (s.frameCount != 0) {
+            const bool finished = [s.frameFinished waitUntilSignaledValue:s.frameCount
+                                                                timeoutMS:kFrameTimeoutMs];
+            GEO_ASSERT(finished);
+        }
+        for (id<MTLBuffer> old in @[ s.blobBuffer, s.definitions, s.occurrences, s.batches,
+                                     s.drawBases ]) {
+            [s.residency removeAllocation:old];
+        }
+    }
+    s.blobBuffer = buffer;
+    s.definitions = definitions;
+    s.occurrences = occurrences;
+    s.batches = batches;
+    s.drawBases = drawBases;
+    s.batchCount = batchCount;
+    s.openBatchStart = closedBatches.size();
+    s.bounds = bounds;
+    s.hasScene = true;
+    for (id<MTLBuffer> resource in @[ buffer, definitions, occurrences, batches, drawBases ]) {
+        [s.residency addAllocation:resource];
+    }
+    [s.residency commit];
+    [s.residency requestResidency];
+}
+
+bool Renderer::hasScene() const {
+    return state_->hasScene;
+}
+
+Aabb Renderer::sceneBounds() const {
+    return state_->bounds;
+}
+
+void Renderer::resize(u32 width, u32 height) {
+    State& s = *state_;
+    if (width == s.width && height == s.height) {
+        return;
+    }
+    if (s.pickIdBuffer) {
+        [s.residency removeAllocation:s.pickIdBuffer];
+        [s.residency removeAllocation:s.pickDepthBuffer];
+        [s.residency removeAllocation:s.offscreenColor];
+    }
+    s.width = width;
+    s.height = height;
+
+    const MTLTextureUsage target = MTLTextureUsageRenderTarget;
+    s.colorMsaa = s.makeTarget(kColorFormat, kSampleCount, MTLStorageModeMemoryless, target);
+    s.idMsaa = s.makeTarget(kIdFormat, kSampleCount, MTLStorageModeMemoryless, target);
+    s.depthCopyMsaa = s.makeTarget(kDepthCopyFormat, kSampleCount, MTLStorageModeMemoryless, target);
+    s.depthMsaa = s.makeTarget(kDepthFormat, kSampleCount, MTLStorageModeMemoryless, target);
+    s.offscreenColor = s.makeTarget(kColorFormat, 1, MTLStorageModeShared, target);
+
+    const auto makeLinear = [&](MTLPixelFormat format, id<MTLBuffer> __strong& buffer,
+                                id<MTLTexture> __strong& texture, NSUInteger& rowBytes) {
+        const NSUInteger alignment = [s.device minimumLinearTextureAlignmentForPixelFormat:format];
+        rowBytes = (NSUInteger(width) * 4 + alignment - 1) & ~(alignment - 1);
+        buffer = s.makeShared(rowBytes * height);
+        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                     width:width
+                                                                                    height:height
+                                                                                 mipmapped:NO];
+        d.storageMode = MTLStorageModeShared;
+        d.usage = MTLTextureUsageShaderWrite;
+        d.resourceOptions = buffer.resourceOptions;
+        texture = [buffer newTextureWithDescriptor:d offset:0 bytesPerRow:rowBytes];
+    };
+    makeLinear(kIdFormat, s.pickIdBuffer, s.pickIds, s.pickIdRowBytes);
+    makeLinear(kDepthCopyFormat, s.pickDepthBuffer, s.pickDepths, s.pickDepthRowBytes);
+
+    [s.tileTable setTexture:s.pickIds.gpuResourceID atIndex:kTexturePickIds];
+    [s.tileTable setTexture:s.pickDepths.gpuResourceID atIndex:kTexturePickDepths];
+    [s.residency addAllocation:s.pickIdBuffer];
+    [s.residency addAllocation:s.pickDepthBuffer];
+    [s.residency addAllocation:s.offscreenColor];
+    [s.residency commit];
+    [s.residency requestResidency];
+}
+
+void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view) {
+    State& s = *state_;
+    s.beginFrame();
+    id<MTL4RenderCommandEncoder> encoder =
+        [s.commandBuffer renderCommandEncoderWithDescriptor:s.passDescriptor(drawable.texture)];
+    s.encodeScene(encoder, view, s.frameCount);
     [encoder endEncoding];
     [s.commandBuffer endCommandBuffer];
 
-    id<MTL4CommandBuffer> buffers[] = {s.commandBuffer};
     [s.queue waitForDrawable:drawable];
-    [s.queue commit:buffers count:1];
+    s.commitAndSignal();
     [s.queue signalDrawable:drawable];
-    [s.queue signalEvent:s.frameFinished value:frame];
+    [s.queue signalEvent:s.frameFinished value:s.frameCount];
     [drawable present];
+}
+
+std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view) {
+    State& s = *state_;
+    s.beginFrame();
+    id<MTL4RenderCommandEncoder> encoder =
+        [s.commandBuffer renderCommandEncoderWithDescriptor:s.passDescriptor(s.offscreenColor)];
+    s.encodeScene(encoder, view, s.frameCount);
+    [encoder endEncoding];
+    [s.commandBuffer endCommandBuffer];
+    s.commitAndSignal();
+    [s.queue signalEvent:s.frameFinished value:s.frameCount];
+    const bool finished = [s.frameFinished waitUntilSignaledValue:s.frameCount
+                                                        timeoutMS:kFrameTimeoutMs * 10];
+    GEO_ASSERT(finished);
+
+    std::vector<u8> pixels(usize(s.width) * s.height * 4);
+    [s.offscreenColor getBytes:pixels.data()
+                   bytesPerRow:NSUInteger(s.width) * 4
+                    fromRegion:MTLRegionMake2D(0, 0, s.width, s.height)
+                   mipmapLevel:0];
+    return pixels;
+}
+
+std::optional<PixelHit> Renderer::readPixel(int x, int y, const render::DepthDecoder& depth) const {
+    const State& s = *state_;
+    if (x < 0 || y < 0 || u32(x) >= s.width || u32(y) >= s.height || !s.pickIdBuffer) {
+        return std::nullopt;
+    }
+    const auto* ids = static_cast<const u8*>(s.pickIdBuffer.contents);
+    const auto* depths = static_cast<const u8*>(s.pickDepthBuffer.contents);
+    u32 id = 0;
+    float value = 0.0f;
+    std::memcpy(&id, ids + usize(y) * s.pickIdRowBytes + usize(x) * 4, sizeof(id));
+    std::memcpy(&value, depths + usize(y) * s.pickDepthRowBytes + usize(x) * 4, sizeof(value));
+    if (id == 0) {
+        return std::nullopt;
+    }
+    return PixelHit{id, depth.viewDepth(value)};
 }
 
 } // namespace geo::gpu

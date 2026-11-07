@@ -138,3 +138,10 @@ TEST_CASE("a connected noisy surface breaks into many faces, not one") {
     CHECK(mesh.faceCount > 10);
     CHECK(mesh.faceCount <= 1000);
 }
+
+TEST_CASE("a cube is closed and a single triangle is open") {
+    CHECK(buildIndexedMesh(cube()).closed);
+    TriangleSoup soup;
+    soup.corners = {0, 0, 0, 1, 0, 0, 0, 1, 0};
+    CHECK_FALSE(buildIndexedMesh(soup).closed);
+}

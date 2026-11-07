@@ -20,6 +20,8 @@ enum DefinitionFlags : uint32_t {
     // The definition's vertices have a parallel high-bits stream, giving a 24-bit grid. See
     // ADR 0004.
     kDefinitionWide = 1u << 0,
+    // The surface is not closed, so both sides can show and back-face culling must stay off.
+    kDefinitionOpen = 1u << 1,
 };
 
 // 12 bytes. Positions are integers on a per-definition grid, so vertices at the same place in

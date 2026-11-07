@@ -51,8 +51,9 @@ typedef struct GeoEngineStats {
 /// Returns the engine version as a static string.
 const char* geo_engine_version(void);
 
-/// Creates the engine and starts its thread. Returns null if this Mac's GPU is unsupported.
-GeoEngine* geo_engine_create(void);
+/// Creates the engine and starts its thread. `shader_library_path` names the compiled metallib.
+/// Returns null if the GPU is unsupported or the library cannot be loaded.
+GeoEngine* geo_engine_create(const char* shader_library_path);
 void geo_engine_destroy(GeoEngine* engine);
 
 /// Hands the engine a CAMetalLayer. The caller configures its size; the engine retains it.
@@ -71,6 +72,12 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 
 /// Prints current and peak memory footprint to stderr when GEOMETRY_TRACE is set.
 void geo_trace_memory(const char* label);
+
+/// Renders a cache file headlessly to a PNG, framed to fit, for tests and `gcli render`. The view
+/// direction is given in degrees. Returns false and prints why on failure.
+bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
+                            const char* png_path, uint32_t width, uint32_t height,
+                            double azimuth_degrees, double elevation_degrees, bool perspective);
 
 #ifdef __cplusplus
 }

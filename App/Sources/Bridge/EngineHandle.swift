@@ -1,3 +1,4 @@
+import Foundation
 import GeometryEngine
 import QuartzCore
 
@@ -7,7 +8,9 @@ final class EngineHandle {
     private let engine: OpaquePointer
 
     init?() {
-        guard let engine = geo_engine_create() else {
+        guard let library = Bundle.main.path(forResource: "default", ofType: "metallib"),
+            let engine = geo_engine_create(library)
+        else {
             return nil
         }
         self.engine = engine

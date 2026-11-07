@@ -16,6 +16,7 @@ struct IndexedMesh {
     std::vector<u32> faceOfVertex;  // one per vertex
     std::vector<u32> indices;       // three per triangle
     u32 faceCount = 0;
+    bool closed = false;            // every edge is shared by exactly two triangles
 
     usize vertexCount() const { return faceOfVertex.size(); }
     usize triangleCount() const { return indices.size() / 3; }

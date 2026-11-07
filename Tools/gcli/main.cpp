@@ -5,6 +5,7 @@
 #include "import.h"
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <print>
@@ -105,6 +106,21 @@ int verifyCommand(const char* path) {
     return 0;
 }
 
+int renderCommand(int argc, const char** argv) {
+    // gcli render <metallib> <blob> <png> [width height azimuth elevation perspective]
+    const char* library = argv[2];
+    const char* blob = argv[3];
+    const char* png = argv[4];
+    const u32 width = argc > 5 ? u32(std::atoi(argv[5])) : 1600;
+    const u32 height = argc > 6 ? u32(std::atoi(argv[6])) : 1000;
+    const double azimuth = argc > 7 ? std::atof(argv[7]) : 35.0;
+    const double elevation = argc > 8 ? std::atof(argv[8]) : 25.0;
+    const bool perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
+    return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation, perspective)
+               ? 0
+               : 1;
+}
+
 } // namespace
 
 int main(int argc, const char** argv) {
@@ -115,8 +131,13 @@ int main(int argc, const char** argv) {
     if (command == "verify" && argc == 3) {
         return verifyCommand(argv[2]);
     }
+    if (command == "render" && argc >= 5) {
+        return renderCommand(argc, argv);
+    }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob>");
     std::println(stderr, "       gcli verify <blob>");
+    std::println(stderr, "       gcli render <metallib> <blob> <png> "
+                         "[width height azimuth elevation perspective]");
     return 2;
 }
