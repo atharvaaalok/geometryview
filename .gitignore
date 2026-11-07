@@ -6,6 +6,7 @@
 
 # Third-party build trees (sources are pinned in ThirdParty/manifest.toml)
 /ThirdParty/.occt/
+/ThirdParty/.dawn/
 
 # Editors and OS
 .DS_Store
@@ -24,3 +25,6 @@ iOS/Shell/*.xcodeproj/
 iOS/Shell/build/
 iOS/Shell/.team
 iOS/Shell/Info.plist
+
+# Personal Claude Code settings
+.claude/settings.local.json
