@@ -3,7 +3,11 @@
 #pragma once
 
 #include "format/gpu_records.h"
+#ifdef __METAL_VERSION__
 #include <simd/simd.h>
+#else
+#include "base/simd.h"
+#endif
 
 #ifdef __METAL_VERSION__
 #define GEO_DEVICE_POINTER(Type) const device Type*

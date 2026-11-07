@@ -4,10 +4,10 @@
 #include "base/parallel_sort.h"
 #include "base/trace.h"
 
+#include "base/simd.h"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
-#include <simd/simd.h>
 
 namespace geo::import {
 namespace {

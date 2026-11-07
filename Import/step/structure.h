@@ -5,7 +5,7 @@
 #include "base/types.h"
 #include "step/part21.h"
 
-#include <simd/simd.h>
+#include "base/simd.h"
 #include <string>
 #include <vector>
 

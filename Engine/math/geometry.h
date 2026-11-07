@@ -1,7 +1,7 @@
 // Small geometric types shared by the engine, on Apple's simd library.
 #pragma once
 
-#include <simd/simd.h>
+#include "base/simd.h"
 
 namespace geo {
 

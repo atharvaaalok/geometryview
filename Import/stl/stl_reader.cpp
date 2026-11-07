@@ -10,7 +10,6 @@
 #include <cstring>
 #include <format>
 #include <string_view>
-#include <xlocale.h>
 
 namespace geo::import {
 namespace {
@@ -37,14 +36,15 @@ const char* skipSpaces(const char* p, const char* end) {
     return p;
 }
 
-// Slow path for numbers the fast path cannot round exactly. The text is not null-terminated, so it
-// is copied first. Very long numbers are cut off, which only drops digits beyond float precision.
+// Slow path for numbers the fast path cannot round exactly, correctly rounded and independent of
+// the locale. A leading plus, which from_chars does not take, is skipped.
 float parseSlow(const char* first, const char* last) {
-    static const locale_t cLocale = newlocale(LC_ALL_MASK, "C", nullptr);
-    std::array<char, 64> buffer{};
-    const usize length = std::min<usize>(usize(last - first), buffer.size() - 1);
-    std::memcpy(buffer.data(), first, length);
-    return strtof_l(buffer.data(), nullptr, cLocale);
+    if (first < last && *first == '+') {
+        ++first;
+    }
+    float value = 0;
+    std::from_chars(first, last, value);
+    return value;
 }
 
 // Parses a decimal float. When the mantissa fits in 2^53 and the exponent is within 10^22, one
@@ -166,8 +166,7 @@ const char* nextLine(const char* p, const char* end) {
 void parseAscii(std::span<const u8> file, std::vector<float>& corners) {
     const char* begin = reinterpret_cast<const char*>(file.data());
     const char* end = begin + file.size();
-    const usize cores = std::max<usize>(1, std::thread::hardware_concurrency());
-    const usize ranges = std::clamp<usize>(file.size() / kParallelGrainBytes, 1, cores);
+    const usize ranges = parallelRangeCount(file.size(), kParallelGrainBytes);
 
     std::vector<std::vector<float>> parts(ranges);
     parallelFor(ranges, [&](usize range) {

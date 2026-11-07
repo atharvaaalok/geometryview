@@ -44,7 +44,7 @@ public:
         header_.magic = kSegmentMagic;
         header_.version = kVersion;
         header_.size = size_;
-        bytes_.assign(size_, 0);
+        bytes_.assign(usize(size_), 0);
         std::memcpy(bytes_.data(), &header_, sizeof(header_));
     }
 
@@ -81,7 +81,7 @@ BlobStream::BlobStream(int fd, SegmentListener* listener)
 bool BlobStream::writeAll(const void* data, u64 size, u64 offset) {
     const auto* cursor = static_cast<const u8*>(data);
     while (size != 0) {
-        const ssize_t written = pwrite(fd_, cursor, size, off_t(offset));
+        const ssize_t written = pwrite(fd_, cursor, usize(size), off_t(offset));
         if (written < 0) {
             if (errno == EINTR) {
                 continue;

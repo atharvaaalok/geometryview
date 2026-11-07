@@ -9,12 +9,11 @@
 
 #include <meshoptimizer.h>
 
+#include "base/simd.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <dispatch/dispatch.h>
 #include <numeric>
-#include <simd/simd.h>
 #include <span>
 
 namespace geo::import {
@@ -364,10 +363,9 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
         w->edges = findFeatureEdges(*w->mesh, w->layout);
     };
     const bool concurrent = mesh.triangleCount() >= kConcurrentEdgeTriangles;
-    dispatch_group_t edgeGroup = dispatch_group_create();
+    Concurrent edgeTask;
     if (concurrent) {
-        dispatch_group_async_f(edgeGroup, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                               &edgeWork, findEdges);
+        edgeTask.start(&edgeWork, findEdges);
     }
 
     std::vector<UnitOutput> outputs(units.size());
@@ -420,7 +418,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     trace.lap("concatenate");
 
     if (concurrent) {
-        dispatch_group_wait(edgeGroup, DISPATCH_TIME_FOREVER);
+        edgeTask.wait();
     } else {
         findEdges(&edgeWork);
     }

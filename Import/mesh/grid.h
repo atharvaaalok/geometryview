@@ -6,7 +6,7 @@
 #include "base/types.h"
 
 #include <array>
-#include <simd/simd.h>
+#include "base/simd.h"
 
 namespace geo::import {
 

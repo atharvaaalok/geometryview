@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
-#include <simd/simd.h>
+#include "base/simd.h"
 
 namespace geo::import {
 namespace {

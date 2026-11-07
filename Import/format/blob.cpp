@@ -23,8 +23,9 @@ bool readSection(std::span<const u8> segment, const SegmentHeader& header, Secti
             error = std::format("Section {} has an invalid layout.", u32(kind));
             return false;
         }
-        out = {reinterpret_cast<const T*>(segment.data() + section.offset),
-               section.size / sizeof(T)};
+        // Both fit in usize, having been checked against the segment's size above.
+        out = {reinterpret_cast<const T*>(segment.data() + usize(section.offset)),
+               usize(section.size / sizeof(T))};
         return true;
     }
     return true; // a missing section is simply empty

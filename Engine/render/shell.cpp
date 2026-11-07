@@ -109,7 +109,7 @@ std::vector<u8> decideShell(const ShellCounts& counts, std::span<const ShellPart
     for (const auto& [key, pixels] : counts.pairs) {
         const u32 behindPart = u32(key % n);
         if (exposure[behindPart] < 0.5) {
-            innerCover[key / n] += pixels;
+            innerCover[usize(key / n)] += pixels;
             innerHidden += pixels;
         }
     }
