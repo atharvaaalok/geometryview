@@ -1,0 +1,39 @@
+# Pinned third-party sources. `ThirdParty/fetch.sh` reproduces the vendored trees from this file.
+# Update a dependency by changing `tag` and `commit` here, re-running the script, and committing
+# the result on its own.
+
+[meshoptimizer]
+url = "https://github.com/zeux/meshoptimizer.git"
+tag = "v1.3"
+commit = "9e1f07b159d3cb777f1c67ed31fc11fd117986f4"
+license = "MIT"
+vendored = true
+
+[doctest]
+url = "https://github.com/doctest/doctest.git"
+tag = "v2.4.12"
+commit = "1da23a3e8119ec5cce4f9388e91b065e20bf06f5"
+license = "MIT"
+vendored = true
+
+# OCCT is built from source by ThirdParty/build_occt.sh and is not vendored, because of its size.
+[occt]
+url = "https://github.com/Open-Cascade-SAS/OCCT.git"
+tag = "V8_0_1"
+commit = "c5605924864829ce8c1e1477f976ffb3880538a8"
+license = "LGPL-2.1-only WITH OCCT-exception-1.0"
+vendored = false
+
+[ibm-plex-mono]
+url = "https://github.com/IBM/plex.git"
+tag = "@ibm/plex-mono@2.5.0"
+commit = "2f9ba1b25957d958db71a849e85d72e3ecfb845a"
+license = "OFL-1.1"
+vendored = true
+
+[xxhash]
+url = "https://github.com/Cyan4973/xxHash.git"
+tag = "v0.8.3"
+commit = "e626a72bc2321cd320e953a0ccf1584cad60f363"
+license = "BSD-2-Clause"
+vendored = true
