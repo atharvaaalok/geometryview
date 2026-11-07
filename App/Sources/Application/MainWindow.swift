@@ -572,6 +572,9 @@ final class MainWindow: NSWindow {
         case .hoverChanged(let document, let node, let face):
             hovered = node.map { (document, $0, face) }
             showHover()
+            structure.highlight(document: document, node: node)
+        case .looksChanged:
+            structure.looksChanged()
         }
     }
 

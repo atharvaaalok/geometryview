@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import GeometryEngine
 import QuartzCore
 
@@ -13,6 +13,8 @@ enum EngineEvent: Sendable {
     case selectionChanged(document: UInt32, node: UInt32?)
     /// The part under the pointer and the face within it, or nil.
     case hoverChanged(document: UInt32, node: UInt32?, face: UInt32)
+    /// The colours standing for each part changed, with the style or the colour mode.
+    case looksChanged
 }
 
 /// Owns the engine's lifetime on the Swift side. All calls are non-blocking.
@@ -154,6 +156,21 @@ final class EngineHandle {
     func model(document: UInt32) -> TreeModel? {
         geo_engine_copy_model(engine, document).map(TreeModel.init)
     }
+
+    /// The colour standing for an occurrence under the current look, or nil before it is known.
+    /// `occurrence` counts within the document.
+    func swatch(document: UInt32, occurrence: UInt32) -> NSColor? {
+        let rgba = geo_engine_swatch(engine, document, occurrence)
+        guard rgba != 0 else {
+            return nil
+        }
+        return NSColor(
+            srgbRed: CGFloat(rgba & 0xFF) / 255,
+            green: CGFloat((rgba >> 8) & 0xFF) / 255,
+            blue: CGFloat((rgba >> 16) & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 }
 
 /// A document's assembly tree. It keeps the file mapped, so it stays readable after the document
@@ -223,6 +240,7 @@ private func receiveEngineEvent(context: UnsafeMutableRawPointer?, event: Unsafe
             node: event.node == UInt32.max ? nil : event.node,
             face: event.done
         )
+    case GeoEventLooksChanged: translated = .looksChanged
     default: translated = nil
     }
     if let translated {
