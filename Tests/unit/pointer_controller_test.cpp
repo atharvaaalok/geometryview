@@ -74,6 +74,19 @@ TEST_CASE("left drag rotates and does not click") {
     CHECK_FALSE(rig.controller.isDragging());
 }
 
+TEST_CASE("a cancelled press ends without a click, and later moves turn nothing") {
+    Rig rig;
+    rig.controller.press(Button::Left, 0, 500, 500);
+    CHECK(rig.controller.move(600, 500).cameraMoved);
+    rig.controller.cancel();
+    CHECK_FALSE(rig.controller.isPressed());
+    CHECK_FALSE(rig.controller.isDragging());
+    const Vec3 before = rig.camera.position;
+    CHECK_FALSE(rig.controller.move(700, 500).cameraMoved);
+    CHECK(simd_distance(rig.camera.position, before) == 0.0);
+    CHECK_FALSE(rig.controller.release(Button::Left, 700, 500).clicked);
+}
+
 TEST_CASE("a drag resolves its pivot once, however far it runs") {
     Rig rig;
     rig.orbit.setMode(PivotMode::Pointer);

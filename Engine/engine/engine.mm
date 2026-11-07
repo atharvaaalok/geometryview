@@ -448,6 +448,17 @@ struct GeoEngine {
 
     void handlePointer(const GeoPointerEvent& event) {
         lastActivity = nowSeconds();
+        if (event.kind == GeoPointerLeave) {
+            cursorInside = false;
+            updateHover();
+            return;
+        }
+        if (event.kind == GeoPointerCancel) {
+            pointer.cancel();
+            cubePressed = 0;
+            updateHover();
+            return;
+        }
         cursorX = event.x;
         cursorY = event.y;
         cursorInside = true;
@@ -469,6 +480,9 @@ struct GeoEngine {
         case GeoPointerScroll:
         case GeoPointerMagnify:
             response = pointer.scroll(event.delta, event.x, event.y, event.timestamp);
+            break;
+        case GeoPointerLeave:
+        case GeoPointerCancel:
             break;
         }
 

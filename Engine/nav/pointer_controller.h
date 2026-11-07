@@ -73,6 +73,8 @@ public:
     PointerResponse press(Button button, u32 modifiers, double x, double y);
     PointerResponse move(double x, double y);
     PointerResponse release(Button button, double x, double y);
+    /// Drops a press whose release went elsewhere, without a click.
+    void cancel();
 
     /// Zooms about the surface under the pointer. `delta` is positive to zoom in. The anchor is
     /// locked for a burst of wheel events, because the depth buffer lags the camera while zooming.

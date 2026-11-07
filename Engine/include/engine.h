@@ -20,6 +20,8 @@ typedef enum GeoPointerKind {
     GeoPointerUp = 2,
     GeoPointerScroll = 3,
     GeoPointerMagnify = 4,
+    GeoPointerLeave = 5,  // the pointer left the view: nothing is hovered until it returns
+    GeoPointerCancel = 6, // a press ended where the view could not see it: no click results
 } GeoPointerKind;
 
 typedef enum GeoPointerButton {
