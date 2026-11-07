@@ -42,7 +42,7 @@ std::vector<id<MTLAllocation>> Targets::resident() const {
     if (pickIdBuffer == nil) {
         return {};
     }
-    return {pickIdBuffer, pickDepthBuffer, offscreenColor};
+    return {pickIdBuffer, pickDepthBuffer, offscreenColor, tags};
 }
 
 void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
@@ -55,6 +55,7 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
     width = newWidth;
     height = newHeight;
     mainPass_ = nil;
+    compositePass_ = nil;
 
     id<MTLDevice> device = context.device;
     const MTLTextureUsage target = MTLTextureUsageRenderTarget;
@@ -66,6 +67,10 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
                                MTLStorageModeMemoryless, target);
     inkMsaa = makeTarget(device, width, height, kInkFormat, kSampleCount, MTLStorageModeMemoryless,
                          target);
+    tagsMsaa = makeTarget(device, width, height, kTagFormat, kSampleCount, MTLStorageModeMemoryless,
+                          target);
+    tags = makeTarget(device, width, height, kTagFormat, 1, MTLStorageModePrivate,
+                      MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     depthMsaa = makeTarget(device, width, height, kDepthFormat, kSampleCount,
                            MTLStorageModeMemoryless, target);
     offscreenColor =
@@ -79,6 +84,16 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
     }
     [context.residency commit];
     [context.residency requestResidency];
+}
+
+MTL4RenderPassDescriptor* Targets::compositePass(id<MTLTexture> target) {
+    if (compositePass_ == nil) {
+        compositePass_ = [MTL4RenderPassDescriptor new];
+        compositePass_.colorAttachments[0].loadAction = MTLLoadActionLoad;
+        compositePass_.colorAttachments[0].storeAction = MTLStoreActionStore;
+    }
+    compositePass_.colorAttachments[0].texture = target;
+    return compositePass_;
 }
 
 MTL4RenderPassDescriptor* Targets::mainPass(id<MTLTexture> resolveTarget) {
@@ -100,6 +115,7 @@ MTL4RenderPassDescriptor* Targets::mainPass(id<MTLTexture> resolveTarget) {
     attach(kAttachmentId, idMsaa);
     attach(kAttachmentDepth, depthCopyMsaa);
     attach(kAttachmentInk, inkMsaa);
+    attach(kAttachmentTags, tagsMsaa);
     pass.depthAttachment.texture = depthMsaa;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;

@@ -26,6 +26,7 @@ struct Pipelines {
     id<MTLRenderPipelineState> applyInk[2];
     id<MTLRenderPipelineState> cube, quad;
     id<MTLRenderPipelineState> resolvePick;
+    id<MTLRenderPipelineState> composite;
 
     id<MTLDepthStencilState> depthWrite;  // reversed depth
     id<MTLDepthStencilState> depthTest;   // tests, writes nothing

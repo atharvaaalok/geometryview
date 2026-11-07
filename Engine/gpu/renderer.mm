@@ -59,7 +59,7 @@ struct Renderer::State {
     id<MTLLibrary> library;
     id<MTL4CommandBuffer> commandBuffer;
     std::array<id<MTL4CommandAllocator>, kFramesInFlight> allocators;
-    id<MTL4ArgumentTable> surfaceTable, tileTable, overlayTable;
+    id<MTL4ArgumentTable> surfaceTable, tileTable, overlayTable, compositeTable;
 
     FrameRing<FrameUniforms> frameUniforms;
     FrameRing<StyleUniforms> styleUniforms;
@@ -84,14 +84,19 @@ struct Renderer::State {
         surfaceTable = [context.device newArgumentTableWithDescriptor:surface error:&error];
 
         MTL4ArgumentTableDescriptor* tile = [MTL4ArgumentTableDescriptor new];
-        tile.maxTextureBindCount = 2;
+        tile.maxTextureBindCount = 3;
         tileTable = [context.device newArgumentTableWithDescriptor:tile error:&error];
+
+        MTL4ArgumentTableDescriptor* composite = [MTL4ArgumentTableDescriptor new];
+        composite.maxBufferBindCount = kBufferCount;
+        composite.maxTextureBindCount = 3;
+        compositeTable = [context.device newArgumentTableWithDescriptor:composite error:&error];
 
         MTL4ArgumentTableDescriptor* overlay = [MTL4ArgumentTableDescriptor new];
         overlay.maxBufferBindCount = 2;
         overlay.maxTextureBindCount = 1;
         overlayTable = [context.device newArgumentTableWithDescriptor:overlay error:&error];
-        if (!surfaceTable || !tileTable || !overlayTable) {
+        if (!surfaceTable || !tileTable || !overlayTable || !compositeTable) {
             reportFailure("Could not create argument tables", error);
             return false;
         }
@@ -190,8 +195,16 @@ struct Renderer::State {
     void encodeMain(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
                     const render::Overlay* overlay) {
         const u64 frame = context.frameCount;
-        [surfaceTable setAddress:frameUniforms.write(frame, &view.uniforms) atIndex:kBufferFrame];
-        [surfaceTable setAddress:styleUniforms.write(frame, &style) atIndex:kBufferStyle];
+        const u64 frameAddress = frameUniforms.write(frame, &view.uniforms);
+        const u64 styleAddress = styleUniforms.write(frame, &style);
+        [surfaceTable setAddress:frameAddress atIndex:kBufferFrame];
+        [surfaceTable setAddress:styleAddress atIndex:kBufferStyle];
+        [compositeTable setAddress:frameAddress atIndex:kBufferFrame];
+        [compositeTable setAddress:styleAddress atIndex:kBufferStyle];
+        // The previous frame's composite may still read what this pass's tiles write.
+        [encoder barrierAfterQueueStages:MTLStageFragment
+                            beforeStages:MTLStageTile
+                       visibilityOptions:MTL4VisibilityOptionNone];
         [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
 
         const bool hasScene = !tables.empty();
@@ -261,6 +274,17 @@ struct Renderer::State {
             [commandBuffer renderCommandEncoderWithDescriptor:targets.mainPass(target)];
         encodeMain(encoder, view, overlay);
         [encoder endEncoding];
+
+        id<MTL4RenderCommandEncoder> composite =
+            [commandBuffer renderCommandEncoderWithDescriptor:targets.compositePass(target)];
+        [composite barrierAfterQueueStages:MTLStageTile | MTLStageFragment
+                              beforeStages:MTLStageFragment
+                         visibilityOptions:MTL4VisibilityOptionDevice];
+        [composite setRenderPipelineState:pipelines.composite];
+        [composite setArgumentTable:compositeTable
+                           atStages:MTLRenderStageVertex | MTLRenderStageFragment];
+        [composite drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        [composite endEncoding];
         [commandBuffer endCommandBuffer];
     }
 
@@ -394,6 +418,9 @@ void Renderer::resize(u32 width, u32 height) {
     s.targets.resize(s.context, width, height);
     [s.tileTable setTexture:s.targets.pickIds.gpuResourceID atIndex:kTexturePickIds];
     [s.tileTable setTexture:s.targets.pickDepths.gpuResourceID atIndex:kTexturePickDepths];
+    [s.tileTable setTexture:s.targets.tags.gpuResourceID atIndex:kTextureTags];
+    [s.compositeTable setTexture:s.targets.pickDepths.gpuResourceID atIndex:kTexturePickDepths];
+    [s.compositeTable setTexture:s.targets.tags.gpuResourceID atIndex:kTextureTags];
 }
 
 void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view,

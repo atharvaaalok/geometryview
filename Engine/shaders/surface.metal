@@ -16,13 +16,14 @@ struct SurfaceVertex {
     float4 position [[position]];
     float3 normal;
     uint id [[flat]];
-    uint flags [[flat]]; // state flags in the low 16 bits, the body's look in the high 16
+    uint flags [[flat]]; // state flags in the low byte, the body's tag in the next, its look above
 };
 
 struct SurfaceOutput {
     float4 color [[color(kAttachmentColor)]];
     uint id [[color(kAttachmentId)]];
     float depth [[color(kAttachmentDepth)]];
+    uint2 tags [[color(kAttachmentTags)]]; // the pipeline's write mask picks solid or ghost
 };
 
 // Indices only, to keep the payload small: in a run batch they are meshlets of `occurrence`, and
@@ -117,7 +118,8 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          const device GpuDefinition& definition,
                                          const device GpuOccurrence& occurrence,
                                          OccurrenceState state, const device uchar* faceStates,
-                                         uint look, constant FrameUniforms& frame, uint index) {
+                                         uint occurrenceIndex, uint look,
+                                         constant FrameUniforms& frame, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
     const float3 world = transformPoint(occurrence, decodePosition(definition, vertexIndex));
@@ -129,7 +131,9 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     out.position = frame.viewProjection * float4(world, 1.0);
     out.normal = frame.viewRotation * normal;
     out.id = occurrence.idBase + face + 1;
-    out.flags = flags | look << 16;
+    // Neighbouring bodies have different tags, unless their indices differ by a multiple of 255.
+    const uint tag = 1 + occurrenceIndex % 255;
+    out.flags = flags | tag << 8 | look << 16;
     // Faces never share vertices, so moving all of a face's vertices to one point outside the view
     // removes exactly that face, with no discard and no per-primitive data.
     const bool ghost = (flags & kStateGhost) != 0;
@@ -164,8 +168,9 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
         out.set_primitive_count(m.triangleCount);
     }
     if (index < m.vertexCount) {
-        out.set_vertex(index, decodeVertex(m, definition, occurrence, state, faceStates,
-                                           uint(looks[ref.occurrence]), frame, index));
+        out.set_vertex(index,
+                       decodeVertex(m, definition, occurrence, state, faceStates, ref.occurrence,
+                                    uint(looks[ref.occurrence]), frame, index));
     }
     if (index < m.triangleCount) {
         // Clamped because a cache file is untrusted and per-index validation would read every page.
@@ -271,7 +276,8 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                                        constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                                        constant StyleUniforms& style [[buffer(kBufferStyle)]],
                                        const device uint* palette [[buffer(kBufferPalette)]]) {
-    const uint flags = in.flags & 0xFFFFu;
+    const uint flags = in.flags & 0xFFu;
+    const uint tag = (in.flags >> 8) & 0xFFu;
     const uint look = in.flags >> 16;
     const bool selected = (flags & kStateSelected) != 0;
     const uint3 texels =
@@ -306,7 +312,7 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
             color = mix(color, style.hover, style.hoverAmount);
             alpha = max(alpha, style.ghostAlpha) * 1.6;
         }
-        return {float4(color, alpha), in.id, in.position.z};
+        return {float4(color, alpha), in.id, in.position.z, uint2(tag)};
     }
     if (hovered) {
         // On a selection hover lifts only half as much, so the selection stays readable.
@@ -314,19 +320,22 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                     ? mix(color, style.hideTint, 0.6)
                     : mix(color, style.hover, style.hoverAmount * (selected ? 0.5 : 1.0));
     }
-    return {float4(color, 1.0), in.id, in.position.z};
+    return {float4(color, 1.0), in.id, in.position.z, uint2(tag)};
 }
 
 // Copies each pixel's ID and depth to memory the CPU reads directly, so hover and pivots need no
-// GPU round trip. The attachments themselves stay memoryless. Sample 0 is enough for picking.
+// GPU round trip, and its tags for the outlines. The attachments themselves stay memoryless.
+// Sample 0 is enough for both.
 struct PickTile {
     uint id [[color(kAttachmentId)]];
     float depth [[color(kAttachmentDepth)]];
+    uint2 tags [[color(kAttachmentTags)]];
 };
 
 kernel void resolvePick(imageblock<PickTile, imageblock_layout_implicit> tile,
                         texture2d<uint, access::write> ids [[texture(kTexturePickIds)]],
                         texture2d<float, access::write> depths [[texture(kTexturePickDepths)]],
+                        texture2d<uint, access::write> tags [[texture(kTextureTags)]],
                         ushort2 pixel [[thread_position_in_threadgroup]],
                         ushort2 tileIndex [[threadgroup_position_in_grid]]) {
     const uint2 position = uint2(tileIndex) * uint(kTileSize) + uint2(pixel);
@@ -336,4 +345,5 @@ kernel void resolvePick(imageblock<PickTile, imageblock_layout_implicit> tile,
     const PickTile sample = tile.read(pixel, 0, imageblock_data_rate::sample);
     ids.write(uint4(sample.id), position);
     depths.write(float4(sample.depth), position);
+    tags.write(uint4(sample.tags, 0, 0), position);
 }

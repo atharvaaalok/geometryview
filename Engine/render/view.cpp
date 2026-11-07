@@ -82,6 +82,8 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
         u.worldPerPixel = float(2.0 * halfHeight / viewport.height);
     }
     u.viewProjection = simd_mul(projection, viewMatrix(right, up, back, camera.position));
+    u.depthNear = float(view.depth.nearPlane);
+    u.depthFar = float(view.depth.farPlane);
     return view;
 }
 

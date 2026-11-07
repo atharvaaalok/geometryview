@@ -36,6 +36,7 @@ enum BufferIndex : unsigned {
 enum TextureIndex : unsigned {
     kTexturePickIds = 0,
     kTexturePickDepths = 1,
+    kTextureTags = 2,
 };
 
 enum AttachmentIndex : unsigned {
@@ -45,6 +46,9 @@ enum AttachmentIndex : unsigned {
     // Ink coverage of feature edges, kept apart from colour so overlapping segments take the
     // larger coverage rather than inking twice: r creases, g ghost lines, b highlights.
     kAttachmentInk = 3,
+    // Which body a pixel shows, as a small tag that differs between neighbours: r for solid
+    // surfaces and g for ghosts in front of them. Outlines are drawn where tags change.
+    kAttachmentTags = 4,
 };
 
 // One per definition. Geometry is addressed directly, so a scene can span several mapped files.
@@ -228,4 +232,6 @@ struct FrameUniforms {
     // a neighbour's slightly different tessellation: twice the coarsest chord error.
     float lineOffset;
     float worldPerPixel; // orthographic, or at unit depth in perspective
+    float depthNear;     // for turning stored depth back into distance
+    float depthFar;
 };

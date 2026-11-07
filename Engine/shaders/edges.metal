@@ -60,7 +60,7 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
             return false;
         }
         return !kGhostLinePass || ((style.ghostStyle & kGhostLines) != 0 &&
-                                (flags & (kStateGhost | kStateFaceGhost)) != 0);
+                                   (flags & (kStateGhost | kStateFaceGhost)) != 0);
     };
     const auto inView = [&](const device GpuOccurrence& occurrence, uint chunk) {
         const device GpuDefinition& definition = definitions[occurrence.definition];

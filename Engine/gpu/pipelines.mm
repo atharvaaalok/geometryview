@@ -21,6 +21,7 @@ struct Writes {
     bool blended = false; // colour blends over what is there
     bool ids = true;      // pick id and depth copy
     bool ink = false;     // edge coverage, keeping the larger of what is there and what is drawn
+    MTLColorWriteMask tags = MTLColorWriteMaskNone; // red for solid bodies, green for ghosts
 };
 
 void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachments,
@@ -29,6 +30,8 @@ void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachme
     attachments[kAttachmentId].pixelFormat = kIdFormat;
     attachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
     attachments[kAttachmentInk].pixelFormat = kInkFormat;
+    attachments[kAttachmentTags].pixelFormat = kTagFormat;
+    attachments[kAttachmentTags].writeMask = writes.tags;
     if (!writes.color) {
         attachments[kAttachmentColor].writeMask = MTLColorWriteMaskNone;
     }
@@ -138,6 +141,22 @@ public:
         return build(descriptor, what);
     }
 
+    // Outlines and print texture, over the resolved image: each pixel's result is premultiplied
+    // ink plus what remains of the colour beneath, so it blends as ink + colour * alpha.
+    id<MTLRenderPipelineState> composite() {
+        MTL4RenderPipelineDescriptor* descriptor = [MTL4RenderPipelineDescriptor new];
+        descriptor.vertexFunctionDescriptor = function(@"sheetVertex");
+        descriptor.fragmentFunctionDescriptor = function(@"compositeFragment");
+        MTL4RenderPipelineColorAttachmentDescriptor* color = descriptor.colorAttachments[0];
+        color.pixelFormat = kColorFormat;
+        color.blendingState = MTL4BlendStateEnabled;
+        color.sourceRGBBlendFactor = MTLBlendFactorOne;
+        color.destinationRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+        color.destinationAlphaBlendFactor = MTLBlendFactorSourceAlpha;
+        return build(descriptor, "Could not create the composite pipeline");
+    }
+
     id<MTLRenderPipelineState> tile(NSString* name, const char* what) {
         MTL4TileRenderPipelineDescriptor* tile = [MTL4TileRenderPipelineDescriptor new];
         tile.tileFunctionDescriptor = function(name);
@@ -147,6 +166,7 @@ public:
         tile.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
         tile.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
         tile.colorAttachments[kAttachmentInk].pixelFormat = kInkFormat;
+        tile.colorAttachments[kAttachmentTags].pixelFormat = kTagFormat;
         return build(tile, what);
     }
 
@@ -170,9 +190,11 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
         return false;
     }
     for (const bool physical : {false, true}) {
-        surface[physical] = builder.surface(false, physical, {});
-        ghost[physical][false] = builder.surface(true, physical, {.blended = true, .ids = false});
-        ghost[physical][true] = builder.surface(true, physical, {.blended = true, .ids = true});
+        surface[physical] = builder.surface(false, physical, {.tags = MTLColorWriteMaskRed});
+        ghost[physical][false] = builder.surface(
+            true, physical, {.blended = true, .ids = false, .tags = MTLColorWriteMaskGreen});
+        ghost[physical][true] = builder.surface(
+            true, physical, {.blended = true, .ids = true, .tags = MTLColorWriteMaskGreen});
         if (!surface[physical] || !ghost[physical][false] || !ghost[physical][true]) {
             return false;
         }
@@ -194,7 +216,8 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
     quad = builder.classic(@"quadVertex", @"quadFragment", {.blended = true, .ids = false},
                            "Could not create the overlay pipeline");
     resolvePick = builder.tile(@"resolvePick", "Could not create the pick pipeline");
-    if (!sheet || !cube || !quad || !resolvePick) {
+    composite = builder.composite();
+    if (!sheet || !cube || !quad || !resolvePick || !composite) {
         return false;
     }
 
