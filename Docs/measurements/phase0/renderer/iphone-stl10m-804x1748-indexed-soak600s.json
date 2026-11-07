@@ -1,0 +1,128 @@
+{
+    "features": 7,
+    "instances": 86595,
+    "pixelsPerPoint": 2,
+    "fetchMs": 149,
+    "width": 804,
+    "adapter": "apple apple",
+    "mode": "indexed",
+    "thermalState": "serious",
+    "timestamps": true,
+    "fileMB": 150.8,
+    "bufferMB": 398.3,
+    "burst": 1,
+    "uploadMs": 55,
+    "label": "iphone-loopback-stl10m-804x1748-indexed-soak600s",
+    "devicePixelRatio": 3,
+    "model": "stl10m",
+    "zooms": [
+        {
+            "pickFrames": {
+                "p50": 0,
+                "p99": 0
+            },
+            "pickHits": 2469,
+            "timedFrames": 5135,
+            "cpuSubmitMs": {
+                "p50": 0.24,
+                "p99": 0.4
+            },
+            "passMsP50": {
+                "occlusion": 4.282,
+                "shadow": 9.874,
+                "composite": 4.615,
+                "vis": 16.847
+            },
+            "clustersP50": 77322,
+            "picks": 5135,
+            "gpuMs": {
+                "p50": 35.992,
+                "p99": 43.405
+            },
+            "frameIntervalMs": {
+                "p50": 39,
+                "p99": 47
+            },
+            "pickMs": {
+                "p50": 38.04,
+                "p99": 45.98
+            },
+            "frames": 5134,
+            "zoom": 1
+        },
+        {
+            "pickFrames": {
+                "p50": 0,
+                "p99": 0
+            },
+            "pickHits": 3763,
+            "timedFrames": 4318,
+            "cpuSubmitMs": {
+                "p50": 0.24,
+                "p99": 0.38
+            },
+            "passMsP50": {
+                "occlusion": 7.186,
+                "shadow": 10.352,
+                "composite": 7.739,
+                "vis": 23.426
+            },
+            "clustersP50": 75546,
+            "picks": 4318,
+            "gpuMs": {
+                "p50": 43.221,
+                "p99": 49.48
+            },
+            "frameIntervalMs": {
+                "p50": 46,
+                "p99": 53
+            },
+            "pickMs": {
+                "p50": 45.36,
+                "p99": 51.78
+            },
+            "frames": 4317,
+            "zoom": 2
+        },
+        {
+            "pickFrames": {
+                "p50": 0,
+                "p99": 0
+            },
+            "pickHits": 6147,
+            "timedFrames": 6455,
+            "cpuSubmitMs": {
+                "p50": 0.26,
+                "p99": 0.56
+            },
+            "passMsP50": {
+                "occlusion": 6.29,
+                "shadow": 3.333,
+                "composite": 8.285,
+                "vis": 16.698
+            },
+            "clustersP50": 39245,
+            "picks": 6455,
+            "gpuMs": {
+                "p50": 26.022,
+                "p99": 43.026
+            },
+            "frameIntervalMs": {
+                "p50": 29,
+                "p99": 47
+            },
+            "pickMs": {
+                "p50": 28.34,
+                "p99": 47.6
+            },
+            "frames": 6454,
+            "zoom": 4
+        }
+    ],
+    "phaseSeconds": 200,
+    "triangles": 10000006,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "targetMB": 25.8,
+    "copies": 1,
+    "height": 1748
+}
