@@ -27,17 +27,30 @@ enum BufferIndex : unsigned {
     kBufferOccurrenceState = 5,
     kBufferFaceState = 6,
     kBufferMeshletRefs = 7,
+    kBufferStyle = 8,
+    kBufferPalette = 9, // three RGBA8 texels per look
+    kBufferLooks = 10,  // a 16-bit look per occurrence
+    kBufferCount = 11,
 };
 
 enum TextureIndex : unsigned {
     kTexturePickIds = 0,
     kTexturePickDepths = 1,
+    kTextureTags = 2,
+    kTextureAo = 3,     // half resolution
+    kTextureShadow = 4, // half resolution
 };
 
 enum AttachmentIndex : unsigned {
     kAttachmentColor = 0,
     kAttachmentId = 1,
     kAttachmentDepth = 2,
+    // Ink coverage of feature edges, kept apart from colour so overlapping segments take the
+    // larger coverage rather than inking twice: r creases, g ghost lines, b highlights.
+    kAttachmentInk = 3,
+    // Which body a pixel shows, as a small tag that differs between neighbours: r for solid
+    // surfaces and g for ghosts in front of them. Outlines are drawn where tags change.
+    kAttachmentTags = 4,
 };
 
 // One per definition. Geometry is addressed directly, so a scene can span several mapped files.
@@ -46,11 +59,15 @@ struct GpuDefinition {
     GEO_DEVICE_POINTER(PackedVertex) vertices;
     GEO_DEVICE_POINTER(uint32_t) highBits;
     GEO_DEVICE_POINTER(uint32_t) triangles;
+    GEO_DEVICE_POINTER(EdgeSegment) edgeSegments;
+    GEO_DEVICE_POINTER(EdgeChunk) edgeChunks;
     simd_float3 boundsMin;
     simd_float3 decodeScale;
     simd_float3 boundsScale;
     float boundsStep; // the largest component of boundsScale
     uint32_t flags;
+    uint32_t vertexCount; // for clamping what a cache file says, which is untrusted
+    uint32_t faceCount;
 };
 
 // One placed instance of a definition.
@@ -140,6 +157,59 @@ struct OverlayUniforms {
     uint32_t quadCount;
 };
 
+// How ghosts draw: bit 0 a faint skin, bit 1 dashed edges.
+enum GhostStyle : uint32_t {
+    kGhostShell = 1,
+    kGhostLines = 2,
+    kGhostBoth = 3,
+};
+
+// What a render style sets for every shader, in encoded colour and in pixels. Built when the style
+// or the display scale changes, not per frame.
+struct StyleUniforms {
+    simd_float3 sheetTop;
+    simd_float3 sheetBottom;
+    simd_float3 gridColor;
+    simd_float3 grainTint;
+    simd_float3 ink;
+    simd_float3 hover;
+    simd_float3 hideTint;
+    simd_float3 shadowColor;
+    simd_float3 lightExterior; // view space, for flat bands
+    simd_float3 lightInterior; // view space, for the inside of an opened part
+    simd_float3 sky;           // the studio, in linear radiance
+    simd_float3 floor;
+    simd_float3 key;
+    simd_float3 band;
+    simd_float3 fill;
+    simd_uint4 selection; // three palette texels, as for a body
+    simd_float2 strips;
+    float vignette;
+    float gridAlpha;
+    float gridPitch; // pixels, or 0 for none
+    float grain;     // 0 to 1
+    float inkAlpha;
+    float silhouette; // ink widths, pixels
+    float partLine;
+    float crease;
+    float highlight;
+    float ghostInk; // a ghost's outline, as a share of the ink
+    float ghostAlpha;
+    float ghostLineAlpha;
+    float hoverAmount;
+    float ao; // strength, 0 for none
+    float shadowAlpha;
+    float shadowSoft;   // blur radius, pixels
+    float wobble;       // amplitude, pixels
+    float wobblePeriod; // pixels
+    float pixelsPerPoint;
+    float sharpness;
+    float exposure;
+    float contrast;
+    uint32_t ghostStyle;
+    uint32_t shadowOn;
+};
+
 struct FrameUniforms {
     simd_float4x4 viewProjection;
     simd_float3x3 viewRotation; // world to view, for lighting
@@ -158,4 +228,19 @@ struct FrameUniforms {
     uint32_t hoverFirst;
     uint32_t hoverEnd;
     uint32_t ghostPickable; // ghosts write ids, while the ghost tool is held, so a click restores
+    uint32_t hoverHides;    // the hide tool is held, so hover shows what a click would hide
+    simd_float2 viewport;   // pixels
+    // How far edges move toward the eye, in world units, so a line on a surface is not hidden by
+    // a neighbour's slightly different tessellation: twice the coarsest chord error.
+    float lineOffset;
+    float worldPerPixel; // orthographic, or at unit depth in perspective
+    float depthNear;     // for turning stored depth back into distance
+    float depthFar;
+    float aoRadius;     // world units
+    uint32_t aoSamples; // fewer while the view moves
+    // The cast shadow: a high sun whose bearing follows the camera, so the shadow always falls
+    // toward the viewer's lower left, onto a ground just below the model.
+    simd_float3 lightTravel; // unit direction the light travels
+    float ground;            // height of the ground along z
+    float shadowVisibility;  // full from above, gone from below the ground
 };

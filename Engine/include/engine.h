@@ -40,6 +40,46 @@ typedef struct GeoPointerEvent {
     double timestamp;
 } GeoPointerEvent;
 
+/// Render styles, after step_viewer's.
+typedef enum GeoStyle {
+    GeoStyleIllustration = 0, // flat light, ink and paper
+    GeoStyleMetal = 1,        // studio light on machined parts
+    GeoStyleClay = 2,         // one matte material, soft light
+    GeoStyleBlueprint = 3,    // white lines on a blue sheet
+    GeoStyleTechnical = 4,    // black linework on white
+} GeoStyle;
+
+/// What decides each body's colour.
+typedef enum GeoColorMode {
+    GeoColorMaterial = 0, // by what each part is made of, read from its name
+    GeoColorParts = 1,    // one colour per part
+    GeoColorMono = 2,     // one material throughout
+    GeoColorFile = 3,     // colours stored in the file
+} GeoColorMode;
+
+/// How ghosts are drawn.
+typedef enum GeoGhostStyle {
+    GeoGhostShell = 1, // a faint skin, outline kept
+    GeoGhostLines = 2, // dashed edges only
+    GeoGhostBoth = 3,  // skin and dashed edges
+} GeoGhostStyle;
+
+/// Everything that decides how the model is drawn.
+typedef struct GeoLook {
+    GeoStyle style;
+    GeoColorMode color_mode;
+    GeoGhostStyle ghost_style;
+    bool cast_shadow;
+    float grain;  // paper grain, 0 to 1, in styles that have it
+    float wobble; // hand-drawn wobble in points, 0 to 7, in styles that have it
+} GeoLook;
+
+/// The look a new engine starts with: Illustration, by material, shell ghosts, a shadow.
+GeoLook geo_default_look(void);
+
+/// Whether a style casts a shadow unless asked not to. Blueprint and Technical do not.
+bool geo_style_casts_shadow(GeoStyle style);
+
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {
     GeoActionFit = 0,
@@ -127,6 +167,7 @@ typedef struct GeoEngineStats {
     uint32_t hovered_id;             // 0 when nothing is under the pointer
     uint32_t selected_count;         // occurrences with anything selected
     uint32_t hidden_count;           // occurrences with anything hidden
+    double gpu_frame_seconds;        // mean GPU time per frame, measured only when tracing
 } GeoEngineStats;
 
 /// Returns the engine version as a static string.
@@ -158,6 +199,9 @@ void geo_engine_set_selection_mode(GeoEngine* engine, GeoSelectionMode mode);
 
 /// Sets the tool clicks use, while its key is held. Release it with GeoToolSelect.
 void geo_engine_set_tool(GeoEngine* engine, GeoTool tool);
+
+/// Changes how the model is drawn.
+void geo_engine_set_look(GeoEngine* engine, const GeoLook* look);
 
 /// Selects everything under a tree node. With `extend` the node toggles instead.
 void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend);
@@ -221,11 +265,24 @@ void geo_engine_report_latency(GeoEngine* engine);
 /// Prints current and peak memory footprint to stderr when GEOMETRY_TRACE is set.
 void geo_trace_memory(const char* label);
 
-/// Renders a cache file headlessly to a PNG, framed to fit, for tests and `gcli render`. The view
-/// direction is given in degrees. Returns false and prints why on failure.
+/// How to render a cache file headlessly.
+typedef struct GeoRenderOptions {
+    uint32_t width, height; // pixels, drawn as for a 2x display
+    double azimuth_degrees; // the view direction
+    double elevation_degrees;
+    bool perspective;
+    bool overlay; // the view cube and scale bar
+    GeoLook look;
+} GeoRenderOptions;
+
+/// The options gcli render starts from: 1600 by 1000, from the front right and above, with the
+/// overlay and the default look.
+GeoRenderOptions geo_default_render_options(void);
+
+/// Renders a cache file to a PNG, framed to fit, for tests and `gcli render`. Returns false and
+/// prints why on failure.
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
-                            const char* png_path, uint32_t width, uint32_t height,
-                            double azimuth_degrees, double elevation_degrees, bool perspective);
+                            const char* png_path, const GeoRenderOptions* options);
 
 #ifdef __cplusplus
 }

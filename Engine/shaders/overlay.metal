@@ -4,18 +4,22 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// The overlay lies over the model, so it takes away the ink beneath it, which is applied only at
+// the end of the pass, and the cube hides the tags of whatever is behind it from the outlines.
 struct OverlayOutput {
     float4 color [[color(kAttachmentColor)]];
     uint id [[color(kAttachmentId)]];
     float depth [[color(kAttachmentDepth)]];
+    float4 ink [[color(kAttachmentInk)]]; // blended to keep only 1 - alpha of what is there
+    uint2 tags [[color(kAttachmentTags)]];
 };
 
 // Cube faces with Z up: the outward normal, then the label's right and up directions. The order
 // matches nav::StandardView's faces: front, back, left, right, top, bottom.
 constant float3 kFaceNormal[6] = {float3(0, -1, 0), float3(0, 1, 0), float3(-1, 0, 0),
                                   float3(1, 0, 0),  float3(0, 0, 1), float3(0, 0, -1)};
-constant float3 kFaceRight[6] = {float3(1, 0, 0),  float3(-1, 0, 0), float3(0, -1, 0),
-                                 float3(0, 1, 0),  float3(1, 0, 0),  float3(1, 0, 0)};
+constant float3 kFaceRight[6] = {float3(1, 0, 0), float3(-1, 0, 0), float3(0, -1, 0),
+                                 float3(0, 1, 0), float3(1, 0, 0),  float3(1, 0, 0)};
 constant float3 kFaceUp[6] = {float3(0, 0, 1), float3(0, 0, 1), float3(0, 0, 1),
                               float3(0, 0, 1), float3(0, 1, 0), float3(0, -1, 0)};
 constant float2 kQuadCorner[6] = {float2(-1, -1), float2(1, -1), float2(1, 1),
@@ -84,7 +88,7 @@ fragment OverlayOutput cubeFragment(CubeVertex in [[stage_in]],
     const float2 edge = (1.0 - abs(in.local)) / max(fwidth(in.local), float2(1e-5));
     const float ink = 1.0 - smoothstep(u.lineWidth - 0.5, u.lineWidth + 0.5, min(edge.x, edge.y));
     color = mix(color, kInk, ink);
-    return {float4(color, 1.0), kCubeIdBase + in.face, 0.0};
+    return {float4(color, 1.0), kCubeIdBase + in.face, 0.0, float4(0.0, 0.0, 0.0, 1.0), uint2(0)};
 }
 
 struct QuadVertex {
@@ -111,5 +115,6 @@ fragment OverlayOutput quadFragment(QuadVertex in [[stage_in]],
                                     texture2d<float> atlas [[texture(0)]]) {
     constexpr sampler linear(filter::linear, address::clamp_to_edge);
     const float coverage = in.solid ? 1.0 : atlas.sample(linear, in.uv).r;
-    return {float4(in.color.rgb, in.color.a * coverage), 0u, 0.0};
+    const float alpha = in.color.a * coverage;
+    return {float4(in.color.rgb, alpha), 0u, 0.0, float4(0.0, 0.0, 0.0, alpha), uint2(0)};
 }

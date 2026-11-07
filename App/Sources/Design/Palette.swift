@@ -21,6 +21,9 @@ enum Palette {
     static let cobaltMid = NSColor(hex: 0x5A82C6)
     static let cobaltWash = NSColor(hex: 0xDDE6F4)
     static let tomatoWash = NSColor(hex: 0xF8DDD3)
+    // Text drawn straight on Blueprint's dark sheet.
+    static let inkOnDark = NSColor(hex: 0xEEF4FF)
+    static let mutedOnDark = NSColor(hex: 0xA9BEDF)
 }
 
 extension NSColor {

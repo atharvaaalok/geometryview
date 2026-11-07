@@ -46,7 +46,40 @@ struct Meshlet {
     uint32_t reserved1; // kept for a level-of-detail error
 };
 
+// What a feature edge is, which decides when it is drawn.
+enum EdgeClass : uint32_t {
+    kEdgeCrease = 0,   // faces meet at an angle: always inked
+    kEdgeSmooth = 1,   // faces meet tangentially: inked only around a highlighted face
+    kEdgeBoundary = 2, // a face on one side only: the rim of an open surface
+};
+
+enum EdgeLimits : uint32_t {
+    kEdgeChunkSegments = 32, // one SIMD group of segments, culled together
+    kEdgeNoFace = 0x3FFFFFFF,
+    kEdgeClassShift = 30,
+};
+
+// 20 bytes. A straight piece of a feature edge. Its ends are vertices of the definition itself, so
+// the line decodes to exactly the points of the surface it borders.
+struct EdgeSegment {
+    uint32_t a, b;  // vertices, in the order the edge's chain runs
+    uint32_t faceA; // the face on one side
+    uint32_t faceB; // the face on the other side, or kEdgeNoFace; the class is in the top two bits
+    float along;    // arc length at `a` from the start of its chain, in definition units
+};
+
+// 16 bytes. Consecutive segments, culled together. Bounds use the definition's 16-bit bounds grid,
+// as meshlets do.
+struct EdgeChunk {
+    uint16_t centerX, centerY, centerZ;
+    uint16_t radius;
+    uint32_t firstSegment;
+    uint32_t segmentCount;
+};
+
 #ifndef __METAL_VERSION__
 static_assert(sizeof(PackedVertex) == 12);
 static_assert(sizeof(Meshlet) == 32);
+static_assert(sizeof(EdgeSegment) == 20);
+static_assert(sizeof(EdgeChunk) == 16);
 #endif

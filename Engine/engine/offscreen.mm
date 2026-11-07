@@ -2,6 +2,7 @@
 #include "engine.h"
 
 #include "base/types.h"
+#include "engine/look_state.h"
 #include "engine/png.h"
 #include "gpu/renderer.h"
 #include "nav/camera.h"
@@ -29,9 +30,13 @@ constexpr double kFitMargin = 1.12;
 
 } // namespace
 
+GeoRenderOptions geo_default_render_options(void) {
+    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look()};
+}
+
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
-                            const char* png_path, uint32_t width, uint32_t height,
-                            double azimuth_degrees, double elevation_degrees, bool perspective) {
+                            const char* png_path, const GeoRenderOptions* options) {
+    const u32 width = options->width, height = options->height;
     @autoreleasepool {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         std::unique_ptr<gpu::Renderer> renderer =
@@ -63,24 +68,36 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         }
         renderer->syncScene(scene);
         renderer->resize(width, height);
+        engine::LookState looks;
+        looks.set(engine::lookSettings(options->look));
+        looks.apply(*renderer, scene);
 
         const nav::Viewport viewport{double(width), double(height)};
         const Aabb bounds = *sceneBounds;
-        const double azimuth = azimuth_degrees * M_PI / 180.0;
-        const double elevation = elevation_degrees * M_PI / 180.0;
+        const double azimuth = options->azimuth_degrees * M_PI / 180.0;
+        const double elevation = options->elevation_degrees * M_PI / 180.0;
         const Vec3 direction =
             simd_make_double3(std::cos(elevation) * std::sin(azimuth),
                               -std::cos(elevation) * std::cos(azimuth), std::sin(elevation));
         nav::Camera camera;
-        camera.perspective = perspective;
+        camera.perspective = options->perspective;
         camera.lookAt(bounds.center() + direction, bounds.center(),
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, bounds, viewport, kFitMargin);
 
-        const render::ViewState view = render::makeView(camera, viewport, bounds);
-        const render::Overlay overlay = render::makeOverlay(
-            camera, viewport, view.uniforms.viewRotation, 2.0f, renderer->glyphAdvance(), 0);
-        const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);
+        render::ViewState view = render::makeView(camera, viewport, bounds);
+        view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
+        view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
+        view.uniforms.aoSamples = 12;
+        render::OverlayLayout layout;
+        if (options->look.style == GeoStyleBlueprint) {
+            layout.ink = render::kOverlayInkOnDark;
+        }
+        const render::Overlay overlay =
+            render::makeOverlay(camera, viewport, view.uniforms.viewRotation, 2.0f,
+                                renderer->glyphAdvance(), 0, layout);
+        const std::vector<u8> pixels =
+            renderer->renderOffscreen(view, options->overlay ? &overlay : nullptr);
         if (!engine::writePng(png_path, pixels, width, height)) {
             std::fprintf(stderr, "Could not write %s.\n", png_path);
             return false;

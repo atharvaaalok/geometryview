@@ -233,6 +233,7 @@ int statsCommand(const char* path) {
 
     double area = 0.0, volume = 0.0;
     u64 triangles = 0, faces = 0;
+    std::array<u64, 3> edges{}; // segments by class, counting every occurrence
     double lo[3] = {INFINITY, INFINITY, INFINITY}, hi[3] = {-INFINITY, -INFINITY, -INFINITY};
     for (const format::OccurrenceRecord& occurrence : model->occurrences) {
         faces += model->definitionInfos[occurrence.definition].faceCount;
@@ -241,6 +242,11 @@ int statsCommand(const char* path) {
             continue;
         }
         const format::DefinitionRecord& d = *g.record;
+        for (u32 s = 0; s < d.edgeSegmentCount; ++s) {
+            const u32 edgeClass =
+                g.view->edgeSegments[d.firstEdgeSegment + s].faceB >> kEdgeClassShift;
+            ++edges[std::min<u32>(edgeClass, 2)];
+        }
         const std::array<float, 12>& t = occurrence.transform;
         const auto toWorld = [&](u32 vertex) {
             const std::array<float, 3> p = decodeVertex(*g.view, d, vertex);
@@ -275,25 +281,38 @@ int statsCommand(const char* path) {
         }
     }
     std::println("{{\"faces\": {}, \"triangles\": {}, \"area\": {}, \"signedVolume\": {}, "
-                 "\"min\": [{}, {}, {}], \"max\": [{}, {}, {}]}}",
-                 faces, triangles, area, volume, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+                 "\"min\": [{}, {}, {}], \"max\": [{}, {}, {}], "
+                 "\"edges\": {{\"crease\": {}, \"smooth\": {}, \"boundary\": {}}}}}",
+                 faces, triangles, area, volume, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
+                 edges[kEdgeCrease], edges[kEdgeSmooth], edges[kEdgeBoundary]);
     return 0;
 }
 
 int renderCommand(int argc, const char** argv) {
-    // gcli render <metallib> <blob> <png> [width height azimuth elevation perspective]
-    const char* library = argv[2];
-    const char* blob = argv[3];
-    const char* png = argv[4];
-    const u32 width = argc > 5 ? u32(std::atoi(argv[5])) : 1600;
-    const u32 height = argc > 6 ? u32(std::atoi(argv[6])) : 1000;
-    const double azimuth = argc > 7 ? std::atof(argv[7]) : 35.0;
-    const double elevation = argc > 8 ? std::atof(argv[8]) : 25.0;
-    const bool perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
-    return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation,
-                                  perspective)
-               ? 0
-               : 1;
+    // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour]
+    // Styles and colour modes are numbered as in engine.h.
+    GeoRenderOptions options = geo_default_render_options();
+    if (argc > 5) {
+        options.width = u32(std::atoi(argv[5]));
+    }
+    if (argc > 6) {
+        options.height = u32(std::atoi(argv[6]));
+    }
+    if (argc > 7) {
+        options.azimuth_degrees = std::atof(argv[7]);
+    }
+    if (argc > 8) {
+        options.elevation_degrees = std::atof(argv[8]);
+    }
+    options.perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
+    if (argc > 10) {
+        options.look.style = GeoStyle(std::atoi(argv[10]));
+        options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
+    }
+    if (argc > 11) {
+        options.look.color_mode = GeoColorMode(std::atoi(argv[11]));
+    }
+    return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
 }
 
 } // namespace
@@ -318,6 +337,6 @@ int main(int argc, const char** argv) {
     std::println(stderr, "       gcli verify <blob>");
     std::println(stderr, "       gcli stats <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> "
-                         "[width height azimuth elevation perspective]");
+                         "[width height azimuth elevation ortho|perspective style colour]");
     return 2;
 }

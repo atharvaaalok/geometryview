@@ -115,6 +115,11 @@ final class EngineHandle {
         geo_engine_set_tool(engine, tool)
     }
 
+    func setLook(_ look: Look) {
+        var engineLook = look.engineLook
+        geo_engine_set_look(engine, &engineLook)
+    }
+
     func selectNode(document: UInt32, node: UInt32, extend: Bool) {
         geo_engine_select_node(engine, document, node, extend)
     }

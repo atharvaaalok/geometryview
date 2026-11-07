@@ -46,6 +46,12 @@ final class Masthead: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// On Blueprint's dark sheet the masthead, drawn straight on it, turns light.
+    func setOnDarkSheet(_ dark: Bool) {
+        title.textColor = dark ? Palette.inkOnDark : Palette.ink
+        subtitle.textColor = dark ? Palette.mutedOnDark : Palette.muted
+    }
+
     func show(title text: String, subtitle detail: String) {
         title.stringValue = text
         subtitle.stringValue = detail

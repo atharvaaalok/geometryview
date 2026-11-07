@@ -93,6 +93,9 @@ public:
     bool hasGeometry() const;
     /// Bounds of everything placed, using estimates for definitions still importing.
     std::optional<Aabb> bounds() const;
+    /// The largest chord error of any document's coarsest tessellation, in model units. Zero for
+    /// meshes, which have none.
+    double coarsestDeflection() const;
 
 private:
     std::vector<std::unique_ptr<Document>> documents_;

@@ -8,7 +8,6 @@
 namespace geo::render {
 namespace {
 
-constexpr simd_float4 kInk = {0x23 / 255.0f, 0x1E / 255.0f, 0x16 / 255.0f, 1.0f};
 constexpr float kBarThickness = 1.5f; // points, the ink line weight
 constexpr float kTickHeight = 6.0f;
 constexpr float kLabelGap = 4.0f;
@@ -67,7 +66,7 @@ Overlay makeOverlay(const nav::Camera& camera, const nav::Viewport& viewport,
     u32 count = 0;
     const auto solid = [&](float x, float y, float w, float h) {
         overlay.quads[count++] = {simd_make_float2(x, y), simd_make_float2(w, h),
-                                  simd_make_float4(0, 0, -1, -1), kInk};
+                                  simd_make_float4(0, 0, -1, -1), layout.ink};
     };
     solid(left, baseline - thickness, right - left, thickness);
     solid(left, baseline - kTickHeight * scale, thickness, kTickHeight * scale);
@@ -93,7 +92,7 @@ Overlay makeOverlay(const nav::Camera& camera, const nav::Viewport& viewport,
                                                    (top + float(kAtlasGlyphHeight)) / atlasHeight,
                                                    (cellLeft + margin + glyphAdvance) / atlasWidth,
                                                    top / atlasHeight),
-                                  kInk};
+                                  layout.ink};
     }
     u.quadCount = count;
     return overlay;

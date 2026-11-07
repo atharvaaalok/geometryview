@@ -11,9 +11,11 @@
 #include "render/overlay.h"
 #include "render/view.h"
 #include "scene/scene.h"
+#include "shaders/shared/gpu_types.h"
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -37,9 +39,15 @@ public:
     /// be reading stay alive until that frame finishes, and mapped geometry stays alive with them.
     void syncScene(const scene::Scene& scene);
 
-    /// Uploads hidden, ghosted and selected flags if they changed since the last call. Ghosts write
-    /// pick ids only when `ghostsPickable`, so normally a click passes through them.
+    /// Uploads hidden, ghosted and selected flags if they changed since the last call.
     void syncState(const model::FaceState& state);
+
+    /// Sets the style for the frames that follow. `physical` chooses the studio light over flat
+    /// bands.
+    void setStyle(const StyleUniforms& style, bool physical);
+
+    /// Sets each occurrence's look, in global order, and the palette: three texels per look.
+    void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette);
 
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);
@@ -51,6 +59,10 @@ public:
     /// Renders and returns BGRA pixels, for tests and `gcli render`. Blocks until done.
     std::vector<u8> renderOffscreen(const render::ViewState& view,
                                     const render::Overlay* overlay = nullptr);
+
+    /// Mean GPU time per frame so far, from Metal's commit feedback, which is gathered only when
+    /// tracing. Safe to call from any thread.
+    double meanGpuSeconds() const;
 
     /// A glyph's advance in the overlay atlas, in atlas pixels.
     float glyphAdvance() const;

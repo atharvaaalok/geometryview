@@ -18,10 +18,10 @@ namespace geo::format {
 
 inline constexpr std::array<char, 8> kMagic = {'G', 'E', 'O', 'B', 'L', 'O', 'B', '\0'};
 inline constexpr std::array<char, 8> kSegmentMagic = {'G', 'E', 'O', 'S', 'E', 'G', 'M', '\0'};
-inline constexpr u32 kVersion = 3;
+inline constexpr u32 kVersion = 4;
 inline constexpr usize kAlignment = 16384;
 inline constexpr usize kMaxSegments = 512;
-inline constexpr usize kMaxSections = 12;
+inline constexpr usize kMaxSections = 14;
 inline constexpr usize kSectionAlignment = 16;
 inline constexpr u32 kNoParent = 0xFFFFFFFF;
 
@@ -39,6 +39,8 @@ enum class SectionKind : u32 {
     Triangles = 9,
     Faces = 10,
     ModelInfo = 11,
+    EdgeSegments = 12,
+    EdgeChunks = 13,
 };
 
 struct SegmentEntry {
@@ -118,7 +120,8 @@ struct NodeRecord {
 static_assert(sizeof(NodeRecord) == 32);
 
 /// Geometry for one definition, at one tessellation level. Meshlets address vertices and triangles
-/// relative to `firstVertex` and `firstTriangle`.
+/// relative to `firstVertex` and `firstTriangle`. Edge segments address the same vertices, and edge
+/// chunks address segments relative to `firstEdgeSegment`.
 struct DefinitionRecord {
     std::array<float, 3> boundsMin;
     std::array<float, 3> boundsMax;
@@ -136,8 +139,12 @@ struct DefinitionRecord {
     u32 firstTriangle;
     u32 triangleCount;
     u32 firstFace;
+    u32 firstEdgeChunk;
+    u32 edgeChunkCount;
+    u32 firstEdgeSegment;
+    u32 edgeSegmentCount;
 };
-static_assert(sizeof(DefinitionRecord) == 96);
+static_assert(sizeof(DefinitionRecord) == 112);
 
 /// Per face: where it came from and its own colour.
 struct FaceRecord {
@@ -160,6 +167,8 @@ struct SegmentView {
     std::span<const u32> highBits;
     std::span<const u32> triangles;
     std::span<const FaceRecord> faces;
+    std::span<const EdgeSegment> edgeSegments;
+    std::span<const EdgeChunk> edgeChunks;
 
     bool hasModel() const { return !modelInfo.empty(); }
 };
