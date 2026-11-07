@@ -57,6 +57,8 @@ public:
     std::span<const OccurrenceState> occurrenceWords() const { return words_; }
     std::span<const u8> faceBytes() const { return faceBytes_; }
     u64 version() const { return version_; }
+    /// Counts changes to what is hidden or ghosted only, so selecting costs no visibility work.
+    u64 visibilityVersion() const { return visibilityVersion_; }
 
 private:
     u32 pageFor(u32 occurrence); // allocates one if needed
@@ -69,6 +71,7 @@ private:
     u32 zeroPage_ = 0;
     u32 zeroPageSize_ = 0;
     u64 version_ = 0;
+    u64 visibilityVersion_ = 0;
 };
 
 } // namespace geo::model

@@ -1,5 +1,6 @@
 #include "cache/blob_writer.h"
 #include "model/interaction.h"
+#include "model/visibility.h"
 #include "scene/scene.h"
 
 #include <doctest/doctest.h>
@@ -17,6 +18,8 @@ format::NodeRecord node(u32 parent, u32 end, u32 first, u32 last, NodeKind kind)
 
 // rig: part A with two bodies (3 and 5 faces), and part B with one body (3 faces).
 // Pick ids: occurrence 0 is 1-3, occurrence 1 is 4-8, occurrence 2 is 9-11.
+// Each body is a unit box, placed at x = 0, 10 and 20.
+// Nodes: 0 the root, 1 part A, 2 and 3 its bodies, 4 part B.
 struct Rig {
     scene::Scene scene;
     Interaction interaction{scene};
@@ -25,8 +28,8 @@ struct Rig {
         import::ModelData model;
         model.definitions = {{{0, 0, 0}, {1, 1, 1}, 3, 0}, {{0, 0, 0}, {1, 1, 1}, 5, 0}};
         model.occurrences = {{{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, 0, 2, 0, 0},
-                             {{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, 1, 3, 0, 0},
-                             {{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, 0, 4, 0, 0}};
+                             {{1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0, 0}, 1, 3, 0, 0},
+                             {{1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 0}, 0, 4, 0, 0}};
         model.nodes = {node(format::kNoParent, 5, 0, 3, NodeKind::Assembly),
                        node(0, 4, 0, 2, NodeKind::Part), node(1, 3, 0, 1, NodeKind::Body),
                        node(1, 4, 1, 2, NodeKind::Body), node(0, 5, 2, 3, NodeKind::Part)};
@@ -134,4 +137,49 @@ TEST_CASE("selecting a tree node selects everything beneath it") {
     rig.interaction.hideSelection();
     CHECK((rig.flags(2) & kStateHidden) != 0);
     CHECK(rig.interaction.nodeRange({0, 1}) == std::pair<u32, u32>(1, 9));
+}
+
+TEST_CASE("visible bounds leave out what is wholly hidden") {
+    Rig rig;
+    const std::optional<Aabb> all = visibleBounds(rig.scene, rig.interaction.state());
+    REQUIRE(all.has_value());
+    CHECK(all->min.x == doctest::Approx(0));
+    CHECK(all->max.x == doctest::Approx(21));
+    rig.interaction.selectNode({0, 4}, false);
+    rig.interaction.hideSelection();
+    const std::optional<Aabb> left = visibleBounds(rig.scene, rig.interaction.state());
+    REQUIRE(left.has_value());
+    CHECK(left->max.x == doctest::Approx(11));
+    rig.interaction.selectNode({0, 0}, false);
+    rig.interaction.hideSelection();
+    CHECK_FALSE(visibleBounds(rig.scene, rig.interaction.state()).has_value());
+}
+
+TEST_CASE("tree rows report hidden, ghosted and partly hidden") {
+    Rig rig;
+    rig.interaction.selectNode({0, 2}, false);
+    rig.interaction.hideSelection();
+    rig.interaction.selectNode({0, 4}, false);
+    rig.interaction.ghostSelection();
+    std::vector<NodeVisibility> states = nodeStates(rig.scene, rig.interaction.state(), 0);
+    REQUIRE(states.size() == 5);
+    CHECK(states[0] == NodeVisibility::Mixed);
+    CHECK(states[1] == NodeVisibility::Mixed);
+    CHECK(states[2] == NodeVisibility::Hidden);
+    CHECK(states[3] == NodeVisibility::Shown);
+    CHECK(states[4] == NodeVisibility::Ghosted);
+
+    // One face of a body is enough to make it partly hidden.
+    rig.interaction.click(5, Tool::Hide, false);
+    states = nodeStates(rig.scene, rig.interaction.state(), 0);
+    CHECK(states[3] == NodeVisibility::Mixed);
+}
+
+TEST_CASE("selecting does not count as a change to what is shown") {
+    Rig rig;
+    const u64 before = rig.interaction.state().visibilityVersion();
+    rig.interaction.click(5, Tool::Select, false);
+    CHECK(rig.interaction.state().visibilityVersion() == before);
+    rig.interaction.hideSelection();
+    CHECK(rig.interaction.state().visibilityVersion() != before);
 }
