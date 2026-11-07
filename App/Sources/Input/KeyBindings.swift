@@ -7,6 +7,7 @@ enum KeyCommand {
     case selectionMode(GeoSelectionMode)
     case toggleProjection
     case showShortcuts
+    case toggleSection
 }
 
 struct KeyBinding {
@@ -33,6 +34,8 @@ enum KeyBindings {
         KeyBinding(key: "1", modifiers: [], command: .selectionMode(GeoSelectFaces)),
         KeyBinding(key: "2", modifiers: [], command: .selectionMode(GeoSelectBodies)),
         KeyBinding(key: "3", modifiers: [], command: .selectionMode(GeoSelectParts)),
+        KeyBinding(key: "s", modifiers: [], command: .toggleSection),
+        KeyBinding(key: "t", modifiers: [], command: .perform(GeoActionToggleSeeThrough)),
     ]
 
     static let held: [HeldBinding] = [

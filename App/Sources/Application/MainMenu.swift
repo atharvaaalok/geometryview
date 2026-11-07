@@ -134,6 +134,14 @@ enum MainMenu {
                 keyEquivalent: ""
             )
         )
+        menu.addItem(actionItem("See Through", GeoActionToggleSeeThrough))
+        menu.addItem(
+            NSMenuItem(
+                title: "Section",
+                action: #selector(MainWindow.toggleSection(_:)),
+                keyEquivalent: ""
+            )
+        )
         let lookItem = NSMenuItem(
             title: "Show Look Options",
             action: #selector(MainWindow.toggleLookCard(_:)),

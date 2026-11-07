@@ -100,6 +100,7 @@ typedef enum GeoAction {
     GeoActionViewBottom = 15,
     GeoActionViewIso = 16,
     GeoActionFitSelection = 17,
+    GeoActionToggleSeeThrough = 18, // fade the outer shell to see the mechanism inside
 } GeoAction;
 
 /// What a click picks: one face, a whole body, or everything in its part.
@@ -203,6 +204,15 @@ void geo_engine_set_tool(GeoEngine* engine, GeoTool tool);
 /// Changes how the model is drawn.
 void geo_engine_set_look(GeoEngine* engine, const GeoLook* look);
 
+/// Section cuts along the model's axes. Each cut removes everything past a plane across one axis.
+typedef struct GeoSection {
+    bool enabled[3];   // cuts across x, y and z
+    float position[3]; // where, from 0 to 1 across the model's bounds
+    bool flip[3];      // remove the low side rather than the high side
+} GeoSection;
+
+void geo_engine_set_section(GeoEngine* engine, const GeoSection* section);
+
 /// Selects everything under a tree node. With `extend` the node toggles instead.
 void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend);
 
@@ -273,6 +283,7 @@ typedef struct GeoRenderOptions {
     bool perspective;
     bool overlay; // the view cube and scale bar
     GeoLook look;
+    GeoSection section;
 } GeoRenderOptions;
 
 /// The options gcli render starts from: 1600 by 1000, from the front right and above, with the

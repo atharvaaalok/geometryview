@@ -138,6 +138,10 @@ MTL4RenderPassDescriptor* Targets::mainPass(id<MTLTexture> resolveTarget) {
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 0.0; // reversed depth
+    pass.stencilAttachment.texture = depthMsaa;
+    pass.stencilAttachment.loadAction = MTLLoadActionClear;
+    pass.stencilAttachment.storeAction = MTLStoreActionDontCare;
+    pass.stencilAttachment.clearStencil = 0;
     pass.tileWidth = kTileSize;
     pass.tileHeight = kTileSize;
     mainPass_ = pass;

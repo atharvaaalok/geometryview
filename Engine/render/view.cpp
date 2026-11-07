@@ -29,6 +29,24 @@ double DepthDecoder::viewDepth(float depth) const {
     return farPlane - double(depth) * (farPlane - nearPlane);
 }
 
+void applySection(const Section& section, const Aabb& bounds, FrameUniforms& uniforms) {
+    uniforms.sectionPlaneCount = 0;
+    for (int axis = 0; axis < 3; ++axis) {
+        if (!section.enabled[axis]) {
+            continue;
+        }
+        const double value =
+            bounds.min[axis] + double(std::clamp(section.position[axis], 0.0f, 1.0f)) *
+                                   (bounds.max[axis] - bounds.min[axis]);
+        simd_float4 plane = simd_make_float4(0.0f, 0.0f, 0.0f, float(-value));
+        plane[axis] = 1.0f;
+        if (section.flip[axis]) {
+            plane = -plane; // the low side is cut away instead
+        }
+        uniforms.sectionPlanes[uniforms.sectionPlaneCount++] = plane;
+    }
+}
+
 ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
                    const Aabb& sceneBounds) {
     const Vec3 right = camera.right(), up = camera.up(), back = camera.back();

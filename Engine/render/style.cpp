@@ -237,6 +237,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .wobble = true,
         .ink = {kInk, 1.0f, 2.4f, 1.5f, 1.0f, 2.0f},
         .ao = 0.0f,
+        .capInk = 0.0f,
         .shadow = {kShadowBlue, 0.9f, 1.0f, true},
         .ghostAlpha = 0.24f,
         .ghostLineAlpha = 0.5f,
@@ -256,6 +257,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .wobble = false,
         .ink = {hex(0x45433F), 0.9f, 1.25f, 1.0f, 0.8f, 2.0f},
         .ao = 0.85f,
+        .capInk = 0.0f,
         .shadow = {hex(0x2A2F35), 0.16f, 10.0f, true},
         .ghostAlpha = 0.2f,
         .ghostLineAlpha = 0.45f,
@@ -283,6 +285,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .wobble = false,
         .ink = {hex(0x3D362D), 0.55f, 1.5f, 0.9f, 0.7f, 2.0f},
         .ao = 0.9f,
+        .capInk = 0.0f,
         .shadow = {hex(0x3A332A), 0.2f, 12.0f, true},
         .ghostAlpha = 0.22f,
         .ghostLineAlpha = 0.45f,
@@ -310,6 +313,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .wobble = false,
         .ink = {hex(0xEEF4FF), 0.95f, 1.8f, 1.2f, 0.9f, 2.2f},
         .ao = 0.0f,
+        .capInk = 1.0f,
         .shadow = {hex(0x0D2244), 0.35f, 8.0f, false},
         .ghostAlpha = 0.18f,
         .ghostLineAlpha = 0.55f,
@@ -329,6 +333,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .wobble = false,
         .ink = {hex(0x15171A), 1.0f, 2.0f, 1.2f, 1.0f, 2.0f},
         .ao = 0.0f,
+        .capInk = 1.0f,
         .shadow = {hex(0x15171A), 0.12f, 6.0f, false},
         .ghostAlpha = 0.2f,
         .ghostLineAlpha = 0.55f,
@@ -514,6 +519,7 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.contrast = style.studio.contrast;
     u.ghostStyle = settings.ghostStyle;
     u.shadowOn = settings.shadow ? 1u : 0u;
+    u.capInk = style.capInk;
     return u;
 }
 

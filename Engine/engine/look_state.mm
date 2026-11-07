@@ -44,7 +44,15 @@ void LookState::apply(gpu::Renderer& renderer, const scene::Scene& scene) {
     }
     if (paletteDirty_) {
         const std::vector<u32> palette = render::paletteTexels(style, looks_.looks);
-        renderer.syncLooks(looks_.ofOccurrence, palette);
+        if (shells_.size() == looks_.ofOccurrence.size()) {
+            std::vector<u16> marked = looks_.ofOccurrence;
+            for (usize o = 0; o < marked.size(); ++o) {
+                marked[o] = u16(marked[o] | (shells_[o] != 0 ? kLookShell : 0));
+            }
+            renderer.syncLooks(marked, palette);
+        } else {
+            renderer.syncLooks(looks_.ofOccurrence, palette);
+        }
         paletteDirty_ = false;
     }
     if (styleDirty_) {

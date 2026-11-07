@@ -29,18 +29,24 @@ final class Toolbar: StickerCard {
     )
     private let views = PillButton(symbol: "cube", help: "Standard views")
     private let look = PillButton(symbol: "paintpalette", help: "Style and colour")
+    private let cut = PillButton(symbol: "scissors", help: "Section (S)")
+    private let seeThrough = PillButton(
+        symbol: "circle.lefthalf.filled",
+        help: "See through the housing (T)"
+    )
     private let shortcuts = PillButton(title: "?", style: .ghostly, help: "Shortcuts (?)")
 
     var onAction: ((GeoAction) -> Void)?
     var onShowShortcuts: (() -> Void)?
     var onShowLook: (() -> Void)?
+    var onShowSection: (() -> Void)?
 
     init() {
         super.init(frame: .zero)
         let actions: [(PillButton, GeoAction)] = [
             (hide, GeoActionHideSelection), (ghost, GeoActionGhostSelection),
             (isolate, GeoActionIsolate), (showAll, GeoActionShowAll), (undo, GeoActionUndo),
-            (redo, GeoActionRedo), (fit, GeoActionFit),
+            (redo, GeoActionRedo), (fit, GeoActionFit), (seeThrough, GeoActionToggleSeeThrough),
         ]
         for (button, action) in actions {
             button.onPress = { [weak self] in self?.onAction?(action) }
@@ -48,9 +54,11 @@ final class Toolbar: StickerCard {
         views.onPress = { [weak self] in self?.showViewsMenu() }
         shortcuts.onPress = { [weak self] in self?.onShowShortcuts?() }
         look.onPress = { [weak self] in self?.onShowLook?() }
+        cut.onPress = { [weak self] in self?.onShowSection?() }
 
         let stack = NSStackView(views: [
-            pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), look,
+            pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), seeThrough,
+            cut, look,
             projection, views, fit, shortcuts,
         ])
         stack.orientation = .horizontal
@@ -107,7 +115,7 @@ final class Toolbar: StickerCard {
         for button in [hide, ghost, isolate] {
             button.isEnabled = hasSelection
         }
-        for button in [showAll, fit, views, undo, redo] {
+        for button in [showAll, fit, views, undo, redo, seeThrough] {
             button.isEnabled = hasModel
         }
     }

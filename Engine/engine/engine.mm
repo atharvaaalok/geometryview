@@ -23,6 +23,7 @@
 #include "nav/pointer_controller.h"
 #include "render/overlay.h"
 #include "render/refinement.h"
+#include "render/shell.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -62,6 +63,10 @@ constexpr double kDefaultElevation = 25.0 * M_PI / 180.0;
 constexpr double kRefineDelaySeconds = 0.3;
 // Camera flights, as to a standard view, take this long unless motion is reduced.
 constexpr double kFlightSeconds = 0.55;
+// See-through fades in and out over this long, as in Colorfigures.
+constexpr double kSeeThroughSeconds = 0.7;
+// The square views that classify the shell, in pixels.
+constexpr u32 kShellViewSize = 160;
 
 // Seconds since this process started, for measuring launch.
 double secondsSinceProcessStart() {
@@ -99,6 +104,7 @@ struct Command {
         HoverNode,
         SetInsets,
         SetLook,
+        SetSection,
         Snapshot,
         RequestFrame,
         Stop
@@ -115,6 +121,7 @@ struct Command {
         NodeCommand node;
         nav::Insets insets;
         GeoLook look;
+        GeoSection section;
     };
 };
 
@@ -215,6 +222,12 @@ struct GeoEngine {
     nav::Insets insetPoints; // as the app gives them
     nav::Insets insets;      // in pixels
     engine::LookState look;
+    render::Section section;
+    // See-through: k moves from where it was toward the target over kSeeThroughSeconds.
+    float seeThrough = 0.0f;
+    float seeThroughFrom = 0.0f;
+    float seeThroughTarget = 0.0f;
+    double seeThroughStart = 0.0;
     u32 cubeHover = 0;   // face index plus one, or zero
     u32 cubePressed = 0; // the face a press began on, plus one
     nav::OrbitPolicy orbit;
@@ -532,6 +545,18 @@ struct GeoEngine {
         case GeoActionFitSelection:
             fitSelection();
             return;
+        case GeoActionToggleSeeThrough:
+            if (seeThroughTarget == 0.0f && !look.hasShells()) {
+                classifyShells();
+            }
+            seeThroughFrom = seeThrough;
+            seeThroughTarget = seeThroughTarget > 0.0f ? 0.0f : 1.0f;
+            seeThroughStart = nowSeconds();
+            if (reduceMotion()) {
+                seeThrough = seeThroughTarget;
+            }
+            requestFrame();
+            return;
         }
         stateChanged();
     }
@@ -705,6 +730,9 @@ struct GeoEngine {
             return;
         }
         frameScene(false); // estimated bounds become exact now that all geometry is here
+        if (seeThroughTarget > 0.0f) {
+            classifyShells(); // the shell is found again for the scene as it is now
+        }
         requestFrame();
         if (traceLaunch) {
             std::fprintf(stderr, "trace: scene ready %.1f ms after opening\n",
@@ -895,6 +923,14 @@ struct GeoEngine {
                 }
                 refreshHover();
                 break;
+            case Command::Kind::SetSection:
+                for (int axis = 0; axis < 3; ++axis) {
+                    section.enabled[axis] = command->section.enabled[axis];
+                    section.position[axis] = command->section.position[axis];
+                    section.flip[axis] = command->section.flip[axis];
+                }
+                requestFrame();
+                break;
             case Command::Kind::SetLook:
                 look.set(engine::lookSettings(command->look));
                 requestFrame();
@@ -969,6 +1005,86 @@ struct GeoEngine {
                    focus ? focus->node : GEO_NO_NODE, u32(interaction.mode())};
     }
 
+    // Finds the shell that see-through fades, from 14 small views of occurrence ids, in two
+    // rounds. Runs once, when see-through is first asked for, and again after the scene changes.
+    void classifyShells() {
+        const std::optional<Aabb> sceneBounds = scene.bounds();
+        if (!sceneBounds || !scene.hasGeometry()) {
+            return;
+        }
+        StageTrace trace("shell");
+        // Each occurrence's name and world bounds.
+        std::vector<render::ShellPart> parts;
+        parts.reserve(scene.occurrenceCount());
+        for (u32 d = 0; d < scene.documentCount(); ++d) {
+            const scene::Document& document = scene.document(d);
+            if (!document.hasModel()) {
+                continue;
+            }
+            const format::SegmentView& model = document.model();
+            for (const format::OccurrenceRecord& o : model.occurrences) {
+                const format::NodeRecord& node = model.nodes[o.node];
+                const std::string_view name(model.strings.data() + node.nameOffset,
+                                            node.nameLength);
+                const format::DefinitionInfo& info = model.definitionInfos[o.definition];
+                Aabb box{simd_make_double3(INFINITY, INFINITY, INFINITY),
+                         simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
+                for (int corner = 0; corner < 8; ++corner) {
+                    const double x = (corner & 1) ? info.boundsMax[0] : info.boundsMin[0];
+                    const double y = (corner & 2) ? info.boundsMax[1] : info.boundsMin[1];
+                    const double z = (corner & 4) ? info.boundsMax[2] : info.boundsMin[2];
+                    const std::array<float, 12>& t = o.transform;
+                    const Vec3 p = simd_make_double3(t[0] * x + t[3] * y + t[6] * z + t[9],
+                                                     t[1] * x + t[4] * y + t[7] * z + t[10],
+                                                     t[2] * x + t[5] * y + t[8] * z + t[11]);
+                    box.min = simd_min(box.min, p);
+                    box.max = simd_max(box.max, p);
+                }
+                parts.push_back({name, box});
+            }
+        }
+
+        const Aabb all = *sceneBounds;
+        const double radius = std::max(all.radius(), 1e-9);
+        const nav::Viewport square{double(kShellViewSize), double(kShellViewSize)};
+        const u32 count = u32(parts.size());
+        const auto measure = [&](bool excludeShells) {
+            render::ShellCounts counts(count);
+            for (const Vec3 direction : render::shellViewDirections()) {
+                nav::Camera view;
+                const Vec3 up = std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0)
+                                                            : simd_make_double3(0, 0, 1);
+                view.lookAt(all.center() - direction * (2.0 * radius), all.center(), up);
+                view.orthoHalfHeight = radius;
+                render::ViewState state = render::makeView(view, square, all);
+                state.uniforms.excludeShells = excludeShells ? 1 : 0;
+                const gpu::OccurrenceIds ids = renderer->renderOccurrenceIds(state, kShellViewSize);
+                counts.accumulate(ids.front, ids.behind);
+            }
+            return counts;
+        };
+        renderer->syncState(interaction.state());
+        look.apply(*renderer, scene);
+        const std::vector<u8> first = render::decideShell(measure(false), parts, 0.3);
+        std::vector<u8> shell = first;
+        if (std::any_of(first.begin(), first.end(), [](u8 s) { return s != 0; })) {
+            // The second layer must hide inner parts decisively, so the mechanism stays solid.
+            look.setShells(first);
+            look.apply(*renderer, scene);
+            const std::vector<u8> second = render::decideShell(measure(true), parts, 0.5);
+            usize visibleSolid = 0;
+            for (u32 p = 0; p < count; ++p) {
+                shell[p] = u8(first[p] | second[p]);
+                visibleSolid += shell[p] == 0 ? 1 : 0;
+            }
+            if (visibleSolid == 0) {
+                shell = first;
+            }
+        }
+        look.setShells(shell);
+        trace.lap("classify");
+    }
+
     render::OverlayLayout overlayLayout() const {
         render::OverlayLayout layout;
         if (look.settings().style == render::StyleName::Blueprint) {
@@ -986,6 +1102,8 @@ struct GeoEngine {
         view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
         view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
         view.uniforms.aoSamples = 12;
+        render::applySection(section, bounds, view.uniforms);
+        view.uniforms.seeThrough = seeThrough;
         return view;
     }
 
@@ -993,6 +1111,16 @@ struct GeoEngine {
         // The surface under a still pointer changes as the camera moves, so hover is checked here
         // too.
         updateHover();
+        if (seeThrough != seeThroughTarget) {
+            const double t =
+                std::clamp((nowSeconds() - seeThroughStart) / kSeeThroughSeconds, 0.0, 1.0);
+            seeThrough = seeThroughFrom + (seeThroughTarget - seeThroughFrom) * float(nav::ease(t));
+            if (t >= 1.0) {
+                seeThrough = seeThroughTarget;
+            }
+            needsFrame = true;
+            lastActivity = nowSeconds();
+        }
         if (flight.active()) {
             camera = flight.at(nowSeconds());
             orbit.navigated();
@@ -1213,6 +1341,13 @@ void geo_engine_set_look(GeoEngine* engine, const GeoLook* look) {
     Command command{};
     command.kind = Command::Kind::SetLook;
     command.look = *look;
+    engine->post(command);
+}
+
+void geo_engine_set_section(GeoEngine* engine, const GeoSection* section) {
+    Command command{};
+    command.kind = Command::Kind::SetSection;
+    command.section = *section;
     engine->post(command);
 }
 

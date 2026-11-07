@@ -21,7 +21,7 @@ inline constexpr MTLPixelFormat kDepthCopyFormat = MTLPixelFormatR32Float;
 inline constexpr MTLPixelFormat kInkFormat = MTLPixelFormatRGBA8Unorm;
 inline constexpr MTLPixelFormat kTagFormat = MTLPixelFormatRG8Uint;
 inline constexpr MTLPixelFormat kShadowFormat = MTLPixelFormatR8Unorm;
-inline constexpr MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float;
+inline constexpr MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float_Stencil8;
 
 struct Targets {
     u32 width = 0, height = 0;

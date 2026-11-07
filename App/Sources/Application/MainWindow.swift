@@ -20,6 +20,7 @@ final class MainWindow: NSWindow {
     private let dropZone = DropZone()
     private let shortcuts = ShortcutsSheet()
     private let lookCard = LookCard()
+    private let sectionCard = SectionCard()
     private var look = Look.saved()
     private var exercise: Exercise?
     private var accessedURLs: [URL] = []
@@ -71,7 +72,8 @@ final class MainWindow: NSWindow {
         let root = NSView()
         root.wantsLayer = true
         let views: [NSView] = [
-            viewport, masthead, structure, selection, toolBar, lookCard, holdHint, hoverChip,
+            viewport, masthead, structure, selection, toolBar, lookCard, sectionCard, holdHint,
+            hoverChip,
             status, dropZone, shortcuts,
         ]
         for view in views {
@@ -112,6 +114,8 @@ final class MainWindow: NSWindow {
                 equalTo: root.bottomAnchor,
                 constant: -Self.toolbarBottom
             ),
+            sectionCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
+            sectionCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
             lookCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
             lookCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
             holdHint.centerXAnchor.constraint(equalTo: free.centerXAnchor),
@@ -136,6 +140,7 @@ final class MainWindow: NSWindow {
         ])
         hoverChip.isHidden = true
         lookCard.isHidden = true
+        sectionCard.isHidden = true
         return root
     }
 
@@ -158,12 +163,9 @@ final class MainWindow: NSWindow {
 
         toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
-        toolBar.onShowLook = { [weak self] in
-            guard let self else {
-                return
-            }
-            lookCard.isHidden.toggle()
-        }
+        toolBar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
+        toolBar.onShowSection = { [weak self] in self?.toggleSectionCard() }
+        sectionCard.onChange = { [weak self] section in self?.engine.setSection(section) }
         lookCard.onChange = { [weak self] look in self?.apply(look) }
         lookCard.show(look)
         masthead.setOnDarkSheet(look.style == .blueprint)
@@ -306,6 +308,29 @@ final class MainWindow: NSWindow {
 
     @objc func toggleLookCard(_ sender: Any?) {
         lookCard.isHidden.toggle()
+        sectionCard.isHidden = true
+    }
+
+    // MARK: Section
+
+    private func toggleSectionCard() {
+        sectionCard.isHidden.toggle()
+        lookCard.isHidden = true
+    }
+
+    /// S cuts across X at the middle, or, with a cut open, removes every cut.
+    @objc func toggleSection(_ sender: Any?) {
+        var section = sectionCard.section
+        if sectionCard.isCutting {
+            section.enabled = (false, false, false)
+            sectionCard.isHidden = true
+        } else {
+            section.enabled.0 = true
+            sectionCard.isHidden = false
+            lookCard.isHidden = true
+        }
+        sectionCard.show(section)
+        engine.setSection(section)
     }
 
     /// Ticks the menu's look items.
@@ -342,6 +367,8 @@ final class MainWindow: NSWindow {
             engine.perform(GeoActionToggleProjection)
         case .showShortcuts:
             shortcuts.isHidden.toggle()
+        case .toggleSection:
+            toggleSection(nil)
         }
     }
 
@@ -361,6 +388,7 @@ final class MainWindow: NSWindow {
             shortcuts.isHidden = true
         }
         lookCard.isHidden = true
+        sectionCard.isHidden = true
     }
 
     // MARK: Pointer and tools
@@ -531,6 +559,14 @@ final class MainWindow: NSWindow {
             }
             if environment["GEOMETRY_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
+            }
+            // GEOMETRY_SNAPSHOT_SEE_THROUGH fades the shell, as T does.
+            if environment["GEOMETRY_SNAPSHOT_SEE_THROUGH"] != nil {
+                engine.perform(GeoActionToggleSeeThrough)
+            }
+            // GEOMETRY_SNAPSHOT_SECTION cuts across X, as S does, with the card open.
+            if environment["GEOMETRY_SNAPSHOT_SECTION"] != nil {
+                toggleSection(nil)
             }
             // GEOMETRY_SNAPSHOT_GHOSTS ghosts the selection, drawn as shell, lines or both (1 to 3),
             // and then clears it.

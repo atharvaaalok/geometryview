@@ -70,6 +70,7 @@ struct Renderer::State {
 
     StyleUniforms style{};
     bool physical = false;
+    bool section = false; // this frame has section planes
 
     // Hidden, ghosted and selected flags. Uploaded only when they change.
     id<MTLBuffer> occurrenceStates, faceStates;
@@ -78,6 +79,13 @@ struct Renderer::State {
 
     // Each occurrence's look, and three palette texels per look.
     id<MTLBuffer> looks, palette;
+    bool hasShells = false; // some occurrence's look marks it as shell
+
+    // The square views that classify the shell, with their own targets and argument table.
+    id<MTL4ArgumentTable> classifyTable;
+    u32 classifySize = 0;
+    id<MTLTexture> classifyFrontIds, classifyBehindIds, classifyFrontDepths;
+    id<MTLTexture> classifyColor, classifyDepthCopy, classifyInk, classifyTags, classifyDepth;
 
     // GPU time, from commit feedback while tracing.
     std::atomic<double> gpuSeconds{0.0};
@@ -106,7 +114,11 @@ struct Renderer::State {
         overlay.maxBufferBindCount = 2;
         overlay.maxTextureBindCount = 1;
         overlayTable = [context.device newArgumentTableWithDescriptor:overlay error:&error];
-        if (!surfaceTable || !tileTable || !overlayTable || !compositeTable) {
+        MTL4ArgumentTableDescriptor* classify = [MTL4ArgumentTableDescriptor new];
+        classify.maxBufferBindCount = kBufferCount;
+        classify.maxTextureBindCount = 2;
+        classifyTable = [context.device newArgumentTableWithDescriptor:classify error:&error];
+        if (!surfaceTable || !tileTable || !overlayTable || !compositeTable || !classifyTable) {
             reportFailure("Could not create argument tables", error);
             return false;
         }
@@ -159,13 +171,15 @@ struct Renderer::State {
 
     // Draws up to kMaxBatchesPerDraw batches at a time.
     void drawBatches(id<MTL4RenderCommandEncoder> encoder, BatchRange range,
-                     NSUInteger meshThreads = kMeshletMaxTriangles) {
+                     NSUInteger meshThreads = kMeshletMaxTriangles,
+                     id<MTL4ArgumentTable> table = nil) {
+        table = table != nil ? table : surfaceTable;
         for (usize start = range.first; start < range.last; start += kMaxBatchesPerDraw) {
             const usize groups = std::min<usize>(kMaxBatchesPerDraw, range.last - start);
-            [surfaceTable
+            [table
                 setAddress:tables.drawBases().gpuAddress + start / kMaxBatchesPerDraw * sizeof(u32)
                    atIndex:kBufferDrawBase];
-            [encoder setArgumentTable:surfaceTable
+            [encoder setArgumentTable:table
                              atStages:MTLRenderStageObject | MTLRenderStageMesh |
                                       MTLRenderStageFragment];
             [encoder drawMeshThreadgroups:MTLSizeMake(groups, 1, 1)
@@ -178,7 +192,7 @@ struct Renderer::State {
     void drawEdges(id<MTL4RenderCommandEncoder> encoder, bool ghostLines) {
         [surfaceTable setAddress:tables.edgeBatches().gpuAddress atIndex:kBufferBatches];
         [surfaceTable setAddress:tables.edgeRefs().gpuAddress atIndex:kBufferMeshletRefs];
-        [encoder setRenderPipelineState:pipelines.edges[ghostLines]];
+        [encoder setRenderPipelineState:pipelines.edges[ghostLines][section]];
         [encoder setDepthStencilState:pipelines.depthTest];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
@@ -186,8 +200,10 @@ struct Renderer::State {
         [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
     }
 
+    // Closed surfaces cull back faces, except while a section is open: the back faces seen
+    // through a cut are its caps.
     void drawSurfaces(id<MTL4RenderCommandEncoder> encoder) {
-        [encoder setCullMode:MTLCullModeBack];
+        [encoder setCullMode:section ? MTLCullModeNone : MTLCullModeBack];
         drawBatches(encoder, tables.closedBatches());
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.openBatches());
@@ -198,22 +214,26 @@ struct Renderer::State {
     // It ends by copying sample 0 of the ids and depths out of tile memory for picking.
     // Points every table at this frame's uniforms and the current scene.
     void bindFrame(const render::ViewState& view) {
+        section = view.uniforms.sectionPlaneCount > 0;
         const u64 frame = context.frameCount;
         const u64 frameAddress = frameUniforms.write(frame, &view.uniforms);
         const u64 styleAddress = styleUniforms.write(frame, &style);
-        for (id<MTL4ArgumentTable> table : {surfaceTable, compositeTable, tileTable}) {
+        for (id<MTL4ArgumentTable> table :
+             {surfaceTable, compositeTable, tileTable, classifyTable}) {
             [table setAddress:frameAddress atIndex:kBufferFrame];
             [table setAddress:styleAddress atIndex:kBufferStyle];
         }
         if (!tables.empty()) {
-            [surfaceTable setAddress:tables.definitions().gpuAddress atIndex:kBufferDefinitions];
-            [surfaceTable setAddress:tables.occurrences().gpuAddress atIndex:kBufferOccurrences];
-            [surfaceTable setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
-            [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
-            [surfaceTable setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
-            [surfaceTable setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
-            [surfaceTable setAddress:palette.gpuAddress atIndex:kBufferPalette];
-            [surfaceTable setAddress:looks.gpuAddress atIndex:kBufferLooks];
+            for (id<MTL4ArgumentTable> table : {surfaceTable, classifyTable}) {
+                [table setAddress:tables.definitions().gpuAddress atIndex:kBufferDefinitions];
+                [table setAddress:tables.occurrences().gpuAddress atIndex:kBufferOccurrences];
+                [table setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
+                [table setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
+                [table setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
+                [table setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
+                [table setAddress:palette.gpuAddress atIndex:kBufferPalette];
+                [table setAddress:looks.gpuAddress atIndex:kBufferLooks];
+            }
         }
     }
 
@@ -229,7 +249,7 @@ struct Renderer::State {
         [encoder barrierAfterQueueStages:MTLStageFragment
                             beforeStages:MTLStageFragment
                        visibilityOptions:MTL4VisibilityOptionNone];
-        [encoder setRenderPipelineState:pipelines.shadow];
+        [encoder setRenderPipelineState:pipelines.shadow[section]];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.closedBatches());
         drawBatches(encoder, tables.openBatches());
@@ -247,9 +267,23 @@ struct Renderer::State {
 
         const bool hasScene = !tables.empty();
         if (hasScene) {
-            [encoder setRenderPipelineState:pipelines.surface[physical]];
+            [encoder setRenderPipelineState:pipelines.surface[physical][section]];
             [encoder setDepthStencilState:pipelines.depthWrite];
             drawSurfaces(encoder);
+        }
+        const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
+        if (seeThrough) {
+            // The shell's far walls: back faces, held just in front of the sheet by a depth
+            // range of their own, so they always lie under the mechanism.
+            [encoder setRenderPipelineState:pipelines.shellBack[physical][section]];
+            [encoder setDepthStencilState:pipelines.depthWrite];
+            [encoder setViewport:MTLViewport{0, 0, double(targets.width), double(targets.height),
+                                             1e-6, 1e-4}];
+            [encoder setCullMode:MTLCullModeFront];
+            drawBatches(encoder, tables.closedBatches());
+            drawBatches(encoder, tables.openBatches());
+            [encoder
+                setViewport:MTLViewport{0, 0, double(targets.width), double(targets.height), 0, 1}];
         }
 
         // The sheet only where nothing was drawn, so hidden-surface removal skips it elsewhere.
@@ -262,10 +296,28 @@ struct Renderer::State {
         if (hasScene && drawsEdges) {
             drawEdges(encoder, false);
         }
+        if (seeThrough) {
+            // The shell's nearest front faces, over everything opaque: into depth, then blended
+            // once per sample.
+            [encoder setRenderPipelineState:pipelines.shellDepth[section]];
+            [encoder setDepthStencilState:pipelines.depthWrite];
+            [encoder setCullMode:MTLCullModeBack];
+            drawBatches(encoder, tables.closedBatches());
+            [encoder setCullMode:MTLCullModeNone];
+            drawBatches(encoder, tables.openBatches());
+            [encoder setRenderPipelineState:pipelines.shellFront[physical][section]];
+            [encoder setDepthStencilState:pipelines.blendOnce];
+            [encoder setStencilReferenceValue:0];
+            [encoder setCullMode:MTLCullModeBack];
+            drawBatches(encoder, tables.closedBatches());
+            [encoder setCullMode:MTLCullModeNone];
+            drawBatches(encoder, tables.openBatches());
+        }
 
         // Ghosts last, blended over everything opaque and writing no depth.
         if (hasScene && hasGhosts) {
-            [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]];
+            [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]
+                                                           [section]];
             [encoder setDepthStencilState:pipelines.depthTest];
             drawSurfaces(encoder);
             if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges) {
@@ -429,6 +481,104 @@ void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const 
     State& s = *state_;
     s.replace(s.looks, lookOfOccurrence.data(), lookOfOccurrence.size_bytes());
     s.replace(s.palette, palette.data(), palette.size_bytes());
+    s.hasShells = std::any_of(lookOfOccurrence.begin(), lookOfOccurrence.end(),
+                              [](u16 look) { return (look & kLookShell) != 0; });
+}
+
+OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 size) {
+    State& s = *state_;
+    OccurrenceIds result;
+    if (s.tables.empty()) {
+        return result;
+    }
+    id<MTLDevice> device = s.context.device;
+    if (s.classifySize != size) {
+        const auto make = [&](MTLPixelFormat format, MTLStorageMode storage,
+                              MTLTextureUsage usage) {
+            MTLTextureDescriptor* d =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                   width:size
+                                                                  height:size
+                                                               mipmapped:NO];
+            d.storageMode = storage;
+            d.usage = usage;
+            id<MTLTexture> texture = [device newTextureWithDescriptor:d];
+            if (storage != MTLStorageModeMemoryless) {
+                [s.context.residency addAllocation:texture];
+            }
+            return texture;
+        };
+        const MTLTextureUsage target = MTLTextureUsageRenderTarget;
+        const MTLTextureUsage read = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        s.classifyFrontIds = make(kIdFormat, MTLStorageModeShared, read);
+        s.classifyBehindIds = make(kIdFormat, MTLStorageModeShared, target);
+        s.classifyFrontDepths = make(kDepthCopyFormat, MTLStorageModePrivate, read);
+        s.classifyColor = make(kColorFormat, MTLStorageModeMemoryless, target);
+        s.classifyDepthCopy = make(kDepthCopyFormat, MTLStorageModeMemoryless, target);
+        s.classifyInk = make(kInkFormat, MTLStorageModeMemoryless, target);
+        s.classifyTags = make(kTagFormat, MTLStorageModeMemoryless, target);
+        s.classifyDepth = make(kDepthFormat, MTLStorageModeMemoryless, target);
+        [s.context.residency commit];
+        [s.classifyTable setTexture:s.classifyFrontIds.gpuResourceID atIndex:kTexturePickIds];
+        [s.classifyTable setTexture:s.classifyFrontDepths.gpuResourceID atIndex:kTexturePickDepths];
+        s.classifySize = size;
+    }
+
+    s.beginFrame();
+    s.bindFrame(view);
+    for (const bool peel : {false, true}) {
+        MTL4RenderPassDescriptor* pass = [MTL4RenderPassDescriptor new];
+        const auto attach = [&](NSUInteger index, id<MTLTexture> texture, bool store) {
+            pass.colorAttachments[index].texture = texture;
+            pass.colorAttachments[index].loadAction = MTLLoadActionClear;
+            pass.colorAttachments[index].storeAction =
+                store ? MTLStoreActionStore : MTLStoreActionDontCare;
+            pass.colorAttachments[index].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        };
+        attach(kAttachmentColor, s.classifyColor, false);
+        attach(kAttachmentId, peel ? s.classifyBehindIds : s.classifyFrontIds, true);
+        attach(kAttachmentDepth, peel ? s.classifyDepthCopy : s.classifyFrontDepths, !peel);
+        attach(kAttachmentInk, s.classifyInk, false);
+        attach(kAttachmentTags, s.classifyTags, false);
+        pass.depthAttachment.texture = s.classifyDepth;
+        pass.depthAttachment.loadAction = MTLLoadActionClear;
+        pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+        pass.depthAttachment.clearDepth = 0.0;
+        id<MTL4RenderCommandEncoder> encoder =
+            [s.commandBuffer renderCommandEncoderWithDescriptor:pass];
+        if (peel) {
+            [encoder barrierAfterQueueStages:MTLStageFragment
+                                beforeStages:MTLStageFragment
+                           visibilityOptions:MTL4VisibilityOptionDevice];
+        }
+        [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+        [encoder setRenderPipelineState:s.pipelines.classify[peel]];
+        [encoder setDepthStencilState:s.pipelines.depthWrite];
+        [encoder setCullMode:MTLCullModeBack];
+        s.drawBatches(encoder, s.tables.closedBatches(), kMeshletMaxTriangles, s.classifyTable);
+        [encoder setCullMode:MTLCullModeNone];
+        s.drawBatches(encoder, s.tables.openBatches(), kMeshletMaxTriangles, s.classifyTable);
+        [encoder endEncoding];
+    }
+    [s.commandBuffer endCommandBuffer];
+    s.commitAndSignal();
+    [s.context.queue signalEvent:s.context.frameFinished value:s.context.frameCount];
+    const bool finished = [s.context.frameFinished waitUntilSignaledValue:s.context.frameCount
+                                                                timeoutMS:kFrameTimeoutMs * 10];
+    GEO_ASSERT(finished);
+
+    result.front.resize(usize(size) * size);
+    result.behind.resize(usize(size) * size);
+    const MTLRegion region = MTLRegionMake2D(0, 0, size, size);
+    [s.classifyFrontIds getBytes:result.front.data()
+                     bytesPerRow:size * 4
+                      fromRegion:region
+                     mipmapLevel:0];
+    [s.classifyBehindIds getBytes:result.behind.data()
+                      bytesPerRow:size * 4
+                       fromRegion:region
+                      mipmapLevel:0];
+    return result;
 }
 
 float Renderer::glyphAdvance() const { return state_->atlas.glyphAdvance; }

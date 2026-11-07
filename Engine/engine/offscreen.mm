@@ -31,7 +31,7 @@ constexpr double kFitMargin = 1.12;
 } // namespace
 
 GeoRenderOptions geo_default_render_options(void) {
-    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look()};
+    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look(), {}};
 }
 
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
@@ -89,6 +89,13 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
         view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
         view.uniforms.aoSamples = 12;
+        render::Section section;
+        for (int axis = 0; axis < 3; ++axis) {
+            section.enabled[axis] = options->section.enabled[axis];
+            section.position[axis] = options->section.position[axis];
+            section.flip[axis] = options->section.flip[axis];
+        }
+        render::applySection(section, bounds, view.uniforms);
         render::OverlayLayout layout;
         if (options->look.style == GeoStyleBlueprint) {
             layout.ink = render::kOverlayInkOnDark;

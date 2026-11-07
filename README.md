@@ -43,6 +43,8 @@ parts you zoom into are retessellated more finely once the view settles.
 | F | Fit to view |
 | P | Switch between orthographic and perspective |
 | Esc | Clear the selection |
+| T | See through the housing to the mechanism inside |
+| S | Cut a section across X; the scissors button opens all three axes |
 | Click the view cube | Turn to that face's view. Standard views are also in the View menu |
 | ? | Show every shortcut |
 
@@ -72,8 +74,11 @@ ctest --preset debug              # unit, GPU and layering tests
 build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometry-occt-worker
 build/release/Tools/gcli stats part.geoblob
 build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png \
-    1600 1000 35 25 ortho 1 0   # size, azimuth, elevation, projection, style, colour mode
+    1600 1000 35 25 ortho 1 0 x0.5 plain   # size, view, projection, style, colour, section
 ```
+
+A section can be added as `x0.5` or `x0.6,y-0.4` (a minus removes the low side), and `plain`
+leaves out the view cube and scale bar.
 
 `Tests/golden` holds an image of every style and colour mode. After a deliberate change to how
 things look, `GEOMETRY_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites them,

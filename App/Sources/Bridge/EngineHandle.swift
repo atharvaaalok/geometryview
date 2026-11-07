@@ -115,6 +115,11 @@ final class EngineHandle {
         geo_engine_set_tool(engine, tool)
     }
 
+    func setSection(_ section: GeoSection) {
+        var copy = section
+        geo_engine_set_section(engine, &copy)
+    }
+
     func setLook(_ look: Look) {
         var engineLook = look.engineLook
         geo_engine_set_look(engine, &engineLook)
