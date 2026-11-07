@@ -4,7 +4,10 @@
 #include "format/blob.h"
 #include "import.h"
 
+#include <algorithm>
+#include <array>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -14,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -71,8 +75,8 @@ int importStepCommand(std::span<const u8> bytes, int sourceFd, int outputFd, con
                  s.workers, s.triangles, s.meshlets);
     std::println("tolerances: linear {} angular {} min {}", s.linearDeflection, s.angularDeflection,
                  s.minSize);
-    std::println("failed {} unmeshed {} unmapped {} crashed {}", s.failedFaces, s.unmeshedFaces,
-                 s.unmappedFaces, s.crashedWorkers);
+    std::println("failed {} unmapped {} crashed {}", s.failedFaces, s.unmappedFaces,
+                 s.crashedWorkers);
     std::println("tokenize {:.1f} ms, structure {:.1f} ms, definitions {:.1f} ms, workers {:.3f} s",
                  s.tokenizeSeconds * 1e3, s.structureSeconds * 1e3, s.definitionSeconds * 1e3,
                  s.workerSeconds);
@@ -166,6 +170,116 @@ int verifyCommand(const char* path) {
     return 0;
 }
 
+struct Moments {
+    double area = 0.0;
+    double signedVolume = 0.0;
+};
+
+std::array<float, 3> decodeVertex(const format::SegmentView& view,
+                                  const format::DefinitionRecord& d, u32 vertex) {
+    const PackedVertex& v = view.vertices[d.firstVertex + vertex];
+    std::array<u32, 3> grid = {v.x, v.y, v.z};
+    if ((d.flags & kDefinitionWide) != 0) {
+        const u32 high = view.highBits[d.firstHighBits + vertex];
+        grid[0] |= (high & 0xFF) << 16;
+        grid[1] |= ((high >> 8) & 0xFF) << 16;
+        grid[2] |= ((high >> 16) & 0xFF) << 16;
+    }
+    return {float(grid[0]) * d.decodeScale[0] + d.boundsMin[0],
+            float(grid[1]) * d.decodeScale[1] + d.boundsMin[1],
+            float(grid[2]) * d.decodeScale[2] + d.boundsMin[2]};
+}
+
+// Prints totals in world space, in the same form as the worker's --truth output.
+int statsCommand(const char* path) {
+    MappedFile file;
+    if (!file.open(path)) {
+        std::println(stderr, "could not read {}", path);
+        return 1;
+    }
+    std::span<const format::SegmentEntry> segments;
+    std::string error;
+    if (!format::parseHeader({file.data, file.size}, segments, error)) {
+        std::println(stderr, "invalid: {}", error);
+        return 1;
+    }
+    std::vector<format::SegmentView> views(segments.size());
+    const format::SegmentView* model = nullptr;
+    for (usize i = 0; i < segments.size(); ++i) {
+        if (!format::parseSegment({file.data + segments[i].offset, segments[i].size}, views[i],
+                                  error)) {
+            std::println(stderr, "invalid: {}", error);
+            return 1;
+        }
+        if (views[i].hasModel()) {
+            model = &views[i];
+        }
+    }
+    if (model == nullptr) {
+        std::println(stderr, "no model");
+        return 1;
+    }
+
+    struct Geometry {
+        const format::SegmentView* view = nullptr;
+        const format::DefinitionRecord* record = nullptr;
+    };
+    std::vector<Geometry> geometry(model->definitionInfos.size());
+    for (const format::SegmentView& view : views) {
+        for (const format::DefinitionRecord& record : view.definitions) {
+            geometry[record.definition] = {&view, &record};
+        }
+    }
+
+    double area = 0.0, volume = 0.0;
+    u64 triangles = 0, faces = 0;
+    double lo[3] = {INFINITY, INFINITY, INFINITY}, hi[3] = {-INFINITY, -INFINITY, -INFINITY};
+    for (const format::OccurrenceRecord& occurrence : model->occurrences) {
+        faces += model->definitionInfos[occurrence.definition].faceCount;
+        const Geometry& g = geometry[occurrence.definition];
+        if (g.record == nullptr) {
+            continue;
+        }
+        const format::DefinitionRecord& d = *g.record;
+        const std::array<float, 12>& t = occurrence.transform;
+        const auto toWorld = [&](u32 vertex) {
+            const std::array<float, 3> p = decodeVertex(*g.view, d, vertex);
+            const double x = p[0], y = p[1], z = p[2];
+            return std::array<double, 3>{t[0] * x + t[3] * y + t[6] * z + t[9],
+                                         t[1] * x + t[4] * y + t[7] * z + t[10],
+                                         t[2] * x + t[5] * y + t[8] * z + t[11]};
+        };
+        for (u32 v = 0; v < d.vertexCount; ++v) {
+            const std::array<double, 3> p = toWorld(v);
+            for (int axis = 0; axis < 3; ++axis) {
+                lo[axis] = std::min(lo[axis], p[axis]);
+                hi[axis] = std::max(hi[axis], p[axis]);
+            }
+        }
+        for (u32 m = 0; m < d.meshletCount; ++m) {
+            const Meshlet& meshlet = g.view->meshlets[d.firstMeshlet + m];
+            for (u32 i = 0; i < meshlet.triangleCount; ++i) {
+                const u32 packed = g.view->triangles[d.firstTriangle + meshlet.triangleOffset + i];
+                const std::array<double, 3> a = toWorld(meshlet.vertexOffset + (packed & 0xFF));
+                const std::array<double, 3> b =
+                    toWorld(meshlet.vertexOffset + ((packed >> 8) & 0xFF));
+                const std::array<double, 3> c =
+                    toWorld(meshlet.vertexOffset + ((packed >> 16) & 0xFF));
+                const double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+                const double vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+                const double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+                area += 0.5 * std::sqrt(nx * nx + ny * ny + nz * nz);
+                volume += (a[0] * nx + a[1] * ny + a[2] * nz) / 6.0;
+                ++triangles;
+            }
+        }
+    }
+    std::println("{{\"faces\": {}, \"triangles\": {}, \"area\": {}, \"signedVolume\": {}, "
+                 "\"min\": [{}, {}, {}], \"max\": [{}, {}, {}]}}",
+                 faces, triangles, area, volume, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+    return 0;
+}
+
 int renderCommand(int argc, const char** argv) {
     // gcli render <metallib> <blob> <png> [width height azimuth elevation perspective]
     const char* library = argv[2];
@@ -193,12 +307,16 @@ int main(int argc, const char** argv) {
     if (command == "verify" && argc == 3) {
         return verifyCommand(argv[2]);
     }
+    if (command == "stats" && argc == 3) {
+        return statsCommand(argv[2]);
+    }
     if (command == "render" && argc >= 5) {
         return renderCommand(argc, argv);
     }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
+    std::println(stderr, "       gcli stats <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> "
                          "[width height azimuth elevation perspective]");
     return 2;
