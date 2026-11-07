@@ -47,13 +47,24 @@ constexpr double kLinearOfDiagonal = 2e-4;
 constexpr double kMinSizeOfDiagonal = 1.5e-3;
 constexpr double kBaseAngular = 0.35;
 constexpr double kMinAngular = 0.05;
+// Rounding to the vertex grid must stay well inside the tessellation's own error.
+constexpr double kGridStepOfDeflection = 0.5;
+constexpr double kRetryToleranceScale = 0.125;
 
 constexpr int kWatchIntervalMs = 200;
 constexpr double kSliceTimeoutSeconds = 120.0;
 constexpr double kWholeFileTimeoutSeconds = 1800.0;
-constexpr u64 kWorkerMemoryLimit = u64(2) << 30;
+// One face of a heavy surface was measured at 2.9 GB, so a limit must leave room for that.
+constexpr u64 kMinWorkerMemoryLimit = u64(4) << 30;
 constexpr u64 kWorkerRecycleFootprint = u64(512) << 20;
 constexpr int kFirstHighFd = 32;
+
+u64 workerMemoryLimit() {
+    u64 memory = 0;
+    usize size = sizeof(memory);
+    sysctlbyname("hw.memsize", &memory, &size, nullptr, 0);
+    return std::max(kMinWorkerMemoryLimit, memory / 8);
+}
 
 usize performanceCores() {
     int cores = 0;
@@ -221,7 +232,8 @@ private:
                 return false;
             }
             if (ready <= 0) {
-                if (nowSeconds() > deadline || footprint() > kWorkerMemoryLimit) {
+                static const u64 memoryLimit = workerMemoryLimit();
+                if (nowSeconds() > deadline || footprint() > memoryLimit) {
                     return false;
                 }
                 continue;
@@ -266,26 +278,55 @@ bool forEachFace(const std::vector<u8>& payload, Visit&& visit) {
     return true;
 }
 
-double signedVolume(const IndexedMesh& mesh) {
-    double volume = 0.0;
-    for (usize t = 0; t + 2 < mesh.indices.size(); t += 3) {
-        const float* a = mesh.positions.data() + usize(mesh.indices[t]) * 3;
-        const float* b = mesh.positions.data() + usize(mesh.indices[t + 1]) * 3;
-        const float* c = mesh.positions.data() + usize(mesh.indices[t + 2]) * 3;
-        volume += double(a[0]) * (double(b[1]) * c[2] - double(b[2]) * c[1]) -
-                  double(a[1]) * (double(b[0]) * c[2] - double(b[2]) * c[0]) +
-                  double(a[2]) * (double(b[0]) * c[1] - double(b[1]) * c[0]);
-    }
-    return volume / 6.0;
+double tetrahedronVolume(const float* a, const float* b, const float* c) {
+    return (double(a[0]) * (double(b[1]) * c[2] - double(b[2]) * c[1]) -
+            double(a[1]) * (double(b[0]) * c[2] - double(b[2]) * c[0]) +
+            double(a[2]) * (double(b[0]) * c[1] - double(b[1]) * c[0])) /
+           6.0;
 }
 
-// Turns a body that OCCT left inside out the right way round.
-void flipMesh(IndexedMesh& mesh) {
-    for (usize t = 0; t + 2 < mesh.indices.size(); t += 3) {
-        std::swap(mesh.indices[t + 1], mesh.indices[t + 2]);
+// Makes every shell of a closed body face the right way: the outer shell encloses positive volume
+// and each cavity negative. The file's own flags cannot be trusted for this, because some writers
+// reverse a cavity twice. OCCT's ShapeFix corrects the same cases when it sees the whole solid.
+void orientShells(IndexedMesh& mesh, std::span<const FaceUse> faces, const Body& body) {
+    if (body.shellCount == 0) {
+        return;
     }
-    for (float& component : mesh.normals) {
-        component = -component;
+    std::vector<double> volumes(body.shellCount, 0.0);
+    for (usize t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        const u32 shell = faces[mesh.faceOfVertex[mesh.indices[t]]].shell;
+        volumes[shell] += tetrahedronVolume(mesh.positions.data() + usize(mesh.indices[t]) * 3,
+                                            mesh.positions.data() + usize(mesh.indices[t + 1]) * 3,
+                                            mesh.positions.data() + usize(mesh.indices[t + 2]) * 3);
+    }
+    // The outer shell is the largest, which is not always the one the file lists first.
+    u32 outer = 0;
+    for (u32 shell = 1; shell < body.shellCount; ++shell) {
+        if (std::fabs(volumes[shell]) > std::fabs(volumes[outer])) {
+            outer = shell;
+        }
+    }
+    std::vector<u8> flip(body.shellCount);
+    bool any = false;
+    for (u32 shell = 0; shell < body.shellCount; ++shell) {
+        const bool cavity = body.hasVoids && shell != outer;
+        flip[shell] = cavity ? volumes[shell] > 0.0 : volumes[shell] < 0.0;
+        any |= flip[shell] != 0;
+    }
+    if (!any) {
+        return;
+    }
+    for (usize t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        if (flip[faces[mesh.faceOfVertex[mesh.indices[t]]].shell] != 0) {
+            std::swap(mesh.indices[t + 1], mesh.indices[t + 2]);
+        }
+    }
+    for (usize v = 0; v < mesh.faceOfVertex.size(); ++v) {
+        if (flip[faces[mesh.faceOfVertex[v]].shell] != 0) {
+            mesh.normals[v * 3] = -mesh.normals[v * 3];
+            mesh.normals[v * 3 + 1] = -mesh.normals[v * 3 + 1];
+            mesh.normals[v * 3 + 2] = -mesh.normals[v * 3 + 2];
+        }
     }
 }
 
@@ -433,7 +474,7 @@ struct DefinitionProgress {
     std::mutex mutex;
     std::vector<Result> results;
     std::atomic<u32> pendingJobs{0};
-    bool triedWholeBody = false;
+    bool triedWholeBody = false; // touched only by the thread that finishes the last job
 };
 
 class SliceImporter {
@@ -466,7 +507,6 @@ public:
         stats_.meshSeconds = micros(meshMicros_);
         stats_.packSeconds = micros(packMicros_);
         stats_.failedFaces = failedFaces_;
-        stats_.unmeshedFaces = unmeshedFaces_;
         stats_.unmappedFaces = unmappedFaces_;
         stats_.crashedWorkers = crashedWorkers_;
         stats_.triangles = triangles_;
@@ -524,7 +564,6 @@ private:
                 const Chunk& chunk = definitions_.chunks[item.firstChunk + c];
                 queue_.push_back({chunk.definition, chunk.firstFace, chunk.faceCount, false});
             }
-            emptyDefinitions_ += 0;
         }
         outstanding_ = queue_.size();
     }
@@ -561,7 +600,12 @@ private:
 
     void buildText(const Job& job, ClosureWalker& walker) {
         const Definition& definition = definitions_.items[job.definition];
-        const u32 context = structure_.bodies[definition.body].context;
+        const Body& body = structure_.bodies[definition.body];
+        const u32 context = body.context;
+        if (job.wholeBody) {
+            writeBodySlice(index_, body.record, context, walker, text_);
+            return;
+        }
         faceRecords_.clear();
         for (u32 f = 0; f < job.faceCount; ++f) {
             faceRecords_.push_back(definitions_.faces[job.firstFace + f].record);
@@ -590,9 +634,12 @@ private:
             request.magic = worker::kMagic;
             request.kind = u32(RequestKind::Slice);
             request.textBytes = text_.size();
-            request.linearDeflection = tolerances_.linear;
+            // A face that would not mesh is usually smaller than the minimum edge, so the retry of
+            // a whole body works finer. Only the faces still missing are taken from it.
+            const double scale = job->wholeBody ? kRetryToleranceScale : 1.0;
+            request.linearDeflection = tolerances_.linear * scale;
             request.angularDeflection = tolerances_.angular;
-            request.minSize = tolerances_.minSize;
+            request.minSize = tolerances_.minSize * scale;
 
             Reply reply{};
             payload.clear();
@@ -611,7 +658,6 @@ private:
             addTime(readMicros_, reply.readSeconds);
             addTime(transferMicros_, reply.transferSeconds);
             addTime(meshMicros_, reply.meshSeconds);
-            unmeshedFaces_.fetch_add(reply.unmeshedFaces, std::memory_order_relaxed);
             unmappedFaces_.fetch_add(reply.unmappedFaces, std::memory_order_relaxed);
             complete(*job, std::move(payload));
             payload = {};
@@ -621,8 +667,8 @@ private:
         }
     }
 
-    // The failure ladder: halve the slice until one face is alone, then let OCCT read the whole
-    // body, whose full shell can sometimes repair what a lone face cannot.
+    // The failure ladder: halve the slice until one face is alone. `finishDefinition` then gives
+    // any face still without triangles to OCCT as part of the whole body.
     void retry(const Job& job) {
         if (job.wholeBody) {
             failJob(job);
@@ -636,26 +682,13 @@ private:
             finishJob();
             return;
         }
-        DefinitionProgress& state = progress_[job.definition];
-        bool first = false;
-        {
-            std::lock_guard lock(state.mutex);
-            first = !state.triedWholeBody;
-            state.triedWholeBody = true;
-        }
-        if (first) {
-            const Definition& definition = definitions_.items[job.definition];
-            state.pendingJobs.fetch_add(1, std::memory_order_relaxed);
-            requeue({Job{job.definition, definition.firstFace, definition.faceCount, true}});
-        }
         failJob(job);
     }
 
     void failJob(const Job& job) {
-        failedFaces_.fetch_add(job.faceCount, std::memory_order_relaxed);
         reportProgress(job.faceCount);
         if (progress_[job.definition].pendingJobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            packDefinition(job.definition);
+            finishDefinition(job.definition);
         }
         finishJob();
     }
@@ -668,9 +701,48 @@ private:
         }
         reportProgress(job.wholeBody ? 0 : job.faceCount);
         if (state.pendingJobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            packDefinition(job.definition);
+            finishDefinition(job.definition);
         }
         finishJob();
+    }
+
+    // Every job for a definition is done, and only this thread can touch its results. If a face has
+    // no triangles, OCCT gets one chance to mesh it as part of the real solid.
+    void finishDefinition(u32 d) {
+        DefinitionProgress& state = progress_[d];
+        if (!state.triedWholeBody && countMissingFaces(d) != 0) {
+            state.triedWholeBody = true;
+            const Definition& definition = definitions_.items[d];
+            state.pendingJobs.store(1, std::memory_order_relaxed);
+            requeue({Job{d, definition.firstFace, definition.faceCount, true}});
+            return;
+        }
+        packDefinition(d);
+    }
+
+    std::vector<std::pair<u32, u32>> faceIds(const Definition& definition) const {
+        std::vector<std::pair<u32, u32>> ids(definition.faceCount);
+        for (u32 f = 0; f < definition.faceCount; ++f) {
+            ids[f] = {index_.ids[definitions_.faces[definition.firstFace + f].record], f};
+        }
+        std::sort(ids.begin(), ids.end());
+        return ids;
+    }
+
+    u32 countMissingFaces(u32 d) const {
+        const Definition& definition = definitions_.items[d];
+        const std::vector<std::pair<u32, u32>> ids = faceIds(definition);
+        std::vector<u8> meshed(definition.faceCount, 0);
+        for (const Result& result : progress_[d].results) {
+            forEachFace(result.payload, [&](const FaceHeader& header, auto, auto, auto) {
+                const auto it = std::lower_bound(ids.begin(), ids.end(),
+                                                 std::pair<u32, u32>(header.sourceId, 0));
+                if (it != ids.end() && it->first == header.sourceId && header.triangleCount != 0) {
+                    meshed[it->second] = 1;
+                }
+            });
+        }
+        return u32(std::count(meshed.begin(), meshed.end(), 0));
     }
 
     void reportProgress(u32 faces) {
@@ -688,11 +760,7 @@ private:
         const std::span<const FaceUse> faces(definitions_.faces.data() + definition.firstFace,
                                              definition.faceCount);
 
-        std::vector<std::pair<u32, u32>> faceOfId(faces.size());
-        for (u32 f = 0; f < faces.size(); ++f) {
-            faceOfId[f] = {index_.ids[faces[f].record], f};
-        }
-        std::sort(faceOfId.begin(), faceOfId.end());
+        const std::vector<std::pair<u32, u32>> faceOfId = faceIds(definition);
 
         // Slices are read before any whole-body retry, so a retry only ever fills gaps.
         std::stable_sort(
@@ -719,7 +787,8 @@ private:
                                                      std::pair<u32, u32>(header.sourceId, 0));
                     const bool known = it != faceOfId.end() && it->first == header.sourceId;
                     const u32 face = known ? it->second : fallback;
-                    if (face >= faces.size() || (owner[face] != 0xFFFFFFFF && owner[face] != r)) {
+                    if (header.triangleCount == 0 || face >= faces.size() ||
+                        (owner[face] != 0xFFFFFFFF && owner[face] != r)) {
                         return;
                     }
                     owner[face] = r;
@@ -730,13 +799,16 @@ private:
             }
         }
         state.results.clear();
+        const u32 missing = u32(std::count(owner.begin(), owner.end(), 0xFFFFFFFF));
+        failedFaces_.fetch_add(missing, std::memory_order_relaxed);
 
         IndexedMesh& mesh = sink.mesh;
         mesh.faceCount = definition.faceCount;
         mesh.closed = body.closed;
         mesh.faceOrderIsFixed = true;
-        if (mesh.closed && signedVolume(mesh) < 0.0) {
-            flipMesh(mesh);
+        mesh.maxGridStep = float(tolerances_.linear * kGridStepOfDeflection);
+        if (mesh.closed) {
+            orientShells(mesh, faces, body);
         }
 
         PackedDefinition packed = packMesh(mesh);
@@ -775,11 +847,9 @@ private:
     usize outstanding_ = 0;
     std::string firstError_;
     u32 totalFaces_ = 0;
-    usize emptyDefinitions_ = 0;
 
     std::atomic<u32> doneFaces_{0};
     std::atomic<u32> failedFaces_{0};
-    std::atomic<u32> unmeshedFaces_{0};
     std::atomic<u32> unmappedFaces_{0};
     std::atomic<u32> crashedWorkers_{0};
     std::atomic<u64> triangles_{0};
@@ -823,7 +893,6 @@ bool importWholeFile(int outputFd, SegmentListener* listener, const StepOptions&
     stats.readSeconds = reply.readSeconds;
     stats.transferSeconds = reply.transferSeconds;
     stats.meshSeconds = reply.meshSeconds;
-    stats.unmeshedFaces = reply.unmeshedFaces;
 
     std::vector<FaceSink> groups(reply.groupCount);
     if (!forEachFace(payload, [&](const FaceHeader& header, const u8* positions, const u8* normals,

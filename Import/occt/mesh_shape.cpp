@@ -32,6 +32,8 @@
 #include <XSControl_WorkSession.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_XYZ.hxx>
 
 #include <algorithm>
 #include <cmath>
@@ -217,7 +219,9 @@ void appendFace(const TopoDS_Face& source, u32 sourceId, u32 group, FaceBuffers&
                 Reply& reply, std::vector<u8>& payload) {
     if (!readFace(source, buffers)) {
         ++reply.unmeshedFaces;
-        return;
+        buffers.positions.clear();
+        buffers.normals.clear();
+        buffers.indices.clear();
     }
     const FaceHeader header{sourceId, group, u32(buffers.positions.size() / 3),
                             u32(buffers.indices.size() / 3)};
@@ -385,32 +389,37 @@ Truth measureFile(const char* path, double linear, double angular, double minSiz
 
         double lo[3] = {INFINITY, INFINITY, INFINITY};
         double hi[3] = {-INFINITY, -INFINITY, -INFINITY};
-        FaceBuffers face;
         for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
             ++truth.faces;
-            if (!readFace(TopoDS::Face(explorer.Current()), face)) {
+            const TopoDS_Face& face = TopoDS::Face(explorer.Current());
+            TopLoc_Location location;
+            const occ::handle<Poly_Triangulation>& mesh = BRep_Tool::Triangulation(face, location);
+            if (mesh.IsNull() || mesh->NbTriangles() == 0) {
                 ++truth.unmeshedFaces;
                 continue;
             }
-            truth.triangles += face.indices.size() / 3;
-            for (usize t = 0; t + 2 < face.indices.size(); t += 3) {
-                const float* a = face.positions.data() + usize(face.indices[t]) * 3;
-                const float* b = face.positions.data() + usize(face.indices[t + 1]) * 3;
-                const float* c = face.positions.data() + usize(face.indices[t + 2]) * 3;
-                const double ux = double(b[0]) - a[0], uy = double(b[1]) - a[1],
-                             uz = double(b[2]) - a[2];
-                const double vx = double(c[0]) - a[0], vy = double(c[1]) - a[1],
-                             vz = double(c[2]) - a[2];
-                const double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-                truth.area += 0.5 * std::sqrt(nx * nx + ny * ny + nz * nz);
-                truth.signedVolume +=
-                    (double(a[0]) * nx + double(a[1]) * ny + double(a[2]) * nz) / 6.0;
-            }
-            for (usize v = 0; v + 2 < face.positions.size(); v += 3) {
-                for (usize axis = 0; axis < 3; ++axis) {
-                    lo[axis] = std::min(lo[axis], double(face.positions[v + axis]));
-                    hi[axis] = std::max(hi[axis], double(face.positions[v + axis]));
+            const gp_Trsf transform = location.Transformation();
+            const auto node = [&](int n) { return mesh->Node(n).Transformed(transform); };
+            for (int n = 1; n <= mesh->NbNodes(); ++n) {
+                const gp_Pnt p = node(n);
+                const double xyz[3] = {p.X(), p.Y(), p.Z()};
+                for (int axis = 0; axis < 3; ++axis) {
+                    lo[axis] = std::min(lo[axis], xyz[axis]);
+                    hi[axis] = std::max(hi[axis], xyz[axis]);
                 }
+            }
+            const bool reversed = face.Orientation() == TopAbs_REVERSED;
+            for (int t = 1; t <= mesh->NbTriangles(); ++t) {
+                int ia = 0, ib = 0, ic = 0;
+                mesh->Triangle(t).Get(ia, ib, ic);
+                if (reversed) {
+                    std::swap(ib, ic);
+                }
+                const gp_Pnt a = node(ia), b = node(ib), c = node(ic);
+                const gp_XYZ normal = (b.XYZ() - a.XYZ()).Crossed(c.XYZ() - a.XYZ());
+                truth.area += 0.5 * normal.Modulus();
+                truth.signedVolume += a.XYZ().Dot(normal) / 6.0;
+                ++truth.triangles;
             }
         }
         for (usize axis = 0; axis < 3; ++axis) {

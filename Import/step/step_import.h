@@ -29,8 +29,7 @@ struct StepStats {
     usize faces = 0;
     usize triangles = 0;
     usize meshlets = 0;
-    u32 failedFaces = 0;
-    u32 unmeshedFaces = 0;
+    u32 failedFaces = 0; // faces left without triangles after every retry
     u32 unmappedFaces = 0;
     u32 crashedWorkers = 0;
     usize workers = 0;
