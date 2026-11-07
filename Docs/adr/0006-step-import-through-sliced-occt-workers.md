@@ -36,9 +36,10 @@ because one legitimate face needed 2.9 GB.
 ### Orientation
 
 Every closed shell is oriented by its own volume: the outer shell positive and each cavity negative.
-The file's own flags cannot be trusted. Fusion 360 writes some cavities reversed twice, and on 2 of 3
-such files OCCT's whole-file read added the cavity's volume instead of subtracting it. On
-`00831767.step` the shells measure 0.00975 and −0.00059, and OCCT reported their sum as positive.
+The file's own flags cannot be trusted: Fusion 360 writes some cavities reversed twice. OCCT's
+whole-file read can also get cavities wrong. On `00831767.step` the shells measure 0.00975 and
+−0.00059, and OCCT reported 0.01033, adding the cavity instead of subtracting it. Files with
+cavities differed from OCCT in volume this way and were checked only for a positive total.
 
 ## Results
 
