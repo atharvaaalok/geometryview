@@ -12,6 +12,7 @@ final class Exercise {
 
     private static let dragSeconds = 6.0
     private static let pixelsPerSecond = 500.0
+    private static let refineWaitSeconds = 3.0
 
     private let engine: EngineHandle
     private let center: CGPoint
@@ -76,6 +77,26 @@ final class Exercise {
         post(GeoPointerUp, GeoButtonLeft, x: x, y: y)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
             print("exercise: hovered face \(hovered), selected \(engine.stats().selected_id)")
+            zoomIn(x: x, y: y)
+        }
+    }
+
+    // Zooms far into the clicked point and waits, which is what makes refinement start.
+    private func zoomIn(x: CGFloat, y: CGFloat) {
+        for _ in 0..<12 {
+            engine.post(
+                GeoPointerEvent(
+                    kind: GeoPointerScroll,
+                    button: GeoButtonNone,
+                    x: Float(x),
+                    y: Float(y),
+                    delta: 200,
+                    modifiers: 0,
+                    timestamp: ProcessInfo.processInfo.systemUptime
+                )
+            )
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refineWaitSeconds) { [self] in
             quit()
         }
     }

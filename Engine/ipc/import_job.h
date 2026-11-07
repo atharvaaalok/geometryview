@@ -5,6 +5,7 @@
 #include "scene/mapped_segment.h"
 
 #include <memory>
+#include <span>
 #include <string>
 
 namespace geo::ipc {
@@ -58,5 +59,11 @@ private:
 /// final name therefore never sees a partial file, and mappings of the temporary one stay valid.
 ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
                          ImportListener& listener, ImportCancel* cancel = nullptr);
+
+/// Imports some definitions again at a finer level, as segments that replace their coarser
+/// geometry. Each result is cached beside the file's own, and `importFile` brings it back.
+ImportOutcome refineFile(const std::string& sourcePath, const ImportPaths& paths, u32 level,
+                         std::span<const u32> definitions, ImportListener& listener,
+                         ImportCancel* cancel = nullptr);
 
 } // namespace geo::ipc
