@@ -70,6 +70,26 @@ rows say so. While anything is hidden or ghosted, the foot of the card counts it
 and Unghost. Fit and rotation always follow what is shown. ⇧⌘O adds a file to what
 is shown, and ⌘-dropping files does the same.
 
+## Using it from AI apps
+
+`Launcher/` is a tool server for AI apps (MCP). It lets Claude, Codex or ChatGPT open a STEP or STL file
+on this Mac, list its assemblies and parts, render pictures of it (any view or style, parts alone,
+sections), and open it in the Geometry app. It drives the native engine through `gcli`, so build
+the release preset first.
+
+- **Claude Desktop:** `node Launcher/scripts/pack.mjs`, then double-click
+  `Launcher/dist/geometry-viewer.mcpb`.
+- **Codex or ChatGPT desktop:** add to `~/.codex/config.toml`:
+
+  ```toml
+  [mcp_servers.geometry]
+  command = "node"
+  args = ["<repo>/Launcher/bin/geometry-viewer.mjs", "--mcp"]
+  ```
+- **Claude Code:** `claude mcp add geometry -- node <repo>/Launcher/bin/geometry-viewer.mjs --mcp`.
+
+`cd Launcher && npm test` drives the server as an AI app does.
+
 ## Development
 
 ```sh

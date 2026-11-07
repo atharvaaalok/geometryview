@@ -1,0 +1,28 @@
+{
+  "manifest_version": "0.3",
+  "name": "geometry-viewer",
+  "display_name": "Geometry",
+  "version": "0.1.0",
+  "description": "Open, inspect and picture STEP and STL models on this Mac.",
+  "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and open them in the Geometry app.",
+  "author": { "name": "Atharva Aalok" },
+  "server": {
+    "type": "node",
+    "entry_point": "bin/geometry-viewer.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/bin/geometry-viewer.mjs", "--mcp"],
+      "env": { "GEOMETRY_NATIVE_DIR": "${__dirname}/native" }
+    }
+  },
+  "tools": [
+    { "name": "open_model", "description": "Open a STEP or STL file and summarise it." },
+    { "name": "get_structure", "description": "List the assemblies and parts." },
+    { "name": "render_view", "description": "Render a picture: any view, style, parts alone, sections." },
+    { "name": "open_in_viewer", "description": "Show the model in the Geometry app." }
+  ],
+  "compatibility": {
+    "platforms": ["darwin"],
+    "runtimes": { "node": ">=20.0.0" }
+  }
+}
