@@ -56,6 +56,7 @@ struct Stage {
     nav::Viewport viewport{double(kWidth), double(kHeight)};
     nav::Camera camera;
     scene::Scene scene;
+    model::FaceState state;
     Aabb bounds{};
 
     explicit Stage(const std::vector<float>& corners, bool perspective = false) {
@@ -82,6 +83,8 @@ struct Stage {
             REQUIRE_MESSAGE(document.add(std::move(segment), error), error);
         }
         renderer->syncScene(scene);
+        state.resize(scene.faceCounts());
+        renderer->syncState(state);
         renderer->resize(kWidth, kHeight);
         bounds = scene.bounds().value();
 
@@ -91,11 +94,20 @@ struct Stage {
         nav::fit(camera, bounds, viewport, 1.2);
     }
 
-    render::ViewState view(u32 hovered = 0, u32 selected = 0) const {
-        render::ViewState state = render::makeView(camera, viewport, bounds);
-        state.uniforms.hoveredId = hovered;
-        state.uniforms.selectedId = selected;
-        return state;
+    // Selection lives in face state now, so selecting marks the face and uploads the change.
+    render::ViewState view(u32 hovered = 0, u32 selected = 0) {
+        if (selected != 0) {
+            const std::optional<scene::PickTarget> target = scene.resolve(selected);
+            REQUIRE(target.has_value());
+            state.set({target->globalOccurrence, target->face}, kStateSelected, true);
+        }
+        renderer->syncState(state);
+        render::ViewState view = render::makeView(camera, viewport, bounds);
+        if (hovered != 0) {
+            view.uniforms.hoverFirst = hovered;
+            view.uniforms.hoverEnd = hovered + 1;
+        }
+        return view;
     }
 
     std::array<u8, 3> pixel(const std::vector<u8>& bgra, int x, int y) const {
@@ -253,5 +265,70 @@ TEST_CASE("a wide definition decodes through its high bits") {
         const render::ViewState view = stage.view();
         stage.renderer->renderOffscreen(view);
         REQUIRE(stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth).has_value());
+    }
+}
+
+namespace {
+
+std::set<u32> visibleIds(Stage& stage, const render::ViewState& view) {
+    std::set<u32> ids;
+    for (u32 y = 0; y < kHeight; y += 2) {
+        for (u32 x = 0; x < kWidth; x += 2) {
+            if (const auto hit = stage.renderer->readPixel(int(x), int(y), view.depth)) {
+                ids.insert(hit->id);
+            }
+        }
+    }
+    return ids;
+}
+
+} // namespace
+
+TEST_CASE("a hidden face is neither drawn nor picked") {
+    @autoreleasepool {
+        Stage stage(box());
+        render::ViewState view = stage.view();
+        stage.renderer->renderOffscreen(view);
+        const std::set<u32> before = visibleIds(stage, view);
+        REQUIRE(before.size() == 3);
+        const auto target = stage.scene.resolve(*before.begin());
+        stage.state.set({target->globalOccurrence, target->face}, kStateHidden, true);
+        view = stage.view();
+        stage.renderer->renderOffscreen(view);
+        const std::set<u32> after = visibleIds(stage, view);
+        // The hidden face's place is taken by the inside of the box, seen through the gap.
+        CHECK_FALSE(after.contains(*before.begin()));
+    }
+}
+
+TEST_CASE("a ghost is drawn translucent and clicks pass through it unless the tool is held") {
+    @autoreleasepool {
+        Stage stage(box());
+        render::ViewState view = stage.view();
+        const std::vector<u8> plain = stage.renderer->renderOffscreen(view);
+        const std::set<u32> before = visibleIds(stage, view);
+        const u32 front = *before.begin();
+        const auto target = stage.scene.resolve(front);
+        stage.state.set({target->globalOccurrence, target->face}, kStateGhost, true);
+
+        view = stage.view();
+        const std::vector<u8> ghosted = stage.renderer->renderOffscreen(view);
+        CHECK(ghosted != plain);
+        CHECK_FALSE(visibleIds(stage, view).contains(front));
+
+        view = stage.view();
+        view.uniforms.ghostPickable = 1;
+        stage.renderer->renderOffscreen(view);
+        CHECK(visibleIds(stage, view).contains(front));
+    }
+}
+
+TEST_CASE("hiding a whole occurrence leaves an empty picture") {
+    @autoreleasepool {
+        Stage stage(box());
+        stage.state.set({0, model::Target::kWholeOccurrence}, kStateHidden, true);
+        const render::ViewState view = stage.view();
+        stage.renderer->renderOffscreen(view);
+        CHECK(visibleIds(stage, view).empty());
     }
 }

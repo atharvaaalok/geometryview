@@ -9,7 +9,7 @@ target_include_directories(geo_format PUBLIC "${CMAKE_SOURCE_DIR}/Import")
 target_link_libraries(geo_format PUBLIC geo_base PRIVATE geo_warnings)
 
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
-    math/*.cpp nav/*.cpp scene/*.cpp render/*.cpp ipc/*.cpp gpu/*.mm gpu/*.cpp
+    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp ipc/*.cpp gpu/*.mm gpu/*.cpp
     engine/*.cpp engine/*.mm)
 add_library(engine STATIC ${engine_sources})
 target_include_directories(engine PUBLIC include PRIVATE .)

@@ -71,6 +71,83 @@ bool Document::add(std::shared_ptr<MappedSegment> segment, std::string& error) {
     return true;
 }
 
+u32 Scene::occurrenceBase(u32 document) const {
+    u32 base = 0;
+    for (u32 d = 0; d < document; ++d) {
+        if (documents_[d]->hasModel()) {
+            base += u32(documents_[d]->model().occurrences.size());
+        }
+    }
+    return base;
+}
+
+u32 Scene::occurrenceCount() const {
+    return occurrenceBase(documentCount());
+}
+
+std::vector<u32> Scene::faceCounts() const {
+    std::vector<u32> counts;
+    for (const std::unique_ptr<Document>& document : documents_) {
+        if (!document->hasModel()) {
+            continue;
+        }
+        const format::SegmentView& model = document->model();
+        for (const format::OccurrenceRecord& occurrence : model.occurrences) {
+            counts.push_back(model.definitionInfos[occurrence.definition].faceCount);
+        }
+    }
+    return counts;
+}
+
+std::pair<u32, u32> Scene::idRange(u32 document, u32 occurrence) const {
+    u32 base = 1;
+    for (u32 d = 0; d < document; ++d) {
+        base += documents_[d]->idCount();
+    }
+    const Document& doc = *documents_[document];
+    const u32 first = base + doc.idBase(occurrence);
+    const u32 faces =
+        doc.model().definitionInfos[doc.model().occurrences[occurrence].definition].faceCount;
+    return {first, first + faces};
+}
+
+std::optional<PickTarget> Scene::resolve(u32 id) const {
+    if (id == 0) {
+        return std::nullopt;
+    }
+    u32 index = id - 1;
+    u32 globalBase = 0;
+    for (u32 d = 0; d < documents_.size(); ++d) {
+        const Document& document = *documents_[d];
+        if (!document.hasModel()) {
+            continue;
+        }
+        const u32 occurrences = u32(document.model().occurrences.size());
+        if (index >= document.idCount()) {
+            index -= document.idCount();
+            globalBase += occurrences;
+            continue;
+        }
+        // The last occurrence whose first id is at or before this one.
+        u32 low = 0, high = occurrences;
+        while (high - low > 1) {
+            const u32 middle = (low + high) / 2;
+            if (document.idBase(middle) <= index) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        const u32 face = index - document.idBase(low);
+        const format::SegmentView& model = document.model();
+        if (face >= model.definitionInfos[model.occurrences[low].definition].faceCount) {
+            return std::nullopt;
+        }
+        return PickTarget{d, low, globalBase + low, face};
+    }
+    return std::nullopt;
+}
+
 u32 Scene::addDocument() {
     documents_.push_back(std::make_unique<Document>());
     return u32(documents_.size()) - 1;

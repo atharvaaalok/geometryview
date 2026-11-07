@@ -76,7 +76,9 @@ final class Exercise {
         post(GeoPointerDown, GeoButtonLeft, x: x, y: y)
         post(GeoPointerUp, GeoButtonLeft, x: x, y: y)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-            print("exercise: hovered face \(hovered), selected \(engine.stats().selected_id)")
+            print(
+                "exercise: hovered face \(hovered), selected \(engine.stats().selected_count)"
+            )
             zoomIn(x: x, y: y)
         }
     }

@@ -46,8 +46,11 @@ struct Renderer::State {
     u64 frameCount = 0;
 
     id<MTLRenderPipelineState> surfacePipeline;
+    id<MTLRenderPipelineState> ghostPipeline;     // blended, writes no ids
+    id<MTLRenderPipelineState> ghostPickPipeline; // blended, writes ids so a ghost can be clicked
     id<MTLRenderPipelineState> pickPipeline;
     id<MTLDepthStencilState> depthState;
+    id<MTLDepthStencilState> ghostDepthState; // tests depth but does not write it
     id<MTL4ArgumentTable> surfaceTable;
     id<MTL4ArgumentTable> tileTable;
     id<MTLResidencySet> residency;
@@ -60,6 +63,11 @@ struct Renderer::State {
     id<MTLBuffer> pickIdBuffer, pickDepthBuffer;
     id<MTLTexture> pickIds, pickDepths;
     NSUInteger pickIdRowBytes = 0, pickDepthRowBytes = 0;
+
+    // Hidden, ghosted and selected flags. Uploaded only when they change.
+    id<MTLBuffer> occurrenceStates, faceStates;
+    u64 stateVersion = ~u64(0);
+    bool hasGhosts = false;
 
     // Scene. Each segment of geometry has its own residency set, filled once and never written
     // again, so wiring its pages on another thread cannot race with anything.
@@ -141,21 +149,11 @@ struct Renderer::State {
             return false;
         }
 
-        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
-        mesh.objectFunctionDescriptor = function(@"surfaceObject");
-        mesh.meshFunctionDescriptor = function(@"surfaceMesh");
-        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment");
-        mesh.payloadMemoryLength = kPayloadBytes;
-        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
-        mesh.rasterSampleCount = kSampleCount;
-        mesh.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
-        mesh.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
-        mesh.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
-        surfacePipeline = [compiler newRenderPipelineStateWithDescriptor:mesh
-                                                     compilerTaskOptions:nil
-                                                                   error:&error];
-        if (!surfacePipeline) {
-            reportFailure("Could not create the surface pipeline", error);
+        surfacePipeline = makeSurfacePipeline(compiler, false, false, &error);
+        ghostPipeline = makeSurfacePipeline(compiler, true, false, &error);
+        ghostPickPipeline = makeSurfacePipeline(compiler, true, true, &error);
+        if (!surfacePipeline || !ghostPipeline || !ghostPickPipeline) {
+            reportFailure("Could not create the surface pipelines", error);
             return false;
         }
 
@@ -178,7 +176,49 @@ struct Renderer::State {
         depth.depthCompareFunction = MTLCompareFunctionGreater; // reversed depth
         depth.depthWriteEnabled = YES;
         depthState = [device newDepthStencilStateWithDescriptor:depth];
+        depth.depthWriteEnabled = NO;
+        ghostDepthState = [device newDepthStencilStateWithDescriptor:depth];
         return true;
+    }
+
+    // One function set serves both passes. The ghost pass is chosen by a function constant, so
+    // each pipeline is specialised and the opaque one keeps no ghost branches.
+    id<MTLRenderPipelineState> makeSurfacePipeline(id<MTL4Compiler> compiler, bool ghost,
+                                                   bool ghostWritesIds, NSError** error) {
+        MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:0];
+        const auto specialized = [&](NSString* name) {
+            MTL4SpecializedFunctionDescriptor* function = [MTL4SpecializedFunctionDescriptor new];
+            function.functionDescriptor = this->function(name);
+            function.constantValues = constants;
+            return function;
+        };
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = specialized(@"surfaceObject");
+        mesh.meshFunctionDescriptor = specialized(@"surfaceMesh");
+        mesh.fragmentFunctionDescriptor = specialized(@"surfaceFragment");
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = kSampleCount;
+        mesh.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        mesh.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        mesh.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        if (ghost) {
+            MTL4RenderPipelineColorAttachmentDescriptor* color =
+                mesh.colorAttachments[kAttachmentColor];
+            color.blendingState = MTL4BlendStateEnabled;
+            color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+            color.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+            color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            if (!ghostWritesIds) {
+                mesh.colorAttachments[kAttachmentId].writeMask = MTLColorWriteMaskNone;
+                mesh.colorAttachments[kAttachmentDepth].writeMask = MTLColorWriteMaskNone;
+            }
+        }
+        return [compiler newRenderPipelineStateWithDescriptor:mesh
+                                          compilerTaskOptions:nil
+                                                        error:error];
     }
 
     bool createTables() {
@@ -264,12 +304,25 @@ struct Renderer::State {
             [surfaceTable setAddress:definitions.gpuAddress atIndex:kBufferDefinitions];
             [surfaceTable setAddress:occurrences.gpuAddress atIndex:kBufferOccurrences];
             [surfaceTable setAddress:batches.gpuAddress atIndex:kBufferBatches];
+            [surfaceTable setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
+            [surfaceTable setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
 
             // Closed surfaces first, with back faces culled. Open ones show both sides.
             [encoder setCullMode:MTLCullModeBack];
             drawBatches(encoder, 0, openBatchStart);
             [encoder setCullMode:MTLCullModeNone];
             drawBatches(encoder, openBatchStart, batchCount);
+
+            // Ghosts last, blended over everything opaque and writing no depth.
+            if (hasGhosts) {
+                [encoder setRenderPipelineState:view.uniforms.ghostPickable != 0 ? ghostPickPipeline
+                                                                                 : ghostPipeline];
+                [encoder setDepthStencilState:ghostDepthState];
+                [encoder setCullMode:MTLCullModeBack];
+                drawBatches(encoder, 0, openBatchStart);
+                [encoder setCullMode:MTLCullModeNone];
+                drawBatches(encoder, openBatchStart, batchCount);
+            }
         }
 
         [encoder setRenderPipelineState:pickPipeline];
@@ -340,6 +393,10 @@ std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* lib
     }
     s.frameUniforms = s.makeShared(sizeof(FrameUniforms) * kFramesInFlight);
     [s.residency addAllocation:s.frameUniforms];
+    s.occurrenceStates = s.makeShared(sizeof(OccurrenceState));
+    s.faceStates = s.makeShared(16);
+    [s.residency addAllocation:s.occurrenceStates];
+    [s.residency addAllocation:s.faceStates];
     return renderer;
 }
 
@@ -507,6 +564,44 @@ void Renderer::syncScene(const scene::Scene& scene) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];
+}
+
+void Renderer::syncState(const model::FaceState& state) {
+    State& s = *state_;
+    if (state.version() == s.stateVersion) {
+        return;
+    }
+    s.stateVersion = state.version();
+    const std::span<const OccurrenceState> words = state.occurrenceWords();
+    const std::span<const u8> faces = state.faceBytes();
+
+    // Grown buffers replace the old ones, which a frame in flight may still read, so those retire.
+    State::Retired retired;
+    retired.frame = s.frameCount;
+    const auto ensure = [&](id<MTLBuffer> __strong& buffer, usize bytes) {
+        if (buffer.length >= bytes) {
+            return;
+        }
+        retired.buffers.push_back(buffer);
+        buffer = s.makeShared(std::max<usize>(bytes, buffer.length * 2));
+        [s.residency addAllocation:buffer];
+    };
+    ensure(s.occurrenceStates, words.size_bytes());
+    ensure(s.faceStates, faces.size_bytes());
+    if (!retired.buffers.empty()) {
+        s.retired.push_back(std::move(retired));
+        [s.residency commit];
+    }
+    std::memcpy(s.occurrenceStates.contents, words.data(), words.size_bytes());
+    std::memcpy(s.faceStates.contents, faces.data(), faces.size_bytes());
+
+    s.hasGhosts = false;
+    for (const OccurrenceState& word : words) {
+        if ((word.flags & (kStateGhost | kStateFaceGhost)) != 0) {
+            s.hasGhosts = true;
+            break;
+        }
+    }
 }
 
 void Renderer::resize(u32 width, u32 height) {

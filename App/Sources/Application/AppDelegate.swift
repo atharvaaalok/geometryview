@@ -23,12 +23,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         NSApp.activate()
         geo_trace_memory("window shown")
+        let openingFile = pendingURL != nil
         if let pendingURL {
             window.open(pendingURL)
             self.pendingURL = nil
         }
 
-        if ChromeSnapshot.isRequested {
+        // With a file, the window takes its snapshot once the file has loaded.
+        if ChromeSnapshot.isRequested, !openingFile {
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -39,7 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openDocument(_ sender: Any?) {
-        window?.chooseFile()
+        window?.chooseFile(adding: false)
+    }
+
+    @objc func addDocument(_ sender: Any?) {
+        window?.chooseFile(adding: true)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

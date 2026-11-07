@@ -6,10 +6,14 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// The ghost pass reuses every stage, with this constant choosing which faces it keeps.
+constant bool kGhostPass [[function_constant(0)]];
+
 struct SurfaceVertex {
     float4 position [[position]];
     float3 normal;
     uint id [[flat]];
+    uint flags [[flat]];
 };
 
 struct SurfaceOutput {
@@ -77,6 +81,18 @@ static inline bool isVisible(const device Meshlet& m, const device GpuDefinition
     return dot(frame.forward, axis) < cutoff;
 }
 
+// Whether a pass draws anything of an occurrence. A face-level flag means faces must be checked one
+// by one in the mesh stage.
+static inline bool passKeeps(uint flags) {
+    if ((flags & kStateHidden) != 0) {
+        return false;
+    }
+    if (kGhostPass) {
+        return (flags & (kStateGhost | kStateFaceGhost)) != 0;
+    }
+    return (flags & kStateGhost) == 0;
+}
+
 [[object, max_total_threads_per_threadgroup(1),
   max_total_threadgroups_per_mesh_grid(kBatchMeshlets)]]
 void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_properties grid,
@@ -85,12 +101,17 @@ void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_propertie
                    const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
                    const device Batch* batches [[buffer(kBufferBatches)]],
                    constant uint& drawBase [[buffer(kBufferDrawBase)]],
+                   const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                    uint group [[threadgroup_position_in_grid]]) {
     const device Batch& batch = batches[drawBase + group];
     const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
     const device GpuDefinition& definition = definitions[occurrence.definition];
 
     uint count = 0;
+    if (!passKeeps(states[batch.occurrence].flags)) {
+        grid.set_threadgroups_per_grid(uint3(0, 1, 1));
+        return;
+    }
     for (uint i = 0; i < batch.meshletCount; ++i) {
         const uint index = batch.firstMeshlet + i;
         if (isVisible(definition.meshlets[index], definition, occurrence, frame)) {
@@ -107,6 +128,7 @@ using SurfaceMesh = metal::mesh<SurfaceVertex, void, kMeshletMaxVertices, kMeshl
 static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          const device GpuDefinition& definition,
                                          const device GpuOccurrence& occurrence,
+                                         OccurrenceState state, const device uchar* faceStates,
                                          constant FrameUniforms& frame, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
@@ -122,10 +144,20 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     const float3 world = transformPoint(occurrence, local);
     const float3 normal = transformDirection(occurrence, decodeOctahedral(short2(v.octX, v.octY)));
 
+    const uint face = m.faceBase + uint(v.localFace);
+    const uint flags = (state.flags & (kStateHidden | kStateGhost | kStateSelected)) |
+                       uint(faceStates[state.facePage + face]);
     SurfaceVertex out;
     out.position = frame.viewProjection * float4(world, 1.0);
     out.normal = frame.viewRotation * normal;
-    out.id = occurrence.idBase + m.faceBase + uint(v.localFace) + 1;
+    out.id = occurrence.idBase + face + 1;
+    out.flags = flags;
+    // Faces never share vertices, so moving all of a face's vertices to one point outside the view
+    // removes exactly that face, with no discard and no per-primitive data.
+    const bool ghost = (flags & kStateGhost) != 0;
+    if ((flags & kStateHidden) != 0 || ghost != kGhostPass) {
+        out.position = float4(0.0, 0.0, 2.0, 1.0);
+    }
     return out;
 }
 
@@ -136,17 +168,21 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
                  constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                  const device GpuDefinition* definitions [[buffer(kBufferDefinitions)]],
                  const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
+                 const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
+                 const device uchar* faceStates [[buffer(kBufferFaceState)]],
                  uint index [[thread_index_in_threadgroup]],
                  uint group [[threadgroup_position_in_grid]]) {
     const device GpuOccurrence& occurrence = occurrences[payload.occurrence];
     const device GpuDefinition& definition = definitions[occurrence.definition];
     const device Meshlet& m = definition.meshlets[payload.meshlets[group]];
+    const OccurrenceState state = states[payload.occurrence];
 
     if (index == 0) {
         out.set_primitive_count(m.triangleCount);
     }
     if (index < m.vertexCount) {
-        out.set_vertex(index, decodeVertex(m, definition, occurrence, frame, index));
+        out.set_vertex(index,
+                       decodeVertex(m, definition, occurrence, state, faceStates, frame, index));
     }
     if (index < m.triangleCount) {
         // Clamped because a cache file is untrusted and per-index validation would read every page.
@@ -176,6 +212,8 @@ constant float3 kSelectedMid = float3(0xA6, 0xC1, 0xEF) / 255.0;
 constant float3 kSelectedDark = float3(0x7A, 0x9F, 0xDC) / 255.0;
 constant float3 kHover = float3(0xFF, 0xF4, 0xD6) / 255.0;
 constant float kHoverAmount = 0.45;
+constant float3 kGhostTint = float3(0x23, 0x1E, 0x16) / 255.0; // ink
+constant float kGhostAlpha = 0.24;
 
 fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                                        bool frontFacing [[front_facing]],
@@ -184,12 +222,19 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
     const float d = dot(n, kLightDirection);
     const float soft = clamp(1.5 * fwidth(d), 0.02, 0.18);
 
-    const bool selected = in.id == frame.selectedId;
+    const bool selected = (in.flags & kStateSelected) != 0;
+    const bool hovered = in.id >= frame.hoverFirst && in.id < frame.hoverEnd;
     float3 color = selected
                        ? band3(d, -0.15, -0.45, soft, kSelectedLight, kSelectedMid, kSelectedDark)
                        : band3(d, -0.15, -0.45, soft, kMetalLight, kMetalMid, kMetalDark);
-    if (in.id == frame.hoveredId) {
+    if (hovered) {
         color = mix(color, kHover, kHoverAmount * (selected ? 0.5 : 1.0));
+    }
+    if (kGhostPass) {
+        // A faint shell of the part, so what lies behind it stays readable.
+        const float shade = mix(0.55, 0.85, saturate(d * 0.5 + 0.5));
+        return {float4(mix(kGhostTint, color, shade), hovered ? kGhostAlpha * 1.6 : kGhostAlpha),
+                in.id, in.position.z};
     }
     return {float4(color, 1.0), in.id, in.position.z};
 }
