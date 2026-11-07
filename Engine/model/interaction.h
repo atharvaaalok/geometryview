@@ -61,6 +61,12 @@ public:
     /// The tree node the last selection belongs to, for the tree to reveal.
     std::optional<NodeRef> focus() const { return focus_; }
 
+    /// The part a pick id belongs to, and its face within its body.
+    std::optional<std::pair<NodeRef, u32>> partAt(u32 id) const;
+
+    /// Selected bodies, and faces counting every face of a wholly selected body.
+    std::pair<u32, u32> selectionCounts() const;
+
 private:
     struct Located {
         scene::PickTarget pick;

@@ -210,6 +210,33 @@ void Interaction::isolate() {
     }
 }
 
+std::optional<std::pair<NodeRef, u32>> Interaction::partAt(u32 id) const {
+    const std::optional<Located> located = locate(id);
+    if (!located) {
+        return std::nullopt;
+    }
+    return std::pair(located->part, located->pick.face);
+}
+
+std::pair<u32, u32> Interaction::selectionCounts() const {
+    u32 occurrences = 0, faces = 0;
+    const std::span<const OccurrenceState> words = state_.occurrenceWords();
+    for (u32 o = 0; o < words.size(); ++o) {
+        if (!state_.anyFace(o, kStateSelected)) {
+            continue;
+        }
+        ++occurrences;
+        if ((words[o].flags & kStateSelected) != 0) {
+            faces += faceCounts_[o];
+            continue;
+        }
+        for (u32 f = 0; f < faceCounts_[o]; ++f) {
+            faces += (state_.faceBytes()[words[o].facePage + f] & kStateSelected) != 0 ? 1 : 0;
+        }
+    }
+    return {occurrences, faces};
+}
+
 bool Interaction::undo() {
     return history_.undo(state_);
 }

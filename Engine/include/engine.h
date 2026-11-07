@@ -83,6 +83,7 @@ typedef enum GeoEventKind {
     GeoEventProgress = 3,         // done and total, in units only the ratio of which matters
     GeoEventModelReady = 4,       // a document's tree can be read with geo_engine_copy_model
     GeoEventSelectionChanged = 5, // node: the tree row to reveal, or GEO_NO_NODE
+    GeoEventHoverChanged = 6, // node: the part under the pointer, or GEO_NO_NODE; done: the face
 } GeoEventKind;
 
 #define GEO_NO_NODE UINT32_MAX
@@ -106,6 +107,17 @@ typedef struct GeoEngineDescriptor {
     GeoEventCallback event_callback;
     void* event_context;
 } GeoEngineDescriptor;
+
+/// What is selected, for the selection card.
+typedef struct GeoSelectionSummary {
+    uint32_t occurrences; // bodies with anything selected
+    uint32_t faces;       // faces selected, counting every face of a whole body
+    uint32_t document;    // the tree row the selection belongs to, if node is not GEO_NO_NODE
+    uint32_t node;
+    uint32_t mode; // a GeoSelectionMode
+} GeoSelectionSummary;
+
+GeoSelectionSummary geo_engine_selection(GeoEngine* engine);
 
 /// Counters for the debug overlay and for tests.
 typedef struct GeoEngineStats {

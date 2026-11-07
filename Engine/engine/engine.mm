@@ -236,6 +236,9 @@ struct GeoEngine {
     std::atomic<u32> publishedHover{0};
     std::atomic<u32> selectedCount{0};
     std::atomic<u32> hiddenCount{0};
+    std::mutex summaryMutex;
+    GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
+    std::optional<std::pair<model::NodeRef, u32>> hoveredPart;
 
     GeoEngine()
         : pointer(camera, viewport, orbit, [this](double x, double y) { return pickAt(x, y); }) {}
@@ -292,6 +295,20 @@ struct GeoEngine {
         if (range != hover) {
             hover = range;
             requestFrame();
+        }
+        // The app labels what is under the pointer, so it hears when that changes, not per frame.
+        std::optional<std::pair<model::NodeRef, u32>> part;
+        if (!hoveredNode) {
+            part = interaction.partAt(hoveredId);
+        }
+        if (part != hoveredPart) {
+            hoveredPart = part;
+            if (part) {
+                emit(GeoEventHoverChanged, "", part->first.document, part->first.node,
+                     part->second);
+            } else {
+                emit(GeoEventHoverChanged, "", 0, GEO_NO_NODE);
+            }
         }
     }
 
@@ -392,6 +409,7 @@ struct GeoEngine {
     void stateChanged() {
         refreshHover();
         requestFrame();
+        publishState();
         if (const std::optional<model::NodeRef> focus = interaction.focus()) {
             emit(GeoEventSelectionChanged, "", focus->document, focus->node);
         } else {
@@ -839,6 +857,8 @@ struct GeoEngine {
                 break;
             case Command::Kind::SetMode:
                 interaction.setMode(toMode(command->mode));
+                publishedStateVersion = ~u64(0);
+                publishState();
                 refreshHover();
                 break;
             case Command::Kind::SetTool:
@@ -904,6 +924,12 @@ struct GeoEngine {
         }
         selectedCount.store(selected, std::memory_order_relaxed);
         hiddenCount.store(hidden, std::memory_order_relaxed);
+
+        const auto [occurrences, faces] = interaction.selectionCounts();
+        const std::optional<model::NodeRef> focus = interaction.focus();
+        std::lock_guard lock(summaryMutex);
+        summary = {occurrences, faces, focus ? focus->document : 0,
+                   focus ? focus->node : GEO_NO_NODE, u32(interaction.mode())};
     }
 
     void onFrame(const gpu::FrameTick& tick) {
@@ -1175,6 +1201,11 @@ void geo_trace_memory(const char* label) {
     task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count);
     std::fprintf(stderr, "trace: %-28s footprint %7.1f MB, peak %7.1f MB\n", label,
                  double(info.phys_footprint) / 1e6, double(info.ledger_phys_footprint_peak) / 1e6);
+}
+
+GeoSelectionSummary geo_engine_selection(GeoEngine* engine) {
+    std::lock_guard lock(engine->summaryMutex);
+    return engine->summary;
 }
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine) {
