@@ -14,6 +14,7 @@
 #include "engine/png.h"
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
+#include "ipc/cache_eviction.h"
 #include "ipc/import_job.h"
 #include "model/interaction.h"
 #include "model/name_index.h"
@@ -195,6 +196,7 @@ struct GeoEngine {
         double started = 0.0;
         std::shared_ptr<ipc::ImportCancel> cancel;
         std::vector<u32> requestedLevels; // the finest level asked for, per definition
+        std::string blobPath;             // its cache file, once known
     };
     std::vector<OpenDocument> documents;
     u64 nextToken = 1;
@@ -717,6 +719,20 @@ struct GeoEngine {
         }
     }
 
+    // Keeps the cache within its budget, on a background thread, sparing what is open.
+    void evictCache() {
+        std::vector<std::string> keep;
+        for (const OpenDocument& open : documents) {
+            if (!open.blobPath.empty()) {
+                keep.push_back(open.blobPath);
+            }
+        }
+        const std::string directory = importPaths.cacheDirectory;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            ipc::evictCache(directory, ipc::cacheBudget(directory), keep);
+        });
+    }
+
     void finishOpen(u64 token, const ipc::ImportOutcome& outcome) {
         const std::optional<u32> index = documentOf(token);
         if (!index) {
@@ -728,6 +744,10 @@ struct GeoEngine {
         if (!outcome.ok) {
             emit(GeoEventFailed, outcome.message.c_str(), *index);
             return;
+        }
+        document.blobPath = outcome.blobPath;
+        if (!outcome.fromCache) {
+            evictCache();
         }
         frameScene(false); // estimated bounds become exact now that all geometry is here
         if (seeThroughTarget > 0.0f) {

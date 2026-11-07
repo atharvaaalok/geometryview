@@ -1,5 +1,7 @@
 #include "ipc/import_job.h"
 
+#include "ipc/cache_eviction.h"
+
 #include "base/types.h"
 #include "format/blob.h"
 #include "format/helper_messages.h"
@@ -291,6 +293,7 @@ ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths
         return outcome;
     }
     if (deliverCached(blobPath, listener)) {
+        touchCacheFile(blobPath); // just used, so eviction keeps it longest
         // Finer levels from earlier sessions come back too, so a part zoomed into before is sharp
         // at once.
         for (const std::string& refinement : refinementsOf(blobPath)) {
