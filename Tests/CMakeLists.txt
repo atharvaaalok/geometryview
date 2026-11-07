@@ -12,7 +12,8 @@ endif()
 target_compile_definitions(geo_tests PRIVATE
     GEO_SANITIZED=${geo_sanitized}
     GEO_TEST_HELPER_PATH="$<TARGET_FILE:geometry-import>"
-    GEO_TEST_SHADER_LIBRARY="${GEO_METALLIB}")
+    GEO_TEST_SHADER_LIBRARY="${GEO_METALLIB}"
+    GEO_TEST_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/Tests/golden")
 target_link_libraries(geo_tests PRIVATE engine import_core doctest geo_warnings)
 set_target_properties(geo_tests PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
 if(TARGET geometry-occt-worker)
