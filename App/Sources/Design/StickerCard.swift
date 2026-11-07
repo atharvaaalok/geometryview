@@ -40,6 +40,21 @@ class StickerCard: NSView {
         CATransaction.commit()
     }
 
+    // MARK: Input stops here
+
+    // Whatever reaches the card unhandled goes no further. Clicks on a card's labels used to reach
+    // the 3D view, which then held a press it never saw released.
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func rightMouseDragged(with event: NSEvent) {}
+    override func rightMouseUp(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
+    override func otherMouseDragged(with event: NSEvent) {}
+    override func otherMouseUp(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
+    override func magnify(with event: NSEvent) {}
 }
 
 /// The card over an empty viewport: an invitation at first, then progress or a problem.

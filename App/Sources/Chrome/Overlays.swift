@@ -150,7 +150,10 @@ final class ShortcutsSheet: NSView {
         let cap = { (action: KeyAction) in keys.chord(for: action)?.label ?? "—" }
         let entries: [([String], String)] = [
             (["Click"], "Select. Shift or ⌘ adds"),
-            ([cap(.faceMode), cap(.bodyMode), cap(.partMode)], "Pick faces, bodies or parts"),
+            (
+                [cap(.faceMode), cap(.bodyMode), cap(.partMode)],
+                "Clicks select faces, bodies or parts"
+            ),
             ([cap(.holdHide), "Click"], "Hide what you click"),
             ([cap(.holdGhost), "Click"], "Ghost, or bring back a ghost"),
             ([cap(.showAll)], "Show everything"),

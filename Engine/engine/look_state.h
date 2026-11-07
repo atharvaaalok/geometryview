@@ -38,6 +38,11 @@ public:
 
     const render::LookSettings& settings() const { return settings_; }
 
+    /// Whether the swatch colours changed since they were last taken.
+    bool swatchesChanged() const { return swatchesDirty_; }
+    /// Each occurrence's swatch colour, RGBA8 in global order, as of the last apply.
+    std::vector<u32> takeSwatches();
+
 private:
     render::LookSettings settings_;
     render::LookAssignment looks_;
@@ -46,6 +51,7 @@ private:
     bool looksDirty_ = true;
     bool paletteDirty_ = true;
     bool styleDirty_ = true;
+    bool swatchesDirty_ = true;
 };
 
 } // namespace geo::engine

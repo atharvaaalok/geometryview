@@ -112,8 +112,9 @@ const Style& styleNamed(StyleName name);
 /// colour, finish (metalness and roughness) and section cap colour for studio lighting.
 std::array<u32, 3> bodyTexels(const Style& style, const Look& look);
 
-/// One colour that stands for a body under a style, for swatches in the interface.
-Rgb swatch(const Style& style, const Look& look);
+/// One colour that stands for a body under a style, for swatches in the interface: RGBA8, red in
+/// the low byte.
+u32 swatch(const Style& style, const Look& look);
 
 /// The user's choices that, with a style, decide what a frame looks like.
 struct LookSettings {

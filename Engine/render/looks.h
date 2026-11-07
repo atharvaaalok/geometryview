@@ -26,4 +26,7 @@ LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode);
 /// Three palette texels for each look under a style, in look order.
 std::vector<u32> paletteTexels(const Style& style, std::span<const Look> looks);
 
+/// Each occurrence's swatch colour under a style, RGBA8, in global occurrence order.
+std::vector<u32> swatchColors(const Style& style, const LookAssignment& assignment);
+
 } // namespace geo::render

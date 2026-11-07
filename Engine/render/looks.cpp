@@ -142,4 +142,17 @@ std::vector<u32> paletteTexels(const Style& style, std::span<const Look> looks) 
     return texels;
 }
 
+std::vector<u32> swatchColors(const Style& style, const LookAssignment& assignment) {
+    // There are few looks and perhaps a million occurrences, so each look is coloured once.
+    std::vector<u32> ofLook(assignment.looks.size());
+    for (usize l = 0; l < ofLook.size(); ++l) {
+        ofLook[l] = swatch(style, assignment.looks[l]);
+    }
+    std::vector<u32> colors(assignment.ofOccurrence.size());
+    for (usize o = 0; o < colors.size(); ++o) {
+        colors[o] = ofLook[assignment.ofOccurrence[o]];
+    }
+    return colors;
+}
+
 } // namespace geo::render

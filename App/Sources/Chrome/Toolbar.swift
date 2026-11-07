@@ -8,7 +8,12 @@ final class Toolbar: StickerCard {
     let pick = SegmentedPill(
         ["Face", "Body", "Part"],
         selected: 0,
-        help: "What a click picks (1, 2, 3)"
+        help: "What a click selects (1, 2, 3)",
+        tips: [
+            "Clicks select single faces (1)",
+            "Clicks select whole bodies (2)",
+            "Clicks select whole parts (3)",
+        ]
     )
     let projection = SegmentedPill(["Ortho", "Persp"], selected: 0, help: "Projection (P)")
     private let hide = PillButton(

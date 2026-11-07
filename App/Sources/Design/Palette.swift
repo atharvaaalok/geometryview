@@ -12,6 +12,8 @@ enum Palette {
     static let faint = NSColor(hex: 0x9A9284)
     static let rule = NSColor(hex: 0xDDD6C8)
     static let cream = NSColor(hex: 0xFFF4D6)
+    /// Half cream, for hover where cream already marks the chosen option.
+    static let creamWash = NSColor(hex: 0xFBF5E2)
     static let shadowBlue = NSColor(hex: 0x41538F)
     static let mustard = NSColor(hex: 0xF4B829)
     static let tomato = NSColor(hex: 0xEF6A4C)

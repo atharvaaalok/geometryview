@@ -23,7 +23,9 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
     private var matches: [(document: UInt32, node: UInt32)] = []
     private var matchIndex = 0
 
-    static let rowHeight: CGFloat = 24
+    static let rowHeight: CGFloat = 28
+    /// The row of the part under the pointer in the view, lit like a row under the pointer.
+    private var highlighted: (document: UInt32, node: UInt32)?
 
     init(engine: EngineHandle) {
         self.engine = engine
@@ -54,8 +56,16 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         table.action = #selector(rowClicked)
         table.onHover = { [weak self] row in self?.hover(row) }
         table.onToggle = { [weak self] row in self?.toggle(row) }
+        table.isLit = { [weak self] row in self?.isHighlighted(row) ?? false }
 
         scroll.documentView = table
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrolled),
+            name: NSView.boundsDidChangeNotification,
+            object: scroll.contentView
+        )
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -214,6 +224,10 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         TreeRowView()
     }
 
+    func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+        (rowView as? TreeRowView)?.isHovered = table.isHovered(row)
+    }
+
     func tableView(
         _ tableView: NSTableView,
         viewFor tableColumn: NSTableColumn?,
@@ -226,21 +240,113 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         cell.configure(
             name: tree.name(of: row),
             depth: row.depth,
-            kind: tree.kind(of: row),
+            mark: mark(of: row),
             isDocument: row.isDocument,
-            disclosure: tree.hasChildren(row) ? (tree.isExpanded(row) ? .open : .closed) : .none
+            disclosure: tree.hasChildren(row) ? (tree.isExpanded(row) ? .open : .closed) : .none,
+            count: tree.count(of: row)
         )
         return cell
     }
+
+    // A file's or an assembly's glyph, or a swatch of the colour the part is drawn in.
+    private func mark(of row: TreeRow) -> TreeCell.Mark {
+        if row.isDocument {
+            return .document
+        }
+        let kind = tree.kind(of: row)
+        if kind == GeoNodeAssembly {
+            return .assembly
+        }
+        let color = tree.firstOccurrence(of: row).flatMap {
+            engine.swatch(document: row.document, occurrence: $0)
+        }
+        return .swatch(color, small: kind == GeoNodeBody)
+    }
+
+    // MARK: Colours and highlights
+
+    /// Repaints the swatches of the rows in view, after the style or colour mode changed.
+    func looksChanged() {
+        let visible = table.rows(in: table.visibleRect)
+        guard visible.length > 0 else {
+            return
+        }
+        table.reloadData(
+            forRowIndexes: IndexSet(integersIn: visible.location..<NSMaxRange(visible)),
+            columnIndexes: IndexSet(integer: 0)
+        )
+    }
+
+    /// Lights the row of the part under the pointer in the view, if it is shown.
+    func highlight(document: UInt32, node: UInt32?) {
+        highlighted = node.map { (document, $0) }
+        table.refreshHover()
+    }
+
+    private func isHighlighted(_ index: Int) -> Bool {
+        guard let highlighted, index < tree.rows.count else {
+            return false
+        }
+        let row = tree.rows[index]
+        return !row.isDocument && row.document == highlighted.document
+            && row.node == highlighted.node
+    }
+
+    // Scrolling moves rows under a still pointer, which sends no move.
+    @objc private func scrolled() {
+        table.syncPointer()
+    }
 }
 
-/// A table that reports the row under the pointer and clicks on disclosure triangles.
+/// A table that reports the row under the pointer and clicks on disclosure chevrons, and lights
+/// the rows under the pointer here or in the view.
 @MainActor
 final class TreeTableView: NSTableView {
     var onHover: ((Int?) -> Void)?
     var onToggle: ((Int) -> Void)?
+    /// Whether a row's part is under the pointer in the view.
+    var isLit: ((Int) -> Bool)?
     private var hoveredRow: Int?
     private var tracking: NSTrackingArea?
+
+    func isHovered(_ row: Int) -> Bool {
+        row == hoveredRow || isLit?(row) == true
+    }
+
+    /// Lights exactly the rows that should be lit, among those on screen.
+    func refreshHover() {
+        let visible = rows(in: visibleRect)
+        for row in visible.location..<NSMaxRange(visible) {
+            (rowView(atRow: row, makeIfNecessary: false) as? TreeRowView)?.isHovered =
+                isHovered(row)
+        }
+    }
+
+    /// Works out the row under the pointer from where it really is, for when the rows moved under
+    /// a still pointer: a scroll, or rows opening and closing.
+    func syncPointer() {
+        guard let window else {
+            return
+        }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        let inside = visibleRect.contains(point) && !isHiddenOrHasHiddenAncestor
+        setHoveredRow(inside ? row(at: point) : -1)
+    }
+
+    private func setHoveredRow(_ row: Int) {
+        let hovered = row >= 0 ? row : nil
+        guard hovered != hoveredRow else {
+            return
+        }
+        hoveredRow = hovered
+        refreshHover()
+        onHover?(hovered)
+    }
+
+    override func reloadData() {
+        super.reloadData()
+        syncPointer()
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -249,7 +355,7 @@ final class TreeTableView: NSTableView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self
         )
         addTrackingArea(area)
@@ -257,17 +363,11 @@ final class TreeTableView: NSTableView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let row = self.row(at: convert(event.locationInWindow, from: nil))
-        let hovered = row >= 0 ? row : nil
-        if hovered != hoveredRow {
-            hoveredRow = hovered
-            onHover?(hovered)
-        }
+        setHoveredRow(row(at: convert(event.locationInWindow, from: nil)))
     }
 
     override func mouseExited(with event: NSEvent) {
-        hoveredRow = nil
-        onHover?(nil)
+        setHoveredRow(-1)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -280,97 +380,5 @@ final class TreeTableView: NSTableView {
             return
         }
         super.mouseDown(with: event)
-    }
-}
-
-/// Draws selection as the cobalt wash, without the system's own highlight.
-@MainActor
-final class TreeRowView: NSTableRowView {
-    override var isEmphasized: Bool {
-        get { false }
-        set {}
-    }
-
-    override func drawSelection(in dirtyRect: NSRect) {
-        Palette.cobaltWash.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 6, yRadius: 6).fill()
-    }
-}
-
-@MainActor
-final class TreeCell: NSTableCellView {
-    static let identifier = NSUserInterfaceItemIdentifier("TreeCell")
-
-    enum Disclosure {
-        case none, open, closed
-    }
-
-    private let label = NSTextField(labelWithString: "")
-    private let marker = NSTextField(labelWithString: "")
-    private let glyph = NSTextField(labelWithString: "")
-    private var indent: NSLayoutConstraint?
-    private static let indentStep: CGFloat = 14
-    private static let markerWidth: CGFloat = 14
-
-    init() {
-        super.init(frame: .zero)
-        identifier = Self.identifier
-        for field in [marker, glyph, label] {
-            field.translatesAutoresizingMaskIntoConstraints = false
-            field.lineBreakMode = .byTruncatingTail
-            addSubview(field)
-        }
-        marker.font = Typography.font(Typography.textSmall)
-        marker.textColor = Palette.muted
-        glyph.font = Typography.font(Typography.textExtraSmall)
-        glyph.textColor = Palette.faint
-        label.font = Typography.font(Typography.textMedium)
-        label.textColor = Palette.ink
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let indent = marker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
-        self.indent = indent
-        NSLayoutConstraint.activate([
-            indent,
-            marker.widthAnchor.constraint(equalToConstant: Self.markerWidth),
-            marker.centerYAnchor.constraint(equalTo: centerYAnchor),
-            glyph.leadingAnchor.constraint(equalTo: marker.trailingAnchor, constant: 2),
-            glyph.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("TreeCell is not used from Interface Builder")
-    }
-
-    func configure(
-        name: String,
-        depth: Int,
-        kind: GeoNodeKind?,
-        isDocument: Bool,
-        disclosure: Disclosure
-    ) {
-        indent?.constant = 8 + CGFloat(depth) * Self.indentStep
-        label.stringValue = name
-        label.font = Typography.font(Typography.textMedium, isDocument ? .semibold : .regular)
-        switch disclosure {
-        case .none: marker.stringValue = ""
-        case .open: marker.stringValue = "▾"
-        case .closed: marker.stringValue = "▸"
-        }
-        switch kind {
-        case GeoNodeAssembly: glyph.stringValue = "◇"
-        case GeoNodePart: glyph.stringValue = "□"
-        case GeoNodeBody: glyph.stringValue = "▪"
-        default: glyph.stringValue = isDocument ? "▤" : ""
-        }
-    }
-
-    func disclosureHit(_ point: NSPoint) -> Bool {
-        !marker.stringValue.isEmpty && marker.frame.insetBy(dx: -4, dy: -4).contains(point)
     }
 }

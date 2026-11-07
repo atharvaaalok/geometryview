@@ -266,6 +266,11 @@ struct GeoEngine {
     std::atomic<u32> selectedCount{0};
     std::atomic<u32> hiddenCount{0};
     std::mutex summaryMutex;
+    // Swatch colours published for the app's thread: one per occurrence in global order, and the
+    // global index of each document's first occurrence.
+    std::mutex swatchMutex;
+    std::vector<u32> publishedSwatches;
+    std::vector<u32> swatchBases;
     GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
     std::optional<std::pair<model::NodeRef, u32>> hoveredPart;
 
@@ -446,8 +451,37 @@ struct GeoEngine {
         }
     }
 
+    // Hands the app each occurrence's swatch colour when the looks change: rarely, never per frame.
+    void publishSwatches() {
+        if (!look.swatchesChanged()) {
+            return;
+        }
+        std::vector<u32> swatches = look.takeSwatches();
+        std::vector<u32> bases(scene.documentCount());
+        for (u32 d = 0; d < bases.size(); ++d) {
+            bases[d] = scene.occurrenceBase(d);
+        }
+        {
+            std::lock_guard lock(swatchMutex);
+            publishedSwatches = std::move(swatches);
+            swatchBases = std::move(bases);
+        }
+        emit(GeoEventLooksChanged);
+    }
+
     void handlePointer(const GeoPointerEvent& event) {
         lastActivity = nowSeconds();
+        if (event.kind == GeoPointerLeave) {
+            cursorInside = false;
+            updateHover();
+            return;
+        }
+        if (event.kind == GeoPointerCancel) {
+            pointer.cancel();
+            cubePressed = 0;
+            updateHover();
+            return;
+        }
         cursorX = event.x;
         cursorY = event.y;
         cursorInside = true;
@@ -469,6 +503,9 @@ struct GeoEngine {
         case GeoPointerScroll:
         case GeoPointerMagnify:
             response = pointer.scroll(event.delta, event.x, event.y, event.timestamp);
+            break;
+        case GeoPointerLeave:
+        case GeoPointerCancel:
             break;
         }
 
@@ -1185,6 +1222,7 @@ struct GeoEngine {
             }
             renderer->syncState(interaction.state());
             look.apply(*renderer, scene);
+            publishSwatches();
             const bool heavy = renderer->sceneTriangles() > kHeavyTriangles ||
                                renderer->sceneEdgeSegments() > kHeavyEdgeSegments;
             detailReduced =
@@ -1438,6 +1476,15 @@ void geo_engine_write_snapshot(GeoEngine* engine, const char* path) {
     command.kind = Command::Kind::Snapshot;
     command.path = strdup(path);
     engine->post(command);
+}
+
+uint32_t geo_engine_swatch(GeoEngine* engine, uint32_t document, uint32_t occurrence) {
+    std::lock_guard lock(engine->swatchMutex);
+    if (document >= engine->swatchBases.size()) {
+        return 0;
+    }
+    const u64 global = u64(engine->swatchBases[document]) + occurrence;
+    return global < engine->publishedSwatches.size() ? engine->publishedSwatches[global] : 0;
 }
 
 void geo_engine_request_frame(GeoEngine* engine) {

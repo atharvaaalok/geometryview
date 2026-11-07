@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 final class MainWindow: NSWindow {
     private let engine: EngineHandle
     private let viewport: ViewportView
+    private let dragArea = WindowDragArea()
     private let masthead = Masthead()
     private let structure: StructureCard
     private let selection = SelectionCard()
@@ -27,6 +28,7 @@ final class MainWindow: NSWindow {
     private let sectionCard = SectionCard()
     private var look = Look.saved()
     private var exercise: Exercise?
+    private var chromeCheck: ChromeCheck?
     private var accessedURLs: [URL] = []
 
     private var names: [String] = []
@@ -44,6 +46,14 @@ final class MainWindow: NSWindow {
     private static let toolbarBottom: CGFloat = 22
     private static let hintBottom: CGFloat = 86
     private static let selectionTop: CGFloat = 172
+    // The view cube's square, drawn by the engine, with its margin.
+    private static let cubeClearance: CGFloat = 144
+
+    /// The height of the title bar the view extends under.
+    private var titleBarHeight: CGFloat {
+        let height = frame.height - contentLayoutRect.height
+        return height > 0 ? height : 28
+    }
 
     init(engine: EngineHandle) {
         self.engine = engine
@@ -76,7 +86,8 @@ final class MainWindow: NSWindow {
         let root = NSView()
         root.wantsLayer = true
         let views: [NSView] = [
-            viewport, masthead, structure, libraryCard, selection, toolBar, lookCard, sectionCard,
+            viewport, dragArea, masthead, structure, libraryCard, selection, toolBar, lookCard,
+            sectionCard,
             holdHint,
             hoverChip,
             status, dropZone, shortcuts,
@@ -94,6 +105,15 @@ final class MainWindow: NSWindow {
             viewport.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             viewport.topAnchor.constraint(equalTo: root.topAnchor),
             viewport.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+
+            // As tall as a title bar, and clear of the view cube in the top right.
+            dragArea.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            dragArea.trailingAnchor.constraint(
+                equalTo: root.trailingAnchor,
+                constant: -Self.cubeClearance
+            ),
+            dragArea.topAnchor.constraint(equalTo: root.topAnchor),
+            dragArea.heightAnchor.constraint(equalToConstant: titleBarHeight),
 
             // Clear of the window's buttons, in line with them.
             masthead.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
@@ -552,6 +572,9 @@ final class MainWindow: NSWindow {
         case .hoverChanged(let document, let node, let face):
             hovered = node.map { (document, $0, face) }
             showHover()
+            structure.highlight(document: document, node: node)
+        case .looksChanged:
+            structure.looksChanged()
         }
     }
 
@@ -670,6 +693,13 @@ final class MainWindow: NSWindow {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSApp.terminate(nil)
                 }
+            }
+        }
+        if ChromeCheck.isRequested, chromeCheck == nil {
+            let check = ChromeCheck(window: self, engine: engine)
+            chromeCheck = check
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+                check.start(lookCard: lookCard)
             }
         }
         if Exercise.isRequested, exercise == nil {

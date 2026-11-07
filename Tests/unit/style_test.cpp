@@ -3,6 +3,7 @@
 #include "render/style.h"
 #include "scene/scene.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <unistd.h>
 
@@ -144,4 +145,20 @@ TEST_CASE("parts, file and mono modes") {
 
     const LookAssignment mono = assignLooks(drive.scene, ColorMode::Mono);
     CHECK(mono.looks.size() == 1);
+}
+
+TEST_CASE("swatches follow each occurrence's look and the style") {
+    const Drive drive;
+    const LookAssignment material = assignLooks(drive.scene, ColorMode::Material);
+    const std::vector<u32> drawn = swatchColors(styleNamed(StyleName::Illustration), material);
+    REQUIRE(drawn.size() == 4);
+    CHECK(drawn[0] != drawn[3]); // a stator core and a magnet
+    for (const u32 color : drawn) {
+        CHECK((color >> 24) == 0xFFu); // opaque, so zero can mean unknown
+    }
+    CHECK(swatchColors(styleNamed(StyleName::Metal), material)[3] != drawn[3]);
+
+    const LookAssignment mono = assignLooks(drive.scene, ColorMode::Mono);
+    const std::vector<u32> same = swatchColors(styleNamed(StyleName::Illustration), mono);
+    CHECK(std::all_of(same.begin(), same.end(), [&](u32 c) { return c == same[0]; }));
 }

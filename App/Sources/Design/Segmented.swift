@@ -1,19 +1,32 @@
 import AppKit
 
-/// A row of exclusive options in one pill. The chosen one is cream with an ink underline, since
-/// blue is kept for what is selected in the model.
+/// A row of exclusive options in one pill. The chosen one is cream and semibold with an ink
+/// underline, since blue is kept for what is selected in the model. Hover is a paler wash, so it
+/// never reads as chosen.
 @MainActor
 final class SegmentedPill: NSView {
     var onChange: ((Int) -> Void)?
     var selected: Int {
         didSet { refresh() }
     }
+    /// A disabled pill is greyed and ignores clicks, but keeps its place in the layout.
+    var isEnabled = true {
+        didSet {
+            for segment in segments {
+                segment.isEnabled = isEnabled
+            }
+            alphaValue = isEnabled ? 1 : 0.4
+        }
+    }
 
     private let frameLayer = CALayer()
-    private let borderLayer = CALayer()  // above the segments, so fills never cover it
+    // A view added after the segments, so its border is drawn over their fills however the layers
+    // are rendered.
+    private let border = Outline()
     private var segments: [Segment] = []
 
-    init(_ options: [String], selected: Int, help: String) {
+    /// `tips`, when given, explain each option on its own, in place of the pill's `help`.
+    init(_ options: [String], selected: Int, help: String, tips: [String]? = nil) {
         self.selected = selected
         super.init(frame: .zero)
         wantsLayer = true
@@ -23,9 +36,6 @@ final class SegmentedPill: NSView {
         layer?.addSublayer(frameLayer)
         layer?.cornerRadius = PillButton.height / 2
         layer?.masksToBounds = true
-        borderLayer.cornerRadius = PillButton.height / 2
-        borderLayer.borderColor = Palette.ink.cgColor
-        borderLayer.zPosition = 10
         setAccessibilityRole(.radioGroup)
         setAccessibilityLabel(help)
         toolTip = help
@@ -33,6 +43,7 @@ final class SegmentedPill: NSView {
         var previous: NSView?
         for (index, option) in options.enumerated() {
             let segment = Segment(title: option, divider: index > 0)
+            segment.toolTip = tips?[index]
             segment.onPress = { [weak self] in
                 guard let self, self.selected != index else {
                     return
@@ -55,7 +66,14 @@ final class SegmentedPill: NSView {
         if let previous {
             previous.trailingAnchor.constraint(equalTo: trailingAnchor).isActive = true
         }
-        layer?.addSublayer(borderLayer)
+        border.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(border)
+        NSLayoutConstraint.activate([
+            border.leadingAnchor.constraint(equalTo: leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: trailingAnchor),
+            border.topAnchor.constraint(equalTo: topAnchor),
+            border.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
         heightAnchor.constraint(equalToConstant: PillButton.height).isActive = true
         refresh()
     }
@@ -69,10 +87,7 @@ final class SegmentedPill: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let scale = window?.backingScaleFactor ?? 2
-        borderLayer.borderWidth = (Metrics.line * scale).rounded(.up) / scale
         frameLayer.frame = bounds
-        borderLayer.frame = bounds
         CATransaction.commit()
     }
 
@@ -83,17 +98,14 @@ final class SegmentedPill: NSView {
     }
 
     @MainActor
-    private final class Segment: NSView {
-        var onPress: (() -> Void)?
+    private final class Segment: ChromeControl {
         var isChosen = false {
-            didSet { refresh() }
+            didSet { stateChanged() }
         }
         private let label: NSTextField
         private let fill = CALayer()
         private let underline = CALayer()
         private let divider = CALayer()
-        private var hovering = false
-        private var tracking: NSTrackingArea?
 
         init(title: String, divider hasDivider: Bool) {
             label = NSTextField(labelWithString: title)
@@ -115,7 +127,7 @@ final class SegmentedPill: NSView {
             ])
             setAccessibilityRole(.radioButton)
             setAccessibilityLabel(title)
-            refresh()
+            stateChanged()
         }
 
         @available(*, unavailable)
@@ -128,56 +140,55 @@ final class SegmentedPill: NSView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             fill.frame = bounds
-            underline.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2)
+            // Just above the pill's border, which is drawn over the segments.
+            let scale = window?.backingScaleFactor ?? 2
+            let border = (Metrics.line * scale).rounded(.up) / scale
+            underline.frame = CGRect(x: 0, y: border, width: bounds.width, height: 2)
             divider.frame = CGRect(x: 0, y: 0, width: Metrics.line, height: bounds.height)
             CATransaction.commit()
         }
 
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            if let tracking {
-                removeTrackingArea(tracking)
-            }
-            let area = NSTrackingArea(
-                rect: bounds,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                owner: self
-            )
-            addTrackingArea(area)
-            tracking = area
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            hovering = true
-            refresh()
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            hovering = false
-            refresh()
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            if bounds.contains(convert(event.locationInWindow, from: nil)) {
-                onPress?()
-            }
-        }
-
-        override func accessibilityPerformPress() -> Bool {
-            onPress?()
-            return true
-        }
-
         override func isAccessibilitySelected() -> Bool { isChosen }
 
-        private func refresh() {
+        override func stateChanged() {
+            let color: NSColor
+            if isChosen {
+                color = Palette.cream
+            } else if isHovering && isEnabled {
+                color = Palette.creamWash
+            } else {
+                color = .clear
+            }
             Motion.animate {
-                fill.backgroundColor =
-                    (isChosen || hovering) ? Palette.cream.cgColor : NSColor.clear.cgColor
+                fill.backgroundColor = color.cgColor
                 underline.opacity = isChosen ? 1 : 0
             }
             label.font = Typography.font(Typography.textSmall, isChosen ? .semibold : .medium)
             label.textColor = Palette.ink
+        }
+    }
+
+    /// The pill's ink outline. It takes no clicks.
+    @MainActor
+    private final class Outline: NSView {
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.cornerRadius = PillButton.height / 2
+            layer?.borderColor = Palette.ink.cgColor
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("Outline is not used from Interface Builder")
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func layout() {
+            super.layout()
+            let scale = window?.backingScaleFactor ?? 2
+            layer?.borderWidth = (Metrics.line * scale).rounded(.up) / scale
         }
     }
 }

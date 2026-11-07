@@ -135,6 +135,11 @@ PointerResponse PointerController::release(Button button, double x, double y) {
     return response;
 }
 
+void PointerController::cancel() {
+    pressed_ = Button::None;
+    active_ = Gesture::None;
+}
+
 Vec3 PointerController::anchorAt(double x, double y) {
     const double ndcX = 2.0 * x / viewport_.width - 1.0;
     const double ndcY = 1.0 - 2.0 * y / viewport_.height;

@@ -20,6 +20,8 @@ typedef enum GeoPointerKind {
     GeoPointerUp = 2,
     GeoPointerScroll = 3,
     GeoPointerMagnify = 4,
+    GeoPointerLeave = 5,  // the pointer left the view: nothing is hovered until it returns
+    GeoPointerCancel = 6, // a press ended where the view could not see it: no click results
 } GeoPointerKind;
 
 typedef enum GeoPointerButton {
@@ -159,6 +161,7 @@ typedef enum GeoEventKind {
     GeoEventModelReady = 4,       // a document's tree can be read with geo_engine_copy_model
     GeoEventSelectionChanged = 5, // node: the tree row to reveal, or GEO_NO_NODE
     GeoEventHoverChanged = 6, // node: the part under the pointer, or GEO_NO_NODE; done: the face
+    GeoEventLooksChanged = 7, // swatch colours changed: read them again with geo_engine_swatch
 } GeoEventKind;
 
 #define GEO_NO_NODE UINT32_MAX
@@ -295,6 +298,11 @@ const char* geo_model_names(const GeoModel* model);
 /// Finds nodes whose names contain `query`, ignoring ASCII case, in tree order. Writes up to
 /// `capacity` indices to `results` and returns how many matched in all.
 uint32_t geo_model_search(GeoModel* model, const char* query, uint32_t* results, uint32_t capacity);
+
+/// The colour standing for an occurrence under the current look, for swatches: RGBA8 with red in
+/// the low byte, or 0 before its look is known. `occurrence` counts within the document, as a
+/// node's first_occurrence does. Callable from any thread.
+uint32_t geo_engine_swatch(GeoEngine* engine, uint32_t document, uint32_t occurrence);
 
 /// Requests a redraw, for changes that do not arrive as input.
 void geo_engine_request_frame(GeoEngine* engine);

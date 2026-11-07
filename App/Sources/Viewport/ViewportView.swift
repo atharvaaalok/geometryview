@@ -121,6 +121,21 @@ final class ViewportView: NSView {
         post(kind, button, event, delta: 0)
     }
 
+    /// Posts an event that carries no position.
+    private func post(_ kind: GeoPointerKind) {
+        engine.post(
+            GeoPointerEvent(
+                kind: kind,
+                button: GeoButtonNone,
+                x: 0,
+                y: 0,
+                delta: 0,
+                modifiers: 0,
+                timestamp: ProcessInfo.processInfo.systemUptime
+            )
+        )
+    }
+
     private func post(
         _ kind: GeoPointerKind,
         _ button: GeoPointerButton,
@@ -153,35 +168,92 @@ final class ViewportView: NSView {
         return result
     }
 
+    // MARK: Only input aimed at the view
+
+    /// The buttons this view sent a press for and has not yet released.
+    private var pressedButtons: Set<UInt32> = []
+    /// Whether the engine was last told the pointer is over the view.
+    private var pointerInside = false
+
+    /// Whether the event is over the 3D view itself, rather than the interface floating above it.
+    /// The view hears moves wherever the pointer is, and has been handed clicks meant for a label.
+    private func isUncovered(_ event: NSEvent) -> Bool {
+        guard let root = window?.contentView else {
+            return false
+        }
+        let point = root.superview?.convert(event.locationInWindow, from: nil)
+        return root.hitTest(point ?? event.locationInWindow) === self
+    }
+
     override func mouseMoved(with event: NSEvent) {
+        // Nothing is pressed while the pointer moves, so a press still held lost its release.
+        cancelLostPress()
+        guard isUncovered(event) else {
+            leave()
+            return
+        }
+        pointerInside = true
         post(GeoPointerMove, GeoButtonNone, event)
         onPointerMoved?(convert(event.locationInWindow, from: nil))
     }
 
     override func mouseExited(with event: NSEvent) {
+        leave()
+    }
+
+    /// Tells the engine the pointer is no longer over the view, so nothing stays hovered.
+    private func leave() {
+        guard pointerInside else {
+            return
+        }
+        pointerInside = false
+        post(GeoPointerLeave)
         onPointerMoved?(nil)
+    }
+
+    private func cancelLostPress() {
+        guard !pressedButtons.isEmpty else {
+            return
+        }
+        pressedButtons.removeAll()
+        post(GeoPointerCancel)
+    }
+
+    private func press(_ button: GeoPointerButton, _ event: NSEvent) {
+        guard isUncovered(event) else {
+            return
+        }
+        pressedButtons.insert(button.rawValue)
+        post(GeoPointerDown, button, event)
+    }
+
+    private func release(_ button: GeoPointerButton, _ event: NSEvent) {
+        guard pressedButtons.remove(button.rawValue) != nil else {
+            return
+        }
+        post(GeoPointerUp, button, event)
+    }
+
+    // A drag keeps going over the interface: only its press had to be aimed at the view.
+    private func drag(_ event: NSEvent) {
+        guard !pressedButtons.isEmpty else {
+            return
+        }
+        post(GeoPointerMove, GeoButtonNone, event)
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: cursor)
     }
-    override func mouseDragged(with event: NSEvent) { post(GeoPointerMove, GeoButtonNone, event) }
-    override func rightMouseDragged(with event: NSEvent) {
-        post(GeoPointerMove, GeoButtonNone, event)
-    }
-    override func otherMouseDragged(with event: NSEvent) {
-        post(GeoPointerMove, GeoButtonNone, event)
-    }
-    override func mouseDown(with event: NSEvent) { post(GeoPointerDown, GeoButtonLeft, event) }
-    override func mouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonLeft, event) }
-    override func rightMouseDown(with event: NSEvent) {
-        post(GeoPointerDown, GeoButtonRight, event)
-    }
-    override func rightMouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonRight, event) }
-    override func otherMouseDown(with event: NSEvent) {
-        post(GeoPointerDown, GeoButtonMiddle, event)
-    }
-    override func otherMouseUp(with event: NSEvent) { post(GeoPointerUp, GeoButtonMiddle, event) }
+    override func mouseDown(with event: NSEvent) { press(GeoButtonLeft, event) }
+    override func mouseDragged(with event: NSEvent) { drag(event) }
+    override func mouseUp(with event: NSEvent) { release(GeoButtonLeft, event) }
+    override func rightMouseDown(with event: NSEvent) { press(GeoButtonRight, event) }
+    override func rightMouseDragged(with event: NSEvent) { drag(event) }
+    override func rightMouseUp(with event: NSEvent) { release(GeoButtonRight, event) }
+    override func otherMouseDown(with event: NSEvent) { press(GeoButtonMiddle, event) }
+    override func otherMouseDragged(with event: NSEvent) { drag(event) }
+    override func otherMouseUp(with event: NSEvent) { release(GeoButtonMiddle, event) }
 
     override func scrollWheel(with event: NSEvent) {
         // Momentum would keep zooming after the fingers lift, which is the inertia this viewer avoids.

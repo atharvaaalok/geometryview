@@ -23,6 +23,7 @@ void LookState::set(const render::LookSettings& settings) {
     }
     if (settings.style != settings_.style) {
         paletteDirty_ = true;
+        swatchesDirty_ = true;
     }
     settings_ = settings;
     styleDirty_ = true;
@@ -41,6 +42,7 @@ void LookState::apply(gpu::Renderer& renderer, const scene::Scene& scene) {
         looks_ = render::assignLooks(scene, settings_.colorMode);
         looksDirty_ = false;
         paletteDirty_ = true;
+        swatchesDirty_ = true;
     }
     if (paletteDirty_) {
         const std::vector<u32> palette = render::paletteTexels(style, looks_.looks);
@@ -60,6 +62,11 @@ void LookState::apply(gpu::Renderer& renderer, const scene::Scene& scene) {
                           style.physical);
         styleDirty_ = false;
     }
+}
+
+std::vector<u32> LookState::takeSwatches() {
+    swatchesDirty_ = false;
+    return render::swatchColors(render::styleNamed(settings_.style), looks_);
 }
 
 } // namespace geo::engine
