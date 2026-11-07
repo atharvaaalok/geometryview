@@ -83,17 +83,14 @@ final class SegmentedPill: NSView {
     }
 
     @MainActor
-    private final class Segment: NSView {
-        var onPress: (() -> Void)?
+    private final class Segment: ChromeControl {
         var isChosen = false {
-            didSet { refresh() }
+            didSet { stateChanged() }
         }
         private let label: NSTextField
         private let fill = CALayer()
         private let underline = CALayer()
         private let divider = CALayer()
-        private var hovering = false
-        private var tracking: NSTrackingArea?
 
         init(title: String, divider hasDivider: Bool) {
             label = NSTextField(labelWithString: title)
@@ -115,7 +112,7 @@ final class SegmentedPill: NSView {
             ])
             setAccessibilityRole(.radioButton)
             setAccessibilityLabel(title)
-            refresh()
+            stateChanged()
         }
 
         @available(*, unavailable)
@@ -133,47 +130,13 @@ final class SegmentedPill: NSView {
             CATransaction.commit()
         }
 
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            if let tracking {
-                removeTrackingArea(tracking)
-            }
-            let area = NSTrackingArea(
-                rect: bounds,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                owner: self
-            )
-            addTrackingArea(area)
-            tracking = area
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            hovering = true
-            refresh()
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            hovering = false
-            refresh()
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            if bounds.contains(convert(event.locationInWindow, from: nil)) {
-                onPress?()
-            }
-        }
-
-        override func accessibilityPerformPress() -> Bool {
-            onPress?()
-            return true
-        }
-
         override func isAccessibilitySelected() -> Bool { isChosen }
 
-        private func refresh() {
+        override func stateChanged() {
             Motion.animate {
                 fill.backgroundColor =
-                    (isChosen || hovering) ? Palette.cream.cgColor : NSColor.clear.cgColor
+                    (isChosen || (isHovering && isEnabled))
+                    ? Palette.cream.cgColor : NSColor.clear.cgColor
                 underline.opacity = isChosen ? 1 : 0
             }
             label.font = Typography.font(Typography.textSmall, isChosen ? .semibold : .medium)

@@ -3,18 +3,14 @@ import AppKit
 /// The interface's button: an ink-bordered pill that turns cream under the pointer, sinks a point
 /// when pressed, and fills with ink when on. Drawn with layers, so nothing in it touches the 3D view.
 @MainActor
-final class PillButton: NSView {
+final class PillButton: ChromeControl {
     enum Style {
         case normal
         case ghostly  // no border or fill until the pointer is over it
     }
 
-    var onPress: (() -> Void)?
     var isOn = false {
-        didSet { refresh() }
-    }
-    var isEnabled = true {
-        didSet { refresh() }
+        didSet { stateChanged() }
     }
 
     private let style: Style
@@ -30,9 +26,6 @@ final class PillButton: NSView {
         }
     }
     private let icon = NSImageView()
-    private var hovering = false
-    private var pressing = false
-    private var tracking: NSTrackingArea?
     private let iconOnly: Bool
 
     static let height: CGFloat = 30
@@ -89,7 +82,7 @@ final class PillButton: NSView {
             natural,
         ])
         setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        refresh()
+        stateChanged()
     }
 
     @available(*, unavailable)
@@ -107,71 +100,24 @@ final class PillButton: NSView {
         CATransaction.commit()
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking {
-            removeTrackingArea(tracking)
-        }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        hovering = true
-        refresh()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hovering = false
-        pressing = false
-        refresh()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isEnabled else {
-            return
-        }
-        pressing = true
-        refresh()
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
-        pressing = false
-        refresh()
-        if isEnabled, inside {
-            onPress?()
-        }
-    }
-
-    override func accessibilityPerformPress() -> Bool {
-        onPress?()
-        return true
-    }
-
-    private func refresh() {
+    override func stateChanged() {
         let fill: NSColor
         let ink: NSColor
         if isOn {
             fill = Palette.ink
             ink = Palette.paper
-        } else if hovering && isEnabled {
+        } else if isHovering && isEnabled {
             fill = Palette.cream
             ink = Palette.ink
         } else {
             fill = style == .ghostly ? .clear : Palette.sheet
             ink = Palette.ink
         }
-        let bordered = style == .normal || hovering || isOn
+        let bordered = style == .normal || isHovering || isOn
         Motion.animate {
             background.backgroundColor = fill.cgColor
             background.borderColor = bordered ? Palette.ink.cgColor : NSColor.clear.cgColor
-            let offset: CGFloat = pressing ? 1 : 0
+            let offset: CGFloat = isPressing ? 1 : 0
             layer?.sublayerTransform = CATransform3DMakeTranslation(offset, -offset, 0)
         }
         label.textColor = ink

@@ -72,6 +72,8 @@ final class StickerSlider: NSView {
         track(event)
     }
 
+    override func mouseUp(with event: NSEvent) {}
+
     override func keyDown(with event: NSEvent) {
         switch event.specialKey {
         case .leftArrow?: set(value - 0.01)
