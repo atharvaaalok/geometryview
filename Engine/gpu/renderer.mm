@@ -61,8 +61,13 @@ struct Renderer::State {
     id<MTLTexture> pickIds, pickDepths;
     NSUInteger pickIdRowBytes = 0, pickDepthRowBytes = 0;
 
-    // Scene.
-    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segmentBuffers;
+    // Scene. Each segment of geometry has its own residency set, filled once and never written
+    // again, so wiring its pages on another thread cannot race with anything.
+    struct SegmentResidency {
+        id<MTLBuffer> buffer;
+        id<MTLResidencySet> set;
+    };
+    std::unordered_map<const scene::MappedSegment*, SegmentResidency> segmentBuffers;
     id<MTLBuffer> definitions, occurrences, batches, drawBases;
     usize batchCount = 0;
     usize openBatchStart = 0;
@@ -71,7 +76,8 @@ struct Renderer::State {
     // Buffers a frame may still read. They leave residency and memory once it has finished.
     struct Retired {
         u64 frame = 0;
-        std::vector<id<MTLBuffer>> buffers;
+        std::vector<id<MTLBuffer>> buffers;    // in the shared residency set
+        std::vector<id<MTLResidencySet>> sets; // a segment's own set
     };
     std::vector<Retired> retired;
 
@@ -88,6 +94,9 @@ struct Renderer::State {
             }
             for (id<MTLBuffer> buffer : entry.buffers) {
                 [residency removeAllocation:buffer];
+            }
+            for (id<MTLResidencySet> set : entry.sets) {
+                [queue removeResidencySet:set];
             }
         }
         if (kept != retired.size()) {
@@ -343,8 +352,7 @@ void Renderer::syncScene(const scene::Scene& scene) {
 
     // Geometry stays in the mapped file: each buffer wraps its segment without copying. See ADR
     // 0002. The deallocator holds the mapping for as long as Metal holds the buffer.
-    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segments;
-    bool residencyChanged = false;
+    std::unordered_map<const scene::MappedSegment*, State::SegmentResidency> segments;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
         for (const std::shared_ptr<scene::MappedSegment>& segment : scene.document(d).segments()) {
             if (const auto it = s.segmentBuffers.find(segment.get());
@@ -362,9 +370,20 @@ void Renderer::syncScene(const scene::Scene& scene) {
                                            (void)owner;
                                        }];
             GEO_ASSERT(buffer != nil);
-            [s.residency addAllocation:buffer];
-            segments.emplace(segment.get(), buffer);
-            residencyChanged = true;
+            NSError* error = nil;
+            id<MTLResidencySet> set =
+                [s.device newResidencySetWithDescriptor:[MTLResidencySetDescriptor new]
+                                                  error:&error];
+            GEO_ASSERT(set != nil);
+            [set addAllocation:buffer];
+            [set commit];
+            [s.queue addResidencySet:set];
+            // Wiring takes tens of milliseconds for a large segment, and must not stall the engine
+            // thread. A frame arriving first simply waits for the pages it needs.
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                [set requestResidency];
+            });
+            segments.emplace(segment.get(), State::SegmentResidency{buffer, set});
         }
     }
 
@@ -397,7 +416,7 @@ void Renderer::syncScene(const scene::Scene& scene) {
                 continue;
             }
             const scene::MappedSegment* segment = document.geometrySegment(i);
-            id<MTLBuffer> buffer = segments.at(segment);
+            id<MTLBuffer> buffer = segments.at(segment).buffer;
             const format::SegmentView& view = segment->view();
             const auto* base = static_cast<const u8*>(segment->data());
             const auto addressOf = [&](const void* pointer) -> u64 {
@@ -467,12 +486,12 @@ void Renderer::syncScene(const scene::Scene& scene) {
             retired.buffers.push_back(old);
         }
     }
-    for (const auto& [segment, buffer] : s.segmentBuffers) {
+    for (const auto& [segment, residency] : s.segmentBuffers) {
         if (!segments.contains(segment)) {
-            retired.buffers.push_back(buffer);
+            retired.sets.push_back(residency.set);
         }
     }
-    if (!retired.buffers.empty()) {
+    if (!retired.buffers.empty() || !retired.sets.empty()) {
         s.retired.push_back(std::move(retired));
     }
 
@@ -488,16 +507,6 @@ void Renderer::syncScene(const scene::Scene& scene) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];
-
-    // Residency wires pages synchronously, which takes tens of milliseconds for a large file, and
-    // it must not stall the engine thread. A frame arriving first simply waits for the pages it
-    // needs.
-    if (residencyChanged) {
-        id<MTLResidencySet> residency = s.residency;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            [residency requestResidency];
-        });
-    }
 }
 
 void Renderer::resize(u32 width, u32 height) {
