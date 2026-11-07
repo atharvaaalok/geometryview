@@ -84,6 +84,8 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
 
         render::ViewState view = render::makeView(camera, viewport, bounds);
         view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
+        view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
+        view.uniforms.aoSamples = 12;
         const render::Overlay overlay = render::makeOverlay(
             camera, viewport, view.uniforms.viewRotation, 2.0f, renderer->glyphAdvance(), 0);
         const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);

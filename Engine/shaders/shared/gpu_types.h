@@ -37,6 +37,7 @@ enum TextureIndex : unsigned {
     kTexturePickIds = 0,
     kTexturePickDepths = 1,
     kTextureTags = 2,
+    kTextureAo = 3, // half resolution
 };
 
 enum AttachmentIndex : unsigned {
@@ -234,4 +235,6 @@ struct FrameUniforms {
     float worldPerPixel; // orthographic, or at unit depth in perspective
     float depthNear;     // for turning stored depth back into distance
     float depthFar;
+    float aoRadius;     // world units
+    uint32_t aoSamples; // fewer while the view moves
 };

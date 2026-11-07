@@ -42,7 +42,7 @@ std::vector<id<MTLAllocation>> Targets::resident() const {
     if (pickIdBuffer == nil) {
         return {};
     }
-    return {pickIdBuffer, pickDepthBuffer, offscreenColor, tags};
+    return {pickIdBuffer, pickDepthBuffer, offscreenColor, tags, occlusion};
 }
 
 void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
@@ -71,6 +71,9 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
                           target);
     tags = makeTarget(device, width, height, kTagFormat, 1, MTLStorageModePrivate,
                       MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
+    occlusion =
+        makeTarget(device, (width + 1) / 2, (height + 1) / 2, MTLPixelFormatR8Unorm, 1,
+                   MTLStorageModePrivate, MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     depthMsaa = makeTarget(device, width, height, kDepthFormat, kSampleCount,
                            MTLStorageModeMemoryless, target);
     offscreenColor =

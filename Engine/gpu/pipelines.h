@@ -27,6 +27,7 @@ struct Pipelines {
     id<MTLRenderPipelineState> cube, quad;
     id<MTLRenderPipelineState> resolvePick;
     id<MTLRenderPipelineState> composite;
+    id<MTLComputePipelineState> ambientOcclusion;
 
     id<MTLDepthStencilState> depthWrite;  // reversed depth
     id<MTLDepthStencilState> depthTest;   // tests, writes nothing

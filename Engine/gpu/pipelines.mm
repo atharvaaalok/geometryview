@@ -157,6 +157,20 @@ public:
         return build(descriptor, "Could not create the composite pipeline");
     }
 
+    id<MTLComputePipelineState> compute(NSString* name, const char* what) {
+        MTL4ComputePipelineDescriptor* descriptor = [MTL4ComputePipelineDescriptor new];
+        descriptor.computeFunctionDescriptor = function(name);
+        NSError* error = nil;
+        id<MTLComputePipelineState> state =
+            [compiler_ newComputePipelineStateWithDescriptor:descriptor
+                                         compilerTaskOptions:nil
+                                                       error:&error];
+        if (!state) {
+            reportFailure(what, error);
+        }
+        return state;
+    }
+
     id<MTLRenderPipelineState> tile(NSString* name, const char* what) {
         MTL4TileRenderPipelineDescriptor* tile = [MTL4TileRenderPipelineDescriptor new];
         tile.tileFunctionDescriptor = function(name);
@@ -217,7 +231,9 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
                            "Could not create the overlay pipeline");
     resolvePick = builder.tile(@"resolvePick", "Could not create the pick pipeline");
     composite = builder.composite();
-    if (!sheet || !cube || !quad || !resolvePick || !composite) {
+    ambientOcclusion =
+        builder.compute(@"ambientOcclusion", "Could not create the occlusion kernel");
+    if (!sheet || !cube || !quad || !resolvePick || !composite || !ambientOcclusion) {
         return false;
     }
 

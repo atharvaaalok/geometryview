@@ -89,7 +89,7 @@ struct Renderer::State {
 
         MTL4ArgumentTableDescriptor* composite = [MTL4ArgumentTableDescriptor new];
         composite.maxBufferBindCount = kBufferCount;
-        composite.maxTextureBindCount = 3;
+        composite.maxTextureBindCount = 4;
         compositeTable = [context.device newArgumentTableWithDescriptor:composite error:&error];
 
         MTL4ArgumentTableDescriptor* overlay = [MTL4ArgumentTableDescriptor new];
@@ -275,9 +275,23 @@ struct Renderer::State {
         encodeMain(encoder, view, overlay);
         [encoder endEncoding];
 
+        if (style.ao > 0.0f) {
+            // Reads the tiles' depth, and writes what the previous frame's composite read.
+            id<MTL4ComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
+            [compute barrierAfterQueueStages:MTLStageTile | MTLStageFragment
+                                beforeStages:MTLStageDispatch
+                           visibilityOptions:MTL4VisibilityOptionDevice];
+            [compute setComputePipelineState:pipelines.ambientOcclusion];
+            [compute setArgumentTable:compositeTable];
+            [compute dispatchThreads:MTLSizeMake(targets.occlusion.width, targets.occlusion.height,
+                                                 1)
+                threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+            [compute endEncoding];
+        }
+
         id<MTL4RenderCommandEncoder> composite =
             [commandBuffer renderCommandEncoderWithDescriptor:targets.compositePass(target)];
-        [composite barrierAfterQueueStages:MTLStageTile | MTLStageFragment
+        [composite barrierAfterQueueStages:MTLStageTile | MTLStageFragment | MTLStageDispatch
                               beforeStages:MTLStageFragment
                          visibilityOptions:MTL4VisibilityOptionDevice];
         [composite setRenderPipelineState:pipelines.composite];
@@ -421,6 +435,7 @@ void Renderer::resize(u32 width, u32 height) {
     [s.tileTable setTexture:s.targets.tags.gpuResourceID atIndex:kTextureTags];
     [s.compositeTable setTexture:s.targets.pickDepths.gpuResourceID atIndex:kTexturePickDepths];
     [s.compositeTable setTexture:s.targets.tags.gpuResourceID atIndex:kTextureTags];
+    [s.compositeTable setTexture:s.targets.occlusion.gpuResourceID atIndex:kTextureAo];
 }
 
 void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view,

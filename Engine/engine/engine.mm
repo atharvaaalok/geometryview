@@ -975,6 +975,8 @@ struct GeoEngine {
         view.uniforms.ghostPickable = tool == GeoToolGhost ? 1 : 0;
         view.uniforms.hoverHides = tool == GeoToolHide ? 1 : 0;
         view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
+        view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
+        view.uniforms.aoSamples = 12;
         return view;
     }
 

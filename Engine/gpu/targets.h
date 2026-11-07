@@ -26,6 +26,7 @@ struct Targets {
     u32 width = 0, height = 0;
     id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, inkMsaa, tagsMsaa, depthMsaa;
     id<MTLTexture> tags;           // sample 0 of the tags, for outlines
+    id<MTLTexture> occlusion;      // ambient occlusion, at half resolution
     id<MTLTexture> offscreenColor; // for renderOffscreen
 
     // Sample 0 of the ID and depth, in linear memory the CPU reads directly, so hover and pivots

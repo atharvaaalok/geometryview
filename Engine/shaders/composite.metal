@@ -44,7 +44,8 @@ fragment float4 compositeFragment(float4 position [[position]],
                                   constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                                   constant StyleUniforms& style [[buffer(kBufferStyle)]],
                                   texture2d<float> depths [[texture(kTexturePickDepths)]],
-                                  texture2d<uint> tags [[texture(kTextureTags)]]) {
+                                  texture2d<uint> tags [[texture(kTextureTags)]],
+                                  texture2d<float> occlusion [[texture(kTextureAo)]]) {
     const float2 px = position.xy;
     const int2 last = int2(tags.get_width(), tags.get_height()) - 1;
     const auto at = [&](int2 q) { return uint2(clamp(q, int2(0), last)); };
@@ -106,6 +107,32 @@ fragment float4 compositeFragment(float4 position [[position]],
     const float ink =
         1.0 - (1.0 - solid * style.inkAlpha) * (1.0 - ghost * style.ghostInk * style.inkAlpha);
 
+    // Ambient occlusion, blurred over the half-resolution neighbours on the same surface. A ghost
+    // in front dims it.
+    float shade = 1.0;
+    if (style.ao > 0.0 && c.r != 0) {
+        const int2 h = p / 2;
+        const int2 lastHalf = int2(occlusion.get_width(), occlusion.get_height()) - 1;
+        const float z = viewDepth(depths.read(at(p)).r, frame);
+        const float tolerance = 6.0 * pixelWorld(z, frame) + 1e-5;
+        float sum = 0.0, total = 0.0;
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                const int2 q = clamp(h + int2(x, y), int2(0), lastHalf);
+                const float dq = depths.read(at(q * 2)).r;
+                const bool sameSurface = dq > 0.0 && abs(viewDepth(dq, frame) - z) < tolerance;
+                const float w =
+                    (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0) * (sameSurface ? 1.0 : 0.02);
+                sum += w * occlusion.read(uint2(q)).r;
+                total += w;
+            }
+        }
+        shade = mix(1.0, sum / total, style.ao);
+        if (c.g != 0) {
+            shade = mix(shade, 1.0, style.ghostAlpha);
+        }
+    }
+
     // Print texture on the figure itself: a fine tooth and a slow blotch, kept faint.
     float print = 1.0;
     if (style.grain > 0.0 && (c.r != 0 || c.g != 0 || ink > 0.0)) {
@@ -113,5 +140,5 @@ fragment float4 compositeFragment(float4 position [[position]],
         const float blotch = valueNoise(px / (90.0 * style.pixelsPerPoint));
         print = mix(1.0, (0.955 + 0.07 * fine) * (0.975 + 0.05 * blotch), style.grain);
     }
-    return float4(style.ink * ink * print, (1.0 - ink) * print);
+    return float4(style.ink * ink * print, (1.0 - ink) * shade * print);
 }
