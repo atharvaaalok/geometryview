@@ -20,6 +20,7 @@ inline constexpr MTLPixelFormat kIdFormat = MTLPixelFormatR32Uint;
 inline constexpr MTLPixelFormat kDepthCopyFormat = MTLPixelFormatR32Float;
 inline constexpr MTLPixelFormat kInkFormat = MTLPixelFormatRGBA8Unorm;
 inline constexpr MTLPixelFormat kTagFormat = MTLPixelFormatRG8Uint;
+inline constexpr MTLPixelFormat kShadowFormat = MTLPixelFormatR8Unorm;
 inline constexpr MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float;
 
 struct Targets {
@@ -27,6 +28,7 @@ struct Targets {
     id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, inkMsaa, tagsMsaa, depthMsaa;
     id<MTLTexture> tags;           // sample 0 of the tags, for outlines
     id<MTLTexture> occlusion;      // ambient occlusion, at half resolution
+    id<MTLTexture> shadowMask;     // where the cast shadow falls, at half resolution
     id<MTLTexture> offscreenColor; // for renderOffscreen
 
     // Sample 0 of the ID and depth, in linear memory the CPU reads directly, so hover and pivots
@@ -42,6 +44,9 @@ struct Targets {
     /// allocates nothing.
     MTL4RenderPassDescriptor* mainPass(id<MTLTexture> resolveTarget);
 
+    /// The shadow pass, drawing the shadow mask.
+    MTL4RenderPassDescriptor* shadowPass();
+
     /// The composite pass, drawing over the main pass's result in `target`.
     MTL4RenderPassDescriptor* compositePass(id<MTLTexture> target);
 
@@ -49,6 +54,7 @@ private:
     std::vector<id<MTLAllocation>> resident() const;
     MTL4RenderPassDescriptor* mainPass_ = nil;
     MTL4RenderPassDescriptor* compositePass_ = nil;
+    MTL4RenderPassDescriptor* shadowPass_ = nil;
 };
 
 } // namespace geo::gpu

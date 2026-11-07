@@ -82,6 +82,23 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
         u.worldPerPixel = float(2.0 * halfHeight / viewport.height);
     }
     u.viewProjection = simd_mul(projection, viewMatrix(right, up, back, camera.position));
+    // The shadow's light: 75 degrees up, from behind the viewer's right shoulder.
+    const Vec3 zUp = simd_make_double3(0.0, 0.0, 1.0);
+    const auto flat = [&](Vec3 v) {
+        const Vec3 f = v - zUp * simd_dot(v, zUp);
+        return simd_length_squared(f) > 1e-16 ? simd_normalize(f) : simd_make_double3(0, 0, 0);
+    };
+    Vec3 away = flat(right) * -0.45 + flat(forward) * -0.89;
+    if (simd_length_squared(away) < 1e-16) {
+        away = -flat(right);
+    }
+    away = simd_normalize(away);
+    const double elevation = 75.0 * M_PI / 180.0;
+    u.lightTravel = toFloat(away * std::cos(elevation) - zUp * std::sin(elevation));
+    u.ground = float(sceneBounds.min.z - 0.01 * simd_length(sceneBounds.max - sceneBounds.min));
+    const double downward = -simd_dot(forward, zUp);
+    const double t = std::clamp((downward - 0.02) / (0.25 - 0.02), 0.0, 1.0);
+    u.shadowVisibility = float(t * t * (3.0 - 2.0 * t));
     u.depthNear = float(view.depth.nearPlane);
     u.depthFar = float(view.depth.farPlane);
     return view;

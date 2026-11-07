@@ -11,6 +11,7 @@ enum FunctionConstant : NSUInteger {
     kConstantGhostPass = 0,
     kConstantPhysical = 1,
     kConstantGhostLines = 2,
+    kConstantShadowPass = 3,
 };
 
 struct Pipelines {
@@ -19,6 +20,7 @@ struct Pipelines {
     // Ghosts by lighting, then by whether they write pick ids, which they do while the ghost tool
     // is held so a click can bring one back.
     id<MTLRenderPipelineState> ghost[2][2];
+    id<MTLRenderPipelineState> shadow; // solid faces flattened onto the ground
     id<MTLRenderPipelineState> sheet;
     // Feature edges into the ink attachment, then ink onto colour: creases and highlights, or
     // ghosts' dashed lines.

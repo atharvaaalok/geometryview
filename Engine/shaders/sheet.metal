@@ -15,9 +15,38 @@ vertex SheetVertex sheetVertex(uint vertexId [[vertex_id]]) {
     return {float4(p * 2.0 - 1.0, 0.0, 1.0)};
 }
 
+// The shadow at a pixel, from the half-resolution mask: a crisp tent grown a little, so hairline
+// gaps between parts that touch close, or for soft styles a disc of samples.
+static float shadowAt(float2 px, texture2d<float> mask, constant StyleUniforms& style) {
+    constexpr sampler linear(filter::linear, address::clamp_to_edge, coord::pixel);
+    const float2 at = px * 0.5;
+    if (style.shadowSoft <= 1.0) {
+        float shade = 0.0;
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                const float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+                shade += w * mask.sample(linear, at + float2(x, y) * 0.5).r;
+            }
+        }
+        return saturate(shade / 16.0 * 1.25);
+    }
+    // A golden-angle spiral, weighted toward the middle.
+    float shade = 0.0, total = 0.0;
+    const float radius = style.shadowSoft * 0.5;
+    for (int i = 0; i < 24; ++i) {
+        const float r = sqrt((float(i) + 0.5) / 24.0);
+        const float a = float(i) * 2.39996;
+        const float w = 1.0 - 0.6 * r;
+        shade += w * mask.sample(linear, at + float2(cos(a), sin(a)) * r * radius).r;
+        total += w;
+    }
+    return shade / total;
+}
+
 fragment float4 sheetFragment(SheetVertex in [[stage_in]],
                               constant FrameUniforms& frame [[buffer(kBufferFrame)]],
-                              constant StyleUniforms& style [[buffer(kBufferStyle)]]) {
+                              constant StyleUniforms& style [[buffer(kBufferStyle)]],
+                              texture2d<float> shadow [[texture(kTextureShadow)]]) {
     const float2 px = in.position.xy;
     const float2 uv = px / frame.viewport; // y runs down
     float3 color = mix(style.sheetTop, style.sheetBottom, uv.y);
@@ -38,5 +67,9 @@ fragment float4 sheetFragment(SheetVertex in [[stage_in]],
     const float fine = valueNoise(px / (1.35 * style.pixelsPerPoint));
     const float paper = 0.55 * fine + 0.45 * valueNoise(px / (4.0 * style.pixelsPerPoint));
     color = mix(color, style.grainTint, 0.11 * style.grain * paper);
+    if (style.shadowOn != 0 && frame.shadowVisibility > 0.0) {
+        color = mix(color, style.shadowColor,
+                    style.shadowAlpha * frame.shadowVisibility * shadowAt(px, shadow, style));
+    }
     return float4(color, 1.0);
 }

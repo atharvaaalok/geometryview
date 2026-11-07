@@ -89,7 +89,7 @@ struct Renderer::State {
 
         MTL4ArgumentTableDescriptor* composite = [MTL4ArgumentTableDescriptor new];
         composite.maxBufferBindCount = kBufferCount;
-        composite.maxTextureBindCount = 4;
+        composite.maxTextureBindCount = 5;
         compositeTable = [context.device newArgumentTableWithDescriptor:composite error:&error];
 
         MTL4ArgumentTableDescriptor* overlay = [MTL4ArgumentTableDescriptor new];
@@ -192,23 +192,16 @@ struct Renderer::State {
     // The main pass: opaque surfaces, the sheet behind them, creases and highlights, ghosts over
     // all of it with their dashed lines, then the overlay.
     // It ends by copying sample 0 of the ids and depths out of tile memory for picking.
-    void encodeMain(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
-                    const render::Overlay* overlay) {
+    // Points every table at this frame's uniforms and the current scene.
+    void bindFrame(const render::ViewState& view) {
         const u64 frame = context.frameCount;
         const u64 frameAddress = frameUniforms.write(frame, &view.uniforms);
         const u64 styleAddress = styleUniforms.write(frame, &style);
-        [surfaceTable setAddress:frameAddress atIndex:kBufferFrame];
-        [surfaceTable setAddress:styleAddress atIndex:kBufferStyle];
-        [compositeTable setAddress:frameAddress atIndex:kBufferFrame];
-        [compositeTable setAddress:styleAddress atIndex:kBufferStyle];
-        // The previous frame's composite may still read what this pass's tiles write.
-        [encoder barrierAfterQueueStages:MTLStageFragment
-                            beforeStages:MTLStageTile
-                       visibilityOptions:MTL4VisibilityOptionNone];
-        [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
-
-        const bool hasScene = !tables.empty();
-        if (hasScene) {
+        for (id<MTL4ArgumentTable> table : {surfaceTable, compositeTable}) {
+            [table setAddress:frameAddress atIndex:kBufferFrame];
+            [table setAddress:styleAddress atIndex:kBufferStyle];
+        }
+        if (!tables.empty()) {
             [surfaceTable setAddress:tables.definitions().gpuAddress atIndex:kBufferDefinitions];
             [surfaceTable setAddress:tables.occurrences().gpuAddress atIndex:kBufferOccurrences];
             [surfaceTable setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
@@ -217,6 +210,39 @@ struct Renderer::State {
             [surfaceTable setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
             [surfaceTable setAddress:palette.gpuAddress atIndex:kBufferPalette];
             [surfaceTable setAddress:looks.gpuAddress atIndex:kBufferLooks];
+        }
+    }
+
+    bool castsShadow(const render::ViewState& view) const {
+        return !tables.empty() && style.shadowOn != 0 && view.uniforms.shadowVisibility > 0.0f;
+    }
+
+    // Solid surfaces flattened onto the ground, into the shadow mask the sheet reads.
+    void encodeShadow() {
+        id<MTL4RenderCommandEncoder> encoder =
+            [commandBuffer renderCommandEncoderWithDescriptor:targets.shadowPass()];
+        // The previous frame's sheet may still read the mask.
+        [encoder barrierAfterQueueStages:MTLStageFragment
+                            beforeStages:MTLStageFragment
+                       visibilityOptions:MTL4VisibilityOptionNone];
+        [encoder setRenderPipelineState:pipelines.shadow];
+        [encoder setCullMode:MTLCullModeNone];
+        drawBatches(encoder, tables.closedBatches());
+        drawBatches(encoder, tables.openBatches());
+        [encoder endEncoding];
+    }
+
+    void encodeMain(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
+                    const render::Overlay* overlay) {
+        // The previous frame's composite may still read what this pass's tiles write, and the
+        // sheet reads the shadow mask just drawn.
+        [encoder barrierAfterQueueStages:MTLStageFragment
+                            beforeStages:MTLStageTile | MTLStageFragment
+                       visibilityOptions:MTL4VisibilityOptionDevice];
+        [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+
+        const bool hasScene = !tables.empty();
+        if (hasScene) {
             [encoder setRenderPipelineState:pipelines.surface[physical]];
             [encoder setDepthStencilState:pipelines.depthWrite];
             drawSurfaces(encoder);
@@ -226,7 +252,7 @@ struct Renderer::State {
         [encoder setRenderPipelineState:pipelines.sheet];
         [encoder setDepthStencilState:pipelines.farOnly];
         [encoder setCullMode:MTLCullModeNone];
-        [encoder setArgumentTable:surfaceTable
+        [encoder setArgumentTable:compositeTable
                          atStages:MTLRenderStageVertex | MTLRenderStageFragment];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
         if (hasScene) {
@@ -270,6 +296,10 @@ struct Renderer::State {
     void encodeFrame(id<MTLTexture> target, const render::ViewState& view,
                      const render::Overlay* overlay) {
         beginFrame();
+        bindFrame(view);
+        if (castsShadow(view)) {
+            encodeShadow();
+        }
         id<MTL4RenderCommandEncoder> encoder =
             [commandBuffer renderCommandEncoderWithDescriptor:targets.mainPass(target)];
         encodeMain(encoder, view, overlay);
@@ -436,6 +466,7 @@ void Renderer::resize(u32 width, u32 height) {
     [s.compositeTable setTexture:s.targets.pickDepths.gpuResourceID atIndex:kTexturePickDepths];
     [s.compositeTable setTexture:s.targets.tags.gpuResourceID atIndex:kTextureTags];
     [s.compositeTable setTexture:s.targets.occlusion.gpuResourceID atIndex:kTextureAo];
+    [s.compositeTable setTexture:s.targets.shadowMask.gpuResourceID atIndex:kTextureShadow];
 }
 
 void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view,

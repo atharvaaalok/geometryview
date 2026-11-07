@@ -100,10 +100,29 @@ public:
 
     // One function set serves every surface pass. Function constants choose the pass and the
     // lighting, so each pipeline is specialised and carries no branches for the others.
-    id<MTLRenderPipelineState> surface(bool ghost, bool physical, Writes writes) {
+    MTLFunctionConstantValues* surfaceConstants(bool ghost, bool physical, bool shadow) {
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
         [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:kConstantGhostPass];
         [constants setConstantValue:&physical type:MTLDataTypeBool atIndex:kConstantPhysical];
+        [constants setConstantValue:&shadow type:MTLDataTypeBool atIndex:kConstantShadowPass];
+        return constants;
+    }
+
+    // The shadow mask: surfaces flattened onto the ground, coverage only, at half resolution.
+    id<MTLRenderPipelineState> shadow() {
+        MTLFunctionConstantValues* constants = surfaceConstants(false, false, true);
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
+        mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
+        mesh.fragmentFunctionDescriptor = function(@"shadowFragment", constants);
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.colorAttachments[0].pixelFormat = kShadowFormat;
+        return build(mesh, "Could not create the shadow pipeline");
+    }
+
+    id<MTLRenderPipelineState> surface(bool ghost, bool physical, Writes writes) {
+        MTLFunctionConstantValues* constants = surfaceConstants(ghost, physical, false);
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
         mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
@@ -213,6 +232,7 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
             return false;
         }
     }
+    shadow = builder.shadow();
     sheet = builder.classic(@"sheetVertex", @"sheetFragment", {.ids = false},
                             "Could not create the sheet pipeline");
     for (const bool ghostLines : {false, true}) {
@@ -233,7 +253,7 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
     composite = builder.composite();
     ambientOcclusion =
         builder.compute(@"ambientOcclusion", "Could not create the occlusion kernel");
-    if (!sheet || !cube || !quad || !resolvePick || !composite || !ambientOcclusion) {
+    if (!shadow || !sheet || !cube || !quad || !resolvePick || !composite || !ambientOcclusion) {
         return false;
     }
 

@@ -11,6 +11,14 @@ using namespace metal;
 constant bool kGhostPass [[function_constant(0)]];
 // Studio light with metal and roughness, rather than three flat bands.
 constant bool kPhysical [[function_constant(1)]];
+// The cast shadow: every solid face flattened onto the ground along the light.
+constant bool kShadowPass [[function_constant(3)]];
+
+// Where a point's shadow lands on the ground.
+static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
+    const float height = p.z - frame.ground;
+    return p + frame.lightTravel * (height / max(-frame.lightTravel.z, 1e-3));
+}
 
 struct SurfaceVertex {
     float4 position [[position]];
@@ -41,6 +49,10 @@ static inline bool isVisible(const device Meshlet& m, const device GpuDefinition
     const float3 center =
         boundsCenter(definition, occurrence, ushort3(m.centerX, m.centerY, m.centerZ));
     const float radius = float(m.radius) * definition.boundsStep;
+    if (kShadowPass) {
+        // Flattened along a light 75 degrees up, a sphere stretches by under 4%.
+        return sphereInView(shadowOf(center, frame), radius * 1.05, frame);
+    }
     if (!sphereInView(center, radius, frame)) {
         return false;
     }
@@ -63,6 +75,9 @@ static inline bool isVisible(const device Meshlet& m, const device GpuDefinition
 static inline bool passKeeps(uint flags) {
     if ((flags & kStateHidden) != 0) {
         return false;
+    }
+    if (kShadowPass) {
+        return (flags & kStateGhost) == 0; // ghosts cast no shadow
     }
     if (kGhostPass) {
         return (flags & (kStateGhost | kStateFaceGhost)) != 0;
@@ -139,6 +154,10 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     const bool ghost = (flags & kStateGhost) != 0;
     if ((flags & kStateHidden) != 0 || ghost != kGhostPass) {
         out.position = float4(0.0, 0.0, 2.0, 1.0);
+    } else if (kShadowPass) {
+        // Held at mid depth, since the flattened model can reach outside the depth range.
+        const float4 clip = frame.viewProjection * float4(shadowOf(world, frame), 1.0);
+        out.position = float4(clip.xy, 0.5 * clip.w, clip.w);
     }
     return out;
 }
@@ -321,6 +340,11 @@ fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                     : mix(color, style.hover, style.hoverAmount * (selected ? 0.5 : 1.0));
     }
     return {float4(color, 1.0), in.id, in.position.z, uint2(tag)};
+}
+
+// The shadow mask: coverage only.
+fragment float4 shadowFragment(SurfaceVertex in [[stage_in]]) {
+    return float4(1.0);
 }
 
 // Copies each pixel's ID and depth to memory the CPU reads directly, so hover and pivots need no

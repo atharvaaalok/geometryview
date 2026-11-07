@@ -37,7 +37,8 @@ enum TextureIndex : unsigned {
     kTexturePickIds = 0,
     kTexturePickDepths = 1,
     kTextureTags = 2,
-    kTextureAo = 3, // half resolution
+    kTextureAo = 3,     // half resolution
+    kTextureShadow = 4, // half resolution
 };
 
 enum AttachmentIndex : unsigned {
@@ -237,4 +238,9 @@ struct FrameUniforms {
     float depthFar;
     float aoRadius;     // world units
     uint32_t aoSamples; // fewer while the view moves
+    // The cast shadow: a high sun whose bearing follows the camera, so the shadow always falls
+    // toward the viewer's lower left, onto a ground just below the model.
+    simd_float3 lightTravel; // unit direction the light travels
+    float ground;            // height of the ground along z
+    float shadowVisibility;  // full from above, gone from below the ground
 };

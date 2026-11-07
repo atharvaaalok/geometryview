@@ -505,7 +505,7 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.hoverAmount = style.hoverAmount;
     u.ao = style.ao;
     u.shadowAlpha = style.shadow.alpha;
-    u.shadowSoft = style.shadow.soft * px;
+    u.shadowSoft = style.shadow.soft <= 1.0f ? 1.0f : style.shadow.soft * px; // 1 is crisp
     u.wobble = style.wobble ? std::clamp(settings.wobble, 0.0f, 7.0f) * px * 0.7f : 0.0f;
     u.wobblePeriod = 36.0f * px;
     u.pixelsPerPoint = px;

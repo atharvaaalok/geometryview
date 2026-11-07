@@ -42,7 +42,7 @@ std::vector<id<MTLAllocation>> Targets::resident() const {
     if (pickIdBuffer == nil) {
         return {};
     }
-    return {pickIdBuffer, pickDepthBuffer, offscreenColor, tags, occlusion};
+    return {pickIdBuffer, pickDepthBuffer, offscreenColor, tags, occlusion, shadowMask};
 }
 
 void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
@@ -56,6 +56,7 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
     height = newHeight;
     mainPass_ = nil;
     compositePass_ = nil;
+    shadowPass_ = nil;
 
     id<MTLDevice> device = context.device;
     const MTLTextureUsage target = MTLTextureUsageRenderTarget;
@@ -74,6 +75,9 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
     occlusion =
         makeTarget(device, (width + 1) / 2, (height + 1) / 2, MTLPixelFormatR8Unorm, 1,
                    MTLStorageModePrivate, MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
+    shadowMask =
+        makeTarget(device, (width + 1) / 2, (height + 1) / 2, kShadowFormat, 1,
+                   MTLStorageModePrivate, MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead);
     depthMsaa = makeTarget(device, width, height, kDepthFormat, kSampleCount,
                            MTLStorageModeMemoryless, target);
     offscreenColor =
@@ -87,6 +91,17 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
     }
     [context.residency commit];
     [context.residency requestResidency];
+}
+
+MTL4RenderPassDescriptor* Targets::shadowPass() {
+    if (shadowPass_ == nil) {
+        shadowPass_ = [MTL4RenderPassDescriptor new];
+        shadowPass_.colorAttachments[0].texture = shadowMask;
+        shadowPass_.colorAttachments[0].loadAction = MTLLoadActionClear;
+        shadowPass_.colorAttachments[0].storeAction = MTLStoreActionStore;
+        shadowPass_.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+    }
+    return shadowPass_;
 }
 
 MTL4RenderPassDescriptor* Targets::compositePass(id<MTLTexture> target) {
