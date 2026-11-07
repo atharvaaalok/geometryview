@@ -66,6 +66,10 @@ constexpr double kRefineDelaySeconds = 0.3;
 constexpr double kFlightSeconds = 0.55;
 // See-through fades in and out over this long, as in Colorfigures.
 constexpr double kSeeThroughSeconds = 0.7;
+// A scene this heavy leaves out edges and the shadow while the view moves, and draws them once it
+// settles: spike 5 found 30M triangles held 120 Hz without them and 48 fps with them.
+constexpr u64 kHeavyTriangles = 20'000'000;
+constexpr u64 kHeavyEdgeSegments = 2'000'000;
 // The square views that classify the shell, in pixels.
 constexpr u32 kShellViewSize = 160;
 
@@ -216,6 +220,8 @@ struct GeoEngine {
 
     // Finer geometry for what the view shows closely. One job runs at a time.
     CFRunLoopTimerRef refineTimer = nullptr;
+    double lastNavigation = -1e9;
+    bool detailReduced = false; // the last frame left out edges and the shadow
     bool refining = false;
     std::shared_ptr<ipc::ImportCancel> refineCancel;
 
@@ -772,6 +778,7 @@ struct GeoEngine {
     }
 
     void scheduleRefinement() {
+        lastNavigation = nowSeconds();
         if (refineTimer != nullptr) {
             CFRunLoopTimerSetNextFireDate(refineTimer,
                                           CFAbsoluteTimeGetCurrent() + kRefineDelaySeconds);
@@ -1178,6 +1185,11 @@ struct GeoEngine {
             }
             renderer->syncState(interaction.state());
             look.apply(*renderer, scene);
+            const bool heavy = renderer->sceneTriangles() > kHeavyTriangles ||
+                               renderer->sceneEdgeSegments() > kHeavyEdgeSegments;
+            detailReduced =
+                heavy && (flight.active() || nowSeconds() - lastNavigation < kRefineDelaySeconds);
+            renderer->setReducedDetail(detailReduced);
             publishState();
             const render::ViewState view = makeFrameView();
             publishedHover.store(hoveredId, std::memory_order_relaxed);
@@ -1236,6 +1248,9 @@ struct GeoEngine {
             refineTimer = CFRunLoopTimerCreateWithHandler(nullptr, CFAbsoluteTimeGetCurrent() + 1e9,
                                                           1e9, 0, 0, ^(CFRunLoopTimerRef) {
                                                               @autoreleasepool {
+                                                                  if (detailReduced) {
+                                                                      requestFrame(); // in full
+                                                                  }
                                                                   refine();
                                                               }
                                                           });
@@ -1487,5 +1502,6 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine) {
             engine->publishedHover.load(std::memory_order_relaxed),
             engine->selectedCount.load(std::memory_order_relaxed),
             engine->hiddenCount.load(std::memory_order_relaxed),
-            engine->renderer ? engine->renderer->meanGpuSeconds() : 0.0};
+            engine->renderer ? engine->renderer->meanGpuSeconds() : 0.0,
+            engine->renderer ? engine->renderer->gpuPercentileSeconds(0.99) : 0.0};
 }

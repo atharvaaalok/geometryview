@@ -1,11 +1,15 @@
 #include "occt/mesh_shape.h"
 
+#include <cstdlib>
+#include <string>
+
 #include "base/time.h"
 
 #include <BRepBndLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <DE_ShapeFixParameters.hxx>
 #include <GeomLib.hxx>
 #include <Geom_Plane.hxx>
 #include <Geom_Surface.hxx>
@@ -17,6 +21,7 @@
 #include <Poly_Triangulation.hxx>
 #include <STEPConstruct.hxx>
 #include <STEPControl_Reader.hxx>
+#include <ShapeProcess.hxx>
 #include <Standard_Failure.hxx>
 #include <StepData_StepModel.hxx>
 #include <StepRepr_RepresentationItem.hxx>
@@ -278,12 +283,43 @@ FaceIds mapFaces(STEPControl_Reader& reader) {
     return ids;
 }
 
+// GEOMETRY_SHAPE_PROCESS chooses OCCT's shape healing, for the ShapeFix experiment in ADR 0012:
+// "none" turns it off, and "lean" skips the checks for intersecting edges and wires. Read once per
+// worker process.
+std::string_view shapeProcess() {
+    static const std::string value = [] {
+        const char* setting = std::getenv("GEOMETRY_SHAPE_PROCESS");
+        return std::string(setting != nullptr ? setting : "");
+    }();
+    return value;
+}
+
+void applyShapeProcess(STEPControl_Reader& reader) {
+    if (shapeProcess() == "none") {
+        reader.SetShapeProcessFlags(ShapeProcess::OperationsFlags());
+    } else if (shapeProcess() == "lean") {
+        using Mode = DE_ShapeFixParameters::FixMode;
+        DE_ShapeFixParameters fix;
+        for (Mode* mode : {&fix.FixSelfIntersectionMode, &fix.FixIntersectingWiresMode,
+                           &fix.FixSelfIntersectingEdgeMode, &fix.FixIntersectingEdgesMode,
+                           &fix.FixNonAdjacentIntersectingEdgesMode}) {
+            *mode = Mode::NotFix;
+        }
+        reader.SetShapeFixParameters(fix);
+    }
+}
+
 bool readText(STEPControl_Reader& reader, std::string_view text, bool productMode) {
     MemoryStream buffer(text);
     std::istream stream(&buffer);
     DESTEP_Parameters parameters;
     parameters.ReadProductMode = productMode;
-    return reader.ReadStream("slice", parameters, stream) == IFSelect_RetDone;
+    if (reader.ReadStream("slice", parameters, stream) != IFSelect_RetDone) {
+        return false;
+    }
+    // The actor that transfers, and holds these settings, exists only once a file is read.
+    applyShapeProcess(reader);
+    return true;
 }
 
 } // namespace

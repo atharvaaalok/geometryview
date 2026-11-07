@@ -96,6 +96,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     std::vector<MeshletRef> allRefs, edgeRefs;
 
     u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
+    u64 triangles = 0, edgeSegments = 0;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
         const scene::Document& document = scene.document(d);
         if (!document.hasModel()) {
@@ -151,6 +152,8 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
             if (geometry == nullptr) {
                 continue;
             }
+            triangles += geometry->triangleCount;
+            edgeSegments += geometry->edgeSegmentCount;
             BatchList& target = (geometry->flags & kDefinitionOpen) != 0 ? open : closed;
             target.add(global, geometry->meshletCount, allRefs);
             edges.add(global, geometry->edgeChunkCount, edgeRefs);
@@ -211,6 +214,8 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     surfaceBatchCount_ = batchCount;
     openBatchStart_ = closed.batches.size();
     edgeBatchCount_ = edges.batches.size();
+    triangles_ = triangles;
+    edgeSegments_ = edgeSegments;
     for (id<MTLBuffer> resource :
          {definitions, occurrences, batches, drawBases, meshletRefs, edgeBatches, edgeChunkRefs}) {
         [context.residency addAllocation:resource];

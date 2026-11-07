@@ -25,6 +25,10 @@ public:
 
     bool empty() const { return surfaceBatchCount_ == 0; }
 
+    /// Triangles and edge segments drawn for the whole scene, counting every instance.
+    u64 triangles() const { return triangles_; }
+    u64 edgeSegments() const { return edgeSegments_; }
+
     id<MTLBuffer> definitions() const { return definitions_; }
     id<MTLBuffer> occurrences() const { return occurrences_; }
     id<MTLBuffer> batches() const { return batches_; }
@@ -48,6 +52,8 @@ private:
     id<MTLBuffer> definitions_, occurrences_, batches_, drawBases_, meshletRefs_;
     id<MTLBuffer> edgeBatches_, edgeRefs_;
     usize edgeBatchCount_ = 0;
+    u64 triangles_ = 0;
+    u64 edgeSegments_ = 0;
     usize surfaceBatchCount_ = 0;
     usize openBatchStart_ = 0;
 };

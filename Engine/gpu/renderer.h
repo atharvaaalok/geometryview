@@ -58,6 +58,13 @@ public:
     /// Renders the occurrence ids of a square view, `size` pixels wide, and waits for them.
     OccurrenceIds renderOccurrenceIds(const render::ViewState& view, u32 size);
 
+    /// While set, frames leave out feature edges and the cast shadow, for heavy scenes in motion.
+    void setReducedDetail(bool reduced);
+
+    /// Triangles and edge segments drawn for the scene, counting every instance.
+    u64 sceneTriangles() const;
+    u64 sceneEdgeSegments() const;
+
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);
 
@@ -72,6 +79,8 @@ public:
     /// Mean GPU time per frame so far, from Metal's commit feedback, which is gathered only when
     /// tracing. Safe to call from any thread.
     double meanGpuSeconds() const;
+    /// The given fraction's percentile of the latest 2048 frames' GPU times, likewise.
+    double gpuPercentileSeconds(double fraction) const;
 
     /// A glyph's advance in the overlay atlas, in atlas pixels.
     float glyphAdvance() const;

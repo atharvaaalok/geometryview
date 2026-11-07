@@ -97,6 +97,10 @@ Tools/step_equivalence.py build/release files.txt --jobs 6
 
 The `asan` and `tsan` presets run the same tests under sanitizers.
 
+`Tools/perf_gate.py build/release` imports the fixtures and fails if any got more than 5% slower
+than `Tools/perf_baseline.json`; `--update` records a new baseline. `Tools/fuzz.sh 600` fuzzes the
+STEP tokenizer, the STL reader and the cache reader for ten minutes each.
+
 Setting `GEOMETRY_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRY_LATENCY=1` measures
 input-to-present latency, and `GEOMETRY_ALLOCS=1` counts per-frame heap allocations. Launching with
 `--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
