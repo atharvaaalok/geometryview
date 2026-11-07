@@ -1,9 +1,10 @@
-file(GLOB_RECURSE test_sources CONFIGURE_DEPENDS unit/*.cpp)
+file(GLOB_RECURSE test_sources CONFIGURE_DEPENDS unit/*.cpp unit/*.mm)
 add_executable(geo_tests ${test_sources})
 target_include_directories(geo_tests PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
-add_dependencies(geo_tests geometry-import)
+add_dependencies(geo_tests geometry-import engine_shaders)
 target_compile_definitions(geo_tests PRIVATE
-    GEO_TEST_HELPER_PATH="$<TARGET_FILE:geometry-import>")
+    GEO_TEST_HELPER_PATH="$<TARGET_FILE:geometry-import>"
+    GEO_TEST_SHADER_LIBRARY="${GEO_METALLIB}")
 target_link_libraries(geo_tests PRIVATE engine import_core doctest geo_warnings)
 set_target_properties(geo_tests PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
 add_test(NAME unit COMMAND geo_tests)
