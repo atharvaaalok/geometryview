@@ -168,11 +168,12 @@ final class Exercise {
             String(
                 format:
                     "exercise: %llu frames in %.2f s, %.1f fps, last CPU encode %.2f ms, "
-                    + "%llu allocations in the last frame",
+                    + "mean GPU %.2f ms, %llu allocations in the last frame",
                 frames,
                 elapsed,
                 Double(frames) / elapsed,
                 stats.last_frame_seconds * 1000,
+                stats.gpu_frame_seconds * 1000,
                 stats.last_frame_allocations
             )
         )
