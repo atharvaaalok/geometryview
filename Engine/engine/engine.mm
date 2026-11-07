@@ -10,6 +10,7 @@
 #include "base/trace.h"
 #include "engine/allocation_counter.h"
 #include "engine/latency_probe.h"
+#include "engine/look_state.h"
 #include "engine/png.h"
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
@@ -97,6 +98,7 @@ struct Command {
         SelectNode,
         HoverNode,
         SetInsets,
+        SetLook,
         Snapshot,
         RequestFrame,
         Stop
@@ -112,6 +114,7 @@ struct Command {
         GeoTool tool;
         NodeCommand node;
         nav::Insets insets;
+        GeoLook look;
     };
 };
 
@@ -211,8 +214,9 @@ struct GeoEngine {
     float pixelsPerPoint = 2.0f;
     nav::Insets insetPoints; // as the app gives them
     nav::Insets insets;      // in pixels
-    u32 cubeHover = 0;       // face index plus one, or zero
-    u32 cubePressed = 0;     // the face a press began on, plus one
+    engine::LookState look;
+    u32 cubeHover = 0;   // face index plus one, or zero
+    u32 cubePressed = 0; // the face a press began on, plus one
     nav::OrbitPolicy orbit;
     nav::PointerController pointer;
     render::DepthDecoder depthDecoder;
@@ -588,6 +592,7 @@ struct GeoEngine {
         documents.clear();
         scene.clear();
         interaction.reset();
+        look.sceneChanged();
         {
             std::lock_guard lock(modelsMutex);
             publishedModels.clear();
@@ -642,6 +647,7 @@ struct GeoEngine {
         sceneChanged = true;
         if (!hadModel && document.hasModel()) {
             interaction.sceneChanged();
+            look.sceneChanged();
             publishModel(*index);
         }
         if (!hasFramed) {
@@ -840,6 +846,7 @@ struct GeoEngine {
                 viewport = {double(command->resize.width), double(command->resize.height)};
                 pointer.setPixelsPerPoint(command->resize.scale);
                 pixelsPerPoint = command->resize.scale;
+                look.setScale(pixelsPerPoint);
                 applyInsets();
                 renderer->resize(command->resize.width, command->resize.height);
                 orbit.navigated();
@@ -888,6 +895,10 @@ struct GeoEngine {
                 }
                 refreshHover();
                 break;
+            case Command::Kind::SetLook:
+                look.set(engine::lookSettings(command->look));
+                requestFrame();
+                break;
             case Command::Kind::SetInsets:
                 insetPoints = command->insets;
                 applyInsets();
@@ -914,9 +925,8 @@ struct GeoEngine {
     // only ever appears whole.
     void writeSnapshot(const std::string& path) {
         renderer->syncState(interaction.state());
-        render::ViewState view = render::makeView(camera, viewport, bounds);
-        view.uniforms.hoverFirst = hover.first;
-        view.uniforms.hoverEnd = hover.second;
+        look.apply(*renderer, scene);
+        render::ViewState view = makeFrameView();
         render::Overlay overlay;
         if (scene.hasGeometry()) {
             overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
@@ -958,6 +968,15 @@ struct GeoEngine {
                    focus ? focus->node : GEO_NO_NODE, u32(interaction.mode())};
     }
 
+    render::ViewState makeFrameView() const {
+        render::ViewState view = render::makeView(camera, viewport, bounds);
+        view.uniforms.hoverFirst = hover.first;
+        view.uniforms.hoverEnd = hover.second;
+        view.uniforms.ghostPickable = tool == GeoToolGhost ? 1 : 0;
+        view.uniforms.hoverHides = tool == GeoToolHide ? 1 : 0;
+        return view;
+    }
+
     void onFrame(const gpu::FrameTick& tick) {
         // The surface under a still pointer changes as the camera moves, so hover is checked here
         // too.
@@ -982,11 +1001,9 @@ struct GeoEngine {
                 }
             }
             renderer->syncState(interaction.state());
+            look.apply(*renderer, scene);
             publishState();
-            render::ViewState view = render::makeView(camera, viewport, bounds);
-            view.uniforms.hoverFirst = hover.first;
-            view.uniforms.hoverEnd = hover.second;
-            view.uniforms.ghostPickable = tool == GeoToolGhost ? 1 : 0;
+            const render::ViewState view = makeFrameView();
             publishedHover.store(hoveredId, std::memory_order_relaxed);
             depthDecoder = view.depth;
 
@@ -1168,6 +1185,17 @@ void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) 
     Command command{};
     command.kind = Command::Kind::HoverNode;
     command.node = {document, node, false};
+    engine->post(command);
+}
+
+GeoLook geo_default_look(void) {
+    return {GeoStyleIllustration, GeoColorMaterial, GeoGhostShell, true, 1.0f, 0.0f};
+}
+
+void geo_engine_set_look(GeoEngine* engine, const GeoLook* look) {
+    Command command{};
+    command.kind = Command::Kind::SetLook;
+    command.look = *look;
     engine->post(command);
 }
 

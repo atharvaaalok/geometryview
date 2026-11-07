@@ -8,12 +8,14 @@ using namespace metal;
 
 // The ghost pass reuses every stage, with this constant choosing which faces it keeps.
 constant bool kGhostPass [[function_constant(0)]];
+// Studio light with metal and roughness, rather than three flat bands.
+constant bool kPhysical [[function_constant(1)]];
 
 struct SurfaceVertex {
     float4 position [[position]];
     float3 normal;
     uint id [[flat]];
-    uint flags [[flat]];
+    uint flags [[flat]]; // state flags in the low 16 bits, the body's look in the high 16
 };
 
 struct SurfaceOutput {
@@ -145,7 +147,7 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          const device GpuDefinition& definition,
                                          const device GpuOccurrence& occurrence,
                                          OccurrenceState state, const device uchar* faceStates,
-                                         constant FrameUniforms& frame, uint index) {
+                                         uint look, constant FrameUniforms& frame, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
 
@@ -167,7 +169,7 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     out.position = frame.viewProjection * float4(world, 1.0);
     out.normal = frame.viewRotation * normal;
     out.id = occurrence.idBase + face + 1;
-    out.flags = flags;
+    out.flags = flags | look << 16;
     // Faces never share vertices, so moving all of a face's vertices to one point outside the view
     // removes exactly that face, with no discard and no per-primitive data.
     const bool ghost = (flags & kStateGhost) != 0;
@@ -187,6 +189,7 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
                  const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                  const device uchar* faceStates [[buffer(kBufferFaceState)]],
                  const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
+                 const device ushort* looks [[buffer(kBufferLooks)]],
                  uint index [[thread_index_in_threadgroup]],
                  uint group [[threadgroup_position_in_grid]]) {
     const MeshletRef ref = payload.occurrence != kNoOccurrence
@@ -201,8 +204,8 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
         out.set_primitive_count(m.triangleCount);
     }
     if (index < m.vertexCount) {
-        out.set_vertex(index,
-                       decodeVertex(m, definition, occurrence, state, faceStates, frame, index));
+        out.set_vertex(index, decodeVertex(m, definition, occurrence, state, faceStates,
+                                           uint(looks[ref.occurrence]), frame, index));
     }
     if (index < m.triangleCount) {
         // Clamped because a cache file is untrusted and per-index validation would read every page.
@@ -214,8 +217,10 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
     }
 }
 
-// Three flat tones with a soft step between them, from the printed-figure look. The step widens
-// with the normal's rate of change, so curved parts stay smooth and flat faces keep crisp bands.
+// ---- Flat bands, after Colorfigures --------------------------------------------------------
+
+// Three flat tones with a soft step between them. The step widens with the normal's rate of
+// change, so curved parts stay smooth and flat faces keep crisp bands.
 static inline float3 band3(float d, float hi, float lo, float soft, float3 light, float3 mid,
                            float3 dark) {
     const float a = smoothstep(hi - soft, hi + soft, d);
@@ -223,38 +228,131 @@ static inline float3 band3(float d, float hi, float lo, float soft, float3 light
     return a > 0.0 ? mix(mid, light, a) : mix(dark, mid, b);
 }
 
-constant float3 kLightDirection = float3(0.561, 0.809, 0.175);
-constant float3 kMetalLight = float3(0xF3, 0xF1, 0xEC) / 255.0;
-constant float3 kMetalMid = float3(0xD6, 0xD2, 0xC8) / 255.0;
-constant float3 kMetalDark = float3(0xA8, 0xA3, 0x98) / 255.0;
-constant float3 kSelectedLight = float3(0xCD, 0xDC, 0xF6) / 255.0;
-constant float3 kSelectedMid = float3(0xA6, 0xC1, 0xEF) / 255.0;
-constant float3 kSelectedDark = float3(0x7A, 0x9F, 0xDC) / 255.0;
-constant float3 kHover = float3(0xFF, 0xF4, 0xD6) / 255.0;
-constant float kHoverAmount = 0.45;
-constant float3 kGhostTint = float3(0x23, 0x1E, 0x16) / 255.0; // ink
-constant float kGhostAlpha = 0.24;
+// ---- The studio, after step_viewer ----------------------------------------------------------
+// Fixed to the camera, in view space with y up: a soft sky over a darker floor, light walls to
+// either side, a key box above and to the right, a weaker fill to the left, a bright horizon strip
+// and tall strip lights, which together make curved metal read as metal.
+
+constant float3 kKey = float3(0.4537, 0.7059, 0.5440);
+constant float3 kFill = float3(-0.7526, 0.1003, 0.6508);
+
+// smoothstep that also runs downhill, when edge0 > edge1.
+static inline float ramp(float edge0, float edge1, float x) {
+    const float t = saturate((x - edge0) / (edge1 - edge0));
+    return t * t * (3.0 - 2.0 * t);
+}
+
+static float3 studio(float3 d, float rough, constant StyleUniforms& s) {
+    const float spread = mix(0.05, 0.55, rough);
+    const float edge = mix(1.0, 0.3, s.sharpness);
+    float3 c = mix(s.floor, s.sky, ramp(-0.35, 0.65, d.y));
+    c += s.fill * ramp(0.2, 0.9, abs(d.x)) * (d.x > 0.0 ? 0.8 : 0.6);
+    c *= 1.0 - 0.5 * ramp(0.15, 0.95, d.z) * (1.0 - abs(d.x));
+    const float key =
+        ramp(1.0 - spread * (0.9 + 0.8 * edge), 1.0 - spread * (0.9 - 0.75 * edge), dot(d, kKey));
+    const float fill =
+        ramp(1.0 - 2.2 * spread, 1.0 - 2.2 * spread * (1.0 - edge * 0.9), dot(d, kFill));
+    const float q = (d.y - 0.16) / (0.06 + 0.32 * rough);
+    const float strip = exp(-q * q);
+    const float stripWidth = 0.07 + 0.3 * rough;
+    const float stripEdge = stripWidth * mix(0.9, 0.25, s.sharpness);
+    const float tall = ramp(0.98, 0.8, abs(d.y));
+    const float right =
+        ramp(stripWidth + stripEdge, stripWidth - stripEdge, abs(d.x - 0.62)) * tall;
+    const float left = ramp(stripWidth + stripEdge, stripWidth - stripEdge, abs(d.x + 0.7)) * tall;
+    const float3 white = float3(1.0, 0.99, 0.97);
+    return c + s.key * key + s.fill * fill + s.band * strip +
+           white * (s.strips.x * right + s.strips.y * left);
+}
+
+// Linear light to display values: exposure, then a gentle shoulder or a filmic curve.
+static float3 tone(float3 c, constant StyleUniforms& s) {
+    c *= s.exposure;
+    const float3 shoulder = c / (1.0 + 0.22 * c);
+    const float3 film = saturate((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14));
+    return pow(max(mix(shoulder, film, s.contrast), 0.0), 1.0 / 2.2);
+}
+
+static float3 irradiance(float3 n, constant StyleUniforms& s) {
+    const float3 ambient = mix(s.floor, s.sky, 0.5 + 0.5 * n.y);
+    const float wrap = max(0.0, (dot(n, kKey) + 0.35) / 1.35);
+    return 0.75 * ambient + 0.4 * s.key * wrap * wrap + 0.15 * s.fill * max(dot(n, kFill), 0.0);
+}
+
+// A surface of base colour, metalness and roughness under the studio, in display values.
+static float3 lit(float3 n, float3 v, float3 baseColor, float metal, float rough,
+                  constant StyleUniforms& s) {
+    const float3 base = pow(baseColor, 2.2);
+    const float nv = saturate(dot(n, v));
+    const float3 f0 = mix(float3(0.04), base, metal);
+    const float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0) * (1.0 - 0.75 * rough);
+    const float3 specular = studio(reflect(-v, n), rough, s) * fresnel;
+    // Metals keep a little body colour, as a satin finish does.
+    const float3 diffuse = base * irradiance(n, s) * mix(1.0, 0.4, metal);
+    return tone(diffuse + specular, s);
+}
+
+// The direction toward the eye at a pixel, in view space.
+static inline float3 toEye(float2 pixel, constant FrameUniforms& frame) {
+    if (frame.perspective == 0) {
+        return float3(0.0, 0.0, 1.0);
+    }
+    const float2 ndc =
+        float2(pixel.x / frame.viewport.x * 2.0 - 1.0, 1.0 - pixel.y / frame.viewport.y * 2.0);
+    return normalize(float3(-ndc.x * frame.tanHalfX, -ndc.y * frame.tanHalfY, 1.0));
+}
+
+static inline float3 texelColor(uint texel) {
+    return unpack_unorm4x8_to_float(texel).rgb;
+}
 
 fragment SurfaceOutput surfaceFragment(SurfaceVertex in [[stage_in]],
                                        bool frontFacing [[front_facing]],
-                                       constant FrameUniforms& frame [[buffer(kBufferFrame)]]) {
-    const float3 n = normalize(frontFacing ? in.normal : -in.normal);
-    const float d = dot(n, kLightDirection);
-    const float soft = clamp(1.5 * fwidth(d), 0.02, 0.18);
+                                       constant FrameUniforms& frame [[buffer(kBufferFrame)]],
+                                       constant StyleUniforms& style [[buffer(kBufferStyle)]],
+                                       const device uint* palette [[buffer(kBufferPalette)]]) {
+    const uint flags = in.flags & 0xFFFFu;
+    const uint look = in.flags >> 16;
+    const bool selected = (flags & kStateSelected) != 0;
+    const uint3 texels =
+        selected ? style.selection.xyz
+                 : uint3(palette[look * 3], palette[look * 3 + 1], palette[look * 3 + 2]);
+    const float3 t0 = texelColor(texels.x), t1 = texelColor(texels.y), t2 = texelColor(texels.z);
+    const float3 n = normalize(in.normal);
 
-    const bool selected = (in.flags & kStateSelected) != 0;
-    const bool hovered = in.id >= frame.hoverFirst && in.id < frame.hoverEnd;
-    float3 color = selected
-                       ? band3(d, -0.15, -0.45, soft, kSelectedLight, kSelectedMid, kSelectedDark)
-                       : band3(d, -0.15, -0.45, soft, kMetalLight, kMetalMid, kMetalDark);
-    if (hovered) {
-        color = mix(color, kHover, kHoverAmount * (selected ? 0.5 : 1.0));
+    // The inside of an open surface, seen from behind, is a little darker than its outside.
+    float3 color;
+    if (kPhysical) {
+        const float3 v = toEye(in.position.xy, frame);
+        color = frontFacing ? lit(n, v, t0, t1.x, t1.y, style)
+                            : 0.82 * lit(-n, v, t0, t1.x, t1.y, style);
+    } else {
+        // Derivatives are taken before choosing a side, where every pixel of a quad runs them.
+        const float outside = dot(n, style.lightExterior);
+        const float inside = dot(-n, style.lightInterior);
+        const float softOutside = clamp(1.5 * fwidth(outside), 0.02, 0.18);
+        const float softInside = clamp(1.5 * fwidth(inside), 0.02, 0.18);
+        color = frontFacing ? band3(outside, -0.15, -0.45, softOutside, t0, t1, t2)
+                            : band3(inside, 0.6, 0.05, softInside, t0, t1, t2);
     }
+
+    const bool hovered = in.id >= frame.hoverFirst && in.id < frame.hoverEnd;
     if (kGhostPass) {
-        // A faint shell of the part, so what lies behind it stays readable.
-        const float shade = mix(0.55, 0.85, saturate(d * 0.5 + 0.5));
-        return {float4(mix(kGhostTint, color, shade), hovered ? kGhostAlpha * 1.6 : kGhostAlpha),
-                in.id, in.position.z};
+        // A faint skin over what lies behind, or none at all for a ghost drawn as lines only.
+        // Hovered with the ghost tool held, it shows enough to be clicked back.
+        color = mix(color, style.sheetTop, 0.45);
+        float alpha = (style.ghostStyle & kGhostShell) != 0 ? style.ghostAlpha : 0.0;
+        if (hovered) {
+            color = mix(color, style.hover, style.hoverAmount);
+            alpha = max(alpha, style.ghostAlpha) * 1.6;
+        }
+        return {float4(color, alpha), in.id, in.position.z};
+    }
+    if (hovered) {
+        // On a selection hover lifts only half as much, so the selection stays readable.
+        color = frame.hoverHides != 0
+                    ? mix(color, style.hideTint, 0.6)
+                    : mix(color, style.hover, style.hoverAmount * (selected ? 0.5 : 1.0));
     }
     return {float4(color, 1.0), in.id, in.position.z};
 }

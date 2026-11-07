@@ -1,0 +1,164 @@
+#include "gpu/pipelines.h"
+
+#include "gpu/targets.h"
+#include "shaders/shared/gpu_types.h"
+
+#include <cstdio>
+
+namespace geo::gpu {
+namespace {
+
+constexpr NSUInteger kPayloadBytes = sizeof(uint32_t) * (kBatchMeshlets + 1);
+
+void reportFailure(const char* what, NSError* error) {
+    std::fprintf(stderr, "%s: %s\n", what,
+                 error ? error.localizedDescription.UTF8String : "unknown error");
+}
+
+// What a pipeline in the main pass writes.
+struct Writes {
+    bool blended = false; // colour blends over what is there
+    bool ids = true;      // pick id and depth copy
+};
+
+void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachments,
+                      Writes writes) {
+    attachments[kAttachmentColor].pixelFormat = kColorFormat;
+    attachments[kAttachmentId].pixelFormat = kIdFormat;
+    attachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+    if (writes.blended) {
+        MTL4RenderPipelineColorAttachmentDescriptor* color = attachments[kAttachmentColor];
+        color.blendingState = MTL4BlendStateEnabled;
+        color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        color.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+        color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    }
+    if (!writes.ids) {
+        attachments[kAttachmentId].writeMask = MTLColorWriteMaskNone;
+        attachments[kAttachmentDepth].writeMask = MTLColorWriteMaskNone;
+    }
+}
+
+class Builder {
+public:
+    Builder(id<MTLDevice> device, id<MTLLibrary> library) : library_(library) {
+        NSError* error = nil;
+        compiler_ = [device newCompilerWithDescriptor:[MTL4CompilerDescriptor new] error:&error];
+        if (!compiler_) {
+            reportFailure("Could not create the shader compiler", error);
+        }
+    }
+
+    bool ok() const { return compiler_ != nil; }
+
+    MTL4FunctionDescriptor* function(NSString* name, MTLFunctionConstantValues* constants = nil) {
+        MTL4LibraryFunctionDescriptor* f = [MTL4LibraryFunctionDescriptor new];
+        f.library = library_;
+        f.name = name;
+        if (constants == nil) {
+            return f;
+        }
+        MTL4SpecializedFunctionDescriptor* specialized = [MTL4SpecializedFunctionDescriptor new];
+        specialized.functionDescriptor = f;
+        specialized.constantValues = constants;
+        return specialized;
+    }
+
+    id<MTLRenderPipelineState> build(MTL4PipelineDescriptor* descriptor, const char* what) {
+        NSError* error = nil;
+        id<MTLRenderPipelineState> state =
+            [compiler_ newRenderPipelineStateWithDescriptor:descriptor
+                                        compilerTaskOptions:nil
+                                                      error:&error];
+        if (!state) {
+            reportFailure(what, error);
+        }
+        return state;
+    }
+
+    // One function set serves every surface pass. Function constants choose the pass and the
+    // lighting, so each pipeline is specialised and carries no branches for the others.
+    id<MTLRenderPipelineState> surface(bool ghost, bool physical, Writes writes) {
+        MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:kConstantGhostPass];
+        [constants setConstantValue:&physical type:MTLDataTypeBool atIndex:kConstantPhysical];
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
+        mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
+        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment", constants);
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = kSampleCount;
+        describeMainPass(mesh.colorAttachments, writes);
+        return build(mesh, "Could not create a surface pipeline");
+    }
+
+    id<MTLRenderPipelineState> classic(NSString* vertex, NSString* fragment, Writes writes,
+                                       const char* what) {
+        MTL4RenderPipelineDescriptor* descriptor = [MTL4RenderPipelineDescriptor new];
+        descriptor.vertexFunctionDescriptor = function(vertex);
+        descriptor.fragmentFunctionDescriptor = function(fragment);
+        descriptor.rasterSampleCount = kSampleCount;
+        describeMainPass(descriptor.colorAttachments, writes);
+        return build(descriptor, what);
+    }
+
+    id<MTLRenderPipelineState> tile(NSString* name, const char* what) {
+        MTL4TileRenderPipelineDescriptor* tile = [MTL4TileRenderPipelineDescriptor new];
+        tile.tileFunctionDescriptor = function(name);
+        tile.rasterSampleCount = kSampleCount;
+        tile.threadgroupSizeMatchesTileSize = YES;
+        tile.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        tile.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        tile.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        return build(tile, what);
+    }
+
+private:
+    id<MTLLibrary> library_;
+    id<MTL4Compiler> compiler_;
+};
+
+id<MTLDepthStencilState> depthState(id<MTLDevice> device, MTLCompareFunction compare, bool write) {
+    MTLDepthStencilDescriptor* depth = [MTLDepthStencilDescriptor new];
+    depth.depthCompareFunction = compare;
+    depth.depthWriteEnabled = write;
+    return [device newDepthStencilStateWithDescriptor:depth];
+}
+
+} // namespace
+
+bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
+    Builder builder(device, library);
+    if (!builder.ok()) {
+        return false;
+    }
+    for (const bool physical : {false, true}) {
+        surface[physical] = builder.surface(false, physical, {});
+        ghost[physical][false] = builder.surface(true, physical, {.blended = true, .ids = false});
+        ghost[physical][true] = builder.surface(true, physical, {.blended = true, .ids = true});
+        if (!surface[physical] || !ghost[physical][false] || !ghost[physical][true]) {
+            return false;
+        }
+    }
+    sheet = builder.classic(@"sheetVertex", @"sheetFragment", {.ids = false},
+                            "Could not create the sheet pipeline");
+    // The cube writes pick ids, so it can be clicked; the scale bar's quads blend and do not.
+    cube = builder.classic(@"cubeVertex", @"cubeFragment", {},
+                           "Could not create the view cube pipeline");
+    quad = builder.classic(@"quadVertex", @"quadFragment", {.blended = true, .ids = false},
+                           "Could not create the overlay pipeline");
+    resolvePick = builder.tile(@"resolvePick", "Could not create the pick pipeline");
+    if (!sheet || !cube || !quad || !resolvePick) {
+        return false;
+    }
+
+    depthWrite = depthState(device, MTLCompareFunctionGreater, true);
+    depthTest = depthState(device, MTLCompareFunctionGreater, false);
+    farOnly = depthState(device, MTLCompareFunctionGreaterEqual, false);
+    depthAlways = depthState(device, MTLCompareFunctionAlways, false);
+    return true;
+}
+
+} // namespace geo::gpu

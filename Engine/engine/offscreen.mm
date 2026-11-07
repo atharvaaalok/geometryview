@@ -2,6 +2,7 @@
 #include "engine.h"
 
 #include "base/types.h"
+#include "engine/look_state.h"
 #include "engine/png.h"
 #include "gpu/renderer.h"
 #include "nav/camera.h"
@@ -31,7 +32,8 @@ constexpr double kFitMargin = 1.12;
 
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, uint32_t width, uint32_t height,
-                            double azimuth_degrees, double elevation_degrees, bool perspective) {
+                            double azimuth_degrees, double elevation_degrees, bool perspective,
+                            const GeoLook* look) {
     @autoreleasepool {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         std::unique_ptr<gpu::Renderer> renderer =
@@ -63,6 +65,9 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         }
         renderer->syncScene(scene);
         renderer->resize(width, height);
+        engine::LookState looks;
+        looks.set(engine::lookSettings(look != nullptr ? *look : geo_default_look()));
+        looks.apply(*renderer, scene);
 
         const nav::Viewport viewport{double(width), double(height)};
         const Aabb bounds = *sceneBounds;

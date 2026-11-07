@@ -14,8 +14,8 @@ struct OverlayOutput {
 // matches nav::StandardView's faces: front, back, left, right, top, bottom.
 constant float3 kFaceNormal[6] = {float3(0, -1, 0), float3(0, 1, 0), float3(-1, 0, 0),
                                   float3(1, 0, 0),  float3(0, 0, 1), float3(0, 0, -1)};
-constant float3 kFaceRight[6] = {float3(1, 0, 0),  float3(-1, 0, 0), float3(0, -1, 0),
-                                 float3(0, 1, 0),  float3(1, 0, 0),  float3(1, 0, 0)};
+constant float3 kFaceRight[6] = {float3(1, 0, 0), float3(-1, 0, 0), float3(0, -1, 0),
+                                 float3(0, 1, 0), float3(1, 0, 0),  float3(1, 0, 0)};
 constant float3 kFaceUp[6] = {float3(0, 0, 1), float3(0, 0, 1), float3(0, 0, 1),
                               float3(0, 0, 1), float3(0, 1, 0), float3(0, -1, 0)};
 constant float2 kQuadCorner[6] = {float2(-1, -1), float2(1, -1), float2(1, 1),

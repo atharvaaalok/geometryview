@@ -40,6 +40,43 @@ typedef struct GeoPointerEvent {
     double timestamp;
 } GeoPointerEvent;
 
+/// Render styles, after step_viewer's.
+typedef enum GeoStyle {
+    GeoStyleIllustration = 0, // flat light, ink and paper
+    GeoStyleMetal = 1,        // studio light on machined parts
+    GeoStyleClay = 2,         // one matte material, soft light
+    GeoStyleBlueprint = 3,    // white lines on a blue sheet
+    GeoStyleTechnical = 4,    // black linework on white
+} GeoStyle;
+
+/// What decides each body's colour.
+typedef enum GeoColorMode {
+    GeoColorMaterial = 0, // by what each part is made of, read from its name
+    GeoColorParts = 1,    // one colour per part
+    GeoColorMono = 2,     // one material throughout
+    GeoColorFile = 3,     // colours stored in the file
+} GeoColorMode;
+
+/// How ghosts are drawn.
+typedef enum GeoGhostStyle {
+    GeoGhostShell = 1, // a faint skin, outline kept
+    GeoGhostLines = 2, // dashed edges only
+    GeoGhostBoth = 3,  // skin and dashed edges
+} GeoGhostStyle;
+
+/// Everything that decides how the model is drawn.
+typedef struct GeoLook {
+    GeoStyle style;
+    GeoColorMode color_mode;
+    GeoGhostStyle ghost_style;
+    bool cast_shadow;
+    float grain;  // paper grain, 0 to 1, in styles that have it
+    float wobble; // hand-drawn wobble in points, 0 to 7, in styles that have it
+} GeoLook;
+
+/// The look a new engine starts with: Illustration, by material, shell ghosts, a shadow.
+GeoLook geo_default_look(void);
+
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {
     GeoActionFit = 0,
@@ -159,6 +196,9 @@ void geo_engine_set_selection_mode(GeoEngine* engine, GeoSelectionMode mode);
 /// Sets the tool clicks use, while its key is held. Release it with GeoToolSelect.
 void geo_engine_set_tool(GeoEngine* engine, GeoTool tool);
 
+/// Changes how the model is drawn.
+void geo_engine_set_look(GeoEngine* engine, const GeoLook* look);
+
 /// Selects everything under a tree node. With `extend` the node toggles instead.
 void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend);
 
@@ -222,10 +262,12 @@ void geo_engine_report_latency(GeoEngine* engine);
 void geo_trace_memory(const char* label);
 
 /// Renders a cache file headlessly to a PNG, framed to fit, for tests and `gcli render`. The view
-/// direction is given in degrees. Returns false and prints why on failure.
+/// direction is given in degrees, and a null look means the default. Returns false and prints why
+/// on failure.
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, uint32_t width, uint32_t height,
-                            double azimuth_degrees, double elevation_degrees, bool perspective);
+                            double azimuth_degrees, double elevation_degrees, bool perspective,
+                            const GeoLook* look);
 
 #ifdef __cplusplus
 }

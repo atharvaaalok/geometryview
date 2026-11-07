@@ -47,6 +47,7 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
     u.up = toFloat(up);
     u.forward = toFloat(forward);
     u.perspective = camera.perspective ? 1 : 0;
+    u.viewport = simd_make_float2(float(viewport.width), float(viewport.height));
 
     simd_float4x4 projection{};
     if (camera.perspective) {

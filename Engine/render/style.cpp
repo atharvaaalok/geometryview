@@ -473,7 +473,10 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.sheetTop = style.sheet.top;
     u.sheetBottom = style.sheet.bottom;
     u.gridColor = style.sheet.gridColor;
-    u.grainTint = style.ink.color;
+    // Grain darkens toward a warm grey on paper, and toward a deeper sheet colour elsewhere.
+    u.grainTint = style.name == StyleName::Illustration
+                      ? Rgb{0.42f, 0.39f, 0.33f}
+                      : mix(style.sheet.bottom, Rgb{0, 0, 0}, 0.55f);
     u.ink = style.ink.color;
     u.hover = style.hover;
     u.hideTint = style.hideTint;

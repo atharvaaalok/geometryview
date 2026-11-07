@@ -27,6 +27,10 @@ enum BufferIndex : unsigned {
     kBufferOccurrenceState = 5,
     kBufferFaceState = 6,
     kBufferMeshletRefs = 7,
+    kBufferStyle = 8,
+    kBufferPalette = 9, // three RGBA8 texels per look
+    kBufferLooks = 10,  // a 16-bit look per occurrence
+    kBufferCount = 11,
 };
 
 enum TextureIndex : unsigned {
@@ -211,4 +215,6 @@ struct FrameUniforms {
     uint32_t hoverFirst;
     uint32_t hoverEnd;
     uint32_t ghostPickable; // ghosts write ids, while the ghost tool is held, so a click restores
+    uint32_t hoverHides;    // the hide tool is held, so hover shows what a click would hide
+    simd_float2 viewport;   // pixels
 };

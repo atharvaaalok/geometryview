@@ -289,7 +289,8 @@ int statsCommand(const char* path) {
 }
 
 int renderCommand(int argc, const char** argv) {
-    // gcli render <metallib> <blob> <png> [width height azimuth elevation perspective]
+    // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour]
+    // Styles and colour modes are numbered as in engine.h.
     const char* library = argv[2];
     const char* blob = argv[3];
     const char* png = argv[4];
@@ -298,8 +299,15 @@ int renderCommand(int argc, const char** argv) {
     const double azimuth = argc > 7 ? std::atof(argv[7]) : 35.0;
     const double elevation = argc > 8 ? std::atof(argv[8]) : 25.0;
     const bool perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
+    GeoLook look = geo_default_look();
+    if (argc > 10) {
+        look.style = GeoStyle(std::atoi(argv[10]));
+    }
+    if (argc > 11) {
+        look.color_mode = GeoColorMode(std::atoi(argv[11]));
+    }
     return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation,
-                                  perspective)
+                                  perspective, &look)
                ? 0
                : 1;
 }
@@ -326,6 +334,6 @@ int main(int argc, const char** argv) {
     std::println(stderr, "       gcli verify <blob>");
     std::println(stderr, "       gcli stats <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> "
-                         "[width height azimuth elevation perspective]");
+                         "[width height azimuth elevation ortho|perspective style colour]");
     return 2;
 }

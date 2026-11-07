@@ -137,8 +137,18 @@ TEST_CASE("the background is paper and the model is drawn over it") {
         Stage stage(box());
         const std::vector<u8> image = stage.renderer->renderOffscreen(stage.view());
         REQUIRE(image.size() == usize(kWidth) * kHeight * 4);
-        CHECK(stage.pixel(image, 2, 2) == std::array<u8, 3>{0xF2, 0xEF, 0xE7});
-        CHECK(stage.pixel(image, kWidth / 2, kHeight / 2) != std::array<u8, 3>{0xF2, 0xEF, 0xE7});
+        // Paper grain moves the sheet a few levels toward the ink at most.
+        const std::array<u8, 3> paper = {0xF2, 0xEF, 0xE7};
+        const auto nearPaper = [&](const std::array<u8, 3>& c) {
+            for (usize i = 0; i < 3; ++i) {
+                if (c[i] > paper[i] || paper[i] - c[i] > 24) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        CHECK(nearPaper(stage.pixel(image, 2, 2)));
+        CHECK_FALSE(nearPaper(stage.pixel(image, kWidth / 2, kHeight / 2)));
     }
 }
 
