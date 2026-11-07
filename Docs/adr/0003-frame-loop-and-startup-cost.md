@@ -1,6 +1,6 @@
 # ADR 0003: On-demand frame loop, and what startup really costs
 
-Status: accepted, with spike 9 and the present-path comparison carried into M1
+Status: accepted. The present-path comparison and spike 9 are in ADR 0005.
 
 ## Decision
 
@@ -58,12 +58,7 @@ target should be read as:
 - Rendering: about 240 MB driver memory + 134 MB render targets + under 150 MB other, at 3456×2234.
 - Idle a few seconds later: render targets + under 150 MB other, with geometry in file-backed pages.
 
-## Carried into M1
-
-The plan's M0 exit criterion asked for present paths to be measured on both displays, and spike 9 asks
-for input-to-photon. Neither is meaningful until input moves a real camera, so both move to M1. Without
-a camera on the display, latency can only be measured from the input event to the reported present
-time, which excludes the display itself. This limit will be stated with the result.
+## Visual checks
 
 `screencapture` needs Screen Recording permission, so visual checks use `--snapshot` for chrome and
 `gcli render` for 3D.

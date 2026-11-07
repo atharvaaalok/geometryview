@@ -87,15 +87,15 @@ Cache blob         Append-only, written by the helper, mapped read-only by the v
 
 | Section | Record | Notes |
 |---|---|---|
-| Vertices | 12 B: `u16 xyz, u16 localFace, i16 oct[2]` | `localFace` is **relative to a per-meshlet `faceBase`**, so definitions can exceed 64k faces (the 792 MB file has about 306k) |
+| Vertices | 12 B: `u16 xyz, u16 localFace, i16 oct[2]` | `localFace` is **relative to a per-meshlet `faceBase`**, so definitions can exceed 64k faces (the 792 MB file has about 306k). Dense definitions add a 4 B high-bits stream for a 24-bit grid (ADR 0004) |
 | Triangles | 4 B, 8-bit meshlet-local | |
-| Meshlets | 32 B: bounds, cone, offsets, `faceBase` | Target 64 vertices, up to 124 triangles, fill ≥60% |
+| Meshlets | 32 B: bounds, cone, offsets, `faceBase` | 124 vertices and 124 triangles (changed from 64 and 124, see ADR 0001) |
 | Occurrences | 64 B: 3×4 transform, definition, face base, flags | |
 | Edges | Polylines with class crease/smooth/seam/boundary | Paged in only for line views |
 | Faces, analytic | 32 B plus f64 parameters | Keeps later measurement possible |
 | Tree, strings | Records, UTF-8 blob | Cold after tree build |
 
-**Size target:** about 23–25 B/triangle, vs 36.6 in step_viewer. The larger win is dedup plus coarser tessellation (pack about 31 MB → 1.3 MB, estimate).
+**Size target:** about 23–25 B/triangle, vs 36.6 in step_viewer. STL measured 12–14 B/triangle without edges or analytic records. The larger win is dedup plus coarser tessellation (pack about 31 MB → 1.3 MB, estimate).
 **Keying:** (path, inode, size, mtime) as a fast path, then XXH3-128 of content. Tessellation settings, format version and importer stamp all invalidate. Persist only when the pipeline exceeds about 100 ms. LRU cap min(5% free disk, 20 GB).
 **Security:** the blob reader treats input as untrusted, since a compromised helper could write it.
 
@@ -232,7 +232,7 @@ Each is a vertical slice. All budgets are targets. **Visual review pauses:** M1,
 | 6 | See-through on coincident CAD faces | 0 double-blended pixels | Stencil one-shot |
 | 7 | Caps on 20 models, multi-plane | No garbage | Real cap meshes on a background thread |
 | 8 | Ink quality from sample-0 ID | Matches reference | Idle jitter accumulation |
-| 9 | Input-to-photon | p95 ≤25 ms | Revisit latency settings |
+| 9 | Input-to-photon | p95 ≤25 ms | Revisit latency settings. **Failed at 60 Hz:** p95 about 54 ms with a 33 ms system floor, 120 Hz untested (ADR 0005) |
 | 10 | 5M edge segments | ≤1 ms | Meshlet-cull lines |
 
 **Performance targets:**
