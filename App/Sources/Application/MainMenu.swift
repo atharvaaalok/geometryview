@@ -134,6 +134,7 @@ enum MainMenu {
                 keyEquivalent: ""
             )
         )
+        menu.addItem(actionItem("See Through", GeoActionToggleSeeThrough))
         menu.addItem(
             NSMenuItem(
                 title: "Section",

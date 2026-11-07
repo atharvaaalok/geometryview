@@ -35,6 +35,7 @@ enum KeyBindings {
         KeyBinding(key: "2", modifiers: [], command: .selectionMode(GeoSelectBodies)),
         KeyBinding(key: "3", modifiers: [], command: .selectionMode(GeoSelectParts)),
         KeyBinding(key: "s", modifiers: [], command: .toggleSection),
+        KeyBinding(key: "t", modifiers: [], command: .perform(GeoActionToggleSeeThrough)),
     ]
 
     static let held: [HeldBinding] = [

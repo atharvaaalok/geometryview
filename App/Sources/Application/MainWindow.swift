@@ -560,6 +560,10 @@ final class MainWindow: NSWindow {
             if environment["GEOMETRY_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
             }
+            // GEOMETRY_SNAPSHOT_SEE_THROUGH fades the shell, as T does.
+            if environment["GEOMETRY_SNAPSHOT_SEE_THROUGH"] != nil {
+                engine.perform(GeoActionToggleSeeThrough)
+            }
             // GEOMETRY_SNAPSHOT_SECTION cuts across X, as S does, with the card open.
             if environment["GEOMETRY_SNAPSHOT_SECTION"] != nil {
                 toggleSection(nil)
