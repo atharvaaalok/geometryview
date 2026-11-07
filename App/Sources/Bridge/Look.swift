@@ -35,6 +35,16 @@ struct Look: Equatable {
             case .file: "File"
             }
         }
+
+        /// One sentence on where the colours come from.
+        var summary: String {
+            switch self {
+            case .material: "Colours follow the material each name suggests."
+            case .parts: "Each part gets a colour of its own."
+            case .mono: "Every part in one neutral colour."
+            case .file: "The colours stored in the file."
+            }
+        }
     }
 
     enum Ghosts: Int, CaseIterable {

@@ -27,7 +27,7 @@ final class LookCard: StickerCard {
         help: "Hand-drawn wobble"
     )
     private let colourNote = NSTextField(labelWithString: "")
-    private var rows: [String: NSView] = [:]
+    private var rowLabels: [String: NSTextField] = [:]
 
     private(set) var look = Look()
     var onChange: ((Look) -> Void)?
@@ -87,7 +87,7 @@ final class LookCard: StickerCard {
         let row = NSStackView(views: [text, control])
         row.orientation = .horizontal
         row.spacing = 8
-        rows[label] = row
+        rowLabels[label] = text
         return row
     }
 
@@ -107,12 +107,18 @@ final class LookCard: StickerCard {
         castShadow.selected = newLook.shadow ? 0 : 1
         grain.selected = newLook.grain ? 0 : 1
         wobble.selected = Look.wobbleSteps.firstIndex(of: newLook.wobble) ?? 0
-        // Only what the style uses is offered.
-        colour.isHidden = !newLook.style.usesColour
-        colourNote.stringValue = "\(newLook.style.title) draws every part alike."
-        colourNote.isHidden = newLook.style.usesColour
-        rows["Colour"]?.isHidden = !newLook.style.usesColour
-        rows["Grain"]?.isHidden = !newLook.style.hasGrain
-        rows["Hand-drawn"]?.isHidden = !newLook.style.canWobble
+        // What the style does not use is dimmed rather than hidden, so the card keeps its size and
+        // nothing moves under the pointer.
+        enable("Colour", colour, newLook.style.usesColour)
+        enable("Grain", grain, newLook.style.hasGrain)
+        enable("Hand-drawn", wobble, newLook.style.canWobble)
+        colourNote.stringValue =
+            newLook.style.usesColour
+            ? newLook.colour.summary : "\(newLook.style.title) draws every part alike."
+    }
+
+    private func enable(_ label: String, _ control: SegmentedPill, _ enabled: Bool) {
+        control.isEnabled = enabled
+        rowLabels[label]?.textColor = enabled ? Palette.ink : Palette.faint
     }
 }
