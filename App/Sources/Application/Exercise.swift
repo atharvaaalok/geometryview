@@ -100,8 +100,26 @@ final class Exercise {
             )
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.refineWaitSeconds) { [self] in
-            quit()
+            checkChromeIsolation()
         }
+    }
+
+    // Once the view is idle, changing only the chrome must draw no 3D frame.
+    private func checkChromeIsolation() {
+        let before = engine.stats().frames_rendered
+        var step = 0
+        func next() {
+            guard step < 12, let window = NSApp.windows.first as? MainWindow else {
+                let drawn = engine.stats().frames_rendered - before
+                print("exercise: 12 chrome-only changes drew \(drawn) 3D frames")
+                quit()
+                return
+            }
+            window.exerciseChrome(step: step)
+            step += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { next() }
+        }
+        next()
     }
 
     private func quit() {

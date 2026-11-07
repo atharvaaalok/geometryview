@@ -290,3 +290,20 @@ TEST_CASE("fit frames the whole box with the requested margin") {
         }
     }
 }
+
+TEST_CASE("framing with insets centres the model in the clear part of the view") {
+    const Aabb box{simd_make_double3(-1, -1, -1), simd_make_double3(1, 1, 1)};
+    const nav::Viewport viewport{1000.0, 600.0};
+    nav::Camera camera;
+    camera.lookAt(simd_make_double3(0, -5, 0), simd_make_double3(0, 0, 0),
+                  simd_make_double3(0, 0, 1));
+    const nav::Insets insets{300.0, 0.0, 0.0, 100.0};
+    nav::fit(camera, box, viewport, 1.0, insets);
+    const nav::NdcPoint centre = camera.project(box.center(), viewport);
+    // The clear area runs from x 300 to 1000 and y 0 to 500, so its middle is (650, 250) in
+    // pixels, which is (0.3, 1/6) in normalised coordinates.
+    CHECK(centre.x == doctest::Approx(0.3).epsilon(1e-6));
+    CHECK(centre.y == doctest::Approx(1.0 / 6.0).epsilon(1e-6));
+    // The box's height fills the clear height exactly: two units over 500 of 600 pixels.
+    CHECK(camera.orthoHalfHeight == doctest::Approx(1.2).epsilon(1e-6));
+}

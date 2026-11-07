@@ -43,6 +43,11 @@ parts you zoom into are retessellated more finely once the view settles.
 | F | Fit to view |
 | P | Switch between orthographic and perspective |
 | Esc | Clear the selection |
+| Click the view cube | Turn to that face's view. Standard views are also in the View menu |
+| ? | Show every shortcut |
+
+The toolbar at the bottom switches the selection mode and holds the hide and ghost tools, and the
+card on the right shows what is selected, with buttons to hide, ghost, isolate or fit to it.
 
 The Structure card on the left lists each open file's assembly tree. Click a row to select it, hover
 a row to highlight it, and type in the search field to find parts by name. ⇧⌘O adds a file to what
@@ -72,17 +77,11 @@ Tools/step_equivalence.py build/release files.txt --jobs 6
 
 The `asan` and `tsan` presets run the same tests under sanitizers.
 
-`gcli` works without the app:
-
-```sh
-build/release/Tools/gcli import model.stl model.geoblob
-build/release/Tools/gcli render build/release/shaders/default.metallib model.geoblob out.png
-```
-
 Setting `GEOMETRY_TRACE=1` prints stage timings and memory use, `GEOMETRY_LATENCY=1` measures
 input-to-present latency, and `GEOMETRY_ALLOCS=1` counts per-frame heap allocations. Launching with
-`--exercise` runs a scripted drag, hover and click on the opened file, and `--snapshot` writes the
-interface to a PNG.
+`--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
+the interface draws no 3D frame. `--snapshot` writes the window, engine output and interface
+together, to `chrome.png` in the app's temporary directory.
 
 ## Project goals, in order
 

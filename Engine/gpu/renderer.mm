@@ -4,6 +4,7 @@
 #include "base/trace.h"
 #include "shaders/shared/gpu_types.h"
 
+#import <CoreText/CoreText.h>
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -51,10 +52,16 @@ struct Renderer::State {
     id<MTLRenderPipelineState> ghostPipeline;     // blended, writes no ids
     id<MTLRenderPipelineState> ghostPickPipeline; // blended, writes ids so a ghost can be clicked
     id<MTLRenderPipelineState> pickPipeline;
+    id<MTLRenderPipelineState> cubePipeline, quadPipeline;
     id<MTLDepthStencilState> depthState;
-    id<MTLDepthStencilState> ghostDepthState; // tests depth but does not write it
+    id<MTLDepthStencilState> overlayDepthState; // always passes, writes nothing
+    id<MTLDepthStencilState> ghostDepthState;   // tests depth but does not write it
     id<MTL4ArgumentTable> surfaceTable;
     id<MTL4ArgumentTable> tileTable;
+    id<MTL4ArgumentTable> overlayTable;
+    id<MTLTexture> atlas;
+    float glyphAdvance = 0.0f;
+    id<MTLBuffer> overlayUniforms, overlayQuads; // one slot per frame in flight
     id<MTLResidencySet> residency;
 
     id<MTLBuffer> frameUniforms;
@@ -159,6 +166,13 @@ struct Renderer::State {
             return false;
         }
 
+        cubePipeline = makeOverlayPipeline(compiler, @"cubeVertex", @"cubeFragment", false, &error);
+        quadPipeline = makeOverlayPipeline(compiler, @"quadVertex", @"quadFragment", true, &error);
+        if (!cubePipeline || !quadPipeline) {
+            reportFailure("Could not create the overlay pipelines", error);
+            return false;
+        }
+
         MTL4TileRenderPipelineDescriptor* tile = [MTL4TileRenderPipelineDescriptor new];
         tile.tileFunctionDescriptor = function(@"resolvePick");
         tile.rasterSampleCount = kSampleCount;
@@ -180,7 +194,147 @@ struct Renderer::State {
         depthState = [device newDepthStencilStateWithDescriptor:depth];
         depth.depthWriteEnabled = NO;
         ghostDepthState = [device newDepthStencilStateWithDescriptor:depth];
+        depth.depthCompareFunction = MTLCompareFunctionAlways;
+        overlayDepthState = [device newDepthStencilStateWithDescriptor:depth];
         return true;
+    }
+
+    // The cube writes pick ids, so it can be clicked; the scale bar's quads blend and do not.
+    id<MTLRenderPipelineState> makeOverlayPipeline(id<MTL4Compiler> compiler, NSString* vertex,
+                                                   NSString* fragment, bool blended,
+                                                   NSError** error) {
+        MTL4RenderPipelineDescriptor* descriptor = [MTL4RenderPipelineDescriptor new];
+        descriptor.vertexFunctionDescriptor = function(vertex);
+        descriptor.fragmentFunctionDescriptor = function(fragment);
+        descriptor.rasterSampleCount = kSampleCount;
+        descriptor.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
+        descriptor.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
+        descriptor.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        if (blended) {
+            MTL4RenderPipelineColorAttachmentDescriptor* color =
+                descriptor.colorAttachments[kAttachmentColor];
+            color.blendingState = MTL4BlendStateEnabled;
+            color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+            color.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+            color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+            descriptor.colorAttachments[kAttachmentId].writeMask = MTLColorWriteMaskNone;
+            descriptor.colorAttachments[kAttachmentDepth].writeMask = MTLColorWriteMaskNone;
+        }
+        return [compiler newRenderPipelineStateWithDescriptor:descriptor
+                                          compilerTaskOptions:nil
+                                                        error:error];
+    }
+
+    // Draws the cube's face labels and the overlay's glyphs once, into one small texture. The
+    // bundled IBM Plex Mono is used when the app has registered it, and Menlo otherwise.
+    bool createAtlas() {
+        std::vector<u8> pixels(usize(kAtlasWidth) * kAtlasHeight, 0);
+        CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
+        CGContextRef context = CGBitmapContextCreate(pixels.data(), kAtlasWidth, kAtlasHeight, 8,
+                                                     kAtlasWidth, gray, u32(kCGImageAlphaNone));
+        CGColorSpaceRelease(gray);
+        if (context == nullptr) {
+            return false;
+        }
+        CGContextSetGrayFillColor(context, 1.0, 1.0);
+        CGContextSetShouldSmoothFonts(context, false);
+
+        const auto makeFont = [](CGFloat size) {
+            CTFontRef font = CTFontCreateWithName(CFSTR("IBMPlexMono-SmBld"), size, nullptr);
+            NSString* name = (__bridge_transfer NSString*)CTFontCopyPostScriptName(font);
+            if (![name isEqualToString:@"IBMPlexMono-SmBld"]) {
+                CFRelease(font);
+                font = CTFontCreateWithName(CFSTR("Menlo-Bold"), size, nullptr);
+            }
+            return font;
+        };
+        // Draws `text` centred in a cell whose top is `top` pixels below the atlas's top.
+        const auto draw = [&](NSString* text, CTFontRef font, CGFloat left, CGFloat width,
+                              CGFloat top, CGFloat height) {
+            NSDictionary* attributes = @{
+                (__bridge id)kCTFontAttributeName : (__bridge id)font,
+                (__bridge id)kCTForegroundColorFromContextAttributeName : @YES,
+            };
+            NSAttributedString* string = [[NSAttributedString alloc] initWithString:text
+                                                                         attributes:attributes];
+            CTLineRef line =
+                CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)string);
+            const CGFloat ascent = CTFontGetCapHeight(font);
+            const CGFloat x =
+                left + (width - CTLineGetTypographicBounds(line, nullptr, nullptr, nullptr)) / 2.0;
+            // Core Graphics counts up from the bottom, and the cell's middle is cap-centred.
+            const CGFloat y = CGFloat(kAtlasHeight) - top - (height + ascent) / 2.0;
+            CGContextSetTextPosition(context, x, y);
+            CTLineDraw(line, context);
+            CFRelease(line);
+        };
+
+        CTFontRef labelFont = makeFont(23);
+        NSArray<NSString*>* labels = @[ @"FRONT", @"BACK", @"LEFT", @"RIGHT", @"TOP", @"BOTTOM" ];
+        for (NSUInteger face = 0; face < labels.count; ++face) {
+            draw(labels[face], labelFont, 0, CGFloat(kAtlasLabelWidth),
+                 CGFloat(face) * CGFloat(kAtlasLabelHeight), CGFloat(kAtlasLabelHeight));
+        }
+        CFRelease(labelFont);
+
+        // The glyph strip, drawn for a 2x display: 11 points is 22 pixels.
+        CTFontRef glyphFont = makeFont(22);
+        const UniChar zero = '0';
+        CGGlyph glyph = 0;
+        CTFontGetGlyphsForCharacters(glyphFont, &zero, &glyph, 1);
+        CGSize advance{};
+        CTFontGetAdvancesForGlyphs(glyphFont, kCTFontOrientationHorizontal, &glyph, &advance, 1);
+        glyphAdvance = float(advance.width);
+        for (usize cell = 0; cell < render::kAtlasGlyphs.size(); ++cell) {
+            const char c = render::kAtlasGlyphs[cell];
+            NSString* text = c == 'u' ? @"\u00B5" : [NSString stringWithFormat:@"%c", c];
+            draw(text, glyphFont, CGFloat(cell * kAtlasGlyphWidth), CGFloat(kAtlasGlyphWidth),
+                 6.0 * CGFloat(kAtlasLabelHeight), CGFloat(kAtlasGlyphHeight));
+        }
+        CFRelease(glyphFont);
+        CGContextRelease(context);
+
+        MTLTextureDescriptor* d =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                               width:kAtlasWidth
+                                                              height:kAtlasHeight
+                                                           mipmapped:NO];
+        d.storageMode = MTLStorageModeShared;
+        d.usage = MTLTextureUsageShaderRead;
+        atlas = [device newTextureWithDescriptor:d];
+        [atlas replaceRegion:MTLRegionMake2D(0, 0, kAtlasWidth, kAtlasHeight)
+                 mipmapLevel:0
+                   withBytes:pixels.data()
+                 bytesPerRow:kAtlasWidth];
+        return atlas != nil;
+    }
+
+    void encodeOverlay(id<MTL4RenderCommandEncoder> encoder, const render::Overlay& overlay,
+                       usize frame) {
+        const usize slot = frame % kFramesInFlight;
+        const usize uniformOffset = slot * sizeof(OverlayUniforms);
+        const usize quadOffset = slot * sizeof(OverlayQuad) * kOverlayMaxQuads;
+        std::memcpy(static_cast<u8*>(overlayUniforms.contents) + uniformOffset, &overlay.uniforms,
+                    sizeof(OverlayUniforms));
+        std::memcpy(static_cast<u8*>(overlayQuads.contents) + quadOffset, overlay.quads.data(),
+                    sizeof(OverlayQuad) * overlay.uniforms.quadCount);
+        [overlayTable setAddress:overlayUniforms.gpuAddress + uniformOffset
+                         atIndex:kOverlayUniforms];
+        [overlayTable setAddress:overlayQuads.gpuAddress + quadOffset atIndex:kOverlayQuads];
+        [encoder setArgumentTable:overlayTable
+                         atStages:MTLRenderStageVertex | MTLRenderStageFragment];
+        [encoder setDepthStencilState:overlayDepthState];
+        [encoder setCullMode:MTLCullModeNone];
+        [encoder setRenderPipelineState:cubePipeline];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:36];
+        if (overlay.uniforms.quadCount != 0) {
+            [encoder setRenderPipelineState:quadPipeline];
+            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:6
+                      instanceCount:overlay.uniforms.quadCount];
+        }
     }
 
     // One function set serves both passes. The ghost pass is chosen by a function constant, so
@@ -232,7 +386,12 @@ struct Renderer::State {
         MTL4ArgumentTableDescriptor* tile = [MTL4ArgumentTableDescriptor new];
         tile.maxTextureBindCount = 2;
         tileTable = [device newArgumentTableWithDescriptor:tile error:&error];
-        if (!surfaceTable || !tileTable) {
+
+        MTL4ArgumentTableDescriptor* overlay = [MTL4ArgumentTableDescriptor new];
+        overlay.maxBufferBindCount = 2;
+        overlay.maxTextureBindCount = 1;
+        overlayTable = [device newArgumentTableWithDescriptor:overlay error:&error];
+        if (!surfaceTable || !tileTable || !overlayTable) {
             reportFailure("Could not create argument tables", error);
             return false;
         }
@@ -293,7 +452,7 @@ struct Renderer::State {
     }
 
     void encodeScene(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
-                     usize frame) {
+                     const render::Overlay* overlay, usize frame) {
         const usize uniformOffset = (frame % kFramesInFlight) * sizeof(FrameUniforms);
         std::memcpy(static_cast<u8*>(frameUniforms.contents) + uniformOffset, &view.uniforms,
                     sizeof(FrameUniforms));
@@ -326,6 +485,10 @@ struct Renderer::State {
                 [encoder setCullMode:MTLCullModeNone];
                 drawBatches(encoder, openBatchStart, batchCount);
             }
+        }
+
+        if (overlay != nullptr && overlay->visible) {
+            encodeOverlay(encoder, *overlay, frame);
         }
 
         [encoder setRenderPipelineState:pickPipeline];
@@ -396,6 +559,16 @@ std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* lib
     }
     s.frameUniforms = s.makeShared(sizeof(FrameUniforms) * kFramesInFlight);
     [s.residency addAllocation:s.frameUniforms];
+    if (!s.createAtlas()) {
+        std::fprintf(stderr, "Could not draw the overlay's text.\n");
+        return nullptr;
+    }
+    [s.overlayTable setTexture:s.atlas.gpuResourceID atIndex:0];
+    s.overlayUniforms = s.makeShared(sizeof(OverlayUniforms) * kFramesInFlight);
+    s.overlayQuads = s.makeShared(sizeof(OverlayQuad) * kOverlayMaxQuads * kFramesInFlight);
+    [s.residency addAllocation:s.atlas];
+    [s.residency addAllocation:s.overlayUniforms];
+    [s.residency addAllocation:s.overlayQuads];
     s.occurrenceStates = s.makeShared(sizeof(OccurrenceState));
     s.faceStates = s.makeShared(16);
     [s.residency addAllocation:s.occurrenceStates];
@@ -597,6 +770,8 @@ void Renderer::syncScene(const scene::Scene& scene) {
     [s.residency commit];
 }
 
+float Renderer::glyphAdvance() const { return state_->glyphAdvance; }
+
 void Renderer::syncState(const model::FaceState& state) {
     State& s = *state_;
     if (state.version() == s.stateVersion) {
@@ -683,12 +858,13 @@ void Renderer::resize(u32 width, u32 height) {
     [s.residency requestResidency];
 }
 
-void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view) {
+void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& view,
+                      const render::Overlay* overlay) {
     State& s = *state_;
     s.beginFrame();
     id<MTL4RenderCommandEncoder> encoder =
         [s.commandBuffer renderCommandEncoderWithDescriptor:s.passDescriptor(drawable.texture)];
-    s.encodeScene(encoder, view, s.frameCount);
+    s.encodeScene(encoder, view, overlay, s.frameCount);
     [encoder endEncoding];
     [s.commandBuffer endCommandBuffer];
 
@@ -699,12 +875,13 @@ void Renderer::render(id<CAMetalDrawable> drawable, const render::ViewState& vie
     [drawable present];
 }
 
-std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view) {
+std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
+                                          const render::Overlay* overlay) {
     State& s = *state_;
     s.beginFrame();
     id<MTL4RenderCommandEncoder> encoder =
         [s.commandBuffer renderCommandEncoderWithDescriptor:s.passDescriptor(s.offscreenColor)];
-    s.encodeScene(encoder, view, s.frameCount);
+    s.encodeScene(encoder, view, overlay, s.frameCount);
     [encoder endEncoding];
     [s.commandBuffer endCommandBuffer];
     s.commitAndSignal();

@@ -11,6 +11,8 @@ enum EngineEvent: Sendable {
     case failed(document: UInt32, message: String)
     /// The tree row a selection belongs to, so the tree can reveal it, or nil when cleared.
     case selectionChanged(document: UInt32, node: UInt32?)
+    /// The part under the pointer and the face within it, or nil.
+    case hoverChanged(document: UInt32, node: UInt32?, face: UInt32)
 }
 
 /// Owns the engine's lifetime on the Swift side. All calls are non-blocking.
@@ -117,6 +119,18 @@ final class EngineHandle {
         geo_engine_select_node(engine, document, node, extend)
     }
 
+    func setViewInsets(left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
+        geo_engine_set_view_insets(engine, Float(left), Float(top), Float(right), Float(bottom))
+    }
+
+    func writeSnapshot(to path: String) {
+        geo_engine_write_snapshot(engine, path)
+    }
+
+    func selection() -> GeoSelectionSummary {
+        geo_engine_selection(engine)
+    }
+
     func hoverNode(document: UInt32, node: UInt32?) {
         geo_engine_hover_node(engine, document, node ?? UInt32.max)
     }
@@ -187,6 +201,12 @@ private func receiveEngineEvent(context: UnsafeMutableRawPointer?, event: Unsafe
         translated = .selectionChanged(
             document: event.document,
             node: event.node == UInt32.max ? nil : event.node
+        )
+    case GeoEventHoverChanged:
+        translated = .hoverChanged(
+            document: event.document,
+            node: event.node == UInt32.max ? nil : event.node,
+            face: event.done
         )
     default: translated = nil
     }

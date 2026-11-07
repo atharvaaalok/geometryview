@@ -61,7 +61,14 @@ void zoomAbout(Camera& camera, double factor, Vec3 anchor, double ndcX, double n
 /// Moves the camera so the scene follows the pointer exactly at `depth`.
 void pan(Camera& camera, double pixelsX, double pixelsY, double depth, const Viewport& viewport);
 
-/// Frames `bounds` with `margin` around it, keeping the view direction.
-void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double margin);
+/// Parts of the viewport covered by chrome, in pixels. Framing keeps the model in what is left.
+struct Insets {
+    double left = 0, top = 0, right = 0, bottom = 0;
+};
+
+/// Frames `bounds` with `margin` around it, keeping the view direction, in the part of the
+/// viewport that `insets` leaves clear.
+void fit(Camera& camera, const Aabb& bounds, const Viewport& viewport, double margin,
+         const Insets& insets = {});
 
 } // namespace geo::nav

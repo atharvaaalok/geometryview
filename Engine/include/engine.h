@@ -52,6 +52,14 @@ typedef enum GeoAction {
     GeoActionGhostSelection = 7,
     GeoActionUndo = 8,
     GeoActionRedo = 9,
+    GeoActionViewFront = 10,
+    GeoActionViewBack = 11,
+    GeoActionViewLeft = 12,
+    GeoActionViewRight = 13,
+    GeoActionViewTop = 14,
+    GeoActionViewBottom = 15,
+    GeoActionViewIso = 16,
+    GeoActionFitSelection = 17,
 } GeoAction;
 
 /// What a click picks: one face, a whole body, or everything in its part.
@@ -75,6 +83,7 @@ typedef enum GeoEventKind {
     GeoEventProgress = 3,         // done and total, in units only the ratio of which matters
     GeoEventModelReady = 4,       // a document's tree can be read with geo_engine_copy_model
     GeoEventSelectionChanged = 5, // node: the tree row to reveal, or GEO_NO_NODE
+    GeoEventHoverChanged = 6, // node: the part under the pointer, or GEO_NO_NODE; done: the face
 } GeoEventKind;
 
 #define GEO_NO_NODE UINT32_MAX
@@ -98,6 +107,17 @@ typedef struct GeoEngineDescriptor {
     GeoEventCallback event_callback;
     void* event_context;
 } GeoEngineDescriptor;
+
+/// What is selected, for the selection card.
+typedef struct GeoSelectionSummary {
+    uint32_t occurrences; // bodies with anything selected
+    uint32_t faces;       // faces selected, counting every face of a whole body
+    uint32_t document;    // the tree row the selection belongs to, if node is not GEO_NO_NODE
+    uint32_t node;
+    uint32_t mode; // a GeoSelectionMode
+} GeoSelectionSummary;
+
+GeoSelectionSummary geo_engine_selection(GeoEngine* engine);
 
 /// Counters for the debug overlay and for tests.
 typedef struct GeoEngineStats {
@@ -185,6 +205,15 @@ uint32_t geo_model_search(GeoModel* model, const char* query, uint32_t* results,
 void geo_engine_request_frame(GeoEngine* engine);
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine);
+
+/// Tells the engine which edges of the view the interface covers, in points, so framing keeps the
+/// model in the part left clear.
+void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
+                                float bottom);
+
+/// Writes the current view, as drawn, to a PNG at `path`, on the engine thread. The file appears
+/// once it is complete.
+void geo_engine_write_snapshot(GeoEngine* engine, const char* path);
 
 /// Prints input-to-present latency to stderr when GEOMETRY_LATENCY is set.
 void geo_engine_report_latency(GeoEngine* engine);

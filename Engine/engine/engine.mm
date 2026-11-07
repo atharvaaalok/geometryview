@@ -10,18 +10,22 @@
 #include "base/trace.h"
 #include "engine/allocation_counter.h"
 #include "engine/latency_probe.h"
+#include "engine/png.h"
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
 #include "ipc/import_job.h"
 #include "model/interaction.h"
 #include "model/name_index.h"
 #include "nav/camera.h"
+#include "nav/flight.h"
 #include "nav/orbit_policy.h"
 #include "nav/pointer_controller.h"
+#include "render/overlay.h"
 #include "render/refinement.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -55,6 +59,8 @@ constexpr double kDefaultAzimuth = 35.0 * M_PI / 180.0;
 constexpr double kDefaultElevation = 25.0 * M_PI / 180.0;
 // Refinement waits for the view to settle, so a drag never starts work it would then outrun.
 constexpr double kRefineDelaySeconds = 0.3;
+// Camera flights, as to a standard view, take this long unless motion is reduced.
+constexpr double kFlightSeconds = 0.55;
 
 // Seconds since this process started, for measuring launch.
 double secondsSinceProcessStart() {
@@ -90,6 +96,8 @@ struct Command {
         SetTool,
         SelectNode,
         HoverNode,
+        SetInsets,
+        Snapshot,
         RequestFrame,
         Stop
     };
@@ -103,6 +111,7 @@ struct Command {
         GeoSelectionMode mode;
         GeoTool tool;
         NodeCommand node;
+        nav::Insets insets;
     };
 };
 
@@ -197,7 +206,13 @@ struct GeoEngine {
     std::shared_ptr<ipc::ImportCancel> refineCancel;
 
     nav::Camera camera;
+    nav::Flight flight;
     nav::Viewport viewport;
+    float pixelsPerPoint = 2.0f;
+    nav::Insets insetPoints; // as the app gives them
+    nav::Insets insets;      // in pixels
+    u32 cubeHover = 0;       // face index plus one, or zero
+    u32 cubePressed = 0;     // the face a press began on, plus one
     nav::OrbitPolicy orbit;
     nav::PointerController pointer;
     render::DepthDecoder depthDecoder;
@@ -223,6 +238,9 @@ struct GeoEngine {
     std::atomic<u32> publishedHover{0};
     std::atomic<u32> selectedCount{0};
     std::atomic<u32> hiddenCount{0};
+    std::mutex summaryMutex;
+    GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
+    std::optional<std::pair<model::NodeRef, u32>> hoveredPart;
 
     GeoEngine()
         : pointer(camera, viewport, orbit, [this](double x, double y) { return pickAt(x, y); }) {}
@@ -251,10 +269,19 @@ struct GeoEngine {
         frames.setRunning(true);
     }
 
+    // The view cube's face under a pixel, plus one, or zero.
+    u32 cubeFaceAt(double x, double y) const {
+        const std::optional<gpu::PixelHit> pixel =
+            renderer->readPixel(int(x), int(y), depthDecoder);
+        return pixel && pixel->id >= kCubeIdBase ? pixel->id - kCubeIdBase + 1 : 0;
+    }
+
+    // The model's surface under a pixel. The view cube is not a surface: it is no pivot to turn
+    // about, and clicking it is handled on its own.
     std::optional<nav::SurfaceHit> pickAt(double x, double y) {
         const std::optional<gpu::PixelHit> pixel =
             renderer->readPixel(int(x), int(y), depthDecoder);
-        if (!pixel) {
+        if (!pixel || pixel->id >= kCubeIdBase) {
             return std::nullopt;
         }
         const double ndcX = 2.0 * x / viewport.width - 1.0;
@@ -271,6 +298,20 @@ struct GeoEngine {
             hover = range;
             requestFrame();
         }
+        // The app labels what is under the pointer, so it hears when that changes, not per frame.
+        std::optional<std::pair<model::NodeRef, u32>> part;
+        if (!hoveredNode) {
+            part = interaction.partAt(hoveredId);
+        }
+        if (part != hoveredPart) {
+            hoveredPart = part;
+            if (part) {
+                emit(GeoEventHoverChanged, "", part->first.document, part->first.node,
+                     part->second);
+            } else {
+                emit(GeoEventHoverChanged, "", 0, GEO_NO_NODE);
+            }
+        }
     }
 
     // Reading the ID buffer costs nanoseconds and no GPU work. A frame is drawn only if the surface
@@ -280,10 +321,16 @@ struct GeoEngine {
             return;
         }
         u32 id = 0;
+        u32 cube = 0;
         if (cursorInside) {
+            cube = cubeFaceAt(cursorX, cursorY);
             if (const std::optional<nav::SurfaceHit> hit = pickAt(cursorX, cursorY)) {
                 id = hit->id;
             }
+        }
+        if (cube != cubeHover) {
+            cubeHover = cube;
+            requestFrame();
         }
         if (id != hoveredId) {
             hoveredId = id;
@@ -291,10 +338,80 @@ struct GeoEngine {
         }
     }
 
+    // Flies the camera to a standard view of everything shown.
+    void flyTo(nav::StandardView view) {
+        if (!scene.hasGeometry()) {
+            return;
+        }
+        const nav::Camera target =
+            nav::standardView(camera, view, bounds, viewport, kFitMargin, insets);
+        flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
+        requestFrame();
+    }
+
+    // Flies to frame what is selected, or everything if nothing is.
+    void fitSelection() {
+        const std::optional<Aabb> selected = selectionBounds();
+        if (!selected) {
+            perform(GeoActionFit);
+            return;
+        }
+        nav::Camera target = camera;
+        nav::fit(target, *selected, viewport, kFitMargin, insets);
+        flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
+        requestFrame();
+    }
+
+    // Bounds of the occurrences with anything selected, from their definitions' bounds.
+    std::optional<Aabb> selectionBounds() const {
+        const model::FaceState& state = interaction.state();
+        Aabb box{simd_make_double3(INFINITY, INFINITY, INFINITY),
+                 simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
+        bool any = false;
+        u32 global = 0;
+        for (u32 d = 0; d < scene.documentCount(); ++d) {
+            const scene::Document& document = scene.document(d);
+            if (!document.hasModel()) {
+                continue;
+            }
+            const format::SegmentView& model = document.model();
+            for (const format::OccurrenceRecord& occurrence : model.occurrences) {
+                if (!state.anyFace(global++, kStateSelected)) {
+                    continue;
+                }
+                const format::DefinitionInfo& info = model.definitionInfos[occurrence.definition];
+                const format::DefinitionRecord* geometry = document.geometry(occurrence.definition);
+                const auto& lo = geometry ? geometry->boundsMin : info.boundsMin;
+                const auto& hi = geometry ? geometry->boundsMax : info.boundsMax;
+                const std::array<float, 12>& t = occurrence.transform;
+                for (int corner = 0; corner < 8; ++corner) {
+                    const double x = corner & 1 ? hi[0] : lo[0];
+                    const double y = corner & 2 ? hi[1] : lo[1];
+                    const double z = corner & 4 ? hi[2] : lo[2];
+                    const Vec3 world = {t[0] * x + t[3] * y + t[6] * z + t[9],
+                                        t[1] * x + t[4] * y + t[7] * z + t[10],
+                                        t[2] * x + t[5] * y + t[8] * z + t[11]};
+                    box.min = simd_min(box.min, world);
+                    box.max = simd_max(box.max, world);
+                    any = true;
+                }
+            }
+        }
+        if (!any) {
+            return std::nullopt;
+        }
+        return box;
+    }
+
+    static bool reduceMotion() {
+        return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    }
+
     // After anything changes what is hidden, ghosted or selected.
     void stateChanged() {
         refreshHover();
         requestFrame();
+        publishState();
         if (const std::optional<model::NodeRef> focus = interaction.focus()) {
             emit(GeoEventSelectionChanged, "", focus->document, focus->node);
         } else {
@@ -315,6 +432,8 @@ struct GeoEngine {
             break;
         case GeoPointerDown:
             frames.setRunning(true);
+            flight.cancel();
+            cubePressed = event.button == GeoButtonLeft ? cubeFaceAt(event.x, event.y) : 0;
             response = pointer.press(toButton(event.button), event.modifiers, event.x, event.y);
             break;
         case GeoPointerUp:
@@ -332,11 +451,16 @@ struct GeoEngine {
             pendingInputTime = pendingInputTime == 0.0 ? event.timestamp : pendingInputTime;
             requestFrame();
         }
-        if (response.clicked) {
+        if (response.clicked && cubePressed != 0) {
+            flyTo(nav::StandardView(cubePressed - 1));
+        } else if (response.clicked) {
             const bool extend =
                 (event.modifiers & (nav::kModifierShift | nav::kModifierCommand)) != 0;
             interaction.click(response.clickedId.value_or(0), toTool(tool), extend);
             stateChanged();
+        }
+        if (event.kind == GeoPointerUp) {
+            cubePressed = 0;
         }
     }
 
@@ -346,7 +470,7 @@ struct GeoEngine {
             -std::cos(kDefaultElevation) * std::cos(kDefaultAzimuth), std::sin(kDefaultElevation));
         camera.lookAt(bounds.center() + direction, bounds.center(),
                       simd_make_double3(0.0, 0.0, 1.0));
-        nav::fit(camera, bounds, viewport, kFitMargin);
+        nav::fit(camera, bounds, viewport, kFitMargin, insets);
         orbit.setVisibleBounds(bounds);
     }
 
@@ -355,7 +479,7 @@ struct GeoEngine {
         switch (action) {
         case GeoActionFit:
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin);
+                nav::fit(camera, bounds, viewport, kFitMargin, insets);
                 orbit.navigated();
                 scheduleRefinement();
             }
@@ -363,7 +487,7 @@ struct GeoEngine {
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin);
+                nav::fit(camera, bounds, viewport, kFitMargin, insets);
             }
             orbit.navigated();
             scheduleRefinement();
@@ -392,6 +516,18 @@ struct GeoEngine {
         case GeoActionRedo:
             interaction.redo();
             break;
+        case GeoActionViewFront:
+        case GeoActionViewBack:
+        case GeoActionViewLeft:
+        case GeoActionViewRight:
+        case GeoActionViewTop:
+        case GeoActionViewBottom:
+        case GeoActionViewIso:
+            flyTo(nav::StandardView(action - GeoActionViewFront));
+            return;
+        case GeoActionFitSelection:
+            fitSelection();
+            return;
         }
         stateChanged();
     }
@@ -545,7 +681,7 @@ struct GeoEngine {
             resetCamera();
             hasFramed = true;
         } else if (!userMovedCamera) {
-            nav::fit(camera, bounds, viewport, kFitMargin);
+            nav::fit(camera, bounds, viewport, kFitMargin, insets);
             orbit.setVisibleBounds(bounds);
         }
     }
@@ -572,6 +708,11 @@ struct GeoEngine {
                          [](const OpenDocument& open) { return open.importing; })) {
             emit(GeoEventSceneReady, "", *index);
         }
+    }
+
+    void applyInsets() {
+        insets = {insetPoints.left * pixelsPerPoint, insetPoints.top * pixelsPerPoint,
+                  insetPoints.right * pixelsPerPoint, insetPoints.bottom * pixelsPerPoint};
     }
 
     void scheduleRefinement() {
@@ -698,6 +839,8 @@ struct GeoEngine {
             case Command::Kind::Resize:
                 viewport = {double(command->resize.width), double(command->resize.height)};
                 pointer.setPixelsPerPoint(command->resize.scale);
+                pixelsPerPoint = command->resize.scale;
+                applyInsets();
                 renderer->resize(command->resize.width, command->resize.height);
                 orbit.navigated();
                 requestFrame();
@@ -716,6 +859,8 @@ struct GeoEngine {
                 break;
             case Command::Kind::SetMode:
                 interaction.setMode(toMode(command->mode));
+                publishedStateVersion = ~u64(0);
+                publishState();
                 refreshHover();
                 break;
             case Command::Kind::SetTool:
@@ -743,6 +888,14 @@ struct GeoEngine {
                 }
                 refreshHover();
                 break;
+            case Command::Kind::SetInsets:
+                insetPoints = command->insets;
+                applyInsets();
+                break;
+            case Command::Kind::Snapshot:
+                writeSnapshot(command->path);
+                std::free(command->path);
+                break;
             case Command::Kind::RequestFrame:
                 requestFrame();
                 break;
@@ -754,6 +907,26 @@ struct GeoEngine {
         }
         if (pointerMoved) {
             updateHover();
+        }
+    }
+
+    // Draws the current view offscreen and saves it, written to a temporary name first so the file
+    // only ever appears whole.
+    void writeSnapshot(const std::string& path) {
+        renderer->syncState(interaction.state());
+        render::ViewState view = render::makeView(camera, viewport, bounds);
+        view.uniforms.hoverFirst = hover.first;
+        view.uniforms.hoverEnd = hover.second;
+        render::Overlay overlay;
+        if (scene.hasGeometry()) {
+            overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
+                                          pixelsPerPoint, renderer->glyphAdvance(), cubeHover);
+        }
+        const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);
+        const std::string temporary = path + ".partial";
+        if (engine::writePng(temporary.c_str(), pixels, u32(viewport.width),
+                             u32(viewport.height))) {
+            rename(temporary.c_str(), path.c_str());
         }
     }
 
@@ -777,12 +950,27 @@ struct GeoEngine {
         }
         selectedCount.store(selected, std::memory_order_relaxed);
         hiddenCount.store(hidden, std::memory_order_relaxed);
+
+        const auto [occurrences, faces] = interaction.selectionCounts();
+        const std::optional<model::NodeRef> focus = interaction.focus();
+        std::lock_guard lock(summaryMutex);
+        summary = {occurrences, faces, focus ? focus->document : 0,
+                   focus ? focus->node : GEO_NO_NODE, u32(interaction.mode())};
     }
 
     void onFrame(const gpu::FrameTick& tick) {
         // The surface under a still pointer changes as the camera moves, so hover is checked here
         // too.
         updateHover();
+        if (flight.active()) {
+            camera = flight.at(nowSeconds());
+            orbit.navigated();
+            needsFrame = true;
+            lastActivity = nowSeconds();
+            if (!flight.active()) {
+                scheduleRefinement();
+            }
+        }
         if (needsFrame) {
             needsFrame = false;
             const double start = nowSeconds();
@@ -818,8 +1006,13 @@ struct GeoEngine {
                               tick.presentationTime);
             }
             pendingInputTime = 0.0;
+            render::Overlay overlay;
+            if (scene.hasGeometry()) {
+                overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
+                                              pixelsPerPoint, renderer->glyphAdvance(), cubeHover);
+            }
             const u64 allocationsBefore = engine::allocationCount();
-            renderer->render(tick.drawable, view);
+            renderer->render(tick.drawable, view, &overlay);
             lastFrameSeconds.store(nowSeconds() - start, std::memory_order_relaxed);
             framesRendered.fetch_add(1, std::memory_order_relaxed);
             frameAllocations.store(engine::allocationCount() - allocationsBefore,
@@ -978,6 +1171,21 @@ void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) 
     engine->post(command);
 }
 
+void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
+                                float bottom) {
+    Command command{};
+    command.kind = Command::Kind::SetInsets;
+    command.insets = {left, top, right, bottom};
+    engine->post(command);
+}
+
+void geo_engine_write_snapshot(GeoEngine* engine, const char* path) {
+    Command command{};
+    command.kind = Command::Kind::Snapshot;
+    command.path = strdup(path);
+    engine->post(command);
+}
+
 void geo_engine_request_frame(GeoEngine* engine) {
     Command command{};
     command.kind = Command::Kind::RequestFrame;
@@ -1026,6 +1234,11 @@ void geo_trace_memory(const char* label) {
     task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count);
     std::fprintf(stderr, "trace: %-28s footprint %7.1f MB, peak %7.1f MB\n", label,
                  double(info.phys_footprint) / 1e6, double(info.ledger_phys_footprint_peak) / 1e6);
+}
+
+GeoSelectionSummary geo_engine_selection(GeoEngine* engine) {
+    std::lock_guard lock(engine->summaryMutex);
+    return engine->summary;
 }
 
 GeoEngineStats geo_engine_stats(const GeoEngine* engine) {

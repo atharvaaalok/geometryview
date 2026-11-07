@@ -2,8 +2,15 @@ file(GLOB_RECURSE test_sources CONFIGURE_DEPENDS unit/*.cpp unit/*.mm)
 add_executable(geo_tests ${test_sources})
 target_include_directories(geo_tests PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
 add_dependencies(geo_tests geometry-import engine_shaders)
+# Computed here rather than with $<BOOL:>, which reads the comma in address,undefined as a second
+# argument.
+if(GEO_SANITIZE)
+    set(geo_sanitized 1)
+else()
+    set(geo_sanitized 0)
+endif()
 target_compile_definitions(geo_tests PRIVATE
-    GEO_SANITIZED=$<BOOL:${GEO_SANITIZE}>
+    GEO_SANITIZED=${geo_sanitized}
     GEO_TEST_HELPER_PATH="$<TARGET_FILE:geometry-import>"
     GEO_TEST_SHADER_LIBRARY="${GEO_METALLIB}")
 target_link_libraries(geo_tests PRIVATE engine import_core doctest geo_warnings)
