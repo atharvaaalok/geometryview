@@ -145,9 +145,15 @@ Vec3 PointerController::anchorAt(double x, double y) {
 }
 
 PointerResponse PointerController::scroll(double delta, double x, double y, double time) {
+    delta *= zoom_.speed * (zoom_.invert ? -1.0 : 1.0);
+    if (!zoom_.towardPointer) {
+        // Toward the centre of the view, as in proto's README.
+        x = viewport_.width * 0.5;
+        y = viewport_.height * 0.5;
+    }
     const bool newBurst = time - lastZoomTime_ > kZoomBurstSeconds || x != zoomX_ || y != zoomY_;
     if (newBurst) {
-        zoomAnchor_ = anchorAt(x, y);
+        zoomAnchor_ = zoom_.towardPointer ? anchorAt(x, y) : camera_.target();
         zoomX_ = x;
         zoomY_ = y;
     }

@@ -106,6 +106,7 @@ struct Command {
         SetInsets,
         SetLook,
         SetSection,
+        SetMouse,
         Snapshot,
         RequestFrame,
         Stop
@@ -123,6 +124,7 @@ struct Command {
         nav::Insets insets;
         GeoLook look;
         GeoSection section;
+        GeoMouseSettings mouse;
     };
 };
 
@@ -943,6 +945,20 @@ struct GeoEngine {
                 }
                 refreshHover();
                 break;
+            case Command::Kind::SetMouse: {
+                std::vector<nav::MouseBinding> bindings;
+                const u32 count =
+                    std::min<u32>(command->mouse.binding_count, GEO_MAX_MOUSE_BINDINGS);
+                for (u32 i = 0; i < count; ++i) {
+                    const GeoMouseBinding& b = command->mouse.bindings[i];
+                    bindings.push_back({toButton(GeoPointerButton(b.button)), b.modifiers,
+                                        nav::Gesture(std::min<u32>(u32(b.gesture), 3))});
+                }
+                pointer.setBindings(std::move(bindings));
+                pointer.setZoom({command->mouse.zoom_toward_pointer, command->mouse.invert_wheel,
+                                 std::clamp(double(command->mouse.zoom_speed), 0.1, 10.0)});
+                break;
+            }
             case Command::Kind::SetSection:
                 for (int axis = 0; axis < 3; ++axis) {
                     section.enabled[axis] = command->section.enabled[axis];
@@ -1361,6 +1377,29 @@ void geo_engine_set_look(GeoEngine* engine, const GeoLook* look) {
     Command command{};
     command.kind = Command::Kind::SetLook;
     command.look = *look;
+    engine->post(command);
+}
+
+GeoMouseSettings geo_default_mouse_settings(void) {
+    GeoMouseSettings settings{};
+    const auto defaults = nav::defaultMouseBindings();
+    for (const nav::MouseBinding& b : defaults) {
+        const u32 button = b.button == nav::Button::Left     ? GeoButtonLeft
+                           : b.button == nav::Button::Right  ? GeoButtonRight
+                           : b.button == nav::Button::Middle ? GeoButtonMiddle
+                                                             : GeoButtonNone;
+        settings.bindings[settings.binding_count++] = {button, b.modifiers, GeoGesture(b.gesture)};
+    }
+    settings.zoom_toward_pointer = true;
+    settings.invert_wheel = false;
+    settings.zoom_speed = 1.0f;
+    return settings;
+}
+
+void geo_engine_set_mouse(GeoEngine* engine, const GeoMouseSettings* settings) {
+    Command command{};
+    command.kind = Command::Kind::SetMouse;
+    command.mouse = *settings;
     engine->post(command);
 }
 

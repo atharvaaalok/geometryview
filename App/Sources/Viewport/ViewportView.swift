@@ -145,11 +145,11 @@ final class ViewportView: NSView {
     private func modifiers(of event: NSEvent) -> UInt32 {
         let flags = event.modifierFlags
         var result: UInt32 = 0
-        if flags.contains(.shift) { result |= 1 << 0 }
-        if flags.contains(.control) { result |= 1 << 1 }
-        if flags.contains(.option) { result |= 1 << 2 }
-        if flags.contains(.command) { result |= 1 << 3 }
-        if spaceHeld { result |= 1 << 4 }
+        if flags.contains(.shift) { result |= UInt32(GeoModifierShift) }
+        if flags.contains(.control) { result |= UInt32(GeoModifierControl) }
+        if flags.contains(.option) { result |= UInt32(GeoModifierOption) }
+        if flags.contains(.command) { result |= UInt32(GeoModifierCommand) }
+        if spaceHeld { result |= UInt32(GeoModifierSpace) }
         return result
     }
 

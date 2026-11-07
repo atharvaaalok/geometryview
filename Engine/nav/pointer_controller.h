@@ -57,6 +57,15 @@ public:
     /// `pixelsPerPoint` converts the point-based thresholds to pixels.
     void setPixelsPerPoint(double scale) { pixelsPerPoint_ = scale; }
     void setBindings(std::vector<MouseBinding> bindings) { bindings_ = std::move(bindings); }
+    const std::vector<MouseBinding>& bindings() const { return bindings_; }
+
+    /// How the wheel zooms: toward the pointer or the centre of the view, which way, how fast.
+    struct ZoomSettings {
+        bool towardPointer = true;
+        bool invert = false;
+        double speed = 1.0;
+    };
+    void setZoom(ZoomSettings zoom) { zoom_ = zoom; }
 
     bool isDragging() const { return active_ != Gesture::None; }
     bool isPressed() const { return pressed_ != Button::None; }
@@ -79,6 +88,7 @@ private:
     OrbitPolicy& orbit_;
     PixelPicker picker_;
     std::vector<MouseBinding> bindings_ = defaultMouseBindings();
+    ZoomSettings zoom_;
     double pixelsPerPoint_ = 1.0;
 
     Button pressed_ = Button::None;
