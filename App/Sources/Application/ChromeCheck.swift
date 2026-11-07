@@ -10,7 +10,8 @@ import GeometryEngine
 /// exactly as live input. After each click, once the view has settled, pointer moves over an empty
 /// corner of the view go to the engine, as the view forwards them. Had the click left the engine
 /// holding a press, those moves would turn the camera and draw frames. Last, it checks that the
-/// pointer leaving the view clears the hover. Prints the result and quits.
+/// pointer leaving the view clears the hover, and that presses at the top of the window reach what
+/// moves it. Prints the result and quits.
 @MainActor
 final class ChromeCheck {
     static var isRequested: Bool { CommandLine.arguments.contains("--chrome-check") }
@@ -107,6 +108,24 @@ final class ChromeCheck {
         probe(0)
     }
 
+    // A press at the top of the window, or on the file's name, must reach what moves the window.
+    private func checkWindowDragging() {
+        guard let root = window.contentView else {
+            return
+        }
+        let points = [
+            ("the top edge", NSPoint(x: root.bounds.midX, y: root.bounds.maxY - 6)),
+            ("the file's name", NSPoint(x: 100, y: root.bounds.maxY - 22)),
+        ]
+        for (name, point) in points {
+            let hit = root.hitTest(root.convert(point, to: root.superview))
+            if !(hit is WindowDragArea || hit is Masthead) {
+                let found = hit.map { String(describing: type(of: $0)) } ?? "nothing"
+                leaks.append("a press on \(name) reaches \(found), not what moves the window")
+            }
+        }
+    }
+
     private func post(_ kind: GeoPointerKind, x: CGFloat, y: CGFloat) {
         engine.post(
             GeoPointerEvent(
@@ -122,9 +141,11 @@ final class ChromeCheck {
     }
 
     private func finish() {
+        checkWindowDragging()
         if leaks.isEmpty {
             print(
-                "chrome-check: PASS, no click reached the 3D view and hover left with the pointer"
+                "chrome-check: PASS, no click reached the 3D view, hover left with the pointer "
+                    + "and the top of the window moves it"
             )
         } else {
             print("chrome-check: FAIL, \(leaks.count) problem\(leaks.count == 1 ? "" : "s"):")

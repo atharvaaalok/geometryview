@@ -1,12 +1,14 @@
 import AppKit
 
 /// The title over the top left of the view: what is open, a line about it, and import progress.
-/// It sits on the figure itself, not in a card, so text gets a paper halo to stay readable.
+/// It sits on the figure itself, not in a card, so text gets a paper halo to stay readable. Like a
+/// window's title, dragging it moves the window.
 @MainActor
 final class Masthead: NSView {
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private let progress = ProgressPill()
+    private let stack = NSStackView()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -22,7 +24,7 @@ final class Masthead: NSView {
             label.layer?.shadowRadius = 3
             label.layer?.shadowOffset = .zero
         }
-        let stack = NSStackView(views: [title, subtitle, progress])
+        stack.setViews([title, subtitle, progress], in: .leading)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 2
@@ -44,7 +46,17 @@ final class Masthead: NSView {
         fatalError("Masthead is not used from Interface Builder")
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    // Only the text itself, and its labels take no clicks of their own.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, stack.frame.contains(convert(point, from: superview)) else {
+            return nil
+        }
+        return self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        WindowDragging.handle(event, in: window)
+    }
 
     /// On Blueprint's dark sheet the masthead, drawn straight on it, turns light.
     func setOnDarkSheet(_ dark: Bool) {
