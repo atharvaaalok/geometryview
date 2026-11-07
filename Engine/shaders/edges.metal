@@ -2,6 +2,7 @@
 // segment reads the state of the faces on its sides to decide what it is: a crease on something
 // solid, a highlight around a hovered or selected face, or a dashed line of a ghost. Coverage goes
 // to the ink attachment, keeping the larger value, so overlapping quads at a joint never ink twice.
+// The tile resolve at the end of the pass inks the colour from it.
 #include "geometry.h"
 #include "noise.h"
 #include "shared/gpu_types.h"
@@ -13,6 +14,10 @@ using namespace metal;
 constant bool kGhostLinePass [[function_constant(2)]];
 
 constant uint kNoOccurrence = 0xFFFFFFFF;
+// Edges of a chunk smaller than this on screen, in pixels of radius, would only blot it with ink,
+// so they are left out; the outline from the tags still draws the part's shape. This is also what
+// keeps a million small parts cheap.
+constant float kMinChunkPixels = 3.0;
 constant uint kInked = 1;       // a crease, or a ghost's line
 constant uint kHighlighted = 2; // around a hovered or selected face
 
@@ -67,7 +72,12 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
         const device EdgeChunk& c = definition.edgeChunks[chunk];
         const float3 center =
             boundsCenter(definition, occurrence, ushort3(c.centerX, c.centerY, c.centerZ));
-        return sphereInView(center, float(c.radius) * definition.boundsStep, frame);
+        const float radius = float(c.radius) * definition.boundsStep;
+        const float pixelWorld =
+            frame.perspective != 0
+                ? frame.worldPerPixel * max(dot(center - frame.eye, frame.forward), radius)
+                : frame.worldPerPixel;
+        return radius >= kMinChunkPixels * pixelWorld && sphereInView(center, radius, frame);
     };
 
     const device Batch& batch = batches[drawBase + group];
@@ -249,16 +259,4 @@ fragment InkOutput edgeFragment(EdgeVertex in [[stage_in]],
         ink.b = (in.kind & kHighlighted) != 0 ? cover(style.highlight) : 0.0;
     }
     return {ink};
-}
-
-// Ink onto colour, once per sample, after every crease and highlight is in the ink attachment.
-fragment float4 applyInk(float4 position [[position]], float4 ink [[color(kAttachmentInk)]],
-                         constant StyleUniforms& style [[buffer(kBufferStyle)]]) {
-    const float crease = ink.r * style.inkAlpha;
-    return float4(style.ink, 1.0 - (1.0 - crease) * (1.0 - ink.b));
-}
-
-fragment float4 applyGhostInk(float4 position [[position]], float4 ink [[color(kAttachmentInk)]],
-                              constant StyleUniforms& style [[buffer(kBufferStyle)]]) {
-    return float4(style.ink, ink.g * style.ghostLineAlpha * style.inkAlpha);
 }

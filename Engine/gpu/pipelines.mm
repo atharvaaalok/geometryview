@@ -18,9 +18,10 @@ void reportFailure(const char* what, NSError* error) {
 // What a pipeline in the main pass writes.
 struct Writes {
     bool color = true;
-    bool blended = false; // colour blends over what is there
-    bool ids = true;      // pick id and depth copy
-    bool ink = false;     // edge coverage, keeping the larger of what is there and what is drawn
+    bool blended = false;   // colour blends over what is there
+    bool ids = true;        // pick id and depth copy
+    bool ink = false;       // edge coverage, keeping the larger of what is there and what is drawn
+    bool clearsInk = false; // takes away ink beneath, by the colour's alpha
     MTLColorWriteMask tags = MTLColorWriteMaskNone; // red for solid bodies, green for ghosts
 };
 
@@ -44,6 +45,13 @@ void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachme
         ink.destinationRGBBlendFactor = MTLBlendFactorOne;
         ink.sourceAlphaBlendFactor = MTLBlendFactorOne;
         ink.destinationAlphaBlendFactor = MTLBlendFactorOne;
+    } else if (writes.clearsInk) {
+        MTL4RenderPipelineColorAttachmentDescriptor* ink = attachments[kAttachmentInk];
+        ink.blendingState = MTL4BlendStateEnabled;
+        ink.sourceRGBBlendFactor = MTLBlendFactorZero;
+        ink.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        ink.sourceAlphaBlendFactor = MTLBlendFactorZero;
+        ink.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     } else {
         attachments[kAttachmentInk].writeMask = MTLColorWriteMaskNone;
     }
@@ -237,23 +245,23 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
                             "Could not create the sheet pipeline");
     for (const bool ghostLines : {false, true}) {
         edges[ghostLines] = builder.edges(ghostLines);
-        applyInk[ghostLines] =
-            builder.classic(@"sheetVertex", ghostLines ? @"applyGhostInk" : @"applyInk",
-                            {.blended = true, .ids = false}, "Could not create an ink pipeline");
-        if (!edges[ghostLines] || !applyInk[ghostLines]) {
+        if (!edges[ghostLines]) {
             return false;
         }
     }
     // The cube writes pick ids, so it can be clicked; the scale bar's quads blend and do not.
-    cube = builder.classic(@"cubeVertex", @"cubeFragment", {},
-                           "Could not create the view cube pipeline");
-    quad = builder.classic(@"quadVertex", @"quadFragment", {.blended = true, .ids = false},
+    cube =
+        builder.classic(@"cubeVertex", @"cubeFragment",
+                        {.clearsInk = true, .tags = MTLColorWriteMaskRed | MTLColorWriteMaskGreen},
+                        "Could not create the view cube pipeline");
+    quad = builder.classic(@"quadVertex", @"quadFragment",
+                           {.blended = true, .ids = false, .clearsInk = true},
                            "Could not create the overlay pipeline");
-    resolvePick = builder.tile(@"resolvePick", "Could not create the pick pipeline");
+    resolveTile = builder.tile(@"resolveTile", "Could not create the tile resolve pipeline");
     composite = builder.composite();
     ambientOcclusion =
         builder.compute(@"ambientOcclusion", "Could not create the occlusion kernel");
-    if (!shadow || !sheet || !cube || !quad || !resolvePick || !composite || !ambientOcclusion) {
+    if (!shadow || !sheet || !cube || !quad || !resolveTile || !composite || !ambientOcclusion) {
         return false;
     }
 

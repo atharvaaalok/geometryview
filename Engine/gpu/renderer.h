@@ -60,6 +60,10 @@ public:
     std::vector<u8> renderOffscreen(const render::ViewState& view,
                                     const render::Overlay* overlay = nullptr);
 
+    /// Mean GPU time per frame so far, from Metal's commit feedback, which is gathered only when
+    /// tracing. Safe to call from any thread.
+    double meanGpuSeconds() const;
+
     /// A glyph's advance in the overlay atlas, in atlas pixels.
     float glyphAdvance() const;
 

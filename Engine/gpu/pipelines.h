@@ -22,12 +22,11 @@ struct Pipelines {
     id<MTLRenderPipelineState> ghost[2][2];
     id<MTLRenderPipelineState> shadow; // solid faces flattened onto the ground
     id<MTLRenderPipelineState> sheet;
-    // Feature edges into the ink attachment, then ink onto colour: creases and highlights, or
-    // ghosts' dashed lines.
+    // Feature edges into the ink attachment: creases and highlights, or ghosts' dashed lines.
     id<MTLRenderPipelineState> edges[2];
-    id<MTLRenderPipelineState> applyInk[2];
     id<MTLRenderPipelineState> cube, quad;
-    id<MTLRenderPipelineState> resolvePick;
+    // Inks the colour, then copies sample 0 of ids, depth and tags out of tile memory.
+    id<MTLRenderPipelineState> resolveTile;
     id<MTLRenderPipelineState> composite;
     id<MTLComputePipelineState> ambientOcclusion;
 

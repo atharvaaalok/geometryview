@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace geo::gpu {
@@ -77,6 +79,13 @@ struct Renderer::State {
     // Each occurrence's look, and three palette texels per look.
     id<MTLBuffer> looks, palette;
 
+    // GPU time, from commit feedback while tracing.
+    std::atomic<double> gpuSeconds{0.0};
+    std::atomic<u64> gpuFrames{0};
+
+    // GEOMETRY_NO_EDGES leaves feature edges out, to measure what they cost.
+    bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
+
     bool createTables() {
         NSError* error = nil;
         MTL4ArgumentTableDescriptor* surface = [MTL4ArgumentTableDescriptor new];
@@ -85,6 +94,7 @@ struct Renderer::State {
 
         MTL4ArgumentTableDescriptor* tile = [MTL4ArgumentTableDescriptor new];
         tile.maxTextureBindCount = 3;
+        tile.maxBufferBindCount = kBufferCount;
         tileTable = [context.device newArgumentTableWithDescriptor:tile error:&error];
 
         MTL4ArgumentTableDescriptor* composite = [MTL4ArgumentTableDescriptor new];
@@ -164,7 +174,7 @@ struct Renderer::State {
         }
     }
 
-    // Edges into the ink attachment, then the ink onto colour.
+    // Edges into the ink attachment. The tile resolve inks the colour from it.
     void drawEdges(id<MTL4RenderCommandEncoder> encoder, bool ghostLines) {
         [surfaceTable setAddress:tables.edgeBatches().gpuAddress atIndex:kBufferBatches];
         [surfaceTable setAddress:tables.edgeRefs().gpuAddress atIndex:kBufferMeshletRefs];
@@ -174,12 +184,6 @@ struct Renderer::State {
         drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
         [surfaceTable setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
         [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
-
-        [encoder setRenderPipelineState:pipelines.applyInk[ghostLines]];
-        [encoder setDepthStencilState:pipelines.depthAlways];
-        [encoder setArgumentTable:surfaceTable
-                         atStages:MTLRenderStageVertex | MTLRenderStageFragment];
-        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     }
 
     void drawSurfaces(id<MTL4RenderCommandEncoder> encoder) {
@@ -197,7 +201,7 @@ struct Renderer::State {
         const u64 frame = context.frameCount;
         const u64 frameAddress = frameUniforms.write(frame, &view.uniforms);
         const u64 styleAddress = styleUniforms.write(frame, &style);
-        for (id<MTL4ArgumentTable> table : {surfaceTable, compositeTable}) {
+        for (id<MTL4ArgumentTable> table : {surfaceTable, compositeTable, tileTable}) {
             [table setAddress:frameAddress atIndex:kBufferFrame];
             [table setAddress:styleAddress atIndex:kBufferStyle];
         }
@@ -255,7 +259,7 @@ struct Renderer::State {
         [encoder setArgumentTable:compositeTable
                          atStages:MTLRenderStageVertex | MTLRenderStageFragment];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-        if (hasScene) {
+        if (hasScene && drawsEdges) {
             drawEdges(encoder, false);
         }
 
@@ -264,7 +268,7 @@ struct Renderer::State {
             [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]];
             [encoder setDepthStencilState:pipelines.depthTest];
             drawSurfaces(encoder);
-            if ((style.ghostStyle & kGhostLines) != 0) {
+            if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges) {
                 drawEdges(encoder, true);
             }
         }
@@ -273,7 +277,7 @@ struct Renderer::State {
             encodeOverlay(encoder, *overlay);
         }
 
-        [encoder setRenderPipelineState:pipelines.resolvePick];
+        [encoder setRenderPipelineState:pipelines.resolveTile];
         [encoder setArgumentTable:tileTable atStages:MTLRenderStageTile];
         [encoder dispatchThreadsPerTile:MTLSizeMake(kTileSize, kTileSize, 1)];
     }
@@ -344,7 +348,12 @@ struct Renderer::State {
             if (feedback.error) {
                 std::fprintf(stderr, "GPU error: %s\n",
                              feedback.error.localizedDescription.UTF8String);
+                return;
             }
+            const double seconds = feedback.GPUEndTime - feedback.GPUStartTime;
+            gpuSeconds.store(gpuSeconds.load(std::memory_order_relaxed) + seconds,
+                             std::memory_order_relaxed);
+            gpuFrames.fetch_add(1, std::memory_order_relaxed);
         }];
         [context.queue commit:buffers count:1 options:options];
     }
@@ -423,6 +432,11 @@ void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const 
 }
 
 float Renderer::glyphAdvance() const { return state_->atlas.glyphAdvance; }
+
+double Renderer::meanGpuSeconds() const {
+    const u64 frames = state_->gpuFrames.load(std::memory_order_relaxed);
+    return frames == 0 ? 0.0 : state_->gpuSeconds.load(std::memory_order_relaxed) / double(frames);
+}
 
 void Renderer::syncState(const model::FaceState& state) {
     State& s = *state_;

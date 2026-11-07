@@ -350,23 +350,46 @@ fragment float4 shadowFragment(SurfaceVertex in [[stage_in]]) {
 // Copies each pixel's ID and depth to memory the CPU reads directly, so hover and pivots need no
 // GPU round trip, and its tags for the outlines. The attachments themselves stay memoryless.
 // Sample 0 is enough for both.
-struct PickTile {
+struct ResolveTile {
+    half4 color [[color(kAttachmentColor)]];
     uint id [[color(kAttachmentId)]];
     float depth [[color(kAttachmentDepth)]];
+    half4 ink [[color(kAttachmentInk)]];
     uint2 tags [[color(kAttachmentTags)]];
 };
 
-kernel void resolvePick(imageblock<PickTile, imageblock_layout_implicit> tile,
+// Also inks every sample from the ink attachment. Doing it here, in the pass's one tile dispatch,
+// matters: any mid-pass step that reads the tiles after a million meshlets cost from 5 to over
+// 100 ms. Creases and highlights were drawn before ghosts, so a ghost's skin in front, known from
+// its tag, dims them; ghosts' own dashed lines were drawn after and are not dimmed.
+kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile,
                         texture2d<uint, access::write> ids [[texture(kTexturePickIds)]],
                         texture2d<float, access::write> depths [[texture(kTexturePickDepths)]],
                         texture2d<uint, access::write> tags [[texture(kTextureTags)]],
+                        constant StyleUniforms& style [[buffer(kBufferStyle)]],
                         ushort2 pixel [[thread_position_in_threadgroup]],
                         ushort2 tileIndex [[threadgroup_position_in_grid]]) {
+    const half ink = half(style.inkAlpha);
+    const half skin = (style.ghostStyle & kGhostShell) != 0 ? half(style.ghostAlpha) : 0.0h;
+    for (ushort s = 0; s < tile.get_num_samples(); ++s) {
+        ResolveTile t = tile.read(pixel, s, imageblock_data_rate::sample);
+        half solid = 1.0h - (1.0h - t.ink.r * ink) * (1.0h - t.ink.b);
+        if (t.tags.g != 0) {
+            solid *= 1.0h - skin;
+        }
+        const half ghost = t.ink.g * half(style.ghostLineAlpha) * ink;
+        const half cover = 1.0h - (1.0h - solid) * (1.0h - ghost);
+        if (cover > 0.0h) {
+            t.color.rgb = mix(t.color.rgb, half3(style.ink), cover);
+            tile.write(t, pixel, s, imageblock_data_rate::sample);
+        }
+    }
+
     const uint2 position = uint2(tileIndex) * uint(kTileSize) + uint2(pixel);
     if (position.x >= ids.get_width() || position.y >= ids.get_height()) {
         return;
     }
-    const PickTile sample = tile.read(pixel, 0, imageblock_data_rate::sample);
+    const ResolveTile sample = tile.read(pixel, 0, imageblock_data_rate::sample);
     ids.write(uint4(sample.id), position);
     depths.write(float4(sample.depth), position);
     tags.write(uint4(sample.tags, 0, 0), position);
