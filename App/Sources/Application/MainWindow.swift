@@ -184,9 +184,9 @@ final class MainWindow: NSWindow {
                 return
             }
             libraryCard.reload()
-            watcher.watch(library.roots.map(\.url.path))
+            watchFiles()
         }
-        watcher.watch(library.roots.map(\.url.path))
+        watchFiles()
         toolBar.onShowSection = { [weak self] in self?.toggleSectionCard() }
         sectionCard.onChange = { [weak self] section in self?.engine.setSection(section) }
         lookCard.onChange = { [weak self] look in self?.apply(look) }
@@ -241,6 +241,7 @@ final class MainWindow: NSWindow {
         }
         names.append(url.lastPathComponent)
         openURLs.append(url)
+        watchFiles()
         structure.addDocument(named: url.lastPathComponent)
         showLibrary(false)
         status.isHidden = true
@@ -344,6 +345,11 @@ final class MainWindow: NSWindow {
         libraryCard.switcher.selected = 0
         structure.switcher.selected = 1
         updateInsets()
+    }
+
+    /// Watches the connected folders, and the open files wherever they are, so an edit reloads.
+    private func watchFiles() {
+        watcher.watch(library.roots.map(\.url.path) + openURLs.map(\.path))
     }
 
     @objc func connectFolder(_ sender: Any?) {
