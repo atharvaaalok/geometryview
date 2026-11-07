@@ -32,20 +32,37 @@ u32 dedupe(usize count, Hash&& hash, Equal&& equal, std::vector<u32>& ids,
         }
     });
 
-    // Count per partition, then place members in item order so the output is deterministic.
+    // Count per range and partition, then place members. Ranges write from their own cursors, so
+    // this needs no synchronisation and keeps item order within each partition, which keeps the
+    // output deterministic.
+    const usize ranges = parallelRangeCount(count, kGrain);
+    std::vector<std::array<usize, kPartitions>> counts(ranges);
+    parallelRanges(count, kGrain, [&](usize first, usize last, usize range) {
+        std::array<usize, kPartitions>& local = counts[range];
+        local.fill(0);
+        for (usize i = first; i < last; ++i) {
+            ++local[partitionOf(hashes[i])];
+        }
+    });
     std::array<usize, kPartitions + 1> offsets{};
-    for (usize i = 0; i < count; ++i) {
-        ++offsets[partitionOf(hashes[i]) + 1];
-    }
+    std::vector<std::array<usize, kPartitions>> cursors(ranges);
+    usize placed = 0;
     for (usize p = 0; p < kPartitions; ++p) {
-        offsets[p + 1] += offsets[p];
+        offsets[p] = placed;
+        for (usize range = 0; range < ranges; ++range) {
+            cursors[range][p] = placed;
+            placed += counts[range][p];
+        }
     }
+    offsets[kPartitions] = placed;
+
     std::vector<u32> members(count);
-    std::array<usize, kPartitions> cursors{};
-    std::copy_n(offsets.begin(), kPartitions, cursors.begin());
-    for (usize i = 0; i < count; ++i) {
-        members[cursors[partitionOf(hashes[i])]++] = u32(i);
-    }
+    parallelRanges(count, kGrain, [&](usize first, usize last, usize range) {
+        std::array<usize, kPartitions>& cursor = cursors[range];
+        for (usize i = first; i < last; ++i) {
+            members[cursor[partitionOf(hashes[i])]++] = u32(i);
+        }
+    });
 
     // Each partition assigns ids from zero, and its base is added afterwards.
     ids.resize(count);

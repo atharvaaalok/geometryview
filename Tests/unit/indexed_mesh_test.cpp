@@ -120,3 +120,21 @@ TEST_CASE("separate pieces never merge") {
     options.maxLargeFaces = 1;
     CHECK(buildIndexedMesh(soup, options).faceCount == 2);
 }
+
+TEST_CASE("a connected noisy surface breaks into many faces, not one") {
+    // A ridged strip where each ridge is a sharp crease, so every triangle starts in its own small
+    // group. Merging must stop once regions are big enough rather than chaining into a single face.
+    TriangleSoup soup;
+    constexpr int kRidges = 1000;
+    for (int i = 0; i < kRidges; ++i) {
+        const float x = float(i), height = i % 2 == 0 ? 0.0f : 1.0f;
+        const float nextHeight = i % 2 == 0 ? 1.0f : 0.0f;
+        addQuad(soup.corners, {x, 0, height}, {x + 1, 0, nextHeight}, {x + 1, 1, nextHeight},
+                {x, 1, height});
+    }
+    RegionOptions options;
+    options.maxLargeFaces = 50; // regions under 40 triangles count as small
+    const IndexedMesh mesh = buildIndexedMesh(soup, options);
+    CHECK(mesh.faceCount > 10);
+    CHECK(mesh.faceCount <= 1000);
+}

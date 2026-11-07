@@ -2,6 +2,8 @@
 
 #include "base/assert.h"
 #include "base/parallel.h"
+#include "base/parallel_sort.h"
+#include "base/trace.h"
 
 #include <meshoptimizer.h>
 
@@ -151,14 +153,22 @@ struct Unit {
     usize first, last; // into the sorted triangle list
 };
 
-std::vector<Unit> makeUnits(const std::vector<u64>& sortedTriangles) {
+// A triangle ordered by packed face, then by position. Keeping the key beside the index avoids a
+// pointer chase per comparison.
+struct SortedTriangle {
+    u64 key;
+    u32 triangle;
+
+    u32 face() const { return u32(key >> 32); }
+};
+
+std::vector<Unit> makeUnits(const std::vector<SortedTriangle>& sortedTriangles) {
     std::vector<Unit> units;
     usize first = 0;
-    const auto faceOf = [](u64 key) { return u32(key >> 32); };
     for (usize t = 1; t <= sortedTriangles.size(); ++t) {
         const bool atEnd = t == sortedTriangles.size();
         if (atEnd || t - first >= kMaxUnitTriangles ||
-            faceOf(sortedTriangles[t]) - faceOf(sortedTriangles[first]) >= kMaxUnitFaces) {
+            sortedTriangles[t].face() - sortedTriangles[first].face() >= kMaxUnitFaces) {
             units.push_back({first, t});
             first = t;
         }
@@ -202,7 +212,8 @@ void packVertex(const PackContext& context, u32 vertex, u32 faceBase, UnitOutput
     }
 }
 
-void packUnit(const PackContext& context, std::span<const u64> sortedTriangles, UnitOutput& out) {
+void packUnit(const PackContext& context, std::span<const SortedTriangle> sortedTriangles,
+              UnitOutput& out) {
     const IndexedMesh& mesh = context.mesh;
 
     // meshoptimizer's cost grows with the vertex range, so each unit gets its own compact ids.
@@ -210,8 +221,8 @@ void packUnit(const PackContext& context, std::span<const u64> sortedTriangles, 
     globals.reserve(sortedTriangles.size() * 3);
     std::vector<u32> indices;
     indices.reserve(sortedTriangles.size() * 3);
-    for (const u64 key : sortedTriangles) {
-        const usize t = usize(u32(key));
+    for (const SortedTriangle& sorted : sortedTriangles) {
+        const usize t = sorted.triangle;
         indices.insert(indices.end(),
                        {mesh.indices[t * 3], mesh.indices[t * 3 + 1], mesh.indices[t * 3 + 2]});
     }
@@ -293,6 +304,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
         return packed;
     }
 
+    StageTrace trace("pack");
     const Bounds bounds = computeBounds(mesh);
     const bool wide = needsWideGrid(mesh, bounds);
     const simd_float3 extent = simd_max(bounds.hi - bounds.lo, simd_float3(1e-30f));
@@ -302,38 +314,31 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     const simd_float3 boundsScale = extent / boundsSteps;
 
     const FaceOrder faces = orderFaces(mesh, bounds);
+    trace.lap("bounds and face order");
 
     // Sorted by packed face, then by position, so a unit is spatially tight and a huge face can
     // still be divided among threads.
-    std::vector<u64> sortedTriangles(mesh.triangleCount());
+    std::vector<SortedTriangle> sortedTriangles(mesh.triangleCount());
     parallelRanges(mesh.triangleCount(), 1 << 15, [&](usize first, usize last, usize) {
         for (usize t = first; t < last; ++t) {
-            sortedTriangles[t] = u64(faces.packedOfFace[mesh.faceOfVertex[mesh.indices[t * 3]]])
-                                     << 32 |
-                                 t;
+            const u32 face = faces.packedOfFace[mesh.faceOfVertex[mesh.indices[t * 3]]];
+            const u32 position = mortonOf(triangleCentroid(mesh, t), bounds);
+            sortedTriangles[t] = {u64(face) << 32 | position, u32(t)};
         }
     });
-    std::vector<u32> morton(mesh.triangleCount());
-    parallelRanges(mesh.triangleCount(), 1 << 15, [&](usize first, usize last, usize) {
-        for (usize t = first; t < last; ++t) {
-            morton[t] = mortonOf(triangleCentroid(mesh, t), bounds);
-        }
-    });
-    std::sort(sortedTriangles.begin(), sortedTriangles.end(), [&](u64 a, u64 b) {
-        const u32 faceA = u32(a >> 32), faceB = u32(b >> 32);
-        return faceA != faceB ? faceA < faceB : morton[u32(a)] < morton[u32(b)];
-    });
-
+    parallelSort(sortedTriangles, [](const SortedTriangle& t) { return t.key; });
+    trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
     const PackContext context{mesh, faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale,
                               simd_reduce_max(boundsScale), wide};
     std::vector<UnitOutput> outputs(units.size());
     parallelFor(units.size(), [&](usize u) {
-        const std::span<const u64> range(sortedTriangles.data() + units[u].first,
-                                         units[u].last - units[u].first);
+        const std::span<const SortedTriangle> range(sortedTriangles.data() + units[u].first,
+                                                    units[u].last - units[u].first);
         packUnit(context, range, outputs[u]);
     });
 
+    trace.lap("build meshlets");
     usize vertexCount = 0, triangleCount = 0, meshletCount = 0;
     for (const UnitOutput& output : outputs) {
         vertexCount += output.vertices.size();
@@ -367,6 +372,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     packed.flags = wide ? u32(kDefinitionWide) : 0;
     packed.faceCount = mesh.faceCount;
     packed.originalFace = faces.originalOfPacked;
+    trace.lap("concatenate");
     return packed;
 }
 

@@ -1,11 +1,15 @@
 #include "mesh/indexed_mesh.h"
 
+#include "base/parallel_sort.h"
+#include "base/trace.h"
 #include "mesh/dedupe.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
+#include <cstdio>
 #include <numbers>
 #include <simd/simd.h>
 
@@ -65,33 +69,48 @@ Welded weldCorners(const std::vector<float>& corners) {
     return welded;
 }
 
-// Union-find with path halving. Each root is the lowest index in its set, so results are stable.
+// Lock-free union-find. Each root is the lowest index in its set, so the sets do not depend on the
+// order of operations or the number of threads.
 class DisjointSets {
 public:
     explicit DisjointSets(usize count) : parent_(count) {
-        for (usize i = 0; i < count; ++i) {
-            parent_[i] = u32(i);
-        }
+        parallelRanges(count, kGrain, [&](usize first, usize last, usize) {
+            for (usize i = first; i < last; ++i) {
+                parent_[i].store(u32(i), std::memory_order_relaxed);
+            }
+        });
     }
 
     u32 find(u32 item) {
-        while (parent_[item] != item) {
-            parent_[item] = parent_[parent_[item]];
-            item = parent_[item];
+        u32 parent = parent_[item].load(std::memory_order_relaxed);
+        while (parent != item) {
+            const u32 grandparent = parent_[parent].load(std::memory_order_relaxed);
+            // Path halving. Losing this race only means a later find does the work.
+            parent_[item].compare_exchange_weak(parent, grandparent, std::memory_order_relaxed);
+            item = grandparent;
+            parent = parent_[item].load(std::memory_order_relaxed);
         }
         return item;
     }
 
     void unite(u32 a, u32 b) {
-        a = find(a);
-        b = find(b);
-        if (a != b) {
-            parent_[std::max(a, b)] = std::min(a, b);
+        while (true) {
+            a = find(a);
+            b = find(b);
+            if (a == b) {
+                return;
+            }
+            u32 high = std::max(a, b);
+            const u32 low = std::min(a, b);
+            // Links only a current root, so a concurrent link can never be lost.
+            if (parent_[high].compare_exchange_weak(high, low, std::memory_order_relaxed)) {
+                return;
+            }
         }
     }
 
 private:
-    std::vector<u32> parent_;
+    std::vector<std::atomic<u32>> parent_;
 };
 
 // Replaces each element's root with a dense id in order of first appearance.
@@ -110,7 +129,8 @@ u32 denseLabels(DisjointSets& sets, usize count, std::vector<u32>& labels) {
 }
 
 struct EdgeTable {
-    std::vector<u32> edgeOfCorner; // edge id per triangle corner
+    std::vector<u32> edgeOfCorner;  // edge id per triangle corner
+    std::vector<u32> firstCorner;   // one corner per edge, the same on every run
     u32 edgeCount = 0;
 };
 
@@ -123,10 +143,9 @@ EdgeTable matchEdges(const std::vector<u32>& indices) {
         return u64(std::min(a, b)) | u64(std::max(a, b)) << 32;
     };
     EdgeTable table;
-    std::vector<u32> firstCorner;
     table.edgeCount = dedupe(
         cornerCount, [&](usize c) { return mixHash(keyOf(c)); },
-        [&](u32 a, u32 b) { return keyOf(a) == keyOf(b); }, table.edgeOfCorner, firstCorner);
+        [&](u32 a, u32 b) { return keyOf(a) == keyOf(b); }, table.edgeOfCorner, table.firstCorner);
     return table;
 }
 
@@ -137,71 +156,98 @@ struct Regions {
     u32 faceCount = 0;
 };
 
-// Merges groups below `minTriangles` into the neighbour they share the longest border with.
-void mergeSmallGroups(const std::vector<u32>& edgeOfCorner, u32 edgeCount, Regions& regions,
-                      u32 minTriangles) {
-    constexpr int kMaxPasses = 4;
-    const usize triangleCount = regions.groupOfTriangle.size();
+// One entry per corner that shares an edge with a triangle in a different group, for small groups.
+// Sorted, so a group's entries are adjacent and equal pairs count the length of a shared border.
+std::vector<u64> collectBorders(const EdgeTable& edges, const Regions& regions,
+                                const std::vector<u32>& size, u32 minTriangles) {
+    const usize cornerCount = edges.edgeOfCorner.size();
+    const usize ranges = parallelRangeCount(cornerCount, kGrain);
+    std::vector<std::vector<u64>> parts(ranges);
+    parallelRanges(cornerCount, kGrain, [&](usize first, usize last, usize range) {
+        std::vector<u64>& part = parts[range];
+        for (usize corner = first; corner < last; ++corner) {
+            const u32 other = edges.firstCorner[edges.edgeOfCorner[corner]];
+            if (other == corner) {
+                continue;
+            }
+            const u32 a = regions.groupOfTriangle[corner / 3];
+            const u32 b = regions.groupOfTriangle[other / 3];
+            if (a == b) {
+                continue;
+            }
+            if (size[a] < minTriangles) {
+                part.push_back(u64(a) << 32 | b);
+            }
+            if (size[b] < minTriangles) {
+                part.push_back(u64(b) << 32 | a);
+            }
+        }
+    });
+
+    usize total = 0;
+    for (const std::vector<u64>& part : parts) {
+        total += part.size();
+    }
+    std::vector<u64> borders;
+    borders.reserve(total);
+    for (const std::vector<u64>& part : parts) {
+        borders.insert(borders.end(), part.begin(), part.end());
+    }
+    parallelSort(borders, [](u64 border) { return border; });
+    return borders;
+}
+
+// Merges groups below `minTriangles` into neighbours, preferring the longest shared border.
+//
+// A size cap on the merged region is what keeps faces from chaining together: without it, every small
+// region's best neighbour soon becomes the one large region, and a whole surface collapses into a
+// single face. The cap starts near `minTriangles`, so regions end up similar in size, and it doubles
+// each pass, so a region left stranded between large neighbours is still absorbed. The last pass has
+// no cap, which guarantees the bound on the number of faces.
+void mergeSmallGroups(const EdgeTable& edges, Regions& regions, u32 minTriangles) {
+    constexpr int kMaxPasses = 6;
     DisjointSets faces(regions.groupCount);
 
     std::vector<u32> size(regions.groupCount, 0);
     for (u32 group : regions.groupOfTriangle) {
         ++size[group];
     }
+    const std::vector<u64> borders = collectBorders(edges, regions, size, minTriangles);
 
     for (int pass = 0; pass < kMaxPasses; ++pass) {
-        std::vector<u64> borders;
-        std::vector<u32> lastFace(edgeCount, kNone);
-        for (usize t = 0; t < triangleCount; ++t) {
-            const u32 face = faces.find(regions.groupOfTriangle[t]);
-            for (usize corner = 0; corner < 3; ++corner) {
-                const u32 edge = edgeOfCorner[t * 3 + corner];
-                const u32 other = lastFace[edge];
-                lastFace[edge] = face;
-                if (other != kNone && other != face) {
-                    if (size[face] < minTriangles) {
-                        borders.push_back(u64(face) << 32 | other);
-                    }
-                    if (size[other] < minTriangles) {
-                        borders.push_back(u64(other) << 32 | face);
-                    }
-                }
-            }
-        }
-        if (borders.empty()) {
-            break;
-        }
-        std::sort(borders.begin(), borders.end());
-
-        // Runs of equal pairs count shared edges, so each small region picks its longest border.
+        const u64 cap = pass + 1 == kMaxPasses ? ~u64(0) : u64(minTriangles) << (pass + 1);
+        bool anySmall = false;
         usize i = 0;
-        bool merged = false;
         while (i < borders.size()) {
-            const u32 small = u32(borders[i] >> 32);
+            const u32 group = u32(borders[i] >> 32);
+            const u32 root = faces.find(group);
             u32 best = kNone;
             usize bestLength = 0;
-            while (i < borders.size() && u32(borders[i] >> 32) == small) {
+            while (i < borders.size() && u32(borders[i] >> 32) == group) {
                 const u64 pair = borders[i];
                 usize length = 0;
                 while (i < borders.size() && borders[i] == pair) {
                     ++length;
                     ++i;
                 }
-                if (length > bestLength) {
+                const u32 neighbour = faces.find(u32(pair));
+                if (neighbour != root && length > bestLength &&
+                    u64(size[root]) + size[neighbour] <= cap) {
                     bestLength = length;
-                    best = u32(pair);
+                    best = neighbour;
                 }
             }
-            const u32 a = faces.find(small);
-            const u32 b = faces.find(best);
-            if (a != b) {
-                const u32 combined = size[a] + size[b];
-                faces.unite(a, b);
-                size[faces.find(a)] = combined;
-                merged = true;
+            if (size[root] >= minTriangles) {
+                continue;
+            }
+            anySmall = true;
+            if (best != kNone) {
+                const u32 combined = size[root] + size[best];
+                faces.unite(root, best);
+                size[faces.find(root)] = combined;
             }
         }
-        if (!merged) {
+        if (!anySmall) {
             break;
         }
     }
@@ -224,29 +270,30 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
     });
 
     const float cosCrease = std::cos(options.creaseDegrees * std::numbers::pi_v<float> / 180.0f);
+    StageTrace trace("grow");
     DisjointSets groups(triangleCount);
-    std::vector<u32> lastTriangle(edges.edgeCount, kNone);
-    for (usize t = 0; t < triangleCount; ++t) {
-        for (usize corner = 0; corner < 3; ++corner) {
-            const u32 edge = edges.edgeOfCorner[t * 3 + corner];
-            const u32 other = lastTriangle[edge];
-            lastTriangle[edge] = u32(t);
-            if (other == kNone) {
+    parallelRanges(mesh.indices.size(), kGrain, [&](usize first, usize last, usize) {
+        for (usize corner = first; corner < last; ++corner) {
+            const u32 firstCorner = edges.firstCorner[edges.edgeOfCorner[corner]];
+            if (firstCorner == corner) {
                 continue;
             }
+            const u32 a = u32(corner / 3), b = firstCorner / 3;
             // A zero-area triangle has no normal, and it joins whatever it touches.
-            const bool degenerate = simd_length_squared(normals[t]) == 0.0f ||
-                                    simd_length_squared(normals[other]) == 0.0f;
-            if (degenerate || simd_dot(normals[t], normals[other]) >= cosCrease) {
-                groups.unite(u32(t), other);
+            const bool degenerate = simd_length_squared(normals[a]) == 0.0f ||
+                                    simd_length_squared(normals[b]) == 0.0f;
+            if (degenerate || simd_dot(normals[a], normals[b]) >= cosCrease) {
+                groups.unite(a, b);
             }
         }
-    }
-
+    });
+    trace.lap("union by crease");
     Regions regions;
     regions.groupCount = denseLabels(groups, triangleCount, regions.groupOfTriangle);
+    trace.lap("dense labels");
     const u32 minTriangles = std::max<u32>(1, u32(triangleCount / options.maxLargeFaces));
-    mergeSmallGroups(edges.edgeOfCorner, edges.edgeCount, regions, minTriangles);
+    mergeSmallGroups(edges, regions, minTriangles);
+    trace.lap("merge small groups");
     return regions;
 }
 
@@ -298,9 +345,25 @@ void accumulateAngleWeightedNormals(IndexedMesh& mesh) {
 } // namespace
 
 IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& options) {
+    StageTrace trace("regions");
     const Welded welded = weldCorners(soup.corners);
+    trace.lap("weld");
     const EdgeTable edges = matchEdges(welded.indices);
+    trace.lap("match edges");
     const Regions regions = growRegions(welded, edges, options);
+    trace.lap("grow regions");
+
+    if (traceEnabled()) {
+        std::vector<u32> size(regions.groupCount, 0);
+        for (u32 group : regions.groupOfTriangle) {
+            ++size[group];
+        }
+        const u32 largest = *std::max_element(size.begin(), size.end());
+        std::fprintf(stderr, "trace: regions    %u smoothing groups (largest %.1f%%), %u faces\n",
+                     regions.groupCount,
+                     100.0 * double(largest) / double(regions.groupOfTriangle.size()),
+                     regions.faceCount);
+    }
 
     // A final vertex is a welded position within one smoothing group.
     const usize cornerCount = welded.indices.size();
@@ -327,6 +390,7 @@ IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& opti
         }
     });
 
+    trace.lap("split vertices");
     accumulateAngleWeightedNormals(mesh);
     parallelRanges(vertexCount, kGrain, [&](usize first, usize last, usize) {
         for (usize v = first; v < last; ++v) {
@@ -339,6 +403,7 @@ IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& opti
             }
         }
     });
+    trace.lap("normals");
     return mesh;
 }
 
