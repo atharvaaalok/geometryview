@@ -23,6 +23,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
     X(BREP_WITH_VOIDS)                                                                             \
     X(CARTESIAN_POINT)                                                                             \
     X(CARTESIAN_TRANSFORMATION_OPERATOR_3D)                                                        \
+    X(CIRCLE)                                                                                      \
     X(CLOSED_SHELL)                                                                                \
     X(COLOUR_RGB)                                                                                  \
     X(COMPLEX_TRIANGULATED_FACE)                                                                   \
@@ -35,6 +36,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
     X(DIRECTION)                                                                                   \
     X(DRAUGHTING_PRE_DEFINED_COLOUR)                                                               \
     X(EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION)                                                   \
+    X(ELLIPSE)                                                                                     \
     X(FACE_BASED_SURFACE_MODEL)                                                                    \
     X(FACE_SURFACE)                                                                                \
     X(FACETED_BREP)                                                                                \
@@ -77,6 +79,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
     X(SHAPE_REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION)                                       \
     X(SHELL_BASED_SURFACE_MODEL)                                                                   \
     X(SI_UNIT)                                                                                     \
+    X(SPHERICAL_SURFACE)                                                                           \
     X(STYLED_ITEM)                                                                                 \
     X(SURFACE_SIDE_STYLE)                                                                          \
     X(SURFACE_STYLE_FILL_AREA)                                                                     \
@@ -88,6 +91,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
     X(TESSELLATED_SHAPE_REPRESENTATION)                                                            \
     X(TESSELLATED_SHELL)                                                                           \
     X(TESSELLATED_SOLID)                                                                           \
+    X(TOROIDAL_SURFACE)                                                                            \
     X(TRIANGULATED_FACE)                                                                           \
     X(TRIANGULATED_SURFACE_SET)                                                                    \
     X(VERTEX_POINT)
@@ -117,7 +121,8 @@ struct Part21 {
 
     u32 recordCount() const { return u32(ids.size()); }
     std::span<const u32> refsOf(u32 record) const {
-        return std::span(refs).subspan(refStarts[record], refStarts[record + 1] - refStarts[record]);
+        return std::span(refs).subspan(refStarts[record],
+                                       refStarts[record + 1] - refStarts[record]);
     }
     std::string_view text(u32 record) const {
         return {reinterpret_cast<const char*>(file.data() + offsets[record]), lengths[record]};
@@ -141,14 +146,14 @@ public:
     bool valid() const { return valid_; }
     bool atEnd() const;
 
-    bool skip();                          // past one parameter, of any form
-    bool readString(std::string& value);  // decodes quotes and \X2\ escapes to UTF-8
-    bool readReal(double& value);         // also accepts an integer and a typed value: NAME(1.5)
+    bool skip();                            // past one parameter, of any form
+    bool readString(std::string& value);    // decodes quotes and \X2\ escapes to UTF-8
+    bool readReal(double& value);           // also accepts an integer and a typed value: NAME(1.5)
     bool readEnum(std::string_view& value); // the text between the dots
-    bool readId(u32& id);                 // the number after #
-    bool enterList();                     // positions at the list's first element
-    bool leaveList();                     // past the list's closing bracket
-    bool inList() const;                  // true unless at the list's closing bracket
+    bool readId(u32& id);                   // the number after #
+    bool enterList();                       // positions at the list's first element
+    bool leaveList();                       // past the list's closing bracket
+    bool inList() const;                    // true unless at the list's closing bracket
 
 private:
     void skipSeparators();

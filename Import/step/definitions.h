@@ -73,4 +73,9 @@ private:
 void writeSlice(const Part21& index, std::span<const u32> faceRecords, u32 context,
                 ClosureWalker& walker, std::string& text);
 
+/// Writes a whole body the same way. OCCT then sees the real solid, with all of its shells, which
+/// can repair faces it cannot mesh alone.
+void writeBodySlice(const Part21& index, u32 body, u32 context, ClosureWalker& walker,
+                    std::string& text);
+
 } // namespace geo::import::step

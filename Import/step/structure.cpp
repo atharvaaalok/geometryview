@@ -696,12 +696,13 @@ private:
             out_.needsWholeFile = true;
             return;
         }
+        const u16 shellIndex = body.shellCount++;
         for (const u32 face : index_.refsOf(shell)) {
-            addFace(face, flipped);
+            addFace(face, flipped, shellIndex);
         }
     }
 
-    void addFace(u32 face, bool flipped) {
+    void addFace(u32 face, bool flipped, u16 shell) {
         if (face == kNoRecord) {
             return;
         }
@@ -709,7 +710,7 @@ private:
         if (kind == Kind::ORIENTED_FACE) {
             const std::span<const u32> refs = index_.refsOf(face);
             if (!refs.empty()) {
-                addFace(refs[0], flipped != isReversed(face));
+                addFace(refs[0], flipped != isReversed(face), shell);
             }
             return;
         }
@@ -717,7 +718,7 @@ private:
             out_.needsWholeFile = true;
             return;
         }
-        out_.faces.push_back({face, styles_.colorOf(face), flipped});
+        out_.faces.push_back({face, styles_.colorOf(face), shell, flipped});
     }
 
     void collectFaces(u32 record, Body& body) {
@@ -732,6 +733,7 @@ private:
             break;
         case Kind::BREP_WITH_VOIDS:
         case Kind::FACETED_BREP_AND_BREP_WITH_VOIDS:
+            body.hasVoids = refs.size() > 1;
             for (usize i = 0; i < refs.size(); ++i) {
                 addShell(refs[i], false, body, i == 0);
             }

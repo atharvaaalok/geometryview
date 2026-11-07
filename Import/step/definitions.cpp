@@ -93,21 +93,51 @@ struct PointBounds {
     bool empty() const { return lo.x > hi.x; }
 };
 
-// Bounds of the vertices among `records`. Curves can bulge beyond their vertices, so this is an
-// estimate, good for framing and for choosing tolerances.
-PointBounds boundsOf(const Part21& index, std::span<const u32> records) {
+// Adds the reach of a circle or round surface, whose vertices alone can be a single point.
+void addCurvedExtent(const Part21& index, u32 record, PointBounds& bounds) {
+    const std::span<const u32> refs = index.refsOf(record);
+    if (refs.empty() || refs[0] == kNoRecord || index.kinds[refs[0]] != Kind::AXIS2_PLACEMENT_3D) {
+        return;
+    }
+    const std::span<const u32> placement = index.refsOf(refs[0]);
+    simd_double3 center;
+    if (placement.empty() || !readPoint(index, placement[0], center)) {
+        return;
+    }
+    ParamCursor cursor(index.text(record));
+    double first = 0.0, second = 0.0;
+    if (!cursor.skip() || !cursor.skip() || !cursor.readReal(first)) {
+        return;
+    }
+    cursor.readReal(second);
+    const Kind kind = index.kinds[record];
+    const double reach = kind == Kind::TOROIDAL_SURFACE ? first + second : std::max(first, second);
+    if (reach > 0.0 && std::isfinite(reach)) {
+        bounds.add(center - reach);
+        bounds.add(center + reach);
+    }
+}
+
+// Bounds of the points that shape `records`. Curves can bulge beyond their vertices, so this is an
+// estimate, good for framing and for choosing tolerances. With `curves`, circles and round surfaces
+// count too, which matters for a body with few vertices, such as a closed sphere.
+PointBounds boundsOf(const Part21& index, std::span<const u32> records, bool curves) {
     PointBounds bounds;
     for (const u32 record : records) {
-        if (index.kinds[record] == Kind::VERTEX_POINT) {
+        const Kind kind = index.kinds[record];
+        if (kind == Kind::VERTEX_POINT) {
             const std::span<const u32> refs = index.refsOf(record);
             simd_double3 point;
             if (!refs.empty() && readPoint(index, refs[0], point)) {
                 bounds.add(point);
             }
+        } else if (curves && (kind == Kind::CIRCLE || kind == Kind::ELLIPSE ||
+                              kind == Kind::SPHERICAL_SURFACE || kind == Kind::TOROIDAL_SURFACE)) {
+            addCurvedExtent(index, record, bounds);
         }
     }
     if (bounds.empty()) {
-        // No vertices, as on a closed sphere: use every point the body mentions.
+        // No vertices at all: use every point the body mentions.
         for (const u32 record : records) {
             simd_double3 point;
             if (readPoint(index, record, point)) {
@@ -240,7 +270,7 @@ Definitions buildDefinitions(const Part21& index, const Structure& structure, us
             const std::span<const FaceUse> faces(structure.faces.data() + body.firstFace,
                                                  body.faceCount);
             hashes[b].hash = hasher.hash(body.record, salt, faces);
-            const PointBounds bounds = boundsOf(index, hasher.lastClosure());
+            const PointBounds bounds = boundsOf(index, hasher.lastClosure(), true);
             if (!bounds.empty()) {
                 for (int axis = 0; axis < 3; ++axis) {
                     hashes[b].lo[axis] = bounds.lo[axis] * unit;
@@ -310,7 +340,7 @@ Definitions buildDefinitions(const Part21& index, const Structure& structure, us
             for (usize f = 0; f < source.size(); ++f) {
                 walker.begin();
                 walker.add(source[f].record);
-                faceBounds[f] = boundsOf(index, walker.visited());
+                faceBounds[f] = boundsOf(index, walker.visited(), false);
                 if (!faceBounds[f].empty()) {
                     whole.add(faceBounds[f].lo);
                     whole.add(faceBounds[f].hi);
@@ -388,6 +418,29 @@ void writeSlice(const Part21& index, std::span<const u32> faceRecords, u32 conte
                    "));\n#{}=SHELL_BASED_SURFACE_MODEL('',(#{}));\n"
                    "#{}=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#{}),#{});\n",
                    shell + 1, shell, shell + 2, shell + 1,
+                   context == kNoRecord ? 0 : index.ids[context]);
+    for (const u32 record : walker.visited()) {
+        text.append(index.text(record));
+        text.push_back('\n');
+    }
+    text.append("ENDSEC;\nEND-ISO-10303-21;\n");
+}
+
+void writeBodySlice(const Part21& index, u32 body, u32 context, ClosureWalker& walker,
+                    std::string& text) {
+    walker.begin();
+    walker.add(body);
+    walker.add(context);
+
+    usize bytes = index.header.size() + 96;
+    for (const u32 record : walker.visited()) {
+        bytes += index.lengths[record] + 1;
+    }
+    text.clear();
+    text.reserve(bytes + 256);
+    text.append(index.header);
+    std::format_to(std::back_inserter(text), "#{}=SHAPE_REPRESENTATION('',(#{}),#{});\n",
+                   u64(index.maxId) + 1, index.ids[body],
                    context == kNoRecord ? 0 : index.ids[context]);
     for (const u32 record : walker.visited()) {
         text.append(index.text(record));

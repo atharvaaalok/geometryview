@@ -40,6 +40,7 @@ struct TreeNode {
 struct FaceUse {
     u32 record = kNoRecord;
     u32 color = kNoColor;
+    u16 shell = 0; // which of the body's shells; shell 0 is the outer one
     bool flipped = false;
 };
 
@@ -50,7 +51,9 @@ struct Body {
     u32 firstFace = 0;
     u32 faceCount = 0;
     u32 color = kNoColor;
+    u16 shellCount = 0;
     bool closed = false;
+    bool hasVoids = false; // shells after the first are cavities
 };
 
 /// A body placed in the assembly.
