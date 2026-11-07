@@ -1,6 +1,6 @@
 # ADR 0005: Start frames just before the commit deadline
 
-Status: accepted. Spike 9 **fails its target at 60 Hz**, and 120 Hz is untested.
+Status: accepted. Spike 9 **fails its target at 60 Hz and at 120 Hz**.
 
 ## Context
 
@@ -60,9 +60,27 @@ is an extrapolation, not a measurement.
 The planned third path, presenting an IOSurface through a `CATransaction`, was not tried. Its evidence
 was one project's unverified numbers, and it would pass through the same compositor.
 
+## Update: 120 Hz, measured 2026-11-07
+
+The built-in display later reported 120 Hz, and the pack fixture ran at 119.3–119.8 fps.
+
+| Setting | Median | p95 |
+|---|---|---|
+| Windowed, `preferredFrameLatency` 1 | 43.9 ms | 44.0 ms |
+| **Fullscreen, `preferredFrameLatency` 1** | **41.6 ms** | **41.6 ms** |
+| Windowed, `preferredFrameLatency` 2 | 45.1 ms | 45.2 ms |
+| Windowed, `preferredFrameLatency` 0.5 | 42.4 ms | 42.8 ms |
+
+Commit deadline to intended present stayed at **33.3 ms** in every case. At 120 Hz that is four
+frames, not two, so the floor is a fixed time rather than a number of frames, and the extrapolation
+above was wrong. Input to frame start fell to 5–8 ms, half a 120 Hz interval, which is the only part
+the refresh rate shortened. Within the frame link's settings the floor did not move. The target stays
+out of reach on this path. Finding what sets the 33.3 ms, such as a compositor queue, needs a
+different present path or instrumentation, and is left open.
+
 ## Consequences
 
-- Re-run this measurement if a display reports 120 Hz.
+- The 120 Hz numbers above replace the extrapolation.
 - Hover uses the same path, so it should behave the same. It was not measured separately. Its state
   updates when the event is processed, it draws on the next frame, and it reaches the display about two
   frames later.
