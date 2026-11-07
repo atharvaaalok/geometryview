@@ -74,6 +74,24 @@
         "CMAKE_BUILD_TYPE": "Release",
         "GEO_WASM_THREADS": "ON"
       }
+    },
+    {
+      "name": "dawn",
+      "inherits": "base",
+      "displayName": "Renderer spike on native Dawn, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GEO_WEBGPU_SPIKE": "ON"
+      }
+    },
+    {
+      "name": "wasm-webgpu",
+      "inherits": "wasm",
+      "displayName": "Renderer spike as WebAssembly, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GEO_WEBGPU_SPIKE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -104,6 +122,20 @@
     {
       "name": "wasm-threads",
       "configurePreset": "wasm-threads"
+    },
+    {
+      "name": "dawn",
+      "configurePreset": "dawn",
+      "targets": [
+        "spike_webgpu"
+      ]
+    },
+    {
+      "name": "wasm-webgpu",
+      "configurePreset": "wasm-webgpu",
+      "targets": [
+        "spike_webgpu"
+      ]
     }
   ],
   "testPresets": [

@@ -1,0 +1,69 @@
+// Serves the renderer spike on this machine only: the page, the WebAssembly build and the cache
+// fixtures, with cross-origin isolation, and saves each run's report.
+//
+// Usage: node Web/spike/serve.mjs [port]
+// Open http://127.0.0.1:<port>/?model=stl10m&label=<where it runs>[&w=2880&h=1800&copies=1]
+
+import { createServer } from "node:http";
+import { createReadStream } from "node:fs";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, "../..");
+const reports = join(root, "Docs/measurements/phase0/renderer");
+const port = Number(process.argv[2] ?? 7342);
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
+                ".wasm": "application/wasm", ".json": "application/json" };
+// What each URL prefix serves.
+const mounts = [
+  ["/build/", join(root, "build/wasm-webgpu/Tools/spikes/webgpu")],
+  ["/fixtures/", join(root, "build/fixtures")],
+  ["/", here],
+];
+
+const server = createServer(async (request, response) => {
+  const headers = {
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cache-Control": "no-store",
+  };
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  if (request.method === "POST" && url.pathname === "/report") {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const report = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const label = String(report.label ?? "unlabelled").replace(/[^\w.-]+/g, "-");
+    await mkdir(reports, { recursive: true });
+    const file = join(reports, `${label}${report.partial ? ".partial" : ""}.json`);
+    await writeFile(file, JSON.stringify(report, null, 2) + "\n");
+    if (!report.partial) {
+      await rm(join(reports, `${label}.partial.json`), { force: true });
+    }
+    console.log(`${report.partial ? "partial" : "report"}: ${file}`);
+    response.writeHead(204, headers).end();
+    return;
+  }
+  const path = url.pathname === "/" ? "/index.html" : url.pathname;
+  const [prefix, directory] = mounts.find(([p]) => path.startsWith(p));
+  const name = path.slice(prefix.length);
+  if (name.includes("..")) {
+    response.writeHead(400, headers).end();
+    return;
+  }
+  const file = join(directory, name);
+  try {
+    const info = await stat(file);
+    response.writeHead(200, { ...headers, "Content-Length": info.size,
+                              "Content-Type": types[extname(name)] ?? "application/octet-stream" });
+    createReadStream(file).pipe(response);
+  } catch {
+    response.writeHead(404, headers).end();
+  }
+});
+
+server.listen(port, "127.0.0.1", () => {
+  console.log(`spike at http://127.0.0.1:${port}/?model=stl10m&label=<where>`);
+});

@@ -3,6 +3,9 @@
 add_executable(probe probe/main.cpp)
 target_include_directories(probe SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
 target_link_libraries(probe PRIVATE import_core geo_warnings)
+if(GEO_WEBGPU_SPIKE)
+    add_subdirectory(spikes/webgpu)
+endif()
 if(GEO_TARGET STREQUAL "wasm")
     # The real file system, through Node, and room for big files.
     target_link_options(probe PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
