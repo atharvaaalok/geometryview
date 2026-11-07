@@ -1036,6 +1036,10 @@ bool importStep(std::span<const u8> file, int outputFd, SegmentListener* listene
         return false;
     }
     stage(stats.workerSeconds);
+    if (stats.triangles == 0 && stats.faces != 0) {
+        error = "None of this file's surfaces could be read.";
+        return false;
+    }
 
     if (!stream.finish(hashContents(file))) {
         error = stream.error();
