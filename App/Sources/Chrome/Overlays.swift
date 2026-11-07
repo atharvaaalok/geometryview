@@ -96,6 +96,8 @@ final class DropZone: NSView {
 final class ShortcutsSheet: NSView {
     var onClose: (() -> Void)?
 
+    private let grid = NSGridView()
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -108,15 +110,10 @@ final class ShortcutsSheet: NSView {
         title.font = Typography.font(Typography.textLarge, .semibold)
         title.textColor = Palette.ink
 
-        let grid = NSGridView()
         grid.rowSpacing = 8
         grid.columnSpacing = 12
-        for (keys, meaning) in Self.entries {
-            let caps = NSStackView(views: keys.map { KeyCap($0) })
-            caps.spacing = 4
-            grid.addRow(with: [caps, Chip.text(meaning)])
-        }
-        grid.column(at: 0).xPlacement = .trailing
+        fillGrid()
+        KeyMap.shared.onChange = { [weak self] in self?.fillGrid() }
 
         let stack = NSStackView(views: [title, grid])
         stack.orientation = .vertical
@@ -144,18 +141,34 @@ final class ShortcutsSheet: NSView {
         onClose?()
     }
 
-    private static let entries: [([String], String)] = [
-        (["Click"], "Select. Shift or ⌘ adds"),
-        (["1", "2", "3"], "Pick faces, bodies or parts"),
-        (["H", "Click"], "Hide what you click"),
-        (["G", "Click"], "Ghost, or bring back a ghost"),
-        (["⇧", "H"], "Show everything"),
-        (["⇧", "G"], "Unghost everything"),
-        (["I"], "Isolate the selection"),
-        (["⌘", "Z"], "Undo, with ⇧ to redo"),
-        (["F"], "Fit to view"),
-        (["P"], "Orthographic or perspective"),
-        (["Esc"], "Clear the selection"),
-        (["?"], "This sheet"),
-    ]
+    /// The rows, with keys read from the key map, so a rebound key shows as it is now.
+    private func fillGrid() {
+        while grid.numberOfRows > 0 {
+            grid.removeRow(at: 0)
+        }
+        let keys = KeyMap.shared
+        let cap = { (action: KeyAction) in keys.chord(for: action)?.label ?? "—" }
+        let entries: [([String], String)] = [
+            (["Click"], "Select. Shift or ⌘ adds"),
+            ([cap(.faceMode), cap(.bodyMode), cap(.partMode)], "Pick faces, bodies or parts"),
+            ([cap(.holdHide), "Click"], "Hide what you click"),
+            ([cap(.holdGhost), "Click"], "Ghost, or bring back a ghost"),
+            ([cap(.showAll)], "Show everything"),
+            ([cap(.unghostAll)], "Unghost everything"),
+            ([cap(.isolate)], "Isolate the selection"),
+            (["⌘", "Z"], "Undo, with ⇧ to redo"),
+            ([cap(.fit)], "Fit to view"),
+            ([cap(.toggleProjection)], "Orthographic or perspective"),
+            ([cap(.seeThrough)], "See through the housing"),
+            ([cap(.section)], "Section across X"),
+            ([cap(.clearSelection)], "Clear the selection"),
+            ([cap(.shortcuts)], "This sheet"),
+        ]
+        for (keyLabels, meaning) in entries {
+            let caps = NSStackView(views: keyLabels.map { KeyCap($0) })
+            caps.spacing = 4
+            grid.addRow(with: [caps, Chip.text(meaning)])
+        }
+        grid.column(at: 0).xPlacement = .trailing
+    }
 }

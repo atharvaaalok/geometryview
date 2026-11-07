@@ -57,7 +57,11 @@ choices are in the View menu, and the look is remembered.
 The toolbar at the bottom switches the selection mode and holds the hide and ghost tools, and the
 card on the right shows what is selected, with buttons to hide, ghost, isolate or fit to it.
 
-The Structure card on the left lists each open file's assembly tree. Click a row to select it, hover
+The left card switches between Library and Structure. Connect Folder (⌥⌘O) adds folders to the
+library, which lists their STEP and STL files and remembers them across launches. Open files that
+change on disk reload. Settings (⌘,) rebinds every key and what each mouse button drags.
+
+The Structure card lists each open file's assembly tree. Click a row to select it, hover
 a row to highlight it, and type in the search field to find parts by name. ⇧⌘O adds a file to what
 is shown, and ⌘-dropping files does the same.
 

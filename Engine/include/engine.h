@@ -29,6 +29,40 @@ typedef enum GeoPointerButton {
     GeoButtonMiddle = 3,
 } GeoPointerButton;
 
+/// Modifier bits in pointer events and mouse bindings.
+enum {
+    GeoModifierShift = 1 << 0,
+    GeoModifierControl = 1 << 1,
+    GeoModifierOption = 1 << 2,
+    GeoModifierCommand = 1 << 3,
+    GeoModifierSpace = 1 << 4, // the space bar held
+};
+
+/// What a drag with a mouse button does.
+typedef enum GeoGesture {
+    GeoGestureNone = 0,
+    GeoGestureRotate = 1,
+    GeoGesturePan = 2,
+    GeoGestureDolly = 3,
+} GeoGesture;
+
+/// One row of the mouse mapping. The most specific row that matches a press wins.
+typedef struct GeoMouseBinding {
+    uint32_t button; // a GeoPointerButton
+    uint32_t modifiers;
+    GeoGesture gesture;
+} GeoMouseBinding;
+
+#define GEO_MAX_MOUSE_BINDINGS 16
+
+typedef struct GeoMouseSettings {
+    GeoMouseBinding bindings[GEO_MAX_MOUSE_BINDINGS];
+    uint32_t binding_count;
+    bool zoom_toward_pointer; // otherwise toward the centre of the view
+    bool invert_wheel;
+    float zoom_speed; // 1 is the default
+} GeoMouseSettings;
+
 /// Pointer input in drawable pixels, with the origin at the top left of the viewport.
 typedef struct GeoPointerEvent {
     GeoPointerKind kind;
@@ -203,6 +237,12 @@ void geo_engine_set_tool(GeoEngine* engine, GeoTool tool);
 
 /// Changes how the model is drawn.
 void geo_engine_set_look(GeoEngine* engine, const GeoLook* look);
+
+/// The mouse mapping a new engine starts with: left rotates, middle pans, right dollies, and Shift
+/// or Space with left pans; the wheel zooms toward the pointer.
+GeoMouseSettings geo_default_mouse_settings(void);
+
+void geo_engine_set_mouse(GeoEngine* engine, const GeoMouseSettings* settings);
 
 /// Section cuts along the model's axes. Each cut removes everything past a plane across one axis.
 typedef struct GeoSection {

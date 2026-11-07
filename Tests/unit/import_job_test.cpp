@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -109,11 +110,17 @@ TEST_CASE("a second import of the same file reuses the cache") {
     const std::string source = workspace.write("part.stl", kTriangle);
     const ImportOutcome first = importFile(source, workspace.paths);
     REQUIRE(first.ok);
-    const auto written = fs::last_write_time(first.blobPath);
+    struct stat written{};
+    REQUIRE(stat(first.blobPath.c_str(), &written) == 0);
     const ImportOutcome second = importFile(source, workspace.paths);
     REQUIRE(second.ok);
+    CHECK(second.fromCache);
     CHECK(second.blobPath == first.blobPath);
-    CHECK(fs::last_write_time(second.blobPath) == written);
+    // The same file, not rewritten; a hit only touches it, to record the use for eviction.
+    struct stat reused{};
+    REQUIRE(stat(second.blobPath.c_str(), &reused) == 0);
+    CHECK(reused.st_ino == written.st_ino);
+    CHECK(reused.st_size == written.st_size);
 }
 
 TEST_CASE("editing a file gives it a new cache entry") {

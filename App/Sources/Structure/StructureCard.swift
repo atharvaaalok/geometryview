@@ -9,7 +9,12 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
 {
     private let engine: EngineHandle
     let tree = TreeRows()
-    private let heading = NSTextField(labelWithString: "Structure")
+    /// Switches the left card between the library and this tree.
+    let switcher = SegmentedPill(
+        ["Library", "Structure"],
+        selected: 1,
+        help: "Show files or parts"
+    )
     private let searchField = NSSearchField()
     private let matchLabel = NSTextField(labelWithString: "")
     private let table = TreeTableView()
@@ -23,9 +28,6 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
     init(engine: EngineHandle) {
         self.engine = engine
         super.init(frame: .zero)
-
-        heading.font = Typography.font(Typography.textLarge, .semibold)
-        heading.textColor = Palette.ink
 
         searchField.placeholderString = "Search parts"
         searchField.font = Typography.font(Typography.textMedium)
@@ -59,19 +61,19 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
 
-        for view in [heading, searchField, matchLabel, scroll] as [NSView] {
+        for view in [switcher, searchField, matchLabel, scroll] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let inset = Metrics.gap
         NSLayoutConstraint.activate([
-            heading.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-            heading.topAnchor.constraint(equalTo: topAnchor, constant: inset - 2),
+            switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
             matchLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
-            matchLabel.firstBaselineAnchor.constraint(equalTo: heading.firstBaselineAnchor),
+            matchLabel.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
             searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
-            searchField.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 10),
+            searchField.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),

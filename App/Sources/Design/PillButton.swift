@@ -20,6 +20,15 @@ final class PillButton: NSView {
     private let style: Style
     private let background = CALayer()
     private let label = NSTextField(labelWithString: "")
+
+    /// The button's text, for buttons made with one.
+    var title: String {
+        get { label.stringValue }
+        set {
+            label.stringValue = newValue
+            invalidateIntrinsicContentSize()
+        }
+    }
     private let icon = NSImageView()
     private var hovering = false
     private var pressing = false

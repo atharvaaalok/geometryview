@@ -145,11 +145,11 @@ final class ViewportView: NSView {
     private func modifiers(of event: NSEvent) -> UInt32 {
         let flags = event.modifierFlags
         var result: UInt32 = 0
-        if flags.contains(.shift) { result |= 1 << 0 }
-        if flags.contains(.control) { result |= 1 << 1 }
-        if flags.contains(.option) { result |= 1 << 2 }
-        if flags.contains(.command) { result |= 1 << 3 }
-        if spaceHeld { result |= 1 << 4 }
+        if flags.contains(.shift) { result |= UInt32(GeoModifierShift) }
+        if flags.contains(.control) { result |= UInt32(GeoModifierControl) }
+        if flags.contains(.option) { result |= UInt32(GeoModifierOption) }
+        if flags.contains(.command) { result |= UInt32(GeoModifierCommand) }
+        if spaceHeld { result |= UInt32(GeoModifierSpace) }
         return result
     }
 
@@ -213,22 +213,21 @@ final class ViewportView: NSView {
             }
             return
         }
-        let modifiers = event.modifierFlags.intersection(KeyBindings.relevant)
-        if modifiers.isEmpty, let held = KeyBindings.held.first(where: { $0.key == key }) {
-            heldKeyCode = event.keyCode
-            engine.setTool(held.tool)
-            onToolChange?(held.tool)
-            return
-        }
         guard
-            let binding = KeyBindings.pressed.first(where: {
-                $0.key == key && $0.modifiers == modifiers
-            })
+            let action = KeyMap.shared.action(
+                for: KeyChord(key: key, modifiers: event.modifierFlags)
+            )
         else {
             super.keyDown(with: event)
             return
         }
-        onKeyCommand?(binding.command)
+        if let tool = action.heldTool {
+            heldKeyCode = event.keyCode
+            engine.setTool(tool)
+            onToolChange?(tool)
+        } else if let command = action.command {
+            onKeyCommand?(command)
+        }
     }
 
     override func keyUp(with event: NSEvent) {

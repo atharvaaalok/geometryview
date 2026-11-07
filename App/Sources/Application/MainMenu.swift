@@ -175,6 +175,13 @@ enum MainMenu {
         )
         add.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(add)
+        let connect = NSMenuItem(
+            title: "Connect Folder…",
+            action: #selector(MainWindow.connectFolder(_:)),
+            keyEquivalent: "o"
+        )
+        connect.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(connect)
         let item = NSMenuItem()
         item.submenu = menu
         return item
@@ -186,6 +193,12 @@ enum MainMenu {
             withTitle: "About Geometry",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
+        )
+        menu.addItem(.separator())
+        menu.addItem(
+            withTitle: "Settings…",
+            action: #selector(AppDelegate.showSettings(_:)),
+            keyEquivalent: ","
         )
         menu.addItem(.separator())
         menu.addItem(

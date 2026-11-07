@@ -20,6 +20,10 @@ final class MainWindow: NSWindow {
     private let dropZone = DropZone()
     private let shortcuts = ShortcutsSheet()
     private let lookCard = LookCard()
+    private let library = LibraryStore()
+    private lazy var libraryCard = LibraryCard(store: library)
+    private lazy var watcher = DirectoryWatcher { [weak self] paths in self?.filesChanged(paths) }
+    private var openURLs: [URL] = []
     private let sectionCard = SectionCard()
     private var look = Look.saved()
     private var exercise: Exercise?
@@ -72,7 +76,8 @@ final class MainWindow: NSWindow {
         let root = NSView()
         root.wantsLayer = true
         let views: [NSView] = [
-            viewport, masthead, structure, selection, toolBar, lookCard, sectionCard, holdHint,
+            viewport, masthead, structure, libraryCard, selection, toolBar, lookCard, sectionCard,
+            holdHint,
             hoverChip,
             status, dropZone, shortcuts,
         ]
@@ -102,6 +107,10 @@ final class MainWindow: NSWindow {
                 constant: -Self.cardBottom
             ),
             structure.widthAnchor.constraint(equalToConstant: Self.cardWidth),
+            libraryCard.leadingAnchor.constraint(equalTo: structure.leadingAnchor),
+            libraryCard.topAnchor.constraint(equalTo: structure.topAnchor),
+            libraryCard.bottomAnchor.constraint(equalTo: structure.bottomAnchor),
+            libraryCard.widthAnchor.constraint(equalTo: structure.widthAnchor),
 
             selection.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -Self.edge),
             selection.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.selectionTop),
@@ -164,6 +173,20 @@ final class MainWindow: NSWindow {
         toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
         toolBar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
+        structure.switcher.onChange = { [weak self] index in self?.showLibrary(index == 0) }
+        libraryCard.switcher.onChange = { [weak self] index in self?.showLibrary(index == 0) }
+        libraryCard.onOpen = { [weak self] url, adding in
+            adding ? self?.add(url) : self?.open(url)
+        }
+        libraryCard.onConnect = { [weak self] in self?.connectFolder(nil) }
+        library.onChange = { [weak self] in
+            guard let self else {
+                return
+            }
+            libraryCard.reload()
+            watchFiles()
+        }
+        watchFiles()
         toolBar.onShowSection = { [weak self] in self?.toggleSectionCard() }
         sectionCard.onChange = { [weak self] section in self?.engine.setSection(section) }
         lookCard.onChange = { [weak self] look in self?.apply(look) }
@@ -197,6 +220,7 @@ final class MainWindow: NSWindow {
             accessed.stopAccessingSecurityScopedResource()
         }
         accessedURLs = []
+        openURLs = []
         names = []
         progress = [:]
         structure.reset()
@@ -216,9 +240,10 @@ final class MainWindow: NSWindow {
             accessedURLs.append(url)
         }
         names.append(url.lastPathComponent)
+        openURLs.append(url)
+        watchFiles()
         structure.addDocument(named: url.lastPathComponent)
-        structure.isHidden = false
-        updateInsets()
+        showLibrary(false)
         status.isHidden = true
         if replacing {
             engine.open(path: url.path)
@@ -309,6 +334,65 @@ final class MainWindow: NSWindow {
     @objc func toggleLookCard(_ sender: Any?) {
         lookCard.isHidden.toggle()
         sectionCard.isHidden = true
+    }
+
+    // MARK: Library
+
+    /// Shows the library, or the structure of what is open, in the left card.
+    private func showLibrary(_ show: Bool) {
+        libraryCard.isHidden = !show
+        structure.isHidden = show
+        libraryCard.switcher.selected = 0
+        structure.switcher.selected = 1
+        updateInsets()
+    }
+
+    /// Watches the connected folders, and the open files wherever they are, so an edit reloads.
+    private func watchFiles() {
+        watcher.watch(library.roots.map(\.url.path) + openURLs.map(\.path))
+    }
+
+    @objc func connectFolder(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Connect"
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard response == .OK, let self else {
+                return
+            }
+            for url in panel.urls {
+                library.connect(url)
+            }
+            showLibrary(true)
+        }
+    }
+
+    /// Lists changed folders again, and reloads an open file that changed on disk.
+    private func filesChanged(_ paths: [String]) {
+        var folders = Set<String>()
+        var reload = false
+        for path in paths {
+            folders.insert((path as NSString).deletingLastPathComponent)
+            folders.insert(path)
+            reload = reload || openURLs.contains { $0.path == path }
+        }
+        for folder in folders {
+            for root in library.roots {
+                if let node = root.find(folder), node.isDirectory {
+                    libraryCard.refresh(node)
+                }
+            }
+        }
+        if reload {
+            // An edited file has a new cache key, so opening it again imports what changed.
+            let urls = openURLs
+            if let first = urls.first {
+                open(first)
+                urls.dropFirst().forEach { add($0) }
+            }
+        }
     }
 
     // MARK: Section
@@ -511,7 +595,7 @@ final class MainWindow: NSWindow {
     // The tree card covers the left, the masthead the top, and the toolbar the bottom. Framing
     // keeps the model in the rest.
     private func updateInsets() {
-        let left = structure.isHidden ? 0 : Self.edge + Self.cardWidth
+        let left = structure.isHidden && libraryCard.isHidden ? 0 : Self.edge + Self.cardWidth
         engine.setViewInsets(
             left: left,
             top: Self.cardTop - 16,
@@ -523,6 +607,8 @@ final class MainWindow: NSWindow {
     private func showEmpty() {
         status.showInvitation()
         structure.isHidden = true
+        libraryCard.isHidden = library.roots.isEmpty
+        updateInsets()
         toolBar.update(hasSelection: false, hasModel: false)
     }
 
