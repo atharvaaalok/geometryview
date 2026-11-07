@@ -1,5 +1,6 @@
 add_executable(gcli gcli/main.cpp)
-target_link_libraries(gcli PRIVATE engine geo_warnings)
+target_include_directories(gcli PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
+target_link_libraries(gcli PRIVATE engine import_core geo_warnings)
 
 # Spikes are small reproducible experiments. Their results are recorded in Docs/adr.
 add_executable(spike_geometry spikes/geometry_path.mm)
