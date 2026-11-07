@@ -175,6 +175,13 @@ enum MainMenu {
         )
         add.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(add)
+        let connect = NSMenuItem(
+            title: "Connect Folder…",
+            action: #selector(MainWindow.connectFolder(_:)),
+            keyEquivalent: "o"
+        )
+        connect.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(connect)
         let item = NSMenuItem()
         item.submenu = menu
         return item
