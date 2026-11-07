@@ -929,8 +929,9 @@ struct GeoEngine {
         render::ViewState view = makeFrameView();
         render::Overlay overlay;
         if (scene.hasGeometry()) {
-            overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
-                                          pixelsPerPoint, renderer->glyphAdvance(), cubeHover);
+            overlay =
+                render::makeOverlay(camera, viewport, view.uniforms.viewRotation, pixelsPerPoint,
+                                    renderer->glyphAdvance(), cubeHover, overlayLayout());
         }
         const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);
         const std::string temporary = path + ".partial";
@@ -966,6 +967,14 @@ struct GeoEngine {
         std::lock_guard lock(summaryMutex);
         summary = {occurrences, faces, focus ? focus->document : 0,
                    focus ? focus->node : GEO_NO_NODE, u32(interaction.mode())};
+    }
+
+    render::OverlayLayout overlayLayout() const {
+        render::OverlayLayout layout;
+        if (look.settings().style == render::StyleName::Blueprint) {
+            layout.ink = render::kOverlayInkOnDark;
+        }
+        return layout;
     }
 
     render::ViewState makeFrameView() const {
@@ -1029,7 +1038,8 @@ struct GeoEngine {
             render::Overlay overlay;
             if (scene.hasGeometry()) {
                 overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
-                                              pixelsPerPoint, renderer->glyphAdvance(), cubeHover);
+                                              pixelsPerPoint, renderer->glyphAdvance(), cubeHover,
+                                              overlayLayout());
             }
             const u64 allocationsBefore = engine::allocationCount();
             renderer->render(tick.drawable, view, &overlay);

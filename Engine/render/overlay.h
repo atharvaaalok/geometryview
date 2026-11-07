@@ -28,7 +28,11 @@ struct OverlayLayout {
     float scaleRight = 24;
     float scaleBottom = 96;      // above the toolbar
     float scaleTargetWidth = 96; // the bar is the largest round length up to this
+    simd_float4 ink = {0x23 / 255.0f, 0x1E / 255.0f, 0x16 / 255.0f, 1.0f}; // the scale bar's
 };
+
+/// The overlay drawn straight on the sheet turns light on Blueprint's dark blue.
+inline constexpr simd_float4 kOverlayInkOnDark = {0xEE / 255.0f, 0xF4 / 255.0f, 1.0f, 1.0f};
 
 /// Builds the overlay for a frame. `glyphAdvance` is a glyph's width in atlas pixels, and
 /// `pixelsPerPoint` is the display's scale. `cubeHover` is a face index plus one, or zero.
