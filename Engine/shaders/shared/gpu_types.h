@@ -25,8 +25,24 @@ enum SectionLimits : unsigned {
 
 // The body tag's top bit, set on section caps, so outlines can tell a cut face from its part.
 enum TagBits : unsigned {
-    kTagCap = 0x80,
+    kTagCap = 0x80,   // in red: a section cap
+    kTagShell = 0x80, // in green: the see-through shell, rather than a ghost
     kTagValues = 127, // tags run from 1 to this
+};
+
+// An occurrence's look index has its top bit set when the occurrence is part of the shell that
+// see-through fades.
+enum LookBits : uint32_t {
+    kLookShell = 0x8000,
+    kLookIndex = 0x7FFF,
+};
+
+// The see-through layers, drawn in turn by the surface functions.
+enum ShellLayer : uint32_t {
+    kShellNone = 0,  // opaque surfaces, leaving out the shell while it is faded
+    kShellBack = 1,  // the shell's far walls, held behind everything
+    kShellDepth = 2, // the shell's nearest front faces, into depth only
+    kShellFront = 3, // those faces again, blended once
 };
 
 enum BufferIndex : unsigned {
@@ -258,4 +274,6 @@ struct FrameUniforms {
     // World planes: where dot(xyz, p) + w > 0 is cut away.
     simd_float4 sectionPlanes[kMaxSectionPlanes];
     uint32_t sectionPlaneCount;
+    float seeThrough;       // k: 0 solid, 1 fully see-through
+    uint32_t excludeShells; // classifying: leave out parts already found to be shell
 };

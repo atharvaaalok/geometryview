@@ -369,3 +369,42 @@ TEST_CASE("the view cube is drawn over the model and can be picked") {
         CHECK(hit->id < kCubeIdBase + 6);
     }
 }
+
+TEST_CASE("the see-through shell blends once, even where its faces coincide") {
+    @autoreleasepool {
+        // The same box twice in one body: every front face has a twin at exactly its depth.
+        std::vector<float> doubled = box();
+        const std::vector<float> again = box();
+        doubled.insert(doubled.end(), again.begin(), again.end());
+
+        const std::array<u32, 3> palette = {0xFF29B8F4u, 0xFF1F9CD4u, 0xFF146D9Au};
+        const std::array<u16, 1> shell = {u16(kLookShell)};
+        const auto seeThrough = [&](Stage& stage) {
+            stage.renderer->syncLooks(shell, palette);
+            render::ViewState view = stage.view();
+            view.uniforms.seeThrough = 1.0f;
+            return stage.renderer->renderOffscreen(view);
+        };
+        // Edges are left out: the doubled mesh's sides pair differently, which is not what this
+        // checks.
+        setenv("GEOMETRY_NO_EDGES", "1", 1);
+        Stage single(box());
+        Stage twin(doubled);
+        unsetenv("GEOMETRY_NO_EDGES");
+        const std::vector<u8> once = seeThrough(single);
+        const std::vector<u8> twice = seeThrough(twin);
+        usize differing = 0, covered = 0;
+        for (u32 y = 0; y < kHeight; y += 4) {
+            for (u32 x = 0; x < kWidth; x += 4) {
+                const auto a = single.pixel(once, int(x), int(y));
+                const auto b = twin.pixel(twice, int(x), int(y));
+                covered += single.renderer->readPixel(int(x), int(y), single.view().depth) ? 1 : 0;
+                for (usize c = 0; c < 3; ++c) {
+                    differing += std::abs(int(a[c]) - int(b[c])) > 2 ? 1 : 0;
+                }
+            }
+        }
+        CHECK(covered > 100);
+        CHECK(differing == 0);
+    }
+}

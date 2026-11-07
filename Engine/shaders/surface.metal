@@ -4,6 +4,7 @@
 // this path, and varyings stay small. See Docs/PLAN.md.
 #include "geometry.h"
 #include "shared/gpu_types.h"
+#include "sheet.h"
 #include <metal_stdlib>
 using namespace metal;
 
@@ -16,8 +17,17 @@ constant bool kShadowPass [[function_constant(3)]];
 // Section planes are on: geometry is clipped, and back faces seen through a cut are caps.
 constant bool kSection [[function_constant(4)]];
 
+// Classifying the shell: ids name occurrences rather than faces, and the peel pass keeps only the
+// nearest surface of another part behind the one in front.
+constant bool kOccurrenceIds [[function_constant(5)]];
+constant bool kPeel [[function_constant(6)]];
+// Which see-through layer this is. See ShellLayer.
+constant uint kShellLayer [[function_constant(7)]];
+
 // Set in a vertex's flags when its definition is not closed, so a cut through it has no cap.
 constant uint kFlagOpen = 0x80;
+// Set when the occurrence is part of the see-through shell.
+constant uint kFlagShell = 0x08;
 
 // Where a point's shadow lands on the ground.
 static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
@@ -163,7 +173,11 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     // Neighbouring bodies have different tags, unless their indices differ by a multiple of 127.
     const uint tag = 1 + occurrenceIndex % kTagValues;
     const uint open = (definition.flags & kDefinitionOpen) != 0 ? kFlagOpen : 0;
-    out.flags = flags | open | tag << 8 | look << 16;
+    const bool shell = (look & kLookShell) != 0;
+    out.flags = flags | open | (shell ? kFlagShell : 0) | tag << 8 | (look & kLookIndex) << 16;
+    if (kOccurrenceIds) {
+        out.id = occurrenceIndex + 1;
+    }
     if (kSection) {
         for (uint k = 0; k < kMaxSectionPlanes; ++k) {
             const float4 plane = frame.sectionPlanes[k];
@@ -173,7 +187,17 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     // Faces never share vertices, so moving all of a face's vertices to one point outside the view
     // removes exactly that face, with no discard and no per-primitive data.
     const bool ghost = (flags & kStateGhost) != 0;
-    if ((flags & kStateHidden) != 0 || ghost != kGhostPass) {
+    // While see-through fades the shell, opaque passes leave it out and the shell layers draw it.
+    const bool fading = frame.seeThrough > 0.0;
+    bool dropped = (flags & kStateHidden) != 0 || ghost != kGhostPass;
+    if (kOccurrenceIds) {
+        dropped = dropped || (shell && frame.excludeShells != 0);
+    } else if (kShellLayer == kShellNone) {
+        dropped = dropped || (shell && fading && !kGhostPass && !kShadowPass);
+    } else {
+        dropped = dropped || !shell || !fading;
+    }
+    if (dropped) {
         out.position = float4(0.0, 0.0, 2.0, 1.0);
     } else if (kShadowPass) {
         // Held at mid depth, since the flattened model can reach outside the depth range.
@@ -382,8 +406,20 @@ fragment SurfaceOutput surfaceFragment(SurfaceFragmentIn in [[stage_in]],
                                        bool frontFacing [[front_facing]],
                                        constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                                        constant StyleUniforms& style [[buffer(kBufferStyle)]],
-                                       const device uint* palette [[buffer(kBufferPalette)]]) {
-    const uint flags = in.flags & 0x7Fu;
+                                       const device uint* palette [[buffer(kBufferPalette)]],
+                                       texture2d<uint> frontIds
+                                       [[texture(kTexturePickIds), function_constant(kPeel)]],
+                                       texture2d<float> frontDepths
+                                       [[texture(kTexturePickDepths), function_constant(kPeel)]]) {
+    if (kPeel) {
+        // Only what lies behind the front surface, and belongs to another part, is kept.
+        const uint2 p = uint2(in.position.xy);
+        const float front = frontDepths.read(p).r;
+        if (frontIds.read(p).r == in.id || in.position.z >= front - (1e-5 * front + 1e-7)) {
+            discard_fragment();
+        }
+    }
+    const uint flags = in.flags & 0x77u; // state, without the shell and open bits
     uint tag = (in.flags >> 8) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.
     const float hatch = kSection ? capHatch(in.position.xy, tag, frame, style) : 0.0;
@@ -421,6 +457,20 @@ fragment SurfaceOutput surfaceFragment(SurfaceFragmentIn in [[stage_in]],
     }
 
     const bool hovered = in.id >= frame.hoverFirst && in.id < frame.hoverEnd;
+    if (kShellLayer == kShellBack) {
+        // The shell's far walls lie under everything, over the sheet they are mixed into.
+        const float3 wall = mix(color, style.sheetTop, 0.55);
+        return {float4(mix(sheetColor(in.position.xy, frame, style), wall, 0.5 * frame.seeThrough),
+                       1.0),
+                in.id, in.position.z, uint2(0)};
+    }
+    if (kShellLayer == kShellFront) {
+        if (hovered) {
+            color = mix(color, style.hover, style.hoverAmount * (selected ? 0.5 : 1.0));
+        }
+        return {float4(color, 1.0 - 0.8 * frame.seeThrough), in.id, in.position.z,
+                uint2(0, kTagShell | tag)};
+    }
     if (kGhostPass) {
         // A faint skin over what lies behind, or none at all for a ghost drawn as lines only.
         // Hovered with the ghost tool held, it shows enough to be clicked back.
@@ -466,6 +516,7 @@ kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile
                         texture2d<float, access::write> depths [[texture(kTexturePickDepths)]],
                         texture2d<uint, access::write> tags [[texture(kTextureTags)]],
                         constant StyleUniforms& style [[buffer(kBufferStyle)]],
+                        constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                         ushort2 pixel [[thread_position_in_threadgroup]],
                         ushort2 tileIndex [[threadgroup_position_in_grid]]) {
     const half ink = half(style.inkAlpha);
@@ -473,7 +524,9 @@ kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile
     for (ushort s = 0; s < tile.get_num_samples(); ++s) {
         ResolveTile t = tile.read(pixel, s, imageblock_data_rate::sample);
         half solid = 1.0h - (1.0h - t.ink.r * ink) * (1.0h - t.ink.b);
-        if (t.tags.g != 0) {
+        if ((t.tags.g & kTagShell) != 0) {
+            solid *= half(0.8 * frame.seeThrough); // what shows through the faded shell
+        } else if (t.tags.g != 0) {
             solid *= 1.0h - skin;
         }
         const half ghost = t.ink.g * half(style.ghostLineAlpha) * ink;

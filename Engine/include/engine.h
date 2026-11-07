@@ -100,6 +100,7 @@ typedef enum GeoAction {
     GeoActionViewBottom = 15,
     GeoActionViewIso = 16,
     GeoActionFitSelection = 17,
+    GeoActionToggleSeeThrough = 18, // fade the outer shell to see the mechanism inside
 } GeoAction;
 
 /// What a click picks: one face, a whole body, or everything in its part.

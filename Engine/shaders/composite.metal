@@ -70,6 +70,8 @@ fragment float4 compositeFragment(float4 position [[position]],
                                              distance));
             }
             if (n.g != c.g) {
+                // The shell's outline is stronger than a ghost's, at the shell's own opacity, but
+                // never weaker than 0.6 k.
                 const bool background = c.g == 0 || n.g == 0;
                 ghost =
                     max(ghost, lineCover(background ? style.silhouette : style.partLine, distance));
@@ -102,12 +104,17 @@ fragment float4 compositeFragment(float4 position [[position]],
         }
     }
 
-    // A ghost in front dims the outlines behind it, as it dims everything else.
+    // A ghost or the faded shell in front dims the outlines behind it, as it dims everything else.
+    const bool shellInFront = (c.g & kTagShell) != 0;
+    const float layerAlpha = shellInFront ? 1.0 - 0.8 * frame.seeThrough : style.ghostAlpha;
     if (c.g != 0) {
-        solid *= 1.0 - style.ghostAlpha;
+        solid *= 1.0 - layerAlpha;
     }
+    const float layerInk = shellInFront || (c.g == 0 && ghost > 0.0 && frame.seeThrough > 0.0)
+                               ? max(1.0 - 0.8 * frame.seeThrough, 0.6 * frame.seeThrough)
+                               : style.ghostInk;
     const float ink =
-        1.0 - (1.0 - solid * style.inkAlpha) * (1.0 - ghost * style.ghostInk * style.inkAlpha);
+        1.0 - (1.0 - solid * style.inkAlpha) * (1.0 - ghost * layerInk * style.inkAlpha);
 
     // Ambient occlusion, blurred over the half-resolution neighbours on the same surface. A ghost
     // in front dims it.
@@ -131,7 +138,7 @@ fragment float4 compositeFragment(float4 position [[position]],
         }
         shade = mix(1.0, sum / total, style.ao);
         if (c.g != 0) {
-            shade = mix(shade, 1.0, style.ghostAlpha);
+            shade = mix(shade, 1.0, layerAlpha);
         }
     }
 

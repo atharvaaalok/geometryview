@@ -19,8 +19,19 @@ class LookState {
 public:
     void set(const render::LookSettings& settings);
     void setScale(float pixelsPerPoint);
-    /// Occurrences were added or removed, so every body's look must be decided again.
-    void sceneChanged() { looksDirty_ = true; }
+    /// Occurrences were added or removed, so every body's look must be decided again, and which
+    /// are shell.
+    void sceneChanged() {
+        looksDirty_ = true;
+        shells_.clear();
+    }
+
+    /// Marks which occurrences are the see-through shell, one flag each in global order.
+    void setShells(std::vector<u8> shells) {
+        shells_ = std::move(shells);
+        paletteDirty_ = true;
+    }
+    bool hasShells() const { return !shells_.empty(); }
 
     /// Uploads whatever changed since the last call, which is nothing on most frames.
     void apply(gpu::Renderer& renderer, const scene::Scene& scene);
@@ -30,6 +41,7 @@ public:
 private:
     render::LookSettings settings_;
     render::LookAssignment looks_;
+    std::vector<u8> shells_;
     float pixelsPerPoint_ = 2.0f;
     bool looksDirty_ = true;
     bool paletteDirty_ = true;

@@ -21,6 +21,12 @@
 
 namespace geo::gpu {
 
+/// For classifying the shell: per pixel of a square view, the nearest occurrence and the nearest
+/// other occurrence behind it, as global index plus one, or zero for none.
+struct OccurrenceIds {
+    std::vector<u32> front, behind;
+};
+
 /// The rendered surface at one pixel.
 struct PixelHit {
     u32 id;
@@ -48,6 +54,9 @@ public:
 
     /// Sets each occurrence's look, in global order, and the palette: three texels per look.
     void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette);
+
+    /// Renders the occurrence ids of a square view, `size` pixels wide, and waits for them.
+    OccurrenceIds renderOccurrenceIds(const render::ViewState& view, u32 size);
 
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);

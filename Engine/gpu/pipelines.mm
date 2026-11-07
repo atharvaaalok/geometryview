@@ -108,19 +108,51 @@ public:
 
     // One function set serves every surface pass. Function constants choose the pass and the
     // lighting, so each pipeline is specialised and carries no branches for the others.
-    MTLFunctionConstantValues* surfaceConstants(bool ghost, bool physical, bool shadow,
-                                                bool section) {
+    struct SurfaceKind {
+        bool ghost = false;
+        bool physical = false;
+        bool shadow = false;
+        bool section = false;
+        bool occurrenceIds = false;
+        bool peel = false;
+        uint32_t shellLayer = kShellNone;
+    };
+
+    MTLFunctionConstantValues* surfaceConstants(SurfaceKind kind) {
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
-        [constants setConstantValue:&ghost type:MTLDataTypeBool atIndex:kConstantGhostPass];
-        [constants setConstantValue:&physical type:MTLDataTypeBool atIndex:kConstantPhysical];
-        [constants setConstantValue:&shadow type:MTLDataTypeBool atIndex:kConstantShadowPass];
-        [constants setConstantValue:&section type:MTLDataTypeBool atIndex:kConstantSection];
+        [constants setConstantValue:&kind.ghost type:MTLDataTypeBool atIndex:kConstantGhostPass];
+        [constants setConstantValue:&kind.physical type:MTLDataTypeBool atIndex:kConstantPhysical];
+        [constants setConstantValue:&kind.shadow type:MTLDataTypeBool atIndex:kConstantShadowPass];
+        [constants setConstantValue:&kind.section type:MTLDataTypeBool atIndex:kConstantSection];
+        [constants setConstantValue:&kind.occurrenceIds
+                               type:MTLDataTypeBool
+                            atIndex:kConstantOccurrenceIds];
+        [constants setConstantValue:&kind.peel type:MTLDataTypeBool atIndex:kConstantPeel];
+        [constants setConstantValue:&kind.shellLayer
+                               type:MTLDataTypeUInt
+                            atIndex:kConstantShellLayer];
         return constants;
+    }
+
+    // Any surface pass in the main pass, or at `samples` for the classification views.
+    id<MTLRenderPipelineState> surfaceKind(SurfaceKind kind, Writes writes,
+                                           NSUInteger samples = kSampleCount) {
+        MTLFunctionConstantValues* constants = surfaceConstants(kind);
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
+        mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
+        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment", constants);
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = samples;
+        describeMainPass(mesh.colorAttachments, writes);
+        return build(mesh, "Could not create a surface pipeline");
     }
 
     // The shadow mask: surfaces flattened onto the ground, coverage only, at half resolution.
     id<MTLRenderPipelineState> shadow(bool section) {
-        MTLFunctionConstantValues* constants = surfaceConstants(false, false, true, section);
+        MTLFunctionConstantValues* constants =
+            surfaceConstants({.shadow = true, .section = section});
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
         mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
@@ -132,16 +164,7 @@ public:
     }
 
     id<MTLRenderPipelineState> surface(bool ghost, bool physical, bool section, Writes writes) {
-        MTLFunctionConstantValues* constants = surfaceConstants(ghost, physical, false, section);
-        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
-        mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
-        mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
-        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment", constants);
-        mesh.payloadMemoryLength = kPayloadBytes;
-        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
-        mesh.rasterSampleCount = kSampleCount;
-        describeMainPass(mesh.colorAttachments, writes);
-        return build(mesh, "Could not create a surface pipeline");
+        return surfaceKind({.ghost = ghost, .physical = physical, .section = section}, writes);
     }
 
     // Feature edges, as screen-space quads. The ghost-lines pass draws the dashed edges of ghosts;
@@ -250,6 +273,23 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
             }
         }
         shadow[section] = builder.shadow(section);
+        // See-through: far walls opaque and pinned behind everything, then the nearest front
+        // faces into depth, then blended once.
+        shellDepth[section] = builder.surfaceKind({.section = section, .shellLayer = kShellDepth},
+                                                  {.color = false, .ids = false});
+        for (const bool physical : {false, true}) {
+            shellBack[physical][section] = builder.surfaceKind(
+                {.physical = physical, .section = section, .shellLayer = kShellBack}, {});
+            shellFront[physical][section] = builder.surfaceKind(
+                {.physical = physical, .section = section, .shellLayer = kShellFront},
+                {.blended = true, .ids = false, .tags = MTLColorWriteMaskGreen});
+            if (!shellBack[physical][section] || !shellFront[physical][section]) {
+                return false;
+            }
+        }
+        if (!shellDepth[section]) {
+            return false;
+        }
         for (const bool ghostLines : {false, true}) {
             edges[ghostLines][section] = builder.edges(ghostLines, section);
             if (!edges[ghostLines][section]) {
@@ -275,6 +315,25 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
         !ambientOcclusion) {
         return false;
     }
+
+    for (const bool peel : {false, true}) {
+        classify[peel] = builder.surfaceKind({.occurrenceIds = true, .peel = peel}, {}, 1);
+        if (!classify[peel]) {
+            return false;
+        }
+    }
+
+    // The shell's front faces blend once per sample, even where two lie at the same depth: the
+    // first to pass marks the stencil, and the rest fail it.
+    MTLDepthStencilDescriptor* once = [MTLDepthStencilDescriptor new];
+    once.depthCompareFunction = MTLCompareFunctionEqual;
+    once.depthWriteEnabled = NO;
+    MTLStencilDescriptor* stencil = [MTLStencilDescriptor new];
+    stencil.stencilCompareFunction = MTLCompareFunctionEqual;
+    stencil.depthStencilPassOperation = MTLStencilOperationIncrementClamp;
+    once.frontFaceStencil = stencil;
+    once.backFaceStencil = stencil;
+    blendOnce = [device newDepthStencilStateWithDescriptor:once];
 
     depthWrite = depthState(device, MTLCompareFunctionGreater, true);
     depthTest = depthState(device, MTLCompareFunctionGreater, false);

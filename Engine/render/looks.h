@@ -10,7 +10,7 @@
 
 namespace geo::render {
 
-inline constexpr u32 kMaxLooks = 65535;
+inline constexpr u32 kMaxLooks = kLookIndex; // the top bit marks the shell
 
 /// The distinct looks of a scene, and which one each occurrence has.
 struct LookAssignment {
