@@ -17,7 +17,7 @@ target_link_libraries(Geometry PRIVATE engine "-framework AppKit")
 target_link_options(Geometry PRIVATE
     "$<$<CONFIG:Release>:SHELL:-Xlinker -dead_strip>"
 )
-add_dependencies(Geometry engine_shaders)
+add_dependencies(Geometry engine_shaders geometry-import)
 
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")
 set(bundle_resources "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/Resources")
@@ -26,6 +26,11 @@ add_custom_command(TARGET Geometry POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GEO_METALLIB}" "${bundle_resources}/default.metallib"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle_resources}/Fonts"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${font_files} "${bundle_resources}/Fonts/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometry-import>"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-import"
+    COMMAND codesign --force --sign - --options runtime
+            --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Helper.entitlements"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-import"
     COMMAND codesign --force --sign - --options runtime
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Geometry.entitlements"
             "$<TARGET_BUNDLE_DIR:Geometry>"
