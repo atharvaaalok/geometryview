@@ -15,8 +15,15 @@ const output = document.getElementById("report");
 
 async function post(partial) {
   output.textContent = JSON.stringify(report, null, 2);
+  const body = JSON.stringify({ ...report, partial });
+  // Inside the iOS shell the app saves reports; elsewhere the census server does.
+  const shell = window.webkit?.messageHandlers?.census;
+  if (shell) {
+    shell.postMessage(body);
+    return;
+  }
   try {
-    await fetch("/report", { method: "POST", body: JSON.stringify({ ...report, partial }) });
+    await fetch("/report", { method: "POST", body });
   } catch {
     // Opened without the census server: the page still shows the report.
   }
