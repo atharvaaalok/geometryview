@@ -5,8 +5,8 @@ import GeometryEngine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow?
-    // A file opened from Finder arrives before launch finishes, while there is no window yet.
-    private var pendingURL: URL?
+    // Files opened from Finder arrive before launch finishes, while there is no window yet.
+    private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         geo_trace_memory("did finish launching")
@@ -23,11 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         NSApp.activate()
         geo_trace_memory("window shown")
-        let openingFile = pendingURL != nil
-        if let pendingURL {
-            window.open(pendingURL)
-            self.pendingURL = nil
-        }
+        let openingFile = !pendingURLs.isEmpty
+        open(pendingURLs, in: window)
+        pendingURLs = []
 
         // With a file, the window takes its snapshot once the file has loaded.
         if ChromeSnapshot.isRequested, !openingFile {
@@ -49,13 +47,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else {
-            return
-        }
         if let window {
-            window.open(url)
+            open(urls, in: window)
         } else {
-            pendingURL = url
+            pendingURLs += urls
+        }
+    }
+
+    /// Several files opened together are shown together.
+    private func open(_ urls: [URL], in window: MainWindow) {
+        for (index, url) in urls.enumerated() {
+            if index == 0 {
+                window.open(url)
+            } else {
+                window.add(url)
+            }
         }
     }
 
