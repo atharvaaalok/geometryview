@@ -655,6 +655,12 @@ final class MainWindow: NSWindow {
             if environment["GEOMETRY_SNAPSHOT_SELECT"] != nil {
                 engine.selectNode(document: 0, node: 1, extend: false)
             }
+            // GEOMETRY_SNAPSHOT_ISOLATE isolates the first part, and waits for the view to frame it.
+            let isolating = environment["GEOMETRY_SNAPSHOT_ISOLATE"] != nil
+            if isolating {
+                engine.selectNode(document: 0, node: 1, extend: false)
+                engine.perform(GeoActionIsolate)
+            }
             // With GEOMETRY_SNAPSHOT_HOLD set, the hide tool's hint shows, as while H is held.
             if environment["GEOMETRY_SNAPSHOT_HOLD"] != nil {
                 toolChanged(GeoToolHide)
@@ -690,7 +696,7 @@ final class MainWindow: NSWindow {
                 engine.perform(GeoActionGhostSelection)
                 engine.perform(GeoActionClearSelection)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + (isolating ? 1.5 : 0.5)) { [self] in
                 ChromeSnapshot.capture(self, engine: engine)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSApp.terminate(nil)
