@@ -46,6 +46,12 @@ parts you zoom into are retessellated more finely once the view settles.
 | Click the view cube | Turn to that face's view. Standard views are also in the View menu |
 | ? | Show every shortcut |
 
+The palette button in the toolbar, or ⇧⌘L, opens the look: five drawing styles (Illustration,
+Metal, Clay, Blueprint and Technical), what decides each part's colour (its material, read from
+its name, one colour per part, one throughout, or the file's colours), how ghosts look (a faint
+shell, dashed lines or both), the cast shadow, paper grain and a hand-drawn wobble. The same
+choices are in the View menu, and the look is remembered.
+
 The toolbar at the bottom switches the selection mode and holds the hide and ghost tools, and the
 card on the right shows what is selected, with buttons to hide, ghost, isolate or fit to it.
 
@@ -65,8 +71,13 @@ ctest --preset debug              # unit, GPU and layering tests
 ```sh
 build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometry-occt-worker
 build/release/Tools/gcli stats part.geoblob
-build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png
+build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png \
+    1600 1000 35 25 ortho 1 0   # size, azimuth, elevation, projection, style, colour mode
 ```
+
+`Tests/golden` holds an image of every style and colour mode. After a deliberate change to how
+things look, `GEOMETRY_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites them,
+to be checked by eye before committing.
 
 `Tools/step_equivalence.py` compares STEP imports with OCCT reading each file whole, on face count,
 area, volume and bounds:
@@ -77,7 +88,7 @@ Tools/step_equivalence.py build/release files.txt --jobs 6
 
 The `asan` and `tsan` presets run the same tests under sanitizers.
 
-Setting `GEOMETRY_TRACE=1` prints stage timings and memory use, `GEOMETRY_LATENCY=1` measures
+Setting `GEOMETRY_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRY_LATENCY=1` measures
 input-to-present latency, and `GEOMETRY_ALLOCS=1` counts per-frame heap allocations. Launching with
 `--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
 the interface draws no 3D frame. `--snapshot` writes the window, engine output and interface
