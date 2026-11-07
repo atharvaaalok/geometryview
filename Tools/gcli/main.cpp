@@ -291,25 +291,27 @@ int statsCommand(const char* path) {
 int renderCommand(int argc, const char** argv) {
     // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour]
     // Styles and colour modes are numbered as in engine.h.
-    const char* library = argv[2];
-    const char* blob = argv[3];
-    const char* png = argv[4];
-    const u32 width = argc > 5 ? u32(std::atoi(argv[5])) : 1600;
-    const u32 height = argc > 6 ? u32(std::atoi(argv[6])) : 1000;
-    const double azimuth = argc > 7 ? std::atof(argv[7]) : 35.0;
-    const double elevation = argc > 8 ? std::atof(argv[8]) : 25.0;
-    const bool perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
-    GeoLook look = geo_default_look();
+    GeoRenderOptions options = geo_default_render_options();
+    if (argc > 5) {
+        options.width = u32(std::atoi(argv[5]));
+    }
+    if (argc > 6) {
+        options.height = u32(std::atoi(argv[6]));
+    }
+    if (argc > 7) {
+        options.azimuth_degrees = std::atof(argv[7]);
+    }
+    if (argc > 8) {
+        options.elevation_degrees = std::atof(argv[8]);
+    }
+    options.perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
     if (argc > 10) {
-        look.style = GeoStyle(std::atoi(argv[10]));
+        options.look.style = GeoStyle(std::atoi(argv[10]));
     }
     if (argc > 11) {
-        look.color_mode = GeoColorMode(std::atoi(argv[11]));
+        options.look.color_mode = GeoColorMode(std::atoi(argv[11]));
     }
-    return geo_render_blob_to_png(library, blob, png, width, height, azimuth, elevation,
-                                  perspective, &look)
-               ? 0
-               : 1;
+    return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
 }
 
 } // namespace

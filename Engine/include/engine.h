@@ -261,13 +261,24 @@ void geo_engine_report_latency(GeoEngine* engine);
 /// Prints current and peak memory footprint to stderr when GEOMETRY_TRACE is set.
 void geo_trace_memory(const char* label);
 
-/// Renders a cache file headlessly to a PNG, framed to fit, for tests and `gcli render`. The view
-/// direction is given in degrees, and a null look means the default. Returns false and prints why
-/// on failure.
+/// How to render a cache file headlessly.
+typedef struct GeoRenderOptions {
+    uint32_t width, height; // pixels, drawn as for a 2x display
+    double azimuth_degrees; // the view direction
+    double elevation_degrees;
+    bool perspective;
+    bool overlay; // the view cube and scale bar
+    GeoLook look;
+} GeoRenderOptions;
+
+/// The options gcli render starts from: 1600 by 1000, from the front right and above, with the
+/// overlay and the default look.
+GeoRenderOptions geo_default_render_options(void);
+
+/// Renders a cache file to a PNG, framed to fit, for tests and `gcli render`. Returns false and
+/// prints why on failure.
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
-                            const char* png_path, uint32_t width, uint32_t height,
-                            double azimuth_degrees, double elevation_degrees, bool perspective,
-                            const GeoLook* look);
+                            const char* png_path, const GeoRenderOptions* options);
 
 #ifdef __cplusplus
 }
