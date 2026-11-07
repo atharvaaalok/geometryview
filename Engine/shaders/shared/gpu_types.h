@@ -140,6 +140,59 @@ struct OverlayUniforms {
     uint32_t quadCount;
 };
 
+// How ghosts draw: bit 0 a faint skin, bit 1 dashed edges.
+enum GhostStyle : uint32_t {
+    kGhostShell = 1,
+    kGhostLines = 2,
+    kGhostBoth = 3,
+};
+
+// What a render style sets for every shader, in encoded colour and in pixels. Built when the style
+// or the display scale changes, not per frame.
+struct StyleUniforms {
+    simd_float3 sheetTop;
+    simd_float3 sheetBottom;
+    simd_float3 gridColor;
+    simd_float3 grainTint;
+    simd_float3 ink;
+    simd_float3 hover;
+    simd_float3 hideTint;
+    simd_float3 shadowColor;
+    simd_float3 lightExterior; // view space, for flat bands
+    simd_float3 lightInterior; // view space, for the inside of an opened part
+    simd_float3 sky;           // the studio, in linear radiance
+    simd_float3 floor;
+    simd_float3 key;
+    simd_float3 band;
+    simd_float3 fill;
+    simd_uint4 selection; // three palette texels, as for a body
+    simd_float2 strips;
+    float vignette;
+    float gridAlpha;
+    float gridPitch; // pixels, or 0 for none
+    float grain;     // 0 to 1
+    float inkAlpha;
+    float silhouette; // ink widths, pixels
+    float partLine;
+    float crease;
+    float highlight;
+    float ghostInk; // a ghost's outline, as a share of the ink
+    float ghostAlpha;
+    float ghostLineAlpha;
+    float hoverAmount;
+    float ao; // strength, 0 for none
+    float shadowAlpha;
+    float shadowSoft;   // blur radius, pixels
+    float wobble;       // amplitude, pixels
+    float wobblePeriod; // pixels
+    float pixelsPerPoint;
+    float sharpness;
+    float exposure;
+    float contrast;
+    uint32_t ghostStyle;
+    uint32_t shadowOn;
+};
+
 struct FrameUniforms {
     simd_float4x4 viewProjection;
     simd_float3x3 viewRotation; // world to view, for lighting
