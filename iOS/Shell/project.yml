@@ -21,6 +21,13 @@ targets:
       - path: ../../Web/census
         type: folder
         buildPhase: resources
+    # Generated from here at `xcodegen` time and merged with the keys below. The page's loopback
+    # server is plain HTTP on 127.0.0.1, which App Transport Security allows only when asked.
+    info:
+      path: Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aalok.geometry.shell
