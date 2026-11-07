@@ -5,6 +5,7 @@
 #include "gpu/renderer.h"
 #include "nav/camera.h"
 #include "render/view.h"
+#include "scene/scene.h"
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
@@ -63,19 +64,27 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
             std::fprintf(stderr, "Could not open %s.\n", blob_path);
             return false;
         }
-        scene::MappedBlob blob;
+        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
         std::string error;
-        const bool opened = blob.open(fd, error);
+        const bool opened = scene::openCacheFile(fd, segments, error);
         close(fd);
-        if (!opened) {
-            std::fprintf(stderr, "%s\n", error.c_str());
+        scene::Scene scene;
+        scene::Document& document = scene.document(scene.addDocument());
+        bool added = opened;
+        for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+            added = added && document.add(std::move(segment), error);
+        }
+        const std::optional<Aabb> sceneBounds = scene.bounds();
+        if (!added || !sceneBounds) {
+            std::fprintf(stderr, "%s\n",
+                         error.empty() ? "The cache file is empty." : error.c_str());
             return false;
         }
-        renderer->setScene(blob);
+        renderer->syncScene(scene);
         renderer->resize(width, height);
 
         const nav::Viewport viewport{double(width), double(height)};
-        const Aabb bounds = renderer->sceneBounds();
+        const Aabb bounds = *sceneBounds;
         const double azimuth = azimuth_degrees * M_PI / 180.0;
         const double elevation = elevation_degrees * M_PI / 180.0;
         const Vec3 direction =

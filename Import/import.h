@@ -2,6 +2,8 @@
 #pragma once
 
 #include "base/types.h"
+#include "cache/blob_writer.h"
+#include "step/step_import.h"
 
 #include <array>
 #include <span>
@@ -26,7 +28,8 @@ struct ImportResult {
 /// Hashes file contents, for keying the cache.
 std::array<u8, 16> hashContents(std::span<const u8> file);
 
-/// Imports a mesh file held in memory and writes a blob to `outputFd`.
-bool importMesh(std::span<const u8> file, int outputFd, ImportResult& result, std::string& error);
+/// Imports a mesh file held in memory and writes a blob to `outputFd`. `listener` may be null.
+bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listener,
+                ImportResult& result, std::string& error);
 
 } // namespace geo::import

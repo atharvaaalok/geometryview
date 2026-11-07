@@ -17,6 +17,9 @@ struct IndexedMesh {
     std::vector<u32> indices;      // three per triangle
     u32 faceCount = 0;
     bool closed = false; // every edge is shared by exactly two triangles
+    /// Face ids are already in spatial order and must not change, as with STEP faces, whose ids
+    /// have to survive refinement.
+    bool faceOrderIsFixed = false;
 
     usize vertexCount() const { return faceOfVertex.size(); }
     usize triangleCount() const { return indices.size() / 3; }

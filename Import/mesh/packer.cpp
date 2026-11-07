@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <numeric>
 #include <simd/simd.h>
 #include <span>
 
@@ -122,6 +123,13 @@ struct FaceOrder {
 };
 
 FaceOrder orderFaces(const IndexedMesh& mesh, const Bounds& bounds) {
+    if (mesh.faceOrderIsFixed) {
+        FaceOrder order;
+        order.packedOfFace.resize(mesh.faceCount);
+        std::iota(order.packedOfFace.begin(), order.packedOfFace.end(), 0);
+        order.originalOfPacked = order.packedOfFace;
+        return order;
+    }
     std::vector<simd_float3> sums(mesh.faceCount, simd_make_float3(0.0f, 0.0f, 0.0f));
     std::vector<u32> counts(mesh.faceCount, 0);
     for (usize t = 0; t < mesh.triangleCount(); ++t) {

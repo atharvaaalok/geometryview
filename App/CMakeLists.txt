@@ -17,7 +17,7 @@ target_link_libraries(Geometry PRIVATE engine "-framework AppKit")
 target_link_options(Geometry PRIVATE
     "$<$<CONFIG:Release>:SHELL:-Xlinker -dead_strip>"
 )
-add_dependencies(Geometry engine_shaders geometry-import)
+add_dependencies(Geometry engine_shaders geometry-import geometry-occt-worker)
 
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")
 set(bundle_resources "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/Resources")
@@ -28,9 +28,12 @@ add_custom_command(TARGET Geometry POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${font_files} "${bundle_resources}/Fonts/"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometry-import>"
             "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-import"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometry-occt-worker>"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-occt-worker"
     COMMAND codesign --force --sign - --options runtime
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Helper.entitlements"
             "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-import"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Geometry>/MacOS/geometry-occt-worker"
     COMMAND codesign --force --sign - --options runtime
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Geometry.entitlements"
             "$<TARGET_BUNDLE_DIR:Geometry>"

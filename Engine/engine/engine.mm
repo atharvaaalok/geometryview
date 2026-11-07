@@ -17,7 +17,7 @@
 #include "nav/orbit_policy.h"
 #include "nav/pointer_controller.h"
 #include "render/view.h"
-#include "scene/mapped_blob.h"
+#include "scene/scene.h"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -109,6 +109,13 @@ struct GeoEngine {
     GeoEventCallback eventCallback = nullptr;
     void* eventContext = nullptr;
     u64 openGeneration = 0; // a newer open supersedes one still importing
+
+    scene::Scene scene;
+    Aabb bounds{simd_make_double3(-1, -1, -1), simd_make_double3(1, 1, 1)};
+    bool sceneChanged = false;
+    bool hasFramed = false;
+    bool userMovedCamera = false;
+    std::shared_ptr<ipc::ImportCancel> activeImport;
 
     nav::Camera camera;
     nav::Viewport viewport;
@@ -214,6 +221,7 @@ struct GeoEngine {
         }
 
         if (response.cameraMoved) {
+            userMovedCamera = true;
             pendingInputTime = pendingInputTime == 0.0 ? event.timestamp : pendingInputTime;
             requestFrame();
         }
@@ -224,7 +232,6 @@ struct GeoEngine {
     }
 
     void resetCamera() {
-        const Aabb bounds = renderer->sceneBounds();
         const Vec3 direction = simd_make_double3(
             std::cos(kDefaultElevation) * std::sin(kDefaultAzimuth),
             -std::cos(kDefaultElevation) * std::cos(kDefaultAzimuth), std::sin(kDefaultElevation));
@@ -238,8 +245,8 @@ struct GeoEngine {
         lastActivity = nowSeconds();
         switch (action) {
         case GeoActionFit:
-            if (renderer->hasScene()) {
-                nav::fit(camera, renderer->sceneBounds(), viewport, kFitMargin);
+            if (scene.hasGeometry()) {
+                nav::fit(camera, bounds, viewport, kFitMargin);
                 orbit.navigated();
             }
             break;
@@ -248,13 +255,48 @@ struct GeoEngine {
             break;
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
-            if (renderer->hasScene()) {
-                nav::fit(camera, renderer->sceneBounds(), viewport, kFitMargin);
+            if (scene.hasGeometry()) {
+                nav::fit(camera, bounds, viewport, kFitMargin);
             }
             orbit.navigated();
             break;
         }
         requestFrame();
+    }
+
+    // Delivers import results to the engine thread, tagged so a superseded import is ignored.
+    class ImportBridge final : public ipc::ImportListener {
+    public:
+        ImportBridge(GeoEngine* engine, u64 generation)
+            : engine_(engine), generation_(generation) {}
+
+        void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
+            GeoEngine* engine = engine_;
+            const u64 generation = generation_;
+            engine->perform([=] { engine->addSegment(generation, segment); });
+        }
+        void progress(u32 done, u32 total) override {
+            GeoEngine* engine = engine_;
+            const u64 generation = generation_;
+            engine->perform([=] { engine->reportProgress(generation, done, total); });
+        }
+        void warning(const std::string& text) override {
+            std::fprintf(stderr, "import: %s\n", text.c_str());
+        }
+
+    private:
+        GeoEngine* engine_;
+        u64 generation_;
+    };
+
+    // Runs `work` on the engine thread.
+    template <typename Work> void perform(Work work) {
+        CFRunLoopPerformBlock(runLoop, kCFRunLoopCommonModes, ^{
+            @autoreleasepool {
+                work();
+            }
+        });
+        CFRunLoopWakeUp(runLoop);
     }
 
     // By value: a block copies C++ objects it captures, but only the reference if given one, and
@@ -265,17 +307,67 @@ struct GeoEngine {
         emit(GeoEventLoading, name.c_str());
         const double start = nowSeconds();
 
+        if (activeImport) {
+            activeImport->cancel();
+        }
+        activeImport = std::make_shared<ipc::ImportCancel>();
+        std::shared_ptr<ipc::ImportCancel> cancel = activeImport;
+
+        scene.clear();
+        scene.addDocument();
+        sceneChanged = true;
+        hasFramed = false;
+        userMovedCamera = false;
+        hoveredId = 0;
+        selectedId = 0;
+        requestFrame();
+
         // The import can take seconds, and the engine thread must keep drawing.
         const ipc::ImportPaths paths = importPaths;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            ipc::ImportOutcome outcome = ipc::importFile(path, paths);
-            CFRunLoopPerformBlock(runLoop, kCFRunLoopCommonModes, ^{
-                @autoreleasepool {
-                    finishOpen(generation, outcome, start);
-                }
-            });
-            CFRunLoopWakeUp(runLoop);
+            ImportBridge bridge(this, generation);
+            ipc::ImportOutcome outcome = ipc::importFile(path, paths, bridge, cancel.get());
+            perform([=, this] { finishOpen(generation, outcome, start); });
         });
+    }
+
+    void addSegment(u64 generation, const std::shared_ptr<scene::MappedSegment>& segment) {
+        if (generation != openGeneration) {
+            return;
+        }
+        std::string error;
+        if (!scene.document(0).add(segment, error)) {
+            emit(GeoEventFailed, error.c_str());
+            return;
+        }
+        const bool hadBounds = hasFramed;
+        sceneChanged = true;
+        if (!hadBounds) {
+            frameScene(true);
+        }
+        requestFrame();
+    }
+
+    void reportProgress(u64 generation, u32 done, u32 total) {
+        if (generation == openGeneration && traceLaunch) {
+            std::fprintf(stderr, "trace: imported %u of %u\n", done, total);
+        }
+    }
+
+    // Takes new scene bounds, and frames them unless the user has already moved the camera.
+    void frameScene(bool reset) {
+        const std::optional<Aabb> current = scene.bounds();
+        if (!current) {
+            return;
+        }
+        bounds = *current;
+        if (reset) {
+            resetCamera();
+            hasFramed = true;
+        } else if (!userMovedCamera) {
+            nav::fit(camera, bounds, viewport, kFitMargin);
+            orbit.setVisibleBounds(bounds);
+        }
     }
 
     void finishOpen(u64 generation, const ipc::ImportOutcome& outcome, double start) {
@@ -286,23 +378,7 @@ struct GeoEngine {
             emit(GeoEventFailed, outcome.message.c_str());
             return;
         }
-        const int fd = open(outcome.blobPath.c_str(), O_RDONLY);
-        scene::MappedBlob blob;
-        std::string error;
-        if (fd < 0 || !blob.open(fd, error)) {
-            if (fd >= 0) {
-                close(fd);
-            }
-            // A damaged cache must not stop the file opening next time.
-            unlink(outcome.blobPath.c_str());
-            emit(GeoEventFailed, error.empty() ? "The cache could not be read." : error.c_str());
-            return;
-        }
-        close(fd);
-        renderer->setScene(blob);
-        hoveredId = 0;
-        selectedId = 0;
-        resetCamera();
+        frameScene(false); // estimated bounds become exact now that all geometry is here
         requestFrame();
         if (traceLaunch) {
             std::fprintf(stderr, "trace: scene ready %.1f ms after opening\n",
@@ -363,7 +439,11 @@ struct GeoEngine {
         if (needsFrame) {
             needsFrame = false;
             const double start = nowSeconds();
-            render::ViewState view = render::makeView(camera, viewport, renderer->sceneBounds());
+            if (sceneChanged) {
+                sceneChanged = false;
+                renderer->syncScene(scene);
+            }
+            render::ViewState view = render::makeView(camera, viewport, bounds);
             view.uniforms.hoveredId = hoveredId;
             view.uniforms.selectedId = selectedId;
             publishedHover.store(hoveredId, std::memory_order_relaxed);

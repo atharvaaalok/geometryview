@@ -8,7 +8,7 @@
 #include "base/types.h"
 #include "math/geometry.h"
 #include "render/view.h"
-#include "scene/mapped_blob.h"
+#include "scene/scene.h"
 
 #include <memory>
 #include <optional>
@@ -31,10 +31,9 @@ public:
 
     void attachLayer(CAMetalLayer* layer);
 
-    /// Takes ownership of the mapping, so geometry stays valid until the GPU is done with it.
-    void setScene(scene::MappedBlob& blob);
-    bool hasScene() const;
-    Aabb sceneBounds() const;
+    /// Brings GPU tables up to date with `scene`. Never waits for the GPU: tables a frame may still
+    /// be reading stay alive until that frame finishes, and mapped geometry stays alive with them.
+    void syncScene(const scene::Scene& scene);
 
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);

@@ -49,7 +49,46 @@ struct MappedFile {
     }
 };
 
-int importCommand(const char* input, const char* output) {
+int importStepCommand(std::span<const u8> bytes, int sourceFd, int outputFd, const char* worker,
+                      const char* levelText) {
+    import::StepOptions options;
+    options.workerPath = worker;
+    options.sourceFd = sourceFd;
+    options.level = levelText != nullptr ? u32(std::atoi(levelText)) : 0;
+    import::StepStats s;
+    std::string error;
+    const double start = nowSeconds();
+    if (!import::importStep(bytes, outputFd, nullptr, options, s, error)) {
+        std::println(stderr, "{}", error);
+        return 1;
+    }
+    const double total = nowSeconds() - start;
+    const off_t blobSize = lseek(outputFd, 0, SEEK_END);
+    std::println("{:.1f} MB source, {} records, {} bodies, {} definitions, {} occurrences{}",
+                 double(bytes.size()) / 1e6, s.records, s.bodies, s.definitions, s.occurrences,
+                 s.wholeFile ? ", whole-file read" : "");
+    std::println("{} faces in {} slices, {} workers, {} triangles, {} meshlets", s.faces, s.chunks,
+                 s.workers, s.triangles, s.meshlets);
+    std::println("tolerances: linear {} angular {} min {}", s.linearDeflection, s.angularDeflection,
+                 s.minSize);
+    std::println("failed {} unmeshed {} unmapped {} crashed {}", s.failedFaces, s.unmeshedFaces,
+                 s.unmappedFaces, s.crashedWorkers);
+    std::println("tokenize {:.1f} ms, structure {:.1f} ms, definitions {:.1f} ms, workers {:.3f} s",
+                 s.tokenizeSeconds * 1e3, s.structureSeconds * 1e3, s.definitionSeconds * 1e3,
+                 s.workerSeconds);
+    std::println("cpu: read {:.3f} s, transfer {:.3f} s, mesh {:.3f} s, pack {:.3f} s",
+                 s.readSeconds, s.transferSeconds, s.meshSeconds, s.packSeconds);
+    std::println("total {:.3f} s, blob {:.2f} MB, {:.1f} bytes per triangle", total,
+                 double(blobSize) / 1e6,
+                 double(blobSize) / double(std::max<usize>(s.triangles, 1)));
+    for (const std::string& warning : s.warnings) {
+        std::println("warning: {}", warning);
+    }
+    return 0;
+}
+
+int importCommand(const char* input, const char* output, const char* worker,
+                  const char* levelText) {
     MappedFile file;
     if (!file.open(input)) {
         std::println(stderr, "could not read {}: {}", input, std::strerror(errno));
@@ -61,10 +100,17 @@ int importCommand(const char* input, const char* output) {
         return 1;
     }
 
+    const std::span<const u8> bytes(file.data, file.size);
+    if (import::looksLikeStep(bytes)) {
+        const int result = importStepCommand(bytes, file.fd, fd, worker, levelText);
+        close(fd);
+        return result;
+    }
+
     import::ImportResult result;
     std::string error;
     const double start = nowSeconds();
-    const bool ok = import::importMesh({file.data, file.size}, fd, result, error);
+    const bool ok = import::importMesh(bytes, fd, nullptr, result, error);
     const double total = nowSeconds() - start;
     const off_t blobSize = lseek(fd, 0, SEEK_END);
     close(fd);
@@ -93,15 +139,29 @@ int verifyCommand(const char* path) {
         std::println(stderr, "could not read {}", path);
         return 1;
     }
-    format::BlobView view;
+    std::span<const format::SegmentEntry> segments;
     std::string error;
     const double start = nowSeconds();
-    if (!format::parseBlob({file.data, file.size}, view, error)) {
+    if (!format::parseHeader({file.data, file.size}, segments, error)) {
         std::println(stderr, "invalid: {}", error);
         return 1;
     }
-    std::println("valid: {} meshlets, {} vertices, {} triangles, checked in {:.2f} ms",
-                 view.meshlets.size(), view.vertices.size(), view.triangles.size(),
+    usize meshlets = 0, vertices = 0, triangles = 0, definitions = 0, occurrences = 0;
+    for (const format::SegmentEntry& entry : segments) {
+        format::SegmentView view;
+        if (!format::parseSegment({file.data + entry.offset, entry.size}, view, error)) {
+            std::println(stderr, "invalid: {}", error);
+            return 1;
+        }
+        meshlets += view.meshlets.size();
+        vertices += view.vertices.size();
+        triangles += view.triangles.size();
+        definitions += view.definitions.size();
+        occurrences += view.occurrences.size();
+    }
+    std::println("valid: {} segments, {} definitions, {} occurrences, {} meshlets, {} vertices, "
+                 "{} triangles, checked in {:.2f} ms",
+                 segments.size(), definitions, occurrences, meshlets, vertices, triangles,
                  (nowSeconds() - start) * 1e3);
     return 0;
 }
@@ -126,8 +186,9 @@ int renderCommand(int argc, const char** argv) {
 
 int main(int argc, const char** argv) {
     const std::string_view command = argc > 1 ? argv[1] : "";
-    if (command == "import" && argc == 4) {
-        return importCommand(argv[2], argv[3]);
+    if (command == "import" && argc >= 4) {
+        return importCommand(argv[2], argv[3], argc > 4 ? argv[4] : "",
+                             argc > 5 ? argv[5] : nullptr);
     }
     if (command == "verify" && argc == 3) {
         return verifyCommand(argv[2]);
@@ -136,7 +197,7 @@ int main(int argc, const char** argv) {
         return renderCommand(argc, argv);
     }
     std::println(stderr, "gcli {}", geo_engine_version());
-    std::println(stderr, "usage: gcli import <source> <blob>");
+    std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> "
                          "[width height azimuth elevation perspective]");
