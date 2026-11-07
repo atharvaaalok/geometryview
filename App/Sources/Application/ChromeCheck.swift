@@ -5,11 +5,12 @@ import GeometryEngine
 /// 3D view.
 ///
 /// Launching with `--chrome-check` and a file waits for the scene, then clicks every segment of
-/// every pill in the toolbar and the look card, on its label and beside it. The clicks go through
-/// `NSWindow.sendEvent`, which hit-tests and dispatches them exactly as live input. After each
-/// click, once the view has settled, pointer moves over an empty corner of the view go to the
-/// engine, as the view forwards them. Had the click left the engine holding a press, those moves
-/// would turn the camera and draw frames. Prints the result and quits.
+/// every pill in the toolbar and the look card, on its label and beside it, and every plain label
+/// on a card. The clicks go through `NSWindow.sendEvent`, which hit-tests and dispatches them
+/// exactly as live input. After each click, once the view has settled, pointer moves over an empty
+/// corner of the view go to the engine, as the view forwards them. Had the click left the engine
+/// holding a press, those moves would turn the camera and draw frames. Last, it checks that the
+/// pointer leaving the view clears the hover. Prints the result and quits.
 @MainActor
 final class ChromeCheck {
     static var isRequested: Bool { CommandLine.arguments.contains("--chrome-check") }
@@ -50,7 +51,7 @@ final class ChromeCheck {
 
     private func next(_ index: Int) {
         guard index < targets.count else {
-            finish()
+            checkLeave()
             return
         }
         let target = targets[index]
@@ -63,18 +64,69 @@ final class ChromeCheck {
                     let name =
                         (target.view as? NSTextField)?.stringValue
                         ?? target.view.accessibilityLabel() ?? "a segment"
-                    self.leaks.append("\(name) at \(Int(target.point.x)), \(Int(target.point.y))")
+                    self.leaks.append(
+                        "a click on \(name) at \(Int(target.point.x)), \(Int(target.point.y)) "
+                            + "left the 3D view holding a press"
+                    )
                 }
                 self.next(index + 1)
             }
         }
     }
 
+    // Finds the model by sweeping down the middle of the view, then checks that the pointer
+    // leaving the view clears its hover.
+    private func checkLeave() {
+        let scale = window.backingScaleFactor
+        let size = (window.contentView?.bounds.size ?? .zero)
+        func probe(_ step: Int) {
+            guard step < 40 else {
+                leaks.append("the pointer never found the model, so leaving was not checked")
+                finish()
+                return
+            }
+            let x = size.width * 0.6 * scale
+            let y = CGFloat(step) * size.height * scale / 40
+            post(GeoPointerMove, x: x, y: y)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+                guard engine.stats().hovered_id != 0 else {
+                    probe(step + 1)
+                    return
+                }
+                // Left where it was, so only the leaving can clear the hover.
+                post(GeoPointerLeave, x: x, y: y)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+                    if engine.stats().hovered_id != 0 {
+                        leaks.append("the hover stayed after the pointer left the view")
+                    }
+                    finish()
+                }
+            }
+        }
+        probe(0)
+    }
+
+    private func post(_ kind: GeoPointerKind, x: CGFloat, y: CGFloat) {
+        engine.post(
+            GeoPointerEvent(
+                kind: kind,
+                button: GeoButtonNone,
+                x: Float(x),
+                y: Float(y),
+                delta: 0,
+                modifiers: 0,
+                timestamp: ProcessInfo.processInfo.systemUptime
+            )
+        )
+    }
+
     private func finish() {
         if leaks.isEmpty {
-            print("chrome-check: PASS, no click reached the 3D view")
+            print(
+                "chrome-check: PASS, no click reached the 3D view and hover left with the pointer"
+            )
         } else {
-            print("chrome-check: FAIL, \(leaks.count) clicks left the 3D view holding a press:")
+            print("chrome-check: FAIL, \(leaks.count) problem\(leaks.count == 1 ? "" : "s"):")
             for leak in leaks {
                 print("chrome-check:   \(leak)")
             }
@@ -123,17 +175,7 @@ final class ChromeCheck {
                 }
                 return
             }
-            engine.post(
-                GeoPointerEvent(
-                    kind: GeoPointerMove,
-                    button: GeoButtonNone,
-                    x: Float(corner.x - CGFloat(step % 2) * 30 * scale),
-                    y: Float(corner.y),
-                    delta: 0,
-                    modifiers: 0,
-                    timestamp: ProcessInfo.processInfo.systemUptime
-                )
-            )
+            post(GeoPointerMove, x: corner.x - CGFloat(step % 2) * 30 * scale, y: corner.y)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { move(step + 1) }
         }
         move(0)
