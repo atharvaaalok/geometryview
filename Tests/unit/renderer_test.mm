@@ -3,6 +3,7 @@
 #include "gpu/renderer.h"
 #include "import.h"
 #include "nav/camera.h"
+#include "render/overlay.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -330,5 +331,21 @@ TEST_CASE("hiding a whole occurrence leaves an empty picture") {
         const render::ViewState view = stage.view();
         stage.renderer->renderOffscreen(view);
         CHECK(visibleIds(stage, view).empty());
+    }
+}
+
+TEST_CASE("the view cube is drawn over the model and can be picked") {
+    @autoreleasepool {
+        Stage stage(box());
+        const render::ViewState view = stage.view();
+        const render::Overlay overlay =
+            render::makeOverlay(stage.camera, stage.viewport, view.uniforms.viewRotation, 1.0f,
+                                stage.renderer->glyphAdvance(), 0);
+        stage.renderer->renderOffscreen(view, &overlay);
+        const simd_float2 center = overlay.uniforms.cubeCenter;
+        const auto hit = stage.renderer->readPixel(int(center.x), int(center.y), view.depth);
+        REQUIRE(hit.has_value());
+        CHECK(hit->id >= kCubeIdBase);
+        CHECK(hit->id < kCubeIdBase + 6);
     }
 }

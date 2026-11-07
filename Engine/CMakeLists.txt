@@ -25,6 +25,8 @@ target_link_libraries(engine INTERFACE
     "-framework ImageIO"
     "-framework CoreGraphics"
     "-framework UniformTypeIdentifiers"
+    "-framework CoreText"
+    "-framework AppKit"
 )
 
 file(GLOB shader_sources CONFIGURE_DEPENDS shaders/*.metal)

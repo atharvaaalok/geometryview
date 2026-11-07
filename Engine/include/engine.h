@@ -52,6 +52,14 @@ typedef enum GeoAction {
     GeoActionGhostSelection = 7,
     GeoActionUndo = 8,
     GeoActionRedo = 9,
+    GeoActionViewFront = 10,
+    GeoActionViewBack = 11,
+    GeoActionViewLeft = 12,
+    GeoActionViewRight = 13,
+    GeoActionViewTop = 14,
+    GeoActionViewBottom = 15,
+    GeoActionViewIso = 16,
+    GeoActionFitSelection = 17,
 } GeoAction;
 
 /// What a click picks: one face, a whole body, or everything in its part.

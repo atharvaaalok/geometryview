@@ -4,6 +4,7 @@
 #include "base/types.h"
 #include "gpu/renderer.h"
 #include "nav/camera.h"
+#include "render/overlay.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -96,8 +97,10 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, bounds, viewport, kFitMargin);
 
-        const std::vector<u8> pixels =
-            renderer->renderOffscreen(render::makeView(camera, viewport, bounds));
+        const render::ViewState view = render::makeView(camera, viewport, bounds);
+        const render::Overlay overlay = render::makeOverlay(
+            camera, viewport, view.uniforms.viewRotation, 2.0f, renderer->glyphAdvance(), 0);
+        const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);
         if (!writePng(png_path, pixels, width, height)) {
             std::fprintf(stderr, "Could not write %s.\n", png_path);
             return false;

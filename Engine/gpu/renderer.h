@@ -8,6 +8,7 @@
 #include "base/types.h"
 #include "math/geometry.h"
 #include "model/face_state.h"
+#include "render/overlay.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -43,10 +44,16 @@ public:
     /// Allocates targets for this size, if it changed. Sizes are in pixels.
     void resize(u32 width, u32 height);
 
-    void render(id<CAMetalDrawable> drawable, const render::ViewState& view);
+    /// Draws a frame. The overlay, if given, is drawn over the model.
+    void render(id<CAMetalDrawable> drawable, const render::ViewState& view,
+                const render::Overlay* overlay = nullptr);
 
     /// Renders and returns BGRA pixels, for tests and `gcli render`. Blocks until done.
-    std::vector<u8> renderOffscreen(const render::ViewState& view);
+    std::vector<u8> renderOffscreen(const render::ViewState& view,
+                                    const render::Overlay* overlay = nullptr);
+
+    /// A glyph's advance in the overlay atlas, in atlas pixels.
+    float glyphAdvance() const;
 
     /// Reads the most recent frame's ID and depth from CPU-visible memory. No GPU round trip.
     /// Pixels outside the viewport, or with nothing drawn, return nothing.

@@ -100,6 +100,46 @@ struct MeshletRef {
     uint32_t meshlet;
 };
 
+// The view cube and scale bar, drawn over the model at the end of the main pass.
+enum OverlayLimits : unsigned {
+    kOverlayMaxQuads = 48,
+    kAtlasWidth = 512,
+    kAtlasLabelWidth = 144, // the label region's shape on a cube face, 3 to 1
+    kAtlasLabelHeight = 48, // one row per cube face
+    kAtlasGlyphWidth = 28,
+    kAtlasGlyphHeight = 48, // one strip of cells below the labels
+    kAtlasHeight = 6 * 48 + 48,
+};
+
+// Pick ids at and above this are the view cube's faces, far above any model's.
+enum CubeIds : uint32_t {
+    kCubeIdBase = 0xFFFFFF00u,
+};
+
+enum OverlayBufferIndex : unsigned {
+    kOverlayUniforms = 0,
+    kOverlayQuads = 1,
+};
+
+// A screen-space rectangle in pixels, from the top left. Solid if uv.z < 0, else coverage from the
+// atlas region uv.xy to uv.zw tints it.
+struct OverlayQuad {
+    simd_float2 origin;
+    simd_float2 size;
+    simd_float4 uv;
+    simd_float4 color;
+};
+
+struct OverlayUniforms {
+    simd_float3x3 viewRotation; // world to view, so the cube turns with the camera
+    simd_float2 viewport;       // pixels
+    simd_float2 cubeCenter;     // pixels
+    float cubeHalf;             // half the cube's edge, in pixels
+    float lineWidth;            // the ink edge, in pixels
+    uint32_t cubeHover;         // face index plus one, or zero
+    uint32_t quadCount;
+};
+
 struct FrameUniforms {
     simd_float4x4 viewProjection;
     simd_float3x3 viewRotation; // world to view, for lighting
