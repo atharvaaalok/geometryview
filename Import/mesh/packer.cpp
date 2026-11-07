@@ -4,12 +4,15 @@
 #include "base/parallel.h"
 #include "base/parallel_sort.h"
 #include "base/trace.h"
+#include "mesh/edges.h"
+#include "mesh/grid.h"
 
 #include <meshoptimizer.h>
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <dispatch/dispatch.h>
 #include <numeric>
 #include <simd/simd.h>
 #include <span>
@@ -26,6 +29,9 @@ constexpr usize kMaxUnitFaces = 1 << 16;
 // the wide grid. See ADR 0004.
 constexpr float kMinEdgeGridSteps = 8.0f;
 constexpr usize kEdgeSampleStride = 97;
+// Meshes at least this large find their feature edges while meshlets are built. Smaller ones are
+// quicker done in turn.
+constexpr usize kConcurrentEdgeTriangles = 1 << 16;
 
 simd_float3 readVector(const std::vector<float>& values, usize index) {
     const float* p = values.data() + index * 3;
@@ -194,26 +200,19 @@ struct UnitOutput {
     std::vector<u32> highBits;
     std::vector<u32> triangles;
     std::vector<Meshlet> meshlets;
+    std::vector<u32> sources; // the mesh vertex of each packed vertex
 };
 
 struct PackContext {
     const IndexedMesh& mesh;
     const FaceOrder& faces;
-    simd_float3 lo;
-    simd_float3 toGrid;       // definition space to integer grid
+    VertexGrid grid;
     simd_float3 toBoundsGrid; // definition space to 16-bit bounds grid
     float boundsStep;         // largest bounds grid step, in definition units
-    simd_float3 gridMax;
-    bool wide;
 };
 
 void packVertex(const PackContext& context, u32 vertex, u32 faceBase, UnitOutput& out) {
-    // Clamped because at 24 bits a float cannot hold the top grid step exactly, and a vertex at the
-    // maximum could round past it and wrap to zero.
-    const simd_float3 grid = simd_clamp(
-        roundToGrid((readVector(context.mesh.positions, vertex) - context.lo) * context.toGrid),
-        simd_float3(0.0f), context.gridMax);
-    const u32 x = u32(grid.x), y = u32(grid.y), z = u32(grid.z);
+    const auto [x, y, z] = context.grid.of(readVector(context.mesh.positions, vertex));
 
     PackedVertex packed{};
     packed.x = u16(x & 0xFFFF);
@@ -224,7 +223,8 @@ void packVertex(const PackContext& context, u32 vertex, u32 faceBase, UnitOutput
     packed.localFace = u16(face - faceBase);
     encodeOctahedral(readVector(context.mesh.normals, vertex), packed.octX, packed.octY);
     out.vertices.push_back(packed);
-    if (context.wide) {
+    out.sources.push_back(vertex);
+    if (context.grid.wide) {
         out.highBits.push_back((x >> 16) | (y >> 16) << 8 | (z >> 16) << 16);
     }
 }
@@ -284,7 +284,8 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
         // Both rounding directions are covered by growing the radius, so bounds stay conservative.
         const simd_float3 center =
             simd_make_float3(bounds.center[0], bounds.center[1], bounds.center[2]);
-        const simd_float3 gridCenter = roundToGrid((center - context.lo) * context.toBoundsGrid);
+        const simd_float3 gridCenter =
+            roundToGrid((center - context.grid.lo) * context.toBoundsGrid);
         const float gridRadius = std::ceil(bounds.radius / context.boundsStep) + 1.0f;
 
         Meshlet meshlet{};
@@ -346,9 +347,29 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     parallelSort(sortedTriangles, [](const SortedTriangle& t) { return t.key; });
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
-    const PackContext context{
-        mesh,      faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale, simd_reduce_max(boundsScale),
-        gridSteps, wide};
+    const PackContext context{mesh,
+                              faces,
+                              {bounds.lo, 1.0f / scale, scale, gridSteps, wide},
+                              1.0f / boundsScale,
+                              simd_reduce_max(boundsScale)};
+
+    // Edges depend only on the mesh and its grid, so a large mesh finds them meanwhile.
+    struct EdgeWork {
+        const IndexedMesh* mesh;
+        EdgeLayout layout;
+        FeatureEdges edges;
+    } edgeWork{&mesh, {context.grid, boundsScale, faces.packedOfFace}, {}};
+    const auto findEdges = [](void* work) {
+        auto* w = static_cast<EdgeWork*>(work);
+        w->edges = findFeatureEdges(*w->mesh, w->layout);
+    };
+    const bool concurrent = mesh.triangleCount() >= kConcurrentEdgeTriangles;
+    dispatch_group_t edgeGroup = dispatch_group_create();
+    if (concurrent) {
+        dispatch_group_async_f(edgeGroup, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                               &edgeWork, findEdges);
+    }
+
     std::vector<UnitOutput> outputs(units.size());
     parallelFor(units.size(), [&](usize u) {
         const std::span<const SortedTriangle> range(sortedTriangles.data() + units[u].first,
@@ -367,8 +388,14 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     packed.highBits.reserve(wide ? vertexCount : 0);
     packed.triangles.reserve(triangleCount);
     packed.meshlets.reserve(meshletCount);
+    // A packed vertex for each mesh vertex. Meshlets copy shared vertices, and any copy will do,
+    // because all of them decode to the same point.
+    std::vector<u32> packedVertex(mesh.vertexCount(), 0);
     for (const UnitOutput& output : outputs) {
         const u32 vertexBase = u32(packed.vertices.size());
+        for (usize v = 0; v < output.sources.size(); ++v) {
+            packedVertex[output.sources[v]] = vertexBase + u32(v);
+        }
         const u32 triangleBase = u32(packed.triangles.size());
         packed.vertices.insert(packed.vertices.end(), output.vertices.begin(),
                                output.vertices.end());
@@ -391,6 +418,16 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     packed.faceCount = mesh.faceCount;
     packed.originalFace = faces.originalOfPacked;
     trace.lap("concatenate");
+
+    if (concurrent) {
+        dispatch_group_wait(edgeGroup, DISPATCH_TIME_FOREVER);
+    } else {
+        findEdges(&edgeWork);
+    }
+    usePackedVertices(edgeWork.edges, packedVertex);
+    packed.edgeSegments = std::move(edgeWork.edges.segments);
+    packed.edgeChunks = std::move(edgeWork.edges.chunks);
+    trace.lap("edges");
     return packed;
 }
 

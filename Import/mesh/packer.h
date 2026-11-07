@@ -21,6 +21,8 @@ struct PackedDefinition {
     std::vector<u32> highBits; // one per vertex in wide definitions, otherwise empty
     std::vector<u32> triangles;
     std::vector<Meshlet> meshlets;
+    std::vector<EdgeSegment> edgeSegments;
+    std::vector<EdgeChunk> edgeChunks;
     /// Packed face id to the caller's face id. Packing renumbers faces so that faces close in space
     /// have close ids, which is what lets a meshlet use a 16-bit local face.
     std::vector<u32> originalFace;
