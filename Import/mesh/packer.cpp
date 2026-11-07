@@ -22,7 +22,7 @@ constexpr u32 kGrid16 = 65535;
 constexpr u32 kGrid24 = (1u << 24) - 1;
 constexpr usize kMaxUnitTriangles = 1 << 18;
 constexpr usize kMaxUnitFaces = 1 << 16;
-// Edges shorter than this many 16-bit grid steps would visibly lose shape, so the definition gets
+// Short edges below this many 16-bit grid steps would visibly lose shape, so the definition gets
 // the wide grid. See ADR 0004.
 constexpr float kMinEdgeGridSteps = 8.0f;
 constexpr usize kEdgeSampleStride = 97;
@@ -102,11 +102,16 @@ simd_float3 triangleCentroid(const IndexedMesh& mesh, usize triangle) {
 bool needsWideGrid(const IndexedMesh& mesh, const Bounds& bounds) {
     const simd_float3 extent = bounds.hi - bounds.lo;
     const float step = simd_reduce_max(extent) / float(kGrid16);
+    if (mesh.maxGridStep > 0.0f && step > mesh.maxGridStep) {
+        return true;
+    }
     std::vector<float> lengths;
     for (usize t = 0; t < mesh.triangleCount(); t += kEdgeSampleStride) {
         const simd_float3 a = readVector(mesh.positions, mesh.indices[t * 3]);
         const simd_float3 b = readVector(mesh.positions, mesh.indices[t * 3 + 1]);
-        lengths.push_back(simd_length(b - a));
+        const simd_float3 c = readVector(mesh.positions, mesh.indices[t * 3 + 2]);
+        // The shortest edge, because slivers are what a coarse grid damages.
+        lengths.push_back(std::min({simd_length(b - a), simd_length(c - b), simd_length(a - c)}));
     }
     if (lengths.empty()) {
         return false;
@@ -198,12 +203,16 @@ struct PackContext {
     simd_float3 toGrid;       // definition space to integer grid
     simd_float3 toBoundsGrid; // definition space to 16-bit bounds grid
     float boundsStep;         // largest bounds grid step, in definition units
+    simd_float3 gridMax;
     bool wide;
 };
 
 void packVertex(const PackContext& context, u32 vertex, u32 faceBase, UnitOutput& out) {
-    const simd_float3 grid =
-        roundToGrid((readVector(context.mesh.positions, vertex) - context.lo) * context.toGrid);
+    // Clamped because at 24 bits a float cannot hold the top grid step exactly, and a vertex at the
+    // maximum could round past it and wrap to zero.
+    const simd_float3 grid = simd_clamp(
+        roundToGrid((readVector(context.mesh.positions, vertex) - context.lo) * context.toGrid),
+        simd_float3(0.0f), context.gridMax);
     const u32 x = u32(grid.x), y = u32(grid.y), z = u32(grid.z);
 
     PackedVertex packed{};
@@ -338,8 +347,8 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
     const PackContext context{
-        mesh, faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale, simd_reduce_max(boundsScale),
-        wide};
+        mesh,      faces, bounds.lo, 1.0f / scale, 1.0f / boundsScale, simd_reduce_max(boundsScale),
+        gridSteps, wide};
     std::vector<UnitOutput> outputs(units.size());
     parallelFor(units.size(), [&](usize u) {
         const std::span<const SortedTriangle> range(sortedTriangles.data() + units[u].first,

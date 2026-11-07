@@ -20,6 +20,8 @@ struct IndexedMesh {
     /// Face ids are already in spatial order and must not change, as with STEP faces, whose ids
     /// have to survive refinement.
     bool faceOrderIsFixed = false;
+    /// The coarsest grid step that keeps the geometry's tolerance, or zero to judge from edges.
+    float maxGridStep = 0.0f;
 
     usize vertexCount() const { return faceOfVertex.size(); }
     usize triangleCount() const { return indices.size() / 3; }

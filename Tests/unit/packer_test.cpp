@@ -145,3 +145,21 @@ TEST_CASE("packing an empty mesh gives an empty definition") {
     const PackedDefinition packed = packMesh(IndexedMesh{});
     CHECK(packed.meshlets.empty());
 }
+
+TEST_CASE("a vertex at the top of the wide grid stays there") {
+    // Tiny triangles force the wide grid, and the large span puts a vertex at its very top.
+    import::TriangleSoup soup;
+    const float size = 123456.7f;
+    for (float x = 0.0f; x < 40.0f; x += 1.0f) {
+        soup.corners.insert(soup.corners.end(), {x, 0, 0, x + 0.25f, 0, 0, x, 0.25f, 0});
+    }
+    soup.corners.insert(soup.corners.end(),
+                        {size, size, size, size - 0.25f, size, size, size, size - 0.25f, size});
+    const import::PackedDefinition packed = import::packMesh(import::buildIndexedMesh(soup));
+    REQUIRE((packed.flags & kDefinitionWide) != 0);
+    float largest = 0.0f;
+    for (usize v = 0; v < packed.vertices.size(); ++v) {
+        largest = std::max(largest, import::decodePosition(packed, v)[0]);
+    }
+    CHECK(largest == doctest::Approx(size).epsilon(1e-5));
+}
