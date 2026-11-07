@@ -116,23 +116,27 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
 }
 
 void FaceState::clear(u8 mask, std::vector<Change>* changes) {
-    mask &= kFaceFlags;
     for (u32 o = 0; o < words_.size(); ++o) {
-        if ((words_[o].flags & mask) != 0) {
-            set({o, Target::kWholeOccurrence}, mask, false, changes);
-        }
-        bool marked = false;
-        for (u32 bit = 0; bit < kFlagCount; ++bit) {
-            marked |= (mask & (1u << bit)) != 0 && marks_[usize(o) * kFlagCount + bit] != 0;
-        }
-        if (!marked) {
-            continue;
-        }
-        const u32 page = words_[o].facePage;
-        for (u32 f = 0; f < faceCounts_[o]; ++f) {
-            if ((faceBytes_[page + f] & mask) != 0) {
-                set({o, f}, mask, false, changes);
-            }
+        clearOccurrence(o, mask, changes);
+    }
+}
+
+void FaceState::clearOccurrence(u32 o, u8 mask, std::vector<Change>* changes) {
+    mask &= kFaceFlags;
+    if ((words_[o].flags & mask) != 0) {
+        set({o, Target::kWholeOccurrence}, mask, false, changes);
+    }
+    bool marked = false;
+    for (u32 bit = 0; bit < kFlagCount; ++bit) {
+        marked |= (mask & (1u << bit)) != 0 && marks_[usize(o) * kFlagCount + bit] != 0;
+    }
+    if (!marked) {
+        return;
+    }
+    const u32 page = words_[o].facePage;
+    for (u32 f = 0; f < faceCounts_[o]; ++f) {
+        if ((faceBytes_[page + f] & mask) != 0) {
+            set({o, f}, mask, false, changes);
         }
     }
 }

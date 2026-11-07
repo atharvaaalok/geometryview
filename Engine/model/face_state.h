@@ -42,6 +42,8 @@ public:
 
     /// Clears `mask` everywhere, recording what it changed.
     void clear(u8 mask, std::vector<Change>* changes = nullptr);
+    /// Clears `mask` from an occurrence and each of its faces.
+    void clearOccurrence(u32 occurrence, u8 mask, std::vector<Change>* changes = nullptr);
 
     /// Puts back the flags recorded in `changes`, newest first.
     void restore(std::span<const Change> changes);

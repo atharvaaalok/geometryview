@@ -183,3 +183,32 @@ TEST_CASE("selecting does not count as a change to what is shown") {
     rig.interaction.hideSelection();
     CHECK(rig.interaction.state().visibilityVersion() != before);
 }
+
+TEST_CASE("a tree node hides and shows, faces included, in one step to undo") {
+    Rig rig;
+    rig.interaction.click(9, Tool::Hide, false); // one face of part B
+    rig.interaction.setNode({0, 1}, kStateHidden, true);
+    CHECK((rig.flags(0) & kStateHidden) != 0);
+    CHECK((rig.flags(1) & kStateHidden) != 0);
+    REQUIRE(rig.interaction.undo());
+    CHECK((rig.flags(0) & kStateHidden) == 0);
+    CHECK((rig.flags(1) & kStateHidden) == 0);
+    CHECK((rig.flags(2, 0) & kStateHidden) != 0); // the earlier step stays
+
+    rig.interaction.setNode({0, 4}, kStateHidden, false);
+    CHECK((rig.flags(2, 0) & kStateHidden) == 0);
+}
+
+TEST_CASE("isolating a node shows and unghosts it, hides the rest, and undoes at once") {
+    Rig rig;
+    rig.interaction.setNode({0, 4}, kStateGhost, true);
+    rig.interaction.setNode({0, 4}, kStateHidden, true);
+    rig.interaction.isolateNode({0, 4});
+    CHECK((rig.flags(0) & kStateHidden) != 0);
+    CHECK((rig.flags(1) & kStateHidden) != 0);
+    CHECK((rig.flags(2) & (kStateHidden | kStateGhost)) == 0);
+    REQUIRE(rig.interaction.undo());
+    CHECK((rig.flags(0) & kStateHidden) == 0);
+    CHECK((rig.flags(2) & kStateHidden) != 0);
+    CHECK((rig.flags(2) & kStateGhost) != 0);
+}
