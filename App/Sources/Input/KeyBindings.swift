@@ -5,6 +5,8 @@ import GeometryEngine
 enum KeyCommand {
     case perform(GeoAction)
     case selectionMode(GeoSelectionMode)
+    case toggleProjection
+    case showShortcuts
 }
 
 struct KeyBinding {
@@ -22,7 +24,8 @@ struct HeldBinding {
 enum KeyBindings {
     static let pressed: [KeyBinding] = [
         KeyBinding(key: "f", modifiers: [], command: .perform(GeoActionFit)),
-        KeyBinding(key: "p", modifiers: [], command: .perform(GeoActionToggleProjection)),
+        KeyBinding(key: "p", modifiers: [], command: .toggleProjection),
+        KeyBinding(key: "?", modifiers: .shift, command: .showShortcuts),
         KeyBinding(key: "\u{1B}", modifiers: [], command: .perform(GeoActionClearSelection)),
         KeyBinding(key: "h", modifiers: .shift, command: .perform(GeoActionShowAll)),
         KeyBinding(key: "g", modifiers: .shift, command: .perform(GeoActionUnghostAll)),

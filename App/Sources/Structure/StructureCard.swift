@@ -44,7 +44,7 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         table.intercellSpacing = .zero
         table.backgroundColor = .clear
         table.style = .plain
-        table.selectionHighlightStyle = .none
+        table.selectionHighlightStyle = .regular
         table.allowsMultipleSelection = false
         table.dataSource = self
         table.delegate = self
@@ -284,6 +284,11 @@ final class TreeTableView: NSTableView {
 /// Draws selection as the cobalt wash, without the system's own highlight.
 @MainActor
 final class TreeRowView: NSTableRowView {
+    override var isEmphasized: Bool {
+        get { false }
+        set {}
+    }
+
     override func drawSelection(in dirtyRect: NSRect) {
         Palette.cobaltWash.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 6, yRadius: 6).fill()

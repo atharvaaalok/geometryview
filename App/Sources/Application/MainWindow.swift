@@ -2,15 +2,41 @@ import AppKit
 import GeometryEngine
 import UniformTypeIdentifiers
 
-/// The single window: a full-bleed viewport with floating chrome above it.
+/// The single window: a full-bleed viewport with the chrome floating above it.
+///
+/// Every piece of chrome is its own layer tree over the Metal layer, so changing any of it never
+/// draws a 3D frame.
 @MainActor
 final class MainWindow: NSWindow {
     private let engine: EngineHandle
-    private let status = StatusCard()
-    private let structure: StructureCard
     private let viewport: ViewportView
+    private let masthead = Masthead()
+    private let structure: StructureCard
+    private let selection = SelectionCard()
+    private let toolBar = Toolbar()
+    private let status = StatusCard()
+    private let holdHint = HoldHint()
+    private let hoverChip = Chip()
+    private let dropZone = DropZone()
+    private let shortcuts = ShortcutsSheet()
     private var exercise: Exercise?
     private var accessedURLs: [URL] = []
+
+    private var names: [String] = []
+    private var progress: [UInt32: Double] = [:]
+    private var perspective = false
+    private var tool = GeoToolSelect
+    private var hovered: (document: UInt32, node: UInt32, face: UInt32)?
+    private var pointer: NSPoint?
+
+    private static let cardWidth: CGFloat = 300
+    private static let selectionWidth: CGFloat = 286
+    private static let edge: CGFloat = 18
+    private static let cardTop: CGFloat = 72
+    private static let cardBottom: CGFloat = 96
+    private static let toolbarBottom: CGFloat = 22
+    private static let hintBottom: CGFloat = 86
+    private static let selectionTop: CGFloat = 172
 
     init(engine: EngineHandle) {
         self.engine = engine
@@ -29,37 +55,86 @@ final class MainWindow: NSWindow {
         isMovableByWindowBackground = false
         backgroundColor = Palette.paper
         isReleasedWhenClosed = false
-        minSize = NSSize(width: 720, height: 480)
+        minSize = NSSize(width: 960, height: 600)
         center()
 
+        contentView = makeLayout()
+        connect()
+        showEmpty()
+    }
+
+    // MARK: Layout
+
+    private func makeLayout() -> NSView {
         let root = NSView()
         root.wantsLayer = true
-        structure.isHidden = true
-        for view in [viewport, structure, status] as [NSView] {
+        let views: [NSView] = [
+            viewport, masthead, structure, selection, toolBar, holdHint, hoverChip, status,
+            dropZone, shortcuts,
+        ]
+        for view in views {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
+        // The space right of the tree card, where the toolBar and hints centre themselves.
+        let free = NSLayoutGuide()
+        root.addLayoutGuide(free)
+
         NSLayoutConstraint.activate([
             viewport.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             viewport.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             viewport.topAnchor.constraint(equalTo: root.topAnchor),
             viewport.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            structure.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: Metrics.gap),
-            structure.topAnchor.constraint(
-                equalTo: root.topAnchor,
-                constant: Self.titlebarClearance
-            ),
+
+            // Clear of the window's buttons, in line with them.
+            masthead.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
+            masthead.topAnchor.constraint(equalTo: root.topAnchor, constant: 10),
+            masthead.trailingAnchor.constraint(lessThanOrEqualTo: root.centerXAnchor),
+
+            structure.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: Self.edge),
+            structure.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.cardTop),
             structure.bottomAnchor.constraint(
                 equalTo: root.bottomAnchor,
-                constant: -Metrics.gap - Metrics.shadowCard
+                constant: -Self.cardBottom
             ),
             structure.widthAnchor.constraint(equalToConstant: Self.cardWidth),
+
+            selection.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -Self.edge),
+            selection.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.selectionTop),
+            selection.widthAnchor.constraint(equalToConstant: Self.selectionWidth),
+
+            free.leadingAnchor.constraint(equalTo: structure.trailingAnchor),
+            free.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            toolBar.centerXAnchor.constraint(equalTo: free.centerXAnchor),
+            toolBar.bottomAnchor.constraint(
+                equalTo: root.bottomAnchor,
+                constant: -Self.toolbarBottom
+            ),
+            holdHint.centerXAnchor.constraint(equalTo: free.centerXAnchor),
+            holdHint.bottomAnchor.constraint(
+                equalTo: root.bottomAnchor,
+                constant: -Self.hintBottom
+            ),
+
             status.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             status.centerYAnchor.constraint(equalTo: root.centerYAnchor),
-            status.widthAnchor.constraint(equalToConstant: 340),
-        ])
-        contentView = root
+            status.widthAnchor.constraint(equalToConstant: 360),
 
+            dropZone.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            dropZone.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            dropZone.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            dropZone.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
+
+            shortcuts.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            shortcuts.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            shortcuts.topAnchor.constraint(equalTo: root.topAnchor),
+            shortcuts.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        hoverChip.isHidden = true
+        return root
+    }
+
+    private func connect() {
         viewport.onDropFiles = { [weak self] urls in
             // Holding Command adds files to what is shown, as in the library.
             let adding = NSApp.currentEvent?.modifierFlags.contains(.command) == true
@@ -71,13 +146,33 @@ final class MainWindow: NSWindow {
                 }
             }
         }
+        viewport.onKeyCommand = { [weak self] command in self?.run(command) }
+        viewport.onToolChange = { [weak self] tool in self?.toolChanged(tool) }
+        viewport.onPointerMoved = { [weak self] point in self?.pointerMoved(point) }
+        viewport.onDragging = { [weak self] dragging in self?.dropZone.isHidden = !dragging }
+
+        toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
+        toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
+        toolBar.pick.onChange = { [weak self] index in
+            self?.engine.setSelectionMode(GeoSelectionMode(rawValue: UInt32(index)))
+            self?.refreshSelection()
+        }
+        toolBar.projection.onChange = { [weak self] index in
+            guard let self, (index == 1) != perspective else {
+                return
+            }
+            perspective = index == 1
+            engine.perform(GeoActionToggleProjection)
+        }
+        selection.onAction = { [weak self] action in self?.engine.perform(action) }
+        shortcuts.onClose = { [weak self] in self?.shortcuts.isHidden = true }
+
         engine.onEvent = { [weak self] event in
             self?.handle(event)
         }
     }
 
-    private static let cardWidth: CGFloat = 300
-    private static let titlebarClearance: CGFloat = 44
+    // MARK: Files
 
     /// Opens a file in place of whatever is shown.
     func open(_ url: URL) {
@@ -85,7 +180,10 @@ final class MainWindow: NSWindow {
             accessed.stopAccessingSecurityScopedResource()
         }
         accessedURLs = []
+        names = []
+        progress = [:]
         structure.reset()
+        selection.isHidden = true
         add(url, replacing: true)
     }
 
@@ -100,13 +198,17 @@ final class MainWindow: NSWindow {
         if url.startAccessingSecurityScopedResource() {
             accessedURLs.append(url)
         }
+        names.append(url.lastPathComponent)
         structure.addDocument(named: url.lastPathComponent)
         structure.isHidden = false
+        updateInsets()
+        status.isHidden = true
         if replacing {
             engine.open(path: url.path)
         } else {
             engine.add(path: url.path)
         }
+        refreshMasthead()
     }
 
     func chooseFile(adding: Bool) {
@@ -130,44 +232,224 @@ final class MainWindow: NSWindow {
         }
     }
 
-    override func resignKey() {
-        super.resignKey()
-        viewport.releaseHeldTool()
-    }
+    // MARK: Commands
 
     @objc func performAction(_ sender: NSMenuItem) {
         engine.perform(GeoAction(rawValue: UInt32(sender.tag)))
     }
 
     @objc func chooseSelectionMode(_ sender: NSMenuItem) {
-        engine.setSelectionMode(GeoSelectionMode(rawValue: UInt32(sender.tag)))
+        setMode(GeoSelectionMode(rawValue: UInt32(sender.tag)))
     }
+
+    @objc func toggleProjection(_ sender: Any?) {
+        run(.toggleProjection)
+    }
+
+    @objc func showShortcuts(_ sender: Any?) {
+        shortcuts.isHidden = false
+    }
+
+    private func run(_ command: KeyCommand) {
+        switch command {
+        case .perform(let action):
+            engine.perform(action)
+        case .selectionMode(let mode):
+            setMode(mode)
+        case .toggleProjection:
+            perspective.toggle()
+            toolBar.projection.selected = perspective ? 1 : 0
+            engine.perform(GeoActionToggleProjection)
+        case .showShortcuts:
+            shortcuts.isHidden.toggle()
+        }
+    }
+
+    private func setMode(_ mode: GeoSelectionMode) {
+        toolBar.pick.selected = Int(mode.rawValue)
+        engine.setSelectionMode(mode)
+        refreshSelection()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        viewport.releaseHeldTool()
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if !shortcuts.isHidden {
+            shortcuts.isHidden = true
+        }
+    }
+
+    // MARK: Pointer and tools
+
+    private func toolChanged(_ newTool: GeoTool) {
+        tool = newTool
+        holdHint.show(newTool)
+        refreshCursor()
+    }
+
+    private func pointerMoved(_ point: NSPoint?) {
+        pointer = point
+        placeHoverChip()
+    }
+
+    private func refreshCursor() {
+        switch tool {
+        case GeoToolHide, GeoToolGhost: viewport.cursor = .crosshair
+        default: viewport.cursor = hovered == nil ? .arrow : .pointingHand
+        }
+    }
+
+    // A label naming what is under the pointer, beside it.
+    private func showHover() {
+        guard let hovered else {
+            hoverChip.isHidden = true
+            refreshCursor()
+            return
+        }
+        let row = TreeRow(document: hovered.document, node: hovered.node, depth: 0)
+        hoverChip.setContent([
+            Chip.text(structure.tree.name(of: row), weight: .medium),
+            Chip.text("face \(hovered.face + 1)", color: Palette.muted),
+        ])
+        refreshCursor()
+        placeHoverChip()
+    }
+
+    private func placeHoverChip() {
+        guard hovered != nil, let pointer, let content = contentView else {
+            hoverChip.isHidden = true
+            return
+        }
+        hoverChip.isHidden = false
+        hoverChip.layoutSubtreeIfNeeded()
+        let size = hoverChip.fittingSize
+        let x = min(pointer.x + 16, content.bounds.width - size.width - 8)
+        let y = max(pointer.y - 14 - size.height, 8)
+        hoverChip.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+    }
+
+    // MARK: Engine events
 
     private func handle(_ event: EngineEvent) {
         switch event {
-        case .loading(_, let name):
-            status.showLoading(name)
-        case .progress(_, let done, let total):
-            status.showProgress(done: done, total: total)
+        case .loading(let document, _):
+            progress[document] = 0
+            refreshMasthead()
+        case .progress(let document, let done, let total):
+            progress[document] = total > 0 ? Double(done) / Double(total) : 0
+            refreshMasthead()
         case .modelReady(let document):
             structure.modelReady(document: document)
+            refreshMasthead()
+            toolBar.update(hasSelection: false, hasModel: true)
         case .sceneReady:
-            status.isHidden = true
-            if ChromeSnapshot.isRequested {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-                    ChromeSnapshot.capture(self)
-                    NSApp.terminate(nil)
-                }
-            }
-            if Exercise.isRequested, exercise == nil {
-                let run = Exercise(engine: engine, size: contentView?.bounds.size ?? .zero)
-                exercise = run
-                run.start(window: self)
-            }
+            progress = [:]
+            refreshMasthead()
+            startAutomation()
         case .failed(_, let message):
+            progress = [:]
+            refreshMasthead()
             status.showFailure(message)
         case .selectionChanged(let document, let node):
             structure.reveal(document: document, node: node)
+            refreshSelection()
+        case .hoverChanged(let document, let node, let face):
+            hovered = node.map { (document, $0, face) }
+            showHover()
+        }
+    }
+
+    private func refreshSelection() {
+        let summary = engine.selection()
+        selection.show(summary, tree: structure.tree)
+        toolBar.update(hasSelection: summary.occurrences > 0, hasModel: !names.isEmpty)
+    }
+
+    private func refreshMasthead() {
+        guard !names.isEmpty else {
+            masthead.isHidden = true
+            return
+        }
+        let title = names.count == 1 ? names[0] : "\(names.count) files"
+        var parts = 0
+        var bodies = 0
+        for document in structure.tree.documents {
+            guard let model = document.model else {
+                continue
+            }
+            for node in model.nodes where node.kind == GeoNodePart.rawValue {
+                parts += 1
+            }
+            bodies += Int(model.nodes.map(\.occurrence_end).max() ?? 0)
+        }
+        var detail = names.count == 1 ? "" : names.joined(separator: ", ")
+        if bodies > 0 {
+            let counts = "\(parts.formatted()) parts · \(bodies.formatted()) bodies"
+            detail = detail.isEmpty ? counts : "\(counts) · \(detail)"
+        } else {
+            detail = "Reading…"
+        }
+        masthead.show(title: title, subtitle: detail)
+        let fractions = Array(progress.values)
+        masthead.setProgress(
+            fractions.isEmpty ? nil : fractions.reduce(0, +) / Double(fractions.count)
+        )
+    }
+
+    // The tree card covers the left, the masthead the top, and the toolbar the bottom. Framing
+    // keeps the model in the rest.
+    private func updateInsets() {
+        let left = structure.isHidden ? 0 : Self.edge + Self.cardWidth
+        engine.setViewInsets(
+            left: left,
+            top: Self.cardTop - 16,
+            right: 0,
+            bottom: Self.cardBottom - 16
+        )
+    }
+
+    private func showEmpty() {
+        status.showInvitation()
+        structure.isHidden = true
+        toolBar.update(hasSelection: false, hasModel: false)
+    }
+
+    // MARK: Automation
+
+    /// Changes only the chrome: shows and hides the sheet, the drop frame and the hold hint. The
+    /// exercise checks that none of this draws a 3D frame.
+    func exerciseChrome(step: Int) {
+        shortcuts.isHidden = step % 2 == 1
+        dropZone.isHidden = step % 3 != 1
+        holdHint.show(step % 2 == 0 ? GeoToolGhost : GeoToolSelect)
+        toolBar.update(hasSelection: step % 2 == 0, hasModel: true)
+    }
+
+    private func startAutomation() {
+        if ChromeSnapshot.isRequested {
+            // With GEOMETRY_SNAPSHOT_SELECT set, the first part is selected, to show its card.
+            let environment = ProcessInfo.processInfo.environment
+            if environment["GEOMETRY_SNAPSHOT_SELECT"] != nil {
+                engine.selectNode(document: 0, node: 1, extend: false)
+            }
+            // With GEOMETRY_SNAPSHOT_HOLD set, the hide tool's hint shows, as while H is held.
+            if environment["GEOMETRY_SNAPSHOT_HOLD"] != nil {
+                toolChanged(GeoToolHide)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+                ChromeSnapshot.capture(self, engine: engine)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        if Exercise.isRequested, exercise == nil {
+            let run = Exercise(engine: engine, size: contentView?.bounds.size ?? .zero)
+            exercise = run
+            run.start(window: self)
         }
     }
 }

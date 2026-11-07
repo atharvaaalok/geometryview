@@ -32,8 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                ChromeSnapshot.capture(window)
-                NSApp.terminate(nil)
+                ChromeSnapshot.capture(window, engine: engine)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    NSApp.terminate(nil)
+                }
             }
         }
     }

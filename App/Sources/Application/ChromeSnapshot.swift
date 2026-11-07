@@ -1,15 +1,38 @@
 import AppKit
 
-/// Renders the window's layer tree to a PNG for visual checks and golden tests.
+/// Writes what the window shows to a PNG, for visual checks and golden tests.
 ///
 /// Launching with `--snapshot` writes `chrome.png` to the app's temporary directory and quits. The
-/// 3D surface is not included, because `CAMetalLayer` contents do not render through
-/// `CALayer.render(in:)`; `gcli render` covers the 3D output.
+/// engine draws its current view offscreen, and the window's own layers are drawn over that, so the
+/// picture is the window as seen, without needing screen recording permission.
 @MainActor
 enum ChromeSnapshot {
     static var isRequested: Bool { CommandLine.arguments.contains("--snapshot") }
 
-    static func capture(_ window: NSWindow) {
+    static func capture(_ window: NSWindow, engine: EngineHandle) {
+        let figure = FileManager.default.temporaryDirectory.appendingPathComponent("figure.png")
+        try? FileManager.default.removeItem(at: figure)
+        engine.writeSnapshot(to: figure.path)
+        waitForFile(figure, attempts: 40) {
+            compose(window, figure: NSImage(contentsOf: figure))
+        }
+    }
+
+    private static func waitForFile(
+        _ url: URL,
+        attempts: Int,
+        then: @escaping @MainActor () -> Void
+    ) {
+        if FileManager.default.fileExists(atPath: url.path) || attempts == 0 {
+            then()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            waitForFile(url, attempts: attempts - 1, then: then)
+        }
+    }
+
+    private static func compose(_ window: NSWindow, figure: NSImage?) {
         guard let root = window.contentView, let layer = root.layer else {
             return
         }
@@ -31,6 +54,9 @@ enum ChromeSnapshot {
         }
         context.setFillColor(Palette.paper.cgColor)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        if let image = figure?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
         context.scaleBy(x: scale, y: scale)
         layer.render(in: context)
 

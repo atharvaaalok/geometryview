@@ -124,6 +124,21 @@ final class TreeRows {
         }
     }
 
+    /// The names of a row's ancestors, from the root down, as a path.
+    func path(of row: TreeRow) -> String {
+        guard !row.isDocument, let model = documents[Int(row.document)].model else {
+            return ""
+        }
+        var names: [String] = []
+        var parent = model.nodes[Int(row.node)].parent
+        while parent != UInt32.max {
+            names.append(name(of: TreeRow(document: row.document, node: parent, depth: 0)))
+            parent = model.nodes[Int(parent)].parent
+        }
+        names.append(documents[Int(row.document)].name)
+        return names.reversed().joined(separator: " / ")
+    }
+
     func kind(of row: TreeRow) -> GeoNodeKind? {
         guard !row.isDocument, let model = documents[Int(row.document)].model else {
             return nil
