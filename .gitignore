@@ -22,3 +22,4 @@ __pycache__/
 Launcher/dist/
 iOS/Shell/*.xcodeproj/
 iOS/Shell/build/
+iOS/Shell/.team
