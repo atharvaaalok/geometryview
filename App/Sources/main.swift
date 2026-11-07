@@ -1,6 +1,11 @@
 import AppKit
-import GeometryEngine
 
-let app = NSApplication.shared
-app.setActivationPolicy(.regular)
-print("Geometry engine \(String(cString: geo_engine_version()))")
+MainActor.assumeIsolated {
+    let application = NSApplication.shared
+    let delegate = AppDelegate()
+    application.delegate = delegate
+    application.setActivationPolicy(.regular)
+    withExtendedLifetime(delegate) {
+        application.run()
+    }
+}
