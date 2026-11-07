@@ -104,7 +104,8 @@ STEP tokenizer, the STL reader and the cache reader for ten minutes each.
 Setting `GEOMETRY_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRY_LATENCY=1` measures
 input-to-present latency, and `GEOMETRY_ALLOCS=1` counts per-frame heap allocations. Launching with
 `--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
-the interface draws no 3D frame. `--snapshot` writes the window, engine output and interface
+the interface draws no 3D frame. `--chrome-check` clicks every segment and card label with real
+events and checks that none of them reaches the 3D view. `--snapshot` writes the window, engine output and interface
 together, to `chrome.png` in the app's temporary directory.
 
 ## Project goals, in order

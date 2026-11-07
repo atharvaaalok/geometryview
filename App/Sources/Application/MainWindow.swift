@@ -27,6 +27,7 @@ final class MainWindow: NSWindow {
     private let sectionCard = SectionCard()
     private var look = Look.saved()
     private var exercise: Exercise?
+    private var chromeCheck: ChromeCheck?
     private var accessedURLs: [URL] = []
 
     private var names: [String] = []
@@ -670,6 +671,13 @@ final class MainWindow: NSWindow {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSApp.terminate(nil)
                 }
+            }
+        }
+        if ChromeCheck.isRequested, chromeCheck == nil {
+            let check = ChromeCheck(window: self, engine: engine)
+            chromeCheck = check
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+                check.start(lookCard: lookCard)
             }
         }
         if Exercise.isRequested, exercise == nil {
