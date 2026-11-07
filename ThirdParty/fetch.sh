@@ -33,4 +33,14 @@ mkdir -p "$root/doctest/doctest"
 cp "$work/doctest/doctest/doctest.h" "$root/doctest/doctest/doctest.h"
 cp "$work/doctest/LICENSE.txt" "$root/doctest/LICENSE.txt"
 
+# Fonts come from the pinned commit directly, so the whole Plex repository is not cloned.
+plex="https://raw.githubusercontent.com/IBM/plex/2f9ba1b25957d958db71a849e85d72e3ecfb845a"
+rm -rf "$root/ibm-plex-mono"
+mkdir -p "$root/ibm-plex-mono"
+for weight in Regular Medium SemiBold Bold; do
+    curl --fail --silent --show-error --output "$root/ibm-plex-mono/IBMPlexMono-$weight.ttf" \
+        "$plex/packages/plex-mono/fonts/complete/ttf/IBMPlexMono-$weight.ttf"
+done
+curl --fail --silent --show-error --output "$root/ibm-plex-mono/LICENSE.txt" "$plex/LICENSE.txt"
+
 echo "Vendored sources match manifest.toml."
