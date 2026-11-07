@@ -10,3 +10,21 @@ target_link_libraries(import_core
 
 add_executable(geometry-import helper/main.cpp)
 target_link_libraries(geometry-import PRIVATE import_core geo_warnings)
+
+# The OCCT worker is optional, so everything else builds on a machine that has not run
+# ThirdParty/build_occt.sh. It is the only target that sees OCCT.
+set(GEO_OCCT_ROOT "${CMAKE_SOURCE_DIR}/ThirdParty/.occt/install")
+if(EXISTS "${GEO_OCCT_ROOT}/lib/libTKDESTEP.a")
+    add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
+    set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
+    target_include_directories(geometry-occt-worker PRIVATE .)
+    target_include_directories(geometry-occt-worker SYSTEM PRIVATE
+        "${GEO_OCCT_ROOT}/include/opencascade")
+    file(GLOB occt_libraries CONFIGURE_DEPENDS "${GEO_OCCT_ROOT}/lib/*.a")
+    target_link_libraries(geometry-occt-worker PRIVATE
+        geo_base geo_warnings
+        ${occt_libraries} ${occt_libraries} ${occt_libraries}
+    )
+else()
+    message(WARNING "OCCT not found. Run ThirdParty/build_occt.sh to import STEP files.")
+endif()
