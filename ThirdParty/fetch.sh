@@ -33,6 +33,13 @@ mkdir -p "$root/doctest/doctest"
 cp "$work/doctest/doctest/doctest.h" "$root/doctest/doctest/doctest.h"
 cp "$work/doctest/LICENSE.txt" "$root/doctest/LICENSE.txt"
 
+checkout xxhash https://github.com/Cyan4973/xxHash.git v0.8.3 \
+    e626a72bc2321cd320e953a0ccf1584cad60f363
+rm -rf "$root/xxhash"
+mkdir -p "$root/xxhash"
+cp "$work/xxhash/xxhash.h" "$root/xxhash/xxhash.h"
+cp "$work/xxhash/LICENSE" "$root/xxhash/LICENSE"
+
 # Fonts come from the pinned commit directly, so the whole Plex repository is not cloned.
 plex="https://raw.githubusercontent.com/IBM/plex/2f9ba1b25957d958db71a849e85d72e3ecfb845a"
 rm -rf "$root/ibm-plex-mono"

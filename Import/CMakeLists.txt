@@ -5,6 +5,3 @@ target_link_libraries(import_core
     PUBLIC geo_options
     PRIVATE geo_warnings meshoptimizer
 )
-target_compile_options(import_core PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-Wunsafe-buffer-usage-in-container>
-)
