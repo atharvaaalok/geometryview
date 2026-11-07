@@ -1,4 +1,5 @@
-file(GLOB_RECURSE import_sources CONFIGURE_DEPENDS import.cpp stl/*.cpp mesh/*.cpp cache/*.cpp)
+file(GLOB_RECURSE import_sources CONFIGURE_DEPENDS
+    import.cpp stl/*.cpp mesh/*.cpp cache/*.cpp step/*.cpp)
 add_library(import_core STATIC ${import_sources})
 target_include_directories(import_core PUBLIC .)
 target_include_directories(import_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
