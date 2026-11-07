@@ -2,6 +2,7 @@
 //
 // Rules that keep the Apple GPU's hidden surface removal working: no discard and no depth output on
 // this path, and varyings stay small. See Docs/PLAN.md.
+#include "geometry.h"
 #include "shared/gpu_types.h"
 #include <metal_stdlib>
 using namespace metal;
@@ -33,47 +34,16 @@ struct Payload {
 
 constant uint kNoOccurrence = 0xFFFFFFFF;
 
-static inline float3 transformPoint(const device GpuOccurrence& occurrence, float3 p) {
-    const float4 h = float4(p, 1.0);
-    return float3(dot(occurrence.rows[0], h), dot(occurrence.rows[1], h),
-                  dot(occurrence.rows[2], h));
-}
-
-static inline float3 transformDirection(const device GpuOccurrence& occurrence, float3 v) {
-    return float3(dot(occurrence.rows[0].xyz, v), dot(occurrence.rows[1].xyz, v),
-                  dot(occurrence.rows[2].xyz, v));
-}
-
-static inline float3 decodeOctahedral(short2 encoded) {
-    const float2 f = float2(encoded) / 32767.0;
-    float3 n = float3(f, 1.0 - abs(f.x) - abs(f.y));
-    if (n.z < 0.0) {
-        n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
-    }
-    return normalize(n);
-}
-
 static inline bool isVisible(const device Meshlet& m, const device GpuDefinition& definition,
                              const device GpuOccurrence& occurrence,
                              constant FrameUniforms& frame) {
-    const float3 local =
-        float3(m.centerX, m.centerY, m.centerZ) * definition.boundsScale + definition.boundsMin;
-    const float3 center = transformPoint(occurrence, local);
+    const float3 center =
+        boundsCenter(definition, occurrence, ushort3(m.centerX, m.centerY, m.centerZ));
     const float radius = float(m.radius) * definition.boundsStep;
-
-    const float3 offset = center - frame.eye;
-    const float x = abs(dot(offset, frame.right));
-    const float y = abs(dot(offset, frame.up));
-    const float depth = dot(offset, frame.forward);
-
-    if (frame.perspective != 0) {
-        if (depth < -radius || x > depth * frame.tanHalfX + radius * frame.secHalfX ||
-            y > depth * frame.tanHalfY + radius * frame.secHalfY) {
-            return false;
-        }
-    } else if (x > frame.halfWidth + radius || y > frame.halfHeight + radius) {
+    if (!sphereInView(center, radius, frame)) {
         return false;
     }
+    const float3 offset = center - frame.eye;
 
     // An open surface shows both sides, so a normal cone proves nothing about it.
     if ((definition.flags & kDefinitionOpen) != 0) {
@@ -150,21 +120,11 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          uint look, constant FrameUniforms& frame, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
-
-    // Integers first, so a vertex at the same grid point decodes to the same float in any meshlet,
-    // which is what keeps shared edges watertight. See ADR 0004.
-    uint3 grid = uint3(v.x, v.y, v.z);
-    if ((definition.flags & kDefinitionWide) != 0) {
-        const uint high = definition.highBits[vertexIndex];
-        grid |= uint3(high & 0xFF, (high >> 8) & 0xFF, (high >> 16) & 0xFF) << 16;
-    }
-    const float3 local = float3(grid) * definition.decodeScale + definition.boundsMin;
-    const float3 world = transformPoint(occurrence, local);
+    const float3 world = transformPoint(occurrence, decodePosition(definition, vertexIndex));
     const float3 normal = transformDirection(occurrence, decodeOctahedral(short2(v.octX, v.octY)));
 
     const uint face = m.faceBase + uint(v.localFace);
-    const uint flags = (state.flags & (kStateHidden | kStateGhost | kStateSelected)) |
-                       uint(faceStates[state.facePage + face]);
+    const uint flags = faceFlags(state, faceStates, face);
     SurfaceVertex out;
     out.position = frame.viewProjection * float4(world, 1.0);
     out.normal = frame.viewRotation * normal;

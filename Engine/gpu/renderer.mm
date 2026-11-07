@@ -143,7 +143,8 @@ struct Renderer::State {
     }
 
     // Draws up to kMaxBatchesPerDraw batches at a time.
-    void drawBatches(id<MTL4RenderCommandEncoder> encoder, BatchRange range) {
+    void drawBatches(id<MTL4RenderCommandEncoder> encoder, BatchRange range,
+                     NSUInteger meshThreads = kMeshletMaxTriangles) {
         for (usize start = range.first; start < range.last; start += kMaxBatchesPerDraw) {
             const usize groups = std::min<usize>(kMaxBatchesPerDraw, range.last - start);
             [surfaceTable
@@ -154,8 +155,26 @@ struct Renderer::State {
                                       MTLRenderStageFragment];
             [encoder drawMeshThreadgroups:MTLSizeMake(groups, 1, 1)
                 threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                  threadsPerMeshThreadgroup:MTLSizeMake(kMeshletMaxTriangles, 1, 1)];
+                  threadsPerMeshThreadgroup:MTLSizeMake(meshThreads, 1, 1)];
         }
+    }
+
+    // Edges into the ink attachment, then the ink onto colour.
+    void drawEdges(id<MTL4RenderCommandEncoder> encoder, bool ghostLines) {
+        [surfaceTable setAddress:tables.edgeBatches().gpuAddress atIndex:kBufferBatches];
+        [surfaceTable setAddress:tables.edgeRefs().gpuAddress atIndex:kBufferMeshletRefs];
+        [encoder setRenderPipelineState:pipelines.edges[ghostLines]];
+        [encoder setDepthStencilState:pipelines.depthTest];
+        [encoder setCullMode:MTLCullModeNone];
+        drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
+        [surfaceTable setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
+        [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
+
+        [encoder setRenderPipelineState:pipelines.applyInk[ghostLines]];
+        [encoder setDepthStencilState:pipelines.depthAlways];
+        [encoder setArgumentTable:surfaceTable
+                         atStages:MTLRenderStageVertex | MTLRenderStageFragment];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     }
 
     void drawSurfaces(id<MTL4RenderCommandEncoder> encoder) {
@@ -165,7 +184,8 @@ struct Renderer::State {
         drawBatches(encoder, tables.openBatches());
     }
 
-    // The main pass: opaque surfaces, the sheet behind them, ghosts over both, then the overlay.
+    // The main pass: opaque surfaces, the sheet behind them, creases and highlights, ghosts over
+    // all of it with their dashed lines, then the overlay.
     // It ends by copying sample 0 of the ids and depths out of tile memory for picking.
     void encodeMain(id<MTL4RenderCommandEncoder> encoder, const render::ViewState& view,
                     const render::Overlay* overlay) {
@@ -196,12 +216,18 @@ struct Renderer::State {
         [encoder setArgumentTable:surfaceTable
                          atStages:MTLRenderStageVertex | MTLRenderStageFragment];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        if (hasScene) {
+            drawEdges(encoder, false);
+        }
 
         // Ghosts last, blended over everything opaque and writing no depth.
         if (hasScene && hasGhosts) {
             [encoder setRenderPipelineState:pipelines.ghost[physical][view.uniforms.ghostPickable]];
             [encoder setDepthStencilState:pipelines.depthTest];
             drawSurfaces(encoder);
+            if ((style.ghostStyle & kGhostLines) != 0) {
+                drawEdges(encoder, true);
+            }
         }
 
         if (overlay != nullptr && overlay->visible) {

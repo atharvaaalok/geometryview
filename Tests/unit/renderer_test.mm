@@ -211,7 +211,7 @@ TEST_CASE("unprojected picks land on the surface") {
     }
 }
 
-TEST_CASE("hover changes only the hovered face, and selection shows through it") {
+TEST_CASE("hover changes only the hovered face and its outline, and selection shows through") {
     @autoreleasepool {
         Stage stage(box());
         const render::ViewState plain = stage.view();
@@ -219,16 +219,26 @@ TEST_CASE("hover changes only the hovered face, and selection shows through it")
         const u32 id = stage.renderer->readPixel(kWidth / 2, kHeight / 2, plain.depth)->id;
 
         const std::vector<u8> hovered = stage.renderer->renderOffscreen(stage.view(id));
+        // The hovered face's highlight reaches a few pixels past its edges.
+        const auto nearFace = [&](int x, int y) {
+            for (int dy = -4; dy <= 4; ++dy) {
+                for (int dx = -4; dx <= 4; ++dx) {
+                    const auto hit = stage.renderer->readPixel(x + dx, y + dy, plain.depth);
+                    if (hit && hit->id == id) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
         usize changed = 0, changedElsewhere = 0;
         for (u32 y = 0; y < kHeight; ++y) {
             for (u32 x = 0; x < kWidth; ++x) {
                 const bool differs =
                     stage.pixel(before, int(x), int(y)) != stage.pixel(hovered, int(x), int(y));
-                const auto hit = stage.renderer->readPixel(int(x), int(y), plain.depth);
                 changed += differs;
-                // Antialiased border pixels mix in the neighbouring face, so only interiors count.
                 changedElsewhere +=
-                    differs && (!hit || hit->id != id) && x % 16 == 8 && y % 16 == 8;
+                    differs && x % 16 == 8 && y % 16 == 8 && !nearFace(int(x), int(y));
             }
         }
         CHECK(changed > 1000);

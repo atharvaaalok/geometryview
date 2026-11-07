@@ -30,6 +30,10 @@ public:
     id<MTLBuffer> batches() const { return batches_; }
     id<MTLBuffer> meshletRefs() const { return meshletRefs_; }
     id<MTLBuffer> drawBases() const { return drawBases_; }
+    // Edge batches cover edge chunks the way surface batches cover meshlets.
+    id<MTLBuffer> edgeBatches() const { return edgeBatches_; }
+    id<MTLBuffer> edgeRefs() const { return edgeRefs_; }
+    BatchRange allEdgeBatches() const { return {0, edgeBatchCount_}; }
 
     /// Closed surfaces draw with back faces culled, and open ones show both sides.
     BatchRange closedBatches() const { return {0, openBatchStart_}; }
@@ -42,6 +46,8 @@ private:
     };
     std::unordered_map<const scene::MappedSegment*, SegmentResidency> segments_;
     id<MTLBuffer> definitions_, occurrences_, batches_, drawBases_, meshletRefs_;
+    id<MTLBuffer> edgeBatches_, edgeRefs_;
+    usize edgeBatchCount_ = 0;
     usize surfaceBatchCount_ = 0;
     usize openBatchStart_ = 0;
 };

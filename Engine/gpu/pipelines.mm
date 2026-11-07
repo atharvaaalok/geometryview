@@ -17,8 +17,10 @@ void reportFailure(const char* what, NSError* error) {
 
 // What a pipeline in the main pass writes.
 struct Writes {
+    bool color = true;
     bool blended = false; // colour blends over what is there
     bool ids = true;      // pick id and depth copy
+    bool ink = false;     // edge coverage, keeping the larger of what is there and what is drawn
 };
 
 void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachments,
@@ -26,6 +28,22 @@ void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachme
     attachments[kAttachmentColor].pixelFormat = kColorFormat;
     attachments[kAttachmentId].pixelFormat = kIdFormat;
     attachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+    attachments[kAttachmentInk].pixelFormat = kInkFormat;
+    if (!writes.color) {
+        attachments[kAttachmentColor].writeMask = MTLColorWriteMaskNone;
+    }
+    if (writes.ink) {
+        MTL4RenderPipelineColorAttachmentDescriptor* ink = attachments[kAttachmentInk];
+        ink.blendingState = MTL4BlendStateEnabled;
+        ink.rgbBlendOperation = MTLBlendOperationMax;
+        ink.alphaBlendOperation = MTLBlendOperationMax;
+        ink.sourceRGBBlendFactor = MTLBlendFactorOne;
+        ink.destinationRGBBlendFactor = MTLBlendFactorOne;
+        ink.sourceAlphaBlendFactor = MTLBlendFactorOne;
+        ink.destinationAlphaBlendFactor = MTLBlendFactorOne;
+    } else {
+        attachments[kAttachmentInk].writeMask = MTLColorWriteMaskNone;
+    }
     if (writes.blended) {
         MTL4RenderPipelineColorAttachmentDescriptor* color = attachments[kAttachmentColor];
         color.blendingState = MTL4BlendStateEnabled;
@@ -94,6 +112,22 @@ public:
         return build(mesh, "Could not create a surface pipeline");
     }
 
+    // Feature edges, as screen-space quads. The ghost-lines pass draws the dashed edges of ghosts;
+    // the other draws creases and highlights.
+    id<MTLRenderPipelineState> edges(bool ghostLines) {
+        MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&ghostLines type:MTLDataTypeBool atIndex:kConstantGhostLines];
+        MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
+        mesh.objectFunctionDescriptor = function(@"edgeObject", constants);
+        mesh.meshFunctionDescriptor = function(@"edgeMesh", constants);
+        mesh.fragmentFunctionDescriptor = function(@"edgeFragment", constants);
+        mesh.payloadMemoryLength = kPayloadBytes;
+        mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
+        mesh.rasterSampleCount = kSampleCount;
+        describeMainPass(mesh.colorAttachments, {.color = false, .ids = false, .ink = true});
+        return build(mesh, "Could not create an edge pipeline");
+    }
+
     id<MTLRenderPipelineState> classic(NSString* vertex, NSString* fragment, Writes writes,
                                        const char* what) {
         MTL4RenderPipelineDescriptor* descriptor = [MTL4RenderPipelineDescriptor new];
@@ -112,6 +146,7 @@ public:
         tile.colorAttachments[kAttachmentColor].pixelFormat = kColorFormat;
         tile.colorAttachments[kAttachmentId].pixelFormat = kIdFormat;
         tile.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
+        tile.colorAttachments[kAttachmentInk].pixelFormat = kInkFormat;
         return build(tile, what);
     }
 
@@ -144,6 +179,15 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
     }
     sheet = builder.classic(@"sheetVertex", @"sheetFragment", {.ids = false},
                             "Could not create the sheet pipeline");
+    for (const bool ghostLines : {false, true}) {
+        edges[ghostLines] = builder.edges(ghostLines);
+        applyInk[ghostLines] =
+            builder.classic(@"sheetVertex", ghostLines ? @"applyGhostInk" : @"applyInk",
+                            {.blended = true, .ids = false}, "Could not create an ink pipeline");
+        if (!edges[ghostLines] || !applyInk[ghostLines]) {
+            return false;
+        }
+    }
     // The cube writes pick ids, so it can be clicked; the scale bar's quads blend and do not.
     cube = builder.classic(@"cubeVertex", @"cubeFragment", {},
                            "Could not create the view cube pipeline");

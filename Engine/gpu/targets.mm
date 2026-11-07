@@ -64,6 +64,8 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
                         target);
     depthCopyMsaa = makeTarget(device, width, height, kDepthCopyFormat, kSampleCount,
                                MTLStorageModeMemoryless, target);
+    inkMsaa = makeTarget(device, width, height, kInkFormat, kSampleCount, MTLStorageModeMemoryless,
+                         target);
     depthMsaa = makeTarget(device, width, height, kDepthFormat, kSampleCount,
                            MTLStorageModeMemoryless, target);
     offscreenColor =
@@ -97,6 +99,7 @@ MTL4RenderPassDescriptor* Targets::mainPass(id<MTLTexture> resolveTarget) {
     pass.colorAttachments[kAttachmentColor].storeAction = MTLStoreActionMultisampleResolve;
     attach(kAttachmentId, idMsaa);
     attach(kAttachmentDepth, depthCopyMsaa);
+    attach(kAttachmentInk, inkMsaa);
     pass.depthAttachment.texture = depthMsaa;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;

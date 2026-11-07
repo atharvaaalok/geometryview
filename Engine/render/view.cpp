@@ -64,6 +64,7 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
         u.tanHalfY = float(tanY);
         u.secHalfX = float(std::sqrt(1.0 + tanX * tanX));
         u.secHalfY = float(std::sqrt(1.0 + tanY * tanY));
+        u.worldPerPixel = float(2.0 * tanY / viewport.height);
     } else {
         const double halfHeight = camera.orthoHalfHeight;
         const double halfWidth = halfHeight * aspect;
@@ -78,6 +79,7 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
         projection.columns[3].w = 1.0f;
         u.halfWidth = float(halfWidth);
         u.halfHeight = float(halfHeight);
+        u.worldPerPixel = float(2.0 * halfHeight / viewport.height);
     }
     u.viewProjection = simd_mul(projection, viewMatrix(right, up, back, camera.position));
     return view;

@@ -162,6 +162,16 @@ bool Scene::hasGeometry() const {
     return false;
 }
 
+double Scene::coarsestDeflection() const {
+    double deflection = 0.0;
+    for (const std::unique_ptr<Document>& document : documents_) {
+        if (document->hasModel() && !document->model().modelInfo.empty()) {
+            deflection = std::max(deflection, document->model().modelInfo[0].linearDeflection);
+        }
+    }
+    return deflection;
+}
+
 std::optional<Aabb> Scene::bounds() const {
     Aabb bounds{simd_make_double3(INFINITY, INFINITY, INFINITY),
                 simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};

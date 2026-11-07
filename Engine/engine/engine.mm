@@ -974,6 +974,7 @@ struct GeoEngine {
         view.uniforms.hoverEnd = hover.second;
         view.uniforms.ghostPickable = tool == GeoToolGhost ? 1 : 0;
         view.uniforms.hoverHides = tool == GeoToolHide ? 1 : 0;
+        view.uniforms.lineOffset = float(2.0 * scene.coarsestDeflection());
         return view;
     }
 

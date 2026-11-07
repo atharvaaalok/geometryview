@@ -42,6 +42,9 @@ enum AttachmentIndex : unsigned {
     kAttachmentColor = 0,
     kAttachmentId = 1,
     kAttachmentDepth = 2,
+    // Ink coverage of feature edges, kept apart from colour so overlapping segments take the
+    // larger coverage rather than inking twice: r creases, g ghost lines, b highlights.
+    kAttachmentInk = 3,
 };
 
 // One per definition. Geometry is addressed directly, so a scene can span several mapped files.
@@ -50,11 +53,15 @@ struct GpuDefinition {
     GEO_DEVICE_POINTER(PackedVertex) vertices;
     GEO_DEVICE_POINTER(uint32_t) highBits;
     GEO_DEVICE_POINTER(uint32_t) triangles;
+    GEO_DEVICE_POINTER(EdgeSegment) edgeSegments;
+    GEO_DEVICE_POINTER(EdgeChunk) edgeChunks;
     simd_float3 boundsMin;
     simd_float3 decodeScale;
     simd_float3 boundsScale;
     float boundsStep; // the largest component of boundsScale
     uint32_t flags;
+    uint32_t vertexCount; // for clamping what a cache file says, which is untrusted
+    uint32_t faceCount;
 };
 
 // One placed instance of a definition.
@@ -217,4 +224,8 @@ struct FrameUniforms {
     uint32_t ghostPickable; // ghosts write ids, while the ghost tool is held, so a click restores
     uint32_t hoverHides;    // the hide tool is held, so hover shows what a click would hide
     simd_float2 viewport;   // pixels
+    // How far edges move toward the eye, in world units, so a line on a surface is not hidden by
+    // a neighbour's slightly different tessellation: twice the coarsest chord error.
+    float lineOffset;
+    float worldPerPixel; // orthographic, or at unit depth in perspective
 };

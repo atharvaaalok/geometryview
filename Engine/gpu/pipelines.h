@@ -10,6 +10,7 @@ namespace geo::gpu {
 enum FunctionConstant : NSUInteger {
     kConstantGhostPass = 0,
     kConstantPhysical = 1,
+    kConstantGhostLines = 2,
 };
 
 struct Pipelines {
@@ -19,6 +20,10 @@ struct Pipelines {
     // is held so a click can bring one back.
     id<MTLRenderPipelineState> ghost[2][2];
     id<MTLRenderPipelineState> sheet;
+    // Feature edges into the ink attachment, then ink onto colour: creases and highlights, or
+    // ghosts' dashed lines.
+    id<MTLRenderPipelineState> edges[2];
+    id<MTLRenderPipelineState> applyInk[2];
     id<MTLRenderPipelineState> cube, quad;
     id<MTLRenderPipelineState> resolvePick;
 

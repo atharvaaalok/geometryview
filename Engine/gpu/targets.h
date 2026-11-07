@@ -18,11 +18,12 @@ inline constexpr NSUInteger kSampleCount = 4;
 inline constexpr MTLPixelFormat kColorFormat = MTLPixelFormatBGRA8Unorm;
 inline constexpr MTLPixelFormat kIdFormat = MTLPixelFormatR32Uint;
 inline constexpr MTLPixelFormat kDepthCopyFormat = MTLPixelFormatR32Float;
+inline constexpr MTLPixelFormat kInkFormat = MTLPixelFormatRGBA8Unorm;
 inline constexpr MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float;
 
 struct Targets {
     u32 width = 0, height = 0;
-    id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, depthMsaa;
+    id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, inkMsaa, depthMsaa;
     id<MTLTexture> offscreenColor; // for renderOffscreen
 
     // Sample 0 of the ID and depth, in linear memory the CPU reads directly, so hover and pivots

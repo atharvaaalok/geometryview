@@ -92,8 +92,8 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     id<MTLBuffer> occurrences = context.makeShared(occurrenceCount * sizeof(GpuOccurrence));
     auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
     auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
-    BatchList closed, open;
-    std::vector<MeshletRef> allRefs;
+    BatchList closed, open, edges;
+    std::vector<MeshletRef> allRefs, edgeRefs;
 
     u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
@@ -122,6 +122,10 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
                                ? addressOf(view.highBits.data() + record->firstHighBits)
                                : 0;
             out.triangles = addressOf(view.triangles.data() + record->firstTriangle);
+            out.edgeSegments = addressOf(view.edgeSegments.data() + record->firstEdgeSegment);
+            out.edgeChunks = addressOf(view.edgeChunks.data() + record->firstEdgeChunk);
+            out.vertexCount = record->vertexCount;
+            out.faceCount = record->faceCount;
             out.boundsMin =
                 simd_make_float3(record->boundsMin[0], record->boundsMin[1], record->boundsMin[2]);
             out.decodeScale = simd_make_float3(record->decodeScale[0], record->decodeScale[1],
@@ -149,6 +153,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
             }
             BatchList& target = (geometry->flags & kDefinitionOpen) != 0 ? open : closed;
             target.add(global, geometry->meshletCount, allRefs);
+            edges.add(global, geometry->edgeChunkCount, edgeRefs);
         }
         definitionBase += u32(model.definitionInfos.size());
         occurrenceBase += u32(model.occurrences.size());
@@ -157,6 +162,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
 
     closed.flushPacked(allRefs, true);
     open.flushPacked(allRefs, true);
+    edges.flushPacked(edgeRefs, true);
     const usize batchCount = closed.batches.size() + open.batches.size();
     id<MTLBuffer> batches = context.makeShared(batchCount * sizeof(Batch));
     auto* gpuBatches = static_cast<Batch*>(batches.contents);
@@ -165,7 +171,13 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     id<MTLBuffer> meshletRefs = context.makeShared(allRefs.size() * sizeof(MeshletRef));
     std::copy(allRefs.begin(), allRefs.end(), static_cast<MeshletRef*>(meshletRefs.contents));
 
-    const usize drawCount = batchCount / kMaxBatchesPerDraw + 2;
+    id<MTLBuffer> edgeBatches = context.makeShared(edges.batches.size() * sizeof(Batch));
+    std::copy(edges.batches.begin(), edges.batches.end(),
+              static_cast<Batch*>(edgeBatches.contents));
+    id<MTLBuffer> edgeChunkRefs = context.makeShared(edgeRefs.size() * sizeof(MeshletRef));
+    std::copy(edgeRefs.begin(), edgeRefs.end(), static_cast<MeshletRef*>(edgeChunkRefs.contents));
+
+    const usize drawCount = std::max(batchCount, edges.batches.size()) / kMaxBatchesPerDraw + 2;
     id<MTLBuffer> drawBases = context.makeShared(drawCount * sizeof(u32));
     auto* bases = static_cast<u32*>(drawBases.contents);
     for (usize i = 0; i < drawCount; ++i) {
@@ -174,7 +186,8 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
 
     // The last frame may still read the old tables, so they go when it finishes.
     std::vector<id<MTLBuffer>> oldBuffers;
-    for (id<MTLBuffer> old : {definitions_, occurrences_, batches_, drawBases_, meshletRefs_}) {
+    for (id<MTLBuffer> old : {definitions_, occurrences_, batches_, drawBases_, meshletRefs_,
+                              edgeBatches_, edgeRefs_}) {
         if (old != nil) {
             oldBuffers.push_back(old);
         }
@@ -193,9 +206,13 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     batches_ = batches;
     meshletRefs_ = meshletRefs;
     drawBases_ = drawBases;
+    edgeBatches_ = edgeBatches;
+    edgeRefs_ = edgeChunkRefs;
     surfaceBatchCount_ = batchCount;
     openBatchStart_ = closed.batches.size();
-    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases, meshletRefs}) {
+    edgeBatchCount_ = edges.batches.size();
+    for (id<MTLBuffer> resource :
+         {definitions, occurrences, batches, drawBases, meshletRefs, edgeBatches, edgeChunkRefs}) {
         [context.residency addAllocation:resource];
     }
     [context.residency commit];
