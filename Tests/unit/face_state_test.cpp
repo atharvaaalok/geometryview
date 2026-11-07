@@ -3,6 +3,7 @@
 #include "model/history.h"
 
 #include <doctest/doctest.h>
+#include <format>
 #include <vector>
 
 using namespace geo;
@@ -135,6 +136,10 @@ TEST_CASE("hiding a part of a million faces and undoing it takes well under a mi
     history.record(std::move(step));
     REQUIRE(history.undo(state));
     const double elapsed = nowSeconds() - start;
+    MESSAGE(std::format("hid and restored a million faces in {:.3f} ms", elapsed * 1e3));
+#if defined(NDEBUG) && !GEO_SANITIZED
+    // Timing means something only in an optimised build without sanitizers.
     CHECK(elapsed < 0.001);
+#endif
     CHECK(state.flags({999, 999}) == 0);
 }

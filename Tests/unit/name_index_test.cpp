@@ -96,7 +96,7 @@ TEST_CASE("searching a million names fits in a frame") {
     const double elapsed = nowSeconds() - start;
     MESSAGE(std::format("searched a million names in {:.2f} ms", elapsed * 1e3));
     CHECK(total == 11); // 99999 and 999990 to 999999
-#ifdef NDEBUG
+#if defined(NDEBUG) && !GEO_SANITIZED
     CHECK(elapsed < 0.008);
 #endif
 }
