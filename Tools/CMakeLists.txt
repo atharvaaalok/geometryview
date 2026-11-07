@@ -14,3 +14,7 @@ geo_add_metallib(spike_geometry_shaders
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/spikes/geometry_path_shared.h"
 )
 add_dependencies(spike_geometry spike_geometry_shaders)
+
+add_executable(spike_residency spikes/residency.mm)
+target_link_libraries(spike_residency PRIVATE
+    geo_options "-framework Foundation" "-framework Metal")
