@@ -154,6 +154,25 @@ TEST_CASE("large files split across chunks without losing records or string stat
     CHECK(p.text(kRecords - 1).ends_with(";"));
 }
 
+TEST_CASE("a record is kept wherever a chunk boundary falls around it") {
+    constexpr usize kChunk = 8 << 20;
+    for (const int shift : {-2, -1, 0, 1, 2}) {
+        // Fills up to the boundary with one long record, then places the next record around it.
+        const usize boundary = kHeader.size() + kChunk;
+        std::string file(kHeader);
+        file += "#1 = PRODUCT('";
+        const usize fill = boundary + usize(i64(shift)) - file.size() - std::string("');\n").size();
+        file.append(fill, 'x');
+        file += "');\n#2 = PRODUCT('two',#3);\n#3 = PRODUCT('three',#2);\nENDSEC;\n";
+        std::vector<u8> scratch;
+        const Part21 p = index(file, scratch);
+        REQUIRE(p.recordCount() == 3);
+        CHECK(p.ids[1] == 2);
+        CHECK(p.refsOf(1)[0] == 2);
+        CHECK(p.refsOf(2)[0] == 1);
+    }
+}
+
 TEST_CASE("the cursor reads every parameter form") {
     const std::string_view record =
         R"(#1 = THING('a''b',1.5,-2,.T.,#42,(1.,2.E1,3.),*,$,LENGTH_MEASURE(25.4));)";
@@ -187,6 +206,16 @@ TEST_CASE("the cursor reads every parameter form") {
     CHECK(value == 25.4);
     CHECK(cursor.atEnd());
     CHECK_FALSE(cursor.skip());
+}
+
+TEST_CASE("the cursor tolerates spaces inside typed values") {
+    ParamCursor cursor("#1 = LENGTH_MEASURE_WITH_UNIT( LENGTH_MEASURE( 1.5 ), #2 );");
+    double value = 0;
+    REQUIRE(cursor.readReal(value));
+    CHECK(value == 1.5);
+    u32 id = 0;
+    REQUIRE(cursor.readId(id));
+    CHECK(id == 2);
 }
 
 TEST_CASE("the cursor finds a sub-entity in a complex record") {

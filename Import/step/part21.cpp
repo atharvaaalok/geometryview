@@ -115,8 +115,7 @@ u64 toBitMask(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d) {
 // Every bit is the parity of the bits at or below it, so a quote bit opens a run that the next
 // closes. A doubled quote inside a string toggles twice, which needs no special case.
 u64 prefixXor(u64 mask) {
-    return vgetq_lane_u64(
-        vreinterpretq_u64_p128(vmull_p64(poly64_t(mask), poly64_t(~u64(0)))), 0);
+    return vgetq_lane_u64(vreinterpretq_u64_p128(vmull_p64(poly64_t(mask), poly64_t(~u64(0)))), 0);
 }
 
 struct ByteCounts {
@@ -235,9 +234,8 @@ void scanReferences(const u8* p, const u8* end, ChunkOutput& out, u32& count) {
             const uint8x16_t v = vld1q_u8(p);
             const uint8x16_t hit = vorrq_u8(vceqq_u8(v, hash), vceqq_u8(v, quote));
             // Narrowing gives four bits per byte in 64 bits, the usual NEON movemask.
-            const u64 nibbles = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(
-                                                  vreinterpretq_u16_u8(hit), 4)),
-                                              0);
+            const u64 nibbles =
+                vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(hit), 4)), 0);
             if (nibbles == 0) {
                 p += 16;
                 continue;
@@ -369,7 +367,10 @@ void scanChunk(std::span<const u8> file, usize first, usize last, usize dataStar
     const uint8x16_t semicolon = vdupq_n_u8(';');
 
     bool inString = startsInString;
-    usize statement = first == dataStart ? first : ~usize(0);
+    // A statement that starts exactly here belongs to this chunk. Any other starts in the previous
+    // chunk, which reads on to finish it, so scanning begins at the first statement end.
+    const bool atStatementStart = first == dataStart || (base[first - 1] == ';' && !inString);
+    usize statement = atStatementStart ? first : ~usize(0);
     usize offset = first;
     std::array<u8, kBlockBytes> tail{};
     while (offset < file.size()) {
@@ -384,8 +385,8 @@ void scanChunk(std::span<const u8> file, usize first, usize last, usize dataStar
                          d = vld1q_u8(block + 48);
         const u64 quotes = toBitMask(vceqq_u8(a, quote), vceqq_u8(b, quote), vceqq_u8(c, quote),
                                      vceqq_u8(d, quote));
-        u64 ends = toBitMask(vceqq_u8(a, semicolon), vceqq_u8(b, semicolon),
-                             vceqq_u8(c, semicolon), vceqq_u8(d, semicolon));
+        u64 ends = toBitMask(vceqq_u8(a, semicolon), vceqq_u8(b, semicolon), vceqq_u8(c, semicolon),
+                             vceqq_u8(d, semicolon));
         const u64 strings = prefixXor(quotes) ^ (inString ? ~u64(0) : 0);
         inString = (strings >> 63) != 0;
         ends &= ~strings;
@@ -405,7 +406,7 @@ void scanChunk(std::span<const u8> file, usize first, usize last, usize dataStar
 }
 
 template <typename T>
-void concatenate(std::vector<ChunkOutput>& chunks, std::vector<T> ChunkOutput::*member,
+void concatenate(std::vector<ChunkOutput>& chunks, std::vector<T> ChunkOutput::* member,
                  std::vector<T>& out) {
     usize total = 0;
     std::vector<usize> bases(chunks.size());
@@ -454,9 +455,9 @@ void resolveReferences(Part21& index) {
     parallelRanges(index.refs.size(), 1 << 14, [&](usize first, usize last, usize) {
         for (usize i = first; i < last; ++i) {
             const u64 id = index.refs[i];
-            const auto it = std::lower_bound(
-                sorted.begin(), sorted.end(), id,
-                [](const IdEntry& entry, u64 value) { return entry.key < value; });
+            const auto it =
+                std::lower_bound(sorted.begin(), sorted.end(), id,
+                                 [](const IdEntry& entry, u64 value) { return entry.key < value; });
             index.refs[i] = it != sorted.end() && it->key == id ? it->record : kNoRecord;
         }
     });
@@ -483,8 +484,8 @@ bool indexPart21(std::span<const u8> file, Part21& index, std::vector<u8>& scrat
     parallelFor(chunkCount, [&](usize chunk) {
         const usize first = chunkStart(chunk);
         const usize last = std::min(first + kChunkBytes, file.size());
-        counts[chunk] = countBytes(file.data() + first, last - first,
-                                   first > 0 ? file[first - 1] : u8(0));
+        counts[chunk] =
+            countBytes(file.data() + first, last - first, first > 0 ? file[first - 1] : u8(0));
     });
     bool hasComment = false;
     for (const ByteCounts& count : counts) {
@@ -780,7 +781,7 @@ bool ParamCursor::readReal(double& value) {
         if (p >= end_ || *p != '(') {
             return false;
         }
-        ++p;
+        p = skipSpaces(p + 1, end_);
         const std::from_chars_result result = std::from_chars(p, end_, value);
         if (result.ec != std::errc()) {
             return false;
@@ -828,9 +829,8 @@ bool ParamCursor::readId(u32& id) {
         return false;
     }
     bool overflow = false;
-    cursor_ = reinterpret_cast<const char*>(parseId(reinterpret_cast<const u8*>(cursor_ + 1),
-                                                    reinterpret_cast<const u8*>(end_), id,
-                                                    overflow));
+    cursor_ = reinterpret_cast<const char*>(parseId(
+        reinterpret_cast<const u8*>(cursor_ + 1), reinterpret_cast<const u8*>(end_), id, overflow));
     skipSeparators();
     return !overflow;
 }
