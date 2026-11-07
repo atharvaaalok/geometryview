@@ -34,7 +34,7 @@ parts you zoom into are retessellated more finely once the view settles.
 | Hold H and click | Hide what you click. Repeated clicks peel away layers |
 | Hold G and click | Ghost what you click. Clicking a ghost with G held brings it back |
 | ⇧H, ⇧G | Show everything hidden, unghost everything |
-| I | Isolate the selection |
+| I | Isolate the selection: everything else hides and the view frames it, as if it alone were open. Rotation turns about it. When everything is shown again, the view returns to where it was |
 | ⌘Z, ⇧⌘Z | Undo and redo hiding and ghosting |
 | Left drag | Rotate |
 | Scroll, pinch | Zoom toward the pointer |
@@ -65,7 +65,9 @@ change on disk reload. Settings (⌘,) rebinds every key and what each mouse but
 The Structure card lists each open file's assembly tree. Each part shows a swatch of the colour it
 is drawn in, each assembly how many parts it holds, and a part of several bodies how many it has.
 Click a row to select it, hover a row to highlight it, and type in the search field to find parts
-by name. ⇧⌘O adds a file to what
+by name. A row under the pointer has buttons to ghost, hide and isolate it, and hidden or ghosted
+rows say so. While anything is hidden or ghosted, the foot of the card counts it and offers Show all
+and Unghost. Fit and rotation always follow what is shown. ⇧⌘O adds a file to what
 is shown, and ⌘-dropping files does the same.
 
 ## Development

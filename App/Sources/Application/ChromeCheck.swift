@@ -10,8 +10,9 @@ import GeometryEngine
 /// exactly as live input. After each click, once the view has settled, pointer moves over an empty
 /// corner of the view go to the engine, as the view forwards them. Had the click left the engine
 /// holding a press, those moves would turn the camera and draw frames. Last, it checks that the
-/// pointer leaving the view clears the hover, and that presses at the top of the window reach what
-/// moves it. Prints the result and quits.
+/// pointer leaving the view clears the hover, that a tree row's hide and isolate buttons and the
+/// footer's Show all work, and that presses at the top of the window reach what moves it. Prints
+/// the result and quits.
 @MainActor
 final class ChromeCheck {
     static var isRequested: Bool { CommandLine.arguments.contains("--chrome-check") }
@@ -101,7 +102,7 @@ final class ChromeCheck {
                     if engine.stats().hovered_id != 0 {
                         leaks.append("the hover stayed after the pointer left the view")
                     }
-                    finish()
+                    checkRowButtons()
                 }
             }
         }
@@ -126,6 +127,67 @@ final class ChromeCheck {
         }
     }
 
+    // A tree row's buttons, shown as though the pointer were on the row, must reach the engine:
+    // hide hides the row's part and shows it again, and isolate leaves only it until the footer's
+    // Show all brings everything back.
+    private func checkRowButtons() {
+        guard let root = window.contentView,
+            let table = Self.views(TreeTableView.self, in: root).first
+        else {
+            finish()
+            return
+        }
+        // The buttons of row 1, the first under the root, as the pointer would show them.
+        func button(_ index: Int) -> RowButton? {
+            table.setHoveredRow(1)
+            guard let cell = table.view(atColumn: 0, row: 1, makeIfNecessary: false) else {
+                return nil
+            }
+            let buttons = Self.views(RowButton.self, in: cell)
+            return buttons.count == 3 ? buttons[index] : nil
+        }
+        let showAll = { () -> NSView? in
+            Self.views(VisibilityFooter.self, in: root).first.flatMap {
+                Self.views(PillButton.self, in: $0).first
+            }
+        }
+        let steps: [(String, () -> NSView?, Bool)] = [
+            ("the row's hide button", { button(1) }, true),
+            ("the row's show button", { button(1) }, false),
+            ("the row's isolate button", { button(2) }, true),
+            ("the footer's Show all", showAll, false),
+        ]
+        func run(_ index: Int) {
+            guard index < steps.count else {
+                finish()
+                return
+            }
+            let (name, find, hides) = steps[index]
+            guard let view = find(), !view.isHiddenOrHasHiddenAncestor else {
+                leaks.append("\(name) is not there to click")
+                finish()
+                return
+            }
+            let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+            send(.leftMouseDown, at: point)
+            send(.leftMouseUp, at: point)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                if (engine.stats().hidden_count > 0) != hides {
+                    leaks.append("\(name) did not \(hides ? "hide" : "show") anything")
+                }
+                run(index + 1)
+            }
+        }
+        run(0)
+    }
+
+    private static func views<View: NSView>(_ type: View.Type, in view: NSView) -> [View] {
+        if let match = view as? View {
+            return [match]
+        }
+        return view.subviews.flatMap { views(type, in: $0) }
+    }
+
     private func post(_ kind: GeoPointerKind, x: CGFloat, y: CGFloat) {
         engine.post(
             GeoPointerEvent(
@@ -144,8 +206,8 @@ final class ChromeCheck {
         checkWindowDragging()
         if leaks.isEmpty {
             print(
-                "chrome-check: PASS, no click reached the 3D view, hover left with the pointer "
-                    + "and the top of the window moves it"
+                "chrome-check: PASS, no click reached the 3D view, hover left with the pointer, "
+                    + "the top of the window moves it, and the tree's buttons work"
             )
         } else {
             print("chrome-check: FAIL, \(leaks.count) problem\(leaks.count == 1 ? "" : "s"):")

@@ -41,7 +41,8 @@ final class TreeRowView: NSTableRowView {
 }
 
 /// One tree row: a disclosure chevron, the assembly glyph or a swatch of the part's colour, the
-/// name, and a count of what is inside.
+/// name, and at the end a count, a mark for what is hidden or ghosted, or, under the pointer,
+/// buttons to ghost, hide and isolate.
 @MainActor
 final class TreeCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("TreeCell")
@@ -57,12 +58,36 @@ final class TreeCell: NSTableCellView {
         case swatch(NSColor?, small: Bool)
     }
 
+    enum Action {
+        case ghost, hide, isolate
+    }
+
+    /// Called with a row button's action.
+    var onAction: ((Action) -> Void)?
+    /// Shows the row buttons in place of the count, while the pointer is on the row.
+    var showsActions = false {
+        didSet {
+            if showsActions != oldValue {
+                refreshEnd()
+            }
+        }
+    }
+
     private let chevron = NSImageView()
     private let glyph = NSImageView()
     private let swatch = SwatchView()
     private let label = NSTextField(labelWithString: "")
     private let count = NSTextField(labelWithString: "")
+    private let stateMark = NSImageView()
+    private let ghostButton = RowButton(symbol: "circle.dashed")
+    private let hideButton = RowButton(symbol: "eye")
+    private let isolateButton = RowButton(symbol: "scope")
+    private let actions = NSStackView()
+    private var labelBeforeCount: NSLayoutConstraint?
+    private var labelBeforeActions: NSLayoutConstraint?
     private var indent: NSLayoutConstraint?
+    private var name = ""
+    private var state: GeoNodeState?
     private static let indentStep: CGFloat = 14
     private static let chevronSize: CGFloat = 16
 
@@ -71,6 +96,7 @@ final class TreeCell: NSTableCellView {
         identifier = Self.identifier
         chevron.contentTintColor = Palette.ink
         glyph.contentTintColor = Palette.ink
+        stateMark.contentTintColor = Palette.muted
         label.font = Typography.font(Typography.textMedium)
         label.textColor = Palette.ink
         label.lineBreakMode = .byTruncatingTail
@@ -78,15 +104,33 @@ final class TreeCell: NSTableCellView {
         count.font = Typography.font(Typography.textSmall)
         count.textColor = Palette.muted
         count.alignment = .right
-        count.setContentCompressionResistancePriority(.required, for: .horizontal)
-        count.setContentHuggingPriority(.required, for: .horizontal)
+        for view in [count, stateMark, actions] as [NSView] {
+            view.setContentCompressionResistancePriority(.required, for: .horizontal)
+            view.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        actions.setViews([ghostButton, hideButton, isolateButton], in: .leading)
+        actions.spacing = 1
+        ghostButton.onPress = { [weak self] in self?.onAction?(.ghost) }
+        hideButton.onPress = { [weak self] in self?.onAction?(.hide) }
+        isolateButton.onPress = { [weak self] in self?.onAction?(.isolate) }
+        isolateButton.toolTip = "Show only this, framed"
 
-        for view in [chevron, glyph, swatch, label, count] as [NSView] {
+        for view in [chevron, glyph, swatch, label, count, stateMark, actions] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let indent = chevron.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         self.indent = indent
+        let beforeCount = label.trailingAnchor.constraint(
+            lessThanOrEqualTo: count.leadingAnchor,
+            constant: -8
+        )
+        let beforeActions = label.trailingAnchor.constraint(
+            lessThanOrEqualTo: actions.leadingAnchor,
+            constant: -4
+        )
+        labelBeforeCount = beforeCount
+        labelBeforeActions = beforeActions
         NSLayoutConstraint.activate([
             indent,
             chevron.widthAnchor.constraint(equalToConstant: Self.chevronSize),
@@ -99,9 +143,13 @@ final class TreeCell: NSTableCellView {
             swatch.centerYAnchor.constraint(equalTo: centerYAnchor),
             label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 7),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            count.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 8),
+            beforeCount,
             count.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             count.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stateMark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stateMark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            actions.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            actions.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
@@ -110,16 +158,19 @@ final class TreeCell: NSTableCellView {
         fatalError("TreeCell is not used from Interface Builder")
     }
 
+    /// `state` is nil for a file's row, which has no buttons.
     func configure(
         name: String,
         depth: Int,
         mark: Mark,
         isDocument: Bool,
         disclosure: Disclosure,
-        count text: String
+        count text: String,
+        state: GeoNodeState?
     ) {
         indent?.constant = 8 + CGFloat(depth) * Self.indentStep
-        label.stringValue = name
+        self.name = name
+        self.state = state
         label.font = Typography.font(Typography.textMedium, isDocument ? .semibold : .regular)
         count.stringValue = text
         chevron.isHidden = disclosure == .none
@@ -138,10 +189,124 @@ final class TreeCell: NSTableCellView {
             swatch.isHidden = false
             swatch.show(color, small: small)
         }
+        refreshName()
+        refreshEnd()
+    }
+
+    // A hidden row's name is faint and struck through, a ghosted one's muted.
+    private func refreshName() {
+        let color: NSColor
+        var attributes: [NSAttributedString.Key: Any] = [:]
+        switch state {
+        case GeoNodeHidden:
+            color = Palette.faint
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            attributes[.strikethroughColor] = Palette.faint
+        case GeoNodeGhosted:
+            color = Palette.muted
+        default:
+            color = Palette.ink
+        }
+        attributes[.foregroundColor] = color
+        attributes[.font] = label.font
+        label.attributedStringValue = NSAttributedString(string: name, attributes: attributes)
+    }
+
+    // The row's end: buttons under the pointer, else a mark for what is hidden or ghosted, else
+    // the count.
+    private func refreshEnd() {
+        let buttons = showsActions && state != nil
+        actions.isHidden = !buttons
+        labelBeforeActions?.isActive = buttons
+        labelBeforeCount?.isActive = !buttons
+        let hidden = state == GeoNodeHidden
+        let ghosted = state == GeoNodeGhosted
+        ghostButton.isOn = ghosted
+        ghostButton.toolTip = ghosted ? "Unghost" : "Ghost"
+        hideButton.isOn = hidden
+        hideButton.symbol = hidden ? "eye.slash" : "eye"
+        hideButton.toolTip = hidden ? "Show" : "Hide"
+
+        let mark: NSImage? =
+            switch state {
+            case GeoNodeHidden: TreeGlyph.hidden
+            case GeoNodeGhosted: TreeGlyph.ghosted
+            case GeoNodeMixed: TreeGlyph.mixed
+            default: nil
+            }
+        stateMark.image = mark
+        stateMark.isHidden = buttons || mark == nil
+        count.isHidden = buttons || mark != nil
     }
 
     func disclosureHit(_ point: NSPoint) -> Bool {
         !chevron.isHidden && chevron.frame.insetBy(dx: -4, dy: -6).contains(point)
+    }
+}
+
+/// A small square icon button for tree rows: bare until the pointer is over it, then outlined, and
+/// sunk while its state is on.
+@MainActor
+final class RowButton: ChromeControl {
+    var isOn = false {
+        didSet { stateChanged() }
+    }
+    var symbol: String {
+        didSet {
+            if symbol != oldValue {
+                icon.image = Self.image(symbol)
+            }
+        }
+    }
+    private let icon = NSImageView()
+    static let size: CGFloat = 22
+
+    init(symbol: String) {
+        self.symbol = symbol
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        icon.image = Self.image(symbol)
+        icon.contentTintColor = Palette.ink
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(icon)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: Self.size),
+            heightAnchor.constraint(equalToConstant: Self.size),
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        setAccessibilityRole(.button)
+        stateChanged()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("RowButton is not used from Interface Builder")
+    }
+
+    override var toolTip: String? {
+        didSet { setAccessibilityLabel(toolTip) }
+    }
+
+    private static func image(_ symbol: String) -> NSImage? {
+        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+    }
+
+    override func layout() {
+        super.layout()
+        let scale = window?.backingScaleFactor ?? 2
+        layer?.borderWidth = (1.25 * scale).rounded(.up) / scale
+    }
+
+    override func stateChanged() {
+        let outlined = isOn || isHovering
+        let fill: NSColor = isOn ? Palette.sheetSunk : (isHovering ? Palette.sheet : .clear)
+        Motion.animate {
+            layer?.backgroundColor = fill.cgColor
+            layer?.borderColor = outlined ? Palette.ink.cgColor : NSColor.clear.cgColor
+        }
     }
 }
 
@@ -242,6 +407,33 @@ enum TreeGlyph {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold))
             ?? NSImage()
     }
+
+    static let hidden = symbol("eye.slash")
+    static let ghosted = symbol("circle.dashed")
+
+    private static func symbol(_ name: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+            ?? NSImage()
+    }
+
+    /// A small circle, half filled: some of what is under the row is hidden or ghosted.
+    static let mixed: NSImage = {
+        let image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { _ in
+            let circle = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 8, height: 8))
+            NSColor.black.setStroke()
+            circle.lineWidth = 1.25
+            NSGraphicsContext.saveGraphicsState()
+            circle.addClip()
+            NSColor.black.setFill()
+            NSRect(x: 0, y: 0, width: 5, height: 10).fill()
+            NSGraphicsContext.restoreGraphicsState()
+            circle.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     static let document: NSImage =
         NSImage(systemSymbolName: "doc", accessibilityDescription: "File")?

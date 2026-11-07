@@ -199,15 +199,51 @@ void Interaction::unghostAll() {
 }
 
 void Interaction::isolate() {
+    std::vector<u8> keep(state_.occurrenceCount(), 0);
+    for (u32 o = 0; o < keep.size(); ++o) {
+        keep[o] = state_.anyFace(o, kStateSelected) ? 1 : 0;
+    }
+    isolateKeeping(keep);
+}
+
+void Interaction::isolateNode(NodeRef node) {
+    std::vector<u8> keep(state_.occurrenceCount(), 0);
     scratch_.clear();
-    for (u32 o = 0; o < state_.occurrenceCount(); ++o) {
-        if (!state_.anyFace(o, kStateSelected)) {
-            scratch_.push_back({o, Target::kWholeOccurrence});
+    occurrencesOf(node, scratch_);
+    for (const Target& target : scratch_) {
+        keep[target.occurrence] = 1;
+    }
+    isolateKeeping(keep);
+}
+
+// One step: what is kept is shown and unghosted, faces included, and everything else is hidden.
+void Interaction::isolateKeeping(const std::vector<u8>& keep) {
+    if (std::find(keep.begin(), keep.end(), 1) == keep.end()) {
+        return;
+    }
+    std::vector<Change> changes;
+    for (u32 o = 0; o < keep.size(); ++o) {
+        if (keep[o] != 0) {
+            state_.clearOccurrence(o, kStateHidden | kStateGhost, &changes);
+        } else {
+            state_.set({o, Target::kWholeOccurrence}, kStateHidden, true, &changes);
         }
     }
-    if (scratch_.size() != state_.occurrenceCount()) {
-        apply(scratch_, kStateHidden, true, true);
+    history_.record(std::move(changes));
+}
+
+void Interaction::setNode(NodeRef node, u8 flag, bool value) {
+    scratch_.clear();
+    occurrencesOf(node, scratch_);
+    std::vector<Change> changes;
+    for (const Target& target : scratch_) {
+        if (value) {
+            state_.set(target, flag, true, &changes);
+        } else {
+            state_.clearOccurrence(target.occurrence, flag, &changes);
+        }
     }
+    history_.record(std::move(changes));
 }
 
 std::optional<std::pair<NodeRef, u32>> Interaction::partAt(u32 id) const {

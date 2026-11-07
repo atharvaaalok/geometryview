@@ -6,6 +6,7 @@ namespace geo::model {
 namespace {
 
 constexpr u8 kFaceFlags = kStateHidden | kStateGhost | kStateSelected;
+constexpr u8 kVisibilityFlags = kStateHidden | kStateGhost;
 constexpr u32 kFlagCount = 3;
 
 // The occurrence bit saying some face has `flag` of its own.
@@ -83,6 +84,8 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
             }
             word.flags = (word.flags & ~u32(kFaceFlags)) | after;
             ++version_;
+            visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
+            selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
         }
         return;
     }
@@ -110,26 +113,32 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
             marks != 0 ? updated.flags | summaryOf(bit) : updated.flags & ~summaryOf(bit);
     }
     ++version_;
+    visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
+    selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
 }
 
 void FaceState::clear(u8 mask, std::vector<Change>* changes) {
-    mask &= kFaceFlags;
     for (u32 o = 0; o < words_.size(); ++o) {
-        if ((words_[o].flags & mask) != 0) {
-            set({o, Target::kWholeOccurrence}, mask, false, changes);
-        }
-        bool marked = false;
-        for (u32 bit = 0; bit < kFlagCount; ++bit) {
-            marked |= (mask & (1u << bit)) != 0 && marks_[usize(o) * kFlagCount + bit] != 0;
-        }
-        if (!marked) {
-            continue;
-        }
-        const u32 page = words_[o].facePage;
-        for (u32 f = 0; f < faceCounts_[o]; ++f) {
-            if ((faceBytes_[page + f] & mask) != 0) {
-                set({o, f}, mask, false, changes);
-            }
+        clearOccurrence(o, mask, changes);
+    }
+}
+
+void FaceState::clearOccurrence(u32 o, u8 mask, std::vector<Change>* changes) {
+    mask &= kFaceFlags;
+    if ((words_[o].flags & mask) != 0) {
+        set({o, Target::kWholeOccurrence}, mask, false, changes);
+    }
+    bool marked = false;
+    for (u32 bit = 0; bit < kFlagCount; ++bit) {
+        marked |= (mask & (1u << bit)) != 0 && marks_[usize(o) * kFlagCount + bit] != 0;
+    }
+    if (!marked) {
+        return;
+    }
+    const u32 page = words_[o].facePage;
+    for (u32 f = 0; f < faceCounts_[o]; ++f) {
+        if ((faceBytes_[page + f] & mask) != 0) {
+            set({o, f}, mask, false, changes);
         }
     }
 }

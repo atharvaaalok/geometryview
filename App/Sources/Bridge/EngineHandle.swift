@@ -15,6 +15,9 @@ enum EngineEvent: Sendable {
     case hoverChanged(document: UInt32, node: UInt32?, face: UInt32)
     /// The colours standing for each part changed, with the style or the colour mode.
     case looksChanged
+    /// What is hidden or ghosted changed. The counts are of bodies with anything hidden, and with
+    /// anything ghosted.
+    case visibilityChanged(hidden: UInt32, ghosted: UInt32)
 }
 
 /// Owns the engine's lifetime on the Swift side. All calls are non-blocking.
@@ -157,6 +160,16 @@ final class EngineHandle {
         geo_engine_copy_model(engine, document).map(TreeModel.init)
     }
 
+    /// Whether what lies under a tree node is shown, hidden, ghosted or a mix.
+    func nodeState(document: UInt32, node: UInt32) -> GeoNodeState {
+        geo_engine_node_state(engine, document, node)
+    }
+
+    /// Hides, shows, ghosts, unghosts or isolates everything under a tree node.
+    func nodeAction(document: UInt32, node: UInt32, action: GeoNodeAction) {
+        geo_engine_node_action(engine, document, node, action)
+    }
+
     /// The colour standing for an occurrence under the current look, or nil before it is known.
     /// `occurrence` counts within the document.
     func swatch(document: UInt32, occurrence: UInt32) -> NSColor? {
@@ -241,6 +254,8 @@ private func receiveEngineEvent(context: UnsafeMutableRawPointer?, event: Unsafe
             face: event.done
         )
     case GeoEventLooksChanged: translated = .looksChanged
+    case GeoEventVisibilityChanged:
+        translated = .visibilityChanged(hidden: event.done, ghosted: event.total)
     default: translated = nil
     }
     if let translated {

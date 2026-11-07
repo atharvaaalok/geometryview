@@ -18,6 +18,7 @@
 #include "ipc/import_job.h"
 #include "model/interaction.h"
 #include "model/name_index.h"
+#include "model/visibility.h"
 #include "nav/camera.h"
 #include "nav/flight.h"
 #include "nav/orbit_policy.h"
@@ -93,6 +94,7 @@ struct ResizeCommand {
 struct NodeCommand {
     u32 document, node;
     bool extend;
+    GeoNodeAction action;
 };
 
 struct Command {
@@ -107,6 +109,7 @@ struct Command {
         SetTool,
         SelectNode,
         HoverNode,
+        NodeAction,
         SetInsets,
         SetLook,
         SetSection,
@@ -213,6 +216,14 @@ struct GeoEngine {
     bool sceneChanged = false;
     bool hasFramed = false;
     bool userMovedCamera = false;
+    // What framing and rotation treat as the model: everything not wholly hidden.
+    Aabb visible{};
+    u64 seenVisibility = ~u64(0);
+    u64 seenSelection = ~u64(0);
+    std::optional<model::NodeRef> seenFocus;
+    u32 hiddenBodies = 0; // bodies with anything hidden
+    // The view to return to when an isolate ends, kept from the first of nested isolates.
+    std::optional<nav::Camera> cameraBeforeIsolate;
 
     // Models published for the app's thread, which reads trees and searches them.
     std::mutex modelsMutex;
@@ -271,6 +282,9 @@ struct GeoEngine {
     std::mutex swatchMutex;
     std::vector<u32> publishedSwatches;
     std::vector<u32> swatchBases;
+    // Each tree node's state, per document, published for the app's thread.
+    std::mutex nodeStateMutex;
+    std::vector<std::vector<model::NodeVisibility>> publishedNodeStates;
     GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
     std::optional<std::pair<model::NodeRef, u32>> hoveredPart;
 
@@ -375,10 +389,7 @@ struct GeoEngine {
         if (!scene.hasGeometry()) {
             return;
         }
-        const nav::Camera target =
-            nav::standardView(camera, view, bounds, viewport, kFitMargin, insets);
-        flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
-        requestFrame();
+        flyTo(nav::standardView(camera, view, visible, viewport, kFitMargin, insets));
     }
 
     // Flies to frame what is selected, or everything if nothing is.
@@ -388,8 +399,16 @@ struct GeoEngine {
             perform(GeoActionFit);
             return;
         }
+        flyToFit(*selected);
+    }
+
+    void flyToFit(const Aabb& box) {
         nav::Camera target = camera;
-        nav::fit(target, *selected, viewport, kFitMargin, insets);
+        nav::fit(target, box, viewport, kFitMargin, insets);
+        flyTo(target);
+    }
+
+    void flyTo(const nav::Camera& target) {
         flight.start(camera, target, nowSeconds(), reduceMotion() ? 0.0 : kFlightSeconds);
         requestFrame();
     }
@@ -397,42 +416,8 @@ struct GeoEngine {
     // Bounds of the occurrences with anything selected, from their definitions' bounds.
     std::optional<Aabb> selectionBounds() const {
         const model::FaceState& state = interaction.state();
-        Aabb box{simd_make_double3(INFINITY, INFINITY, INFINITY),
-                 simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
-        bool any = false;
-        u32 global = 0;
-        for (u32 d = 0; d < scene.documentCount(); ++d) {
-            const scene::Document& document = scene.document(d);
-            if (!document.hasModel()) {
-                continue;
-            }
-            const format::SegmentView& model = document.model();
-            for (const format::OccurrenceRecord& occurrence : model.occurrences) {
-                if (!state.anyFace(global++, kStateSelected)) {
-                    continue;
-                }
-                const format::DefinitionInfo& info = model.definitionInfos[occurrence.definition];
-                const format::DefinitionRecord* geometry = document.geometry(occurrence.definition);
-                const auto& lo = geometry ? geometry->boundsMin : info.boundsMin;
-                const auto& hi = geometry ? geometry->boundsMax : info.boundsMax;
-                const std::array<float, 12>& t = occurrence.transform;
-                for (int corner = 0; corner < 8; ++corner) {
-                    const double x = corner & 1 ? hi[0] : lo[0];
-                    const double y = corner & 2 ? hi[1] : lo[1];
-                    const double z = corner & 4 ? hi[2] : lo[2];
-                    const Vec3 world = {t[0] * x + t[3] * y + t[6] * z + t[9],
-                                        t[1] * x + t[4] * y + t[7] * z + t[10],
-                                        t[2] * x + t[5] * y + t[8] * z + t[11]};
-                    box.min = simd_min(box.min, world);
-                    box.max = simd_max(box.max, world);
-                    any = true;
-                }
-            }
-        }
-        if (!any) {
-            return std::nullopt;
-        }
-        return box;
+        return model::boundsWhere(
+            scene, [&](u32 occurrence) { return state.anyFace(occurrence, kStateSelected); });
     }
 
     static bool reduceMotion() {
@@ -444,7 +429,17 @@ struct GeoEngine {
         refreshHover();
         requestFrame();
         publishState();
-        if (const std::optional<model::NodeRef> focus = interaction.focus()) {
+        if (interaction.state().visibilityVersion() != seenVisibility) {
+            visibilityChanged();
+        }
+        // Only a change of selection, so hiding from the tree does not scroll it to the selection.
+        const std::optional<model::NodeRef> focus = interaction.focus();
+        if (interaction.state().selectionVersion() == seenSelection && focus == seenFocus) {
+            return;
+        }
+        seenSelection = interaction.state().selectionVersion();
+        seenFocus = focus;
+        if (focus) {
             emit(GeoEventSelectionChanged, "", focus->document, focus->node);
         } else {
             emit(GeoEventSelectionChanged, "", 0, GEO_NO_NODE);
@@ -467,6 +462,75 @@ struct GeoEngine {
             swatchBases = std::move(bases);
         }
         emit(GeoEventLooksChanged);
+    }
+
+    // After what is shown changes, by hiding, ghosting or opening files: rotation and framing
+    // follow what is shown, as though it were all that had been opened, and the end of an isolate
+    // returns the view it began from.
+    void visibilityChanged() {
+        const model::FaceState& state = interaction.state();
+        seenVisibility = state.visibilityVersion();
+        visible = model::visibleBounds(scene, state).value_or(bounds);
+        orbit.setVisibleBounds(visible);
+        u32 hidden = 0, ghosted = 0;
+        for (u32 o = 0; o < state.occurrenceCount(); ++o) {
+            hidden += state.anyFace(o, kStateHidden) ? 1 : 0;
+            ghosted += state.anyFace(o, kStateGhost) ? 1 : 0;
+        }
+        hiddenBodies = hidden;
+        if (cameraBeforeIsolate && hidden == 0) {
+            flyTo(*cameraBeforeIsolate);
+            cameraBeforeIsolate.reset();
+        }
+        std::vector<std::vector<model::NodeVisibility>> states(scene.documentCount());
+        for (u32 d = 0; d < states.size(); ++d) {
+            states[d] = model::nodeStates(scene, state, d);
+        }
+        {
+            std::lock_guard lock(nodeStateMutex);
+            publishedNodeStates = std::move(states);
+        }
+        emit(GeoEventVisibilityChanged, "", 0, GEO_NO_NODE, hidden, ghosted);
+    }
+
+    // A tree row's button.
+    void nodeAction(model::NodeRef node, GeoNodeAction action) {
+        switch (action) {
+        case GeoNodeHide:
+            interaction.setNode(node, kStateHidden, true);
+            break;
+        case GeoNodeShow:
+            interaction.setNode(node, kStateHidden, false);
+            break;
+        case GeoNodeGhost:
+            interaction.setNode(node, kStateGhost, true);
+            break;
+        case GeoNodeUnghost:
+            interaction.setNode(node, kStateGhost, false);
+            break;
+        case GeoNodeIsolate: {
+            const u64 before = interaction.state().visibilityVersion();
+            interaction.isolateNode(node);
+            stateChanged();
+            if (interaction.state().visibilityVersion() != before) {
+                frameIsolated();
+            }
+            return;
+        }
+        }
+        stateChanged();
+    }
+
+    // Isolating frames what is kept, as if it alone had been opened, and remembers the view to
+    // return to when everything is shown again.
+    void frameIsolated() {
+        if (hiddenBodies == 0) {
+            return; // everything was kept, so nothing was isolated
+        }
+        if (!cameraBeforeIsolate) {
+            cameraBeforeIsolate = flight.active() ? flight.destination() : camera;
+        }
+        flyToFit(visible);
     }
 
     void handlePointer(const GeoPointerEvent& event) {
@@ -535,7 +599,6 @@ struct GeoEngine {
         camera.lookAt(bounds.center() + direction, bounds.center(),
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, bounds, viewport, kFitMargin, insets);
-        orbit.setVisibleBounds(bounds);
     }
 
     void perform(GeoAction action) {
@@ -543,7 +606,7 @@ struct GeoEngine {
         switch (action) {
         case GeoActionFit:
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin, insets);
+                nav::fit(camera, visible, viewport, kFitMargin, insets);
                 orbit.navigated();
                 scheduleRefinement();
             }
@@ -551,7 +614,7 @@ struct GeoEngine {
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
             if (scene.hasGeometry()) {
-                nav::fit(camera, bounds, viewport, kFitMargin, insets);
+                nav::fit(camera, visible, viewport, kFitMargin, insets);
             }
             orbit.navigated();
             scheduleRefinement();
@@ -565,9 +628,15 @@ struct GeoEngine {
         case GeoActionUnghostAll:
             interaction.unghostAll();
             break;
-        case GeoActionIsolate:
+        case GeoActionIsolate: {
+            const u64 before = interaction.state().visibilityVersion();
             interaction.isolate();
-            break;
+            stateChanged();
+            if (interaction.state().visibilityVersion() != before) {
+                frameIsolated();
+            }
+            return;
+        }
         case GeoActionHideSelection:
             interaction.hideSelection();
             break;
@@ -671,6 +740,14 @@ struct GeoEngine {
         }
         hasFramed = false;
         userMovedCamera = false;
+        cameraBeforeIsolate.reset();
+        seenVisibility = ~u64(0);
+        seenSelection = ~u64(0);
+        seenFocus.reset();
+        {
+            std::lock_guard lock(nodeStateMutex);
+            publishedNodeStates.clear();
+        }
         hoveredId = 0;
         hoveredNode.reset();
         hover = {0, 0};
@@ -724,6 +801,8 @@ struct GeoEngine {
         }
         if (!hasFramed) {
             frameScene(true);
+        } else if (!hadModel && document.hasModel()) {
+            visibilityChanged(); // a file added to what is shown
         }
         requestFrame();
     }
@@ -760,8 +839,8 @@ struct GeoEngine {
             hasFramed = true;
         } else if (!userMovedCamera) {
             nav::fit(camera, bounds, viewport, kFitMargin, insets);
-            orbit.setVisibleBounds(bounds);
         }
+        visibilityChanged();
     }
 
     // Keeps the cache within its budget, on a background thread, sparing what is open.
@@ -976,6 +1055,14 @@ struct GeoEngine {
                     interaction.selectNode({command->node.document, command->node.node},
                                            command->node.extend);
                     stateChanged();
+                }
+                break;
+            case Command::Kind::NodeAction:
+                if (command->node.document < scene.documentCount() &&
+                    scene.document(command->node.document).hasModel() &&
+                    command->node.node <
+                        scene.document(command->node.document).model().nodes.size()) {
+                    nodeAction({command->node.document, command->node.node}, command->node.action);
                 }
                 break;
             case Command::Kind::HoverNode:
@@ -1407,14 +1494,35 @@ void geo_engine_set_tool(GeoEngine* engine, GeoTool tool) {
 void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node, bool extend) {
     Command command{};
     command.kind = Command::Kind::SelectNode;
-    command.node = {document, node, extend};
+    command.node = {document, node, extend, GeoNodeHide};
     engine->post(command);
+}
+
+void geo_engine_node_action(GeoEngine* engine, uint32_t document, uint32_t node,
+                            GeoNodeAction action) {
+    Command command{};
+    command.kind = Command::Kind::NodeAction;
+    command.node = {document, node, false, action};
+    engine->post(command);
+}
+
+static_assert(u32(model::NodeVisibility::Hidden) == GeoNodeHidden &&
+              u32(model::NodeVisibility::Ghosted) == GeoNodeGhosted &&
+              u32(model::NodeVisibility::Mixed) == GeoNodeMixed);
+
+GeoNodeState geo_engine_node_state(GeoEngine* engine, uint32_t document, uint32_t node) {
+    std::lock_guard lock(engine->nodeStateMutex);
+    if (document >= engine->publishedNodeStates.size() ||
+        node >= engine->publishedNodeStates[document].size()) {
+        return GeoNodeShown;
+    }
+    return GeoNodeState(engine->publishedNodeStates[document][node]);
 }
 
 void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node) {
     Command command{};
     command.kind = Command::Kind::HoverNode;
-    command.node = {document, node, false};
+    command.node = {document, node, false, GeoNodeHide};
     engine->post(command);
 }
 

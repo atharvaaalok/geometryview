@@ -42,6 +42,8 @@ public:
 
     /// Clears `mask` everywhere, recording what it changed.
     void clear(u8 mask, std::vector<Change>* changes = nullptr);
+    /// Clears `mask` from an occurrence and each of its faces.
+    void clearOccurrence(u32 occurrence, u8 mask, std::vector<Change>* changes = nullptr);
 
     /// Puts back the flags recorded in `changes`, newest first.
     void restore(std::span<const Change> changes);
@@ -57,6 +59,10 @@ public:
     std::span<const OccurrenceState> occurrenceWords() const { return words_; }
     std::span<const u8> faceBytes() const { return faceBytes_; }
     u64 version() const { return version_; }
+    /// Counts changes to what is hidden or ghosted only, so selecting costs no visibility work.
+    u64 visibilityVersion() const { return visibilityVersion_; }
+    /// Counts changes to what is selected only.
+    u64 selectionVersion() const { return selectionVersion_; }
 
 private:
     u32 pageFor(u32 occurrence); // allocates one if needed
@@ -69,6 +75,8 @@ private:
     u32 zeroPage_ = 0;
     u32 zeroPageSize_ = 0;
     u64 version_ = 0;
+    u64 visibilityVersion_ = 0;
+    u64 selectionVersion_ = 0;
 };
 
 } // namespace geo::model

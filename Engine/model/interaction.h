@@ -53,8 +53,14 @@ public:
     void ghostSelection();
     void showAll();
     void unghostAll();
-    /// Hides every occurrence with nothing selected in it.
+    /// Shows only what has anything selected: it is shown and unghosted, everything else
+    /// hidden. Does nothing when nothing is selected.
     void isolate();
+    /// Shows only what lies under a tree node, in the same way.
+    void isolateNode(NodeRef node);
+    /// Hides, shows, ghosts or unghosts everything under a tree node, faces included, as one
+    /// step to undo.
+    void setNode(NodeRef node, u8 flag, bool value);
     bool undo();
     bool redo();
 
@@ -78,6 +84,7 @@ private:
     void targetsFor(const Located& located, std::vector<Target>& out) const;
     void occurrencesOf(NodeRef node, std::vector<Target>& out) const;
     void apply(const std::vector<Target>& targets, u8 flag, bool value, bool recorded);
+    void isolateKeeping(const std::vector<u8>& keep);
     void forEachSelected(auto&& visit) const;
 
     const scene::Scene& scene_;

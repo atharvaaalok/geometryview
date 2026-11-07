@@ -162,6 +162,9 @@ typedef enum GeoEventKind {
     GeoEventSelectionChanged = 5, // node: the tree row to reveal, or GEO_NO_NODE
     GeoEventHoverChanged = 6, // node: the part under the pointer, or GEO_NO_NODE; done: the face
     GeoEventLooksChanged = 7, // swatch colours changed: read them again with geo_engine_swatch
+    // What is hidden or ghosted changed: read rows again with geo_engine_node_state. done: bodies
+    // with anything hidden; total: bodies with anything ghosted.
+    GeoEventVisibilityChanged = 8,
 } GeoEventKind;
 
 #define GEO_NO_NODE UINT32_MAX
@@ -262,6 +265,29 @@ void geo_engine_select_node(GeoEngine* engine, uint32_t document, uint32_t node,
 
 /// Lights up everything under a tree node, as hover does. GEO_NO_NODE clears it.
 void geo_engine_hover_node(GeoEngine* engine, uint32_t document, uint32_t node);
+
+/// What a tree row's buttons do to everything under it. Each is one step to undo.
+typedef enum GeoNodeAction {
+    GeoNodeHide = 0,
+    GeoNodeShow = 1, // faces hidden one by one included
+    GeoNodeGhost = 2,
+    GeoNodeUnghost = 3,
+    GeoNodeIsolate = 4, // show only this, framed, as Isolate does for the selection
+} GeoNodeAction;
+
+void geo_engine_node_action(GeoEngine* engine, uint32_t document, uint32_t node,
+                            GeoNodeAction action);
+
+/// What lies under a tree node.
+typedef enum GeoNodeState {
+    GeoNodeShown = 0,
+    GeoNodeHidden = 1,  // every body wholly hidden
+    GeoNodeGhosted = 2, // every body wholly ghosted
+    GeoNodeMixed = 3,   // some of it hidden or ghosted
+} GeoNodeState;
+
+/// Callable from any thread. GeoEventVisibilityChanged says when states change.
+GeoNodeState geo_engine_node_state(GeoEngine* engine, uint32_t document, uint32_t node);
 
 // A document's assembly tree, readable from any thread. It holds the file's mapping, so it stays
 // valid after the document closes, until released.
