@@ -19,6 +19,9 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
     private let matchLabel = NSTextField(labelWithString: "")
     private let table = TreeTableView()
     private let scroll = NSScrollView()
+    private let footer = VisibilityFooter()
+    private var scrollAboveFooter: NSLayoutConstraint?
+    private var scrollAtBottom: NSLayoutConstraint?
     private var applyingEngineSelection = false
     private var matches: [(document: UInt32, node: UInt32)] = []
     private var matchIndex = 0
@@ -71,7 +74,11 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
 
-        for view in [switcher, searchField, matchLabel, scroll] as [NSView] {
+        footer.onShowAll = { [weak self] in self?.engine.perform(GeoActionShowAll) }
+        footer.onUnghostAll = { [weak self] in self?.engine.perform(GeoActionUnghostAll) }
+        footer.isHidden = true
+
+        for view in [switcher, searchField, matchLabel, scroll, footer] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -87,8 +94,18 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
+        let atBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        let aboveFooter = scroll.bottomAnchor.constraint(
+            equalTo: footer.topAnchor,
+            constant: -6
+        )
+        atBottom.isActive = true
+        scrollAtBottom = atBottom
+        scrollAboveFooter = aboveFooter
     }
 
     // MARK: Documents
@@ -243,9 +260,46 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
             mark: mark(of: row),
             isDocument: row.isDocument,
             disclosure: tree.hasChildren(row) ? (tree.isExpanded(row) ? .open : .closed) : .none,
-            count: tree.count(of: row)
+            count: tree.count(of: row),
+            state: row.isDocument ? nil : engine.nodeState(document: row.document, node: row.node)
         )
+        cell.showsActions = table.isUnderPointer(index)
+        cell.onAction = { [weak self, weak cell] action in
+            guard let self, let cell else {
+                return
+            }
+            rowAction(action, at: table.row(for: cell))
+        }
         return cell
+    }
+
+    // A row button: hide or show, ghost or unghost, by what the row is now, or isolate.
+    private func rowAction(_ action: TreeCell.Action, at index: Int) {
+        guard index >= 0, index < tree.rows.count, !tree.rows[index].isDocument else {
+            return
+        }
+        let row = tree.rows[index]
+        let state = engine.nodeState(document: row.document, node: row.node)
+        let nodeAction: GeoNodeAction =
+            switch action {
+            case .ghost: state == GeoNodeGhosted ? GeoNodeUnghost : GeoNodeGhost
+            case .hide: state == GeoNodeHidden ? GeoNodeShow : GeoNodeHide
+            case .isolate: GeoNodeIsolate
+            }
+        engine.nodeAction(document: row.document, node: row.node, action: nodeAction)
+    }
+
+    // MARK: Hidden and ghosted
+
+    /// Shows each row's state again, and the footer's counts, after what is hidden or ghosted
+    /// changed.
+    func visibilityChanged(hidden: UInt32, ghosted: UInt32) {
+        footer.show(hidden: hidden, ghosted: ghosted)
+        let showing = hidden > 0 || ghosted > 0
+        footer.isHidden = !showing
+        scrollAtBottom?.isActive = !showing
+        scrollAboveFooter?.isActive = showing
+        looksChanged()
     }
 
     // A file's or an assembly's glyph, or a swatch of the colour the part is drawn in.
@@ -265,7 +319,7 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
 
     // MARK: Colours and highlights
 
-    /// Repaints the swatches of the rows in view, after the style or colour mode changed.
+    /// Repaints the rows in view, after their colours or states changed.
     func looksChanged() {
         let visible = table.rows(in: table.visibleRect)
         guard visible.length > 0 else {
@@ -319,7 +373,15 @@ final class TreeTableView: NSTableView {
         for row in visible.location..<NSMaxRange(visible) {
             (rowView(atRow: row, makeIfNecessary: false) as? TreeRowView)?.isHovered =
                 isHovered(row)
+            (view(atColumn: 0, row: row, makeIfNecessary: false) as? TreeCell)?.showsActions =
+                isUnderPointer(row)
         }
+    }
+
+    /// Whether the pointer itself is on a row, which shows its buttons, as a row lit from the
+    /// view does not.
+    func isUnderPointer(_ row: Int) -> Bool {
+        row == hoveredRow
     }
 
     /// Works out the row under the pointer from where it really is, for when the rows moved under
@@ -333,7 +395,8 @@ final class TreeTableView: NSTableView {
         setHoveredRow(inside ? row(at: point) : -1)
     }
 
-    private func setHoveredRow(_ row: Int) {
+    /// Takes `row` as the row under the pointer, or none when negative.
+    func setHoveredRow(_ row: Int) {
         let hovered = row >= 0 ? row : nil
         guard hovered != hoveredRow else {
             return
@@ -346,6 +409,15 @@ final class TreeTableView: NSTableView {
     override func reloadData() {
         super.reloadData()
         syncPointer()
+    }
+
+    // A table keeps clicks on its rows' views for selecting rows, unless it is told a view takes
+    // its own: the row buttons do.
+    override func validateProposedFirstResponder(
+        _ responder: NSResponder,
+        for event: NSEvent?
+    ) -> Bool {
+        responder is ChromeControl || super.validateProposedFirstResponder(responder, for: event)
     }
 
     override func updateTrackingAreas() {

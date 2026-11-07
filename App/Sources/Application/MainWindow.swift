@@ -575,6 +575,8 @@ final class MainWindow: NSWindow {
             structure.highlight(document: document, node: node)
         case .looksChanged:
             structure.looksChanged()
+        case .visibilityChanged(let hidden, let ghosted):
+            structure.visibilityChanged(hidden: hidden, ghosted: ghosted)
         }
     }
 
