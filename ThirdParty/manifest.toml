@@ -20,7 +20,7 @@ vendored = true
 [occt]
 url = "https://github.com/Open-Cascade-SAS/OCCT.git"
 tag = "V8_0_1"
-commit = "c5605924864829ce8c1e1477f976ffb3880538a8"
+commit = "b8f597c677811d1f9f4d8a97f5ae2825c0353a42"
 license = "LGPL-2.1-only WITH OCCT-exception-1.0"
 vendored = false
 

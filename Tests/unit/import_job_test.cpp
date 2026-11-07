@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
+#include <vector>
 
 using namespace geo;
 using namespace geo::ipc;
@@ -16,6 +17,23 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr const char* kTriangle = "solid s\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendsolid s\n";
+
+// Keeps what the import reported.
+struct Collector final : ImportListener {
+    std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+    usize progressCalls = 0;
+
+    void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
+        segments.push_back(std::move(segment));
+    }
+    void progress(u32, u32) override { ++progressCalls; }
+    void warning(const std::string&) override {}
+};
+
+ImportOutcome importFile(const std::string& source, const ImportPaths& paths) {
+    Collector collector;
+    return geo::ipc::importFile(source, paths, collector);
+}
 
 // A temporary directory holding a source file and a cache.
 struct Workspace {
@@ -52,6 +70,38 @@ TEST_CASE("importing through the helper produces a valid cache file") {
     REQUIRE_MESSAGE(outcome.ok, outcome.message);
     CHECK(fs::file_size(outcome.blobPath) > 0);
     CHECK(workspace.cacheEntries() == 1);
+}
+
+TEST_CASE("a miss and a hit deliver the same segments") {
+    Workspace workspace;
+    const std::string source = workspace.write("part.stl", kTriangle);
+    Collector miss, hit;
+    const ImportOutcome first = geo::ipc::importFile(source, workspace.paths, miss);
+    const ImportOutcome second = geo::ipc::importFile(source, workspace.paths, hit);
+    REQUIRE(first.ok);
+    REQUIRE(second.ok);
+    CHECK_FALSE(first.fromCache);
+    CHECK(second.fromCache);
+    REQUIRE(miss.segments.size() == 2);
+    REQUIRE(hit.segments.size() == 2);
+    for (usize i = 0; i < miss.segments.size(); ++i) {
+        CHECK(miss.segments[i]->size() == hit.segments[i]->size());
+    }
+}
+
+TEST_CASE("a damaged cache file is replaced") {
+    Workspace workspace;
+    const std::string source = workspace.write("part.stl", kTriangle);
+    const ImportOutcome first = importFile(source, workspace.paths);
+    REQUIRE(first.ok);
+    {
+        std::fstream file(first.blobPath, std::ios::in | std::ios::out | std::ios::binary);
+        file.seekp(0);
+        file << "broken";
+    }
+    const ImportOutcome second = importFile(source, workspace.paths);
+    REQUIRE(second.ok);
+    CHECK_FALSE(second.fromCache);
 }
 
 TEST_CASE("a second import of the same file reuses the cache") {

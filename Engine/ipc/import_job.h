@@ -1,6 +1,11 @@
 // Runs the import helper and manages the cache.
 #pragma once
 
+#include "base/types.h"
+#include "scene/mapped_segment.h"
+
+#include <memory>
+#include <span>
 #include <string>
 
 namespace geo::ipc {
@@ -12,8 +17,18 @@ struct ImportPaths {
 
 struct ImportOutcome {
     bool ok = false;
+    bool fromCache = false;
     std::string blobPath;
     std::string message;
+};
+
+/// Receives results as they become available, on the importing thread.
+class ImportListener {
+public:
+    virtual ~ImportListener() = default;
+    virtual void segmentReady(std::shared_ptr<scene::MappedSegment> segment) = 0;
+    virtual void progress(u32 done, u32 total) = 0;
+    virtual void warning(const std::string& text) = 0;
 };
 
 /// Returns the cache file for a source, or nothing if the source cannot be examined. The name is
@@ -22,10 +37,33 @@ struct ImportOutcome {
 std::string cachePathFor(const std::string& sourcePath, const ImportPaths& paths,
                          std::string& error);
 
-/// Imports `sourcePath` unless it is already cached. Blocks, so it runs off the engine thread.
+/// Allows an import in progress to be abandoned from another thread.
+class ImportCancel {
+public:
+    ImportCancel();
+
+    /// Stops the helper, if there is one.
+    void cancel();
+    void setHelper(int pid);
+    bool cancelled() const;
+
+private:
+    struct State;
+    std::shared_ptr<State> state_;
+};
+
+/// Imports `sourcePath`, or reads it from the cache. Either way the listener receives the same
+/// segments, so a hit and a miss share one path. Blocks, so it runs off the engine thread.
 ///
-/// The helper writes to a temporary file, which is renamed only after it succeeds. A reader
-/// therefore never sees a partial file, and a mapping of an older version stays valid.
-ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths);
+/// The helper writes to a temporary file, which is renamed only after it succeeds. Reading the
+/// final name therefore never sees a partial file, and mappings of the temporary one stay valid.
+ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
+                         ImportListener& listener, ImportCancel* cancel = nullptr);
+
+/// Imports some definitions again at a finer level, as segments that replace their coarser
+/// geometry. Each result is cached beside the file's own, and `importFile` brings it back.
+ImportOutcome refineFile(const std::string& sourcePath, const ImportPaths& paths, u32 level,
+                         std::span<const u32> definitions, ImportListener& listener,
+                         ImportCancel* cancel = nullptr);
 
 } // namespace geo::ipc

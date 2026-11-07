@@ -8,7 +8,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
-#include <sys/mman.h>
+#include <unordered_map>
 
 namespace geo::gpu {
 namespace {
@@ -62,11 +62,39 @@ struct Renderer::State {
     NSUInteger pickIdRowBytes = 0, pickDepthRowBytes = 0;
 
     // Scene.
-    id<MTLBuffer> blobBuffer, definitions, occurrences, batches, drawBases;
+    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segmentBuffers;
+    id<MTLBuffer> definitions, occurrences, batches, drawBases;
     usize batchCount = 0;
     usize openBatchStart = 0;
-    Aabb bounds{};
     bool hasScene = false;
+
+    // Buffers a frame may still read. They leave residency and memory once it has finished.
+    struct Retired {
+        u64 frame = 0;
+        std::vector<id<MTLBuffer>> buffers;
+    };
+    std::vector<Retired> retired;
+
+    void releaseFinished() {
+        if (retired.empty()) {
+            return;
+        }
+        const u64 finished = frameFinished.signaledValue;
+        usize kept = 0;
+        for (Retired& entry : retired) {
+            if (entry.frame > finished) {
+                retired[kept++] = std::move(entry);
+                continue;
+            }
+            for (id<MTLBuffer> buffer : entry.buffers) {
+                [residency removeAllocation:buffer];
+            }
+        }
+        if (kept != retired.size()) {
+            retired.resize(kept);
+            [residency commit];
+        }
+    }
 
     id<MTLBuffer> makeShared(usize length) {
         return [device newBufferWithLength:std::max<usize>(length, 16)
@@ -248,6 +276,7 @@ struct Renderer::State {
                                                               timeoutMS:kFrameTimeoutMs];
             GEO_ASSERT(finished);
         }
+        releaseFinished();
         id<MTL4CommandAllocator> allocator = allocators[frame % kFramesInFlight];
         [allocator reset];
         [commandBuffer beginCommandBufferWithAllocator:allocator];
@@ -309,82 +338,112 @@ void Renderer::attachLayer(CAMetalLayer* layer) {
     [state_->queue addResidencySet:layer.residencySet];
 }
 
-void Renderer::setScene(scene::MappedBlob& blob) {
+void Renderer::syncScene(const scene::Scene& scene) {
     State& s = *state_;
-    const format::BlobView& view = blob.view();
 
-    // Geometry stays in the mapped file: this buffer wraps the mapping without copying, and it owns
-    // the mapping from here on. See ADR 0002.
-    id<MTLBuffer> buffer = [s.device newBufferWithBytesNoCopy:blob.data()
-                                                       length:blob.size()
-                                                      options:MTLResourceStorageModeShared |
-                                                              MTLResourceHazardTrackingModeUntracked
-                                                  deallocator:^(void* pointer, NSUInteger length) {
-                                                      munmap(pointer, length);
-                                                  }];
-    GEO_ASSERT(buffer != nil);
-    blob.releaseOwnership();
-
-    const auto* base = static_cast<const u8*>(buffer.contents);
-    const auto addressOf = [&](const void* pointer) -> u64 {
-        return buffer.gpuAddress + u64(static_cast<const u8*>(pointer) - base);
-    };
-
-    id<MTLBuffer> definitions = s.makeShared(view.definitions.size() * sizeof(GpuDefinition));
-    auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
-    for (usize i = 0; i < view.definitions.size(); ++i) {
-        const format::DefinitionRecord& record = view.definitions[i];
-        GpuDefinition& out = gpuDefinitions[i];
-        out.meshlets = addressOf(view.meshlets.data());
-        out.vertices = addressOf(view.vertices.data());
-        out.highBits = view.highBits.empty() ? 0 : addressOf(view.highBits.data());
-        out.triangles = addressOf(view.triangles.data());
-        out.boundsMin =
-            simd_make_float3(record.boundsMin[0], record.boundsMin[1], record.boundsMin[2]);
-        out.decodeScale =
-            simd_make_float3(record.decodeScale[0], record.decodeScale[1], record.decodeScale[2]);
-        out.boundsScale =
-            simd_make_float3(record.boundsScale[0], record.boundsScale[1], record.boundsScale[2]);
-        out.boundsStep = simd_reduce_max(out.boundsScale);
-        out.flags = record.flags;
+    // Geometry stays in the mapped file: each buffer wraps its segment without copying. See ADR
+    // 0002. The deallocator holds the mapping for as long as Metal holds the buffer.
+    std::unordered_map<const scene::MappedSegment*, id<MTLBuffer>> segments;
+    bool residencyChanged = false;
+    for (u32 d = 0; d < scene.documentCount(); ++d) {
+        for (const std::shared_ptr<scene::MappedSegment>& segment : scene.document(d).segments()) {
+            if (const auto it = s.segmentBuffers.find(segment.get());
+                it != s.segmentBuffers.end()) {
+                segments.emplace(it->first, it->second);
+                continue;
+            }
+            std::shared_ptr<scene::MappedSegment> owner = segment;
+            id<MTLBuffer> buffer =
+                [s.device newBufferWithBytesNoCopy:segment->data()
+                                            length:segment->size()
+                                           options:MTLResourceStorageModeShared |
+                                                   MTLResourceHazardTrackingModeUntracked
+                                       deallocator:^(void*, NSUInteger) {
+                                           (void)owner;
+                                       }];
+            GEO_ASSERT(buffer != nil);
+            [s.residency addAllocation:buffer];
+            segments.emplace(segment.get(), buffer);
+            residencyChanged = true;
+        }
     }
 
-    Aabb bounds{simd_make_double3(INFINITY, INFINITY, INFINITY),
-                simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
-    id<MTLBuffer> occurrences = s.makeShared(view.occurrences.size() * sizeof(GpuOccurrence));
+    usize definitionCount = 0, occurrenceCount = 0;
+    for (u32 d = 0; d < scene.documentCount(); ++d) {
+        if (scene.document(d).hasModel()) {
+            definitionCount += scene.document(d).model().definitionInfos.size();
+            occurrenceCount += scene.document(d).model().occurrences.size();
+        }
+    }
+
+    id<MTLBuffer> definitions = s.makeShared(definitionCount * sizeof(GpuDefinition));
+    id<MTLBuffer> occurrences = s.makeShared(occurrenceCount * sizeof(GpuOccurrence));
+    auto* gpuDefinitions = static_cast<GpuDefinition*>(definitions.contents);
     auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
     std::vector<Batch> closedBatches, openBatches;
-    u32 idBase = 0;
-    for (usize i = 0; i < view.occurrences.size(); ++i) {
-        const format::OccurrenceRecord& record = view.occurrences[i];
-        const format::DefinitionRecord& definition = view.definitions[record.definition];
-        const std::array<float, 12>& t = record.transform;
-        GpuOccurrence& out = gpuOccurrences[i];
-        out.rows[0] = simd_make_float4(t[0], t[3], t[6], t[9]);
-        out.rows[1] = simd_make_float4(t[1], t[4], t[7], t[10]);
-        out.rows[2] = simd_make_float4(t[2], t[5], t[8], t[11]);
-        out.definition = record.definition;
-        out.idBase = idBase;
-        idBase += definition.faceCount;
 
-        for (int corner = 0; corner < 8; ++corner) {
-            const simd_float4 local = simd_make_float4(
-                corner & 1 ? definition.boundsMax[0] : definition.boundsMin[0],
-                corner & 2 ? definition.boundsMax[1] : definition.boundsMin[1],
-                corner & 4 ? definition.boundsMax[2] : definition.boundsMin[2], 1.0f);
-            const Vec3 world =
-                simd_make_double3(simd_dot(out.rows[0], local), simd_dot(out.rows[1], local),
-                                  simd_dot(out.rows[2], local));
-            bounds.min = simd_min(bounds.min, world);
-            bounds.max = simd_max(bounds.max, world);
+    u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
+    for (u32 d = 0; d < scene.documentCount(); ++d) {
+        const scene::Document& document = scene.document(d);
+        if (!document.hasModel()) {
+            continue;
+        }
+        const format::SegmentView& model = document.model();
+        for (u32 i = 0; i < model.definitionInfos.size(); ++i) {
+            const format::DefinitionRecord* record = document.geometry(i);
+            GpuDefinition& out = gpuDefinitions[definitionBase + i];
+            if (record == nullptr) {
+                out = {};
+                continue;
+            }
+            const scene::MappedSegment* segment = document.geometrySegment(i);
+            id<MTLBuffer> buffer = segments.at(segment);
+            const format::SegmentView& view = segment->view();
+            const auto* base = static_cast<const u8*>(segment->data());
+            const auto addressOf = [&](const void* pointer) -> u64 {
+                return buffer.gpuAddress + u64(static_cast<const u8*>(pointer) - base);
+            };
+            out.meshlets = addressOf(view.meshlets.data() + record->firstMeshlet);
+            out.vertices = addressOf(view.vertices.data() + record->firstVertex);
+            out.highBits = (record->flags & kDefinitionWide) != 0
+                               ? addressOf(view.highBits.data() + record->firstHighBits)
+                               : 0;
+            out.triangles = addressOf(view.triangles.data() + record->firstTriangle);
+            out.boundsMin =
+                simd_make_float3(record->boundsMin[0], record->boundsMin[1], record->boundsMin[2]);
+            out.decodeScale = simd_make_float3(record->decodeScale[0], record->decodeScale[1],
+                                               record->decodeScale[2]);
+            out.boundsScale = simd_make_float3(record->boundsScale[0], record->boundsScale[1],
+                                               record->boundsScale[2]);
+            out.boundsStep = simd_reduce_max(out.boundsScale);
+            out.flags = record->flags;
         }
 
-        std::vector<Batch>& target =
-            (definition.flags & kDefinitionOpen) != 0 ? openBatches : closedBatches;
-        for (u32 first = 0; first < definition.meshletCount; first += kBatchMeshlets) {
-            const u32 count = std::min<u32>(kBatchMeshlets, definition.meshletCount - first);
-            target.push_back({u32(i), definition.firstMeshlet + first, count, 0});
+        for (u32 i = 0; i < model.occurrences.size(); ++i) {
+            const format::OccurrenceRecord& record = model.occurrences[i];
+            const std::array<float, 12>& t = record.transform;
+            const u32 global = occurrenceBase + i;
+            GpuOccurrence& out = gpuOccurrences[global];
+            out.rows[0] = simd_make_float4(t[0], t[3], t[6], t[9]);
+            out.rows[1] = simd_make_float4(t[1], t[4], t[7], t[10]);
+            out.rows[2] = simd_make_float4(t[2], t[5], t[8], t[11]);
+            out.definition = definitionBase + record.definition;
+            out.idBase = idBase + document.idBase(i);
+
+            const format::DefinitionRecord* geometry = document.geometry(record.definition);
+            if (geometry == nullptr) {
+                continue;
+            }
+            std::vector<Batch>& target =
+                (geometry->flags & kDefinitionOpen) != 0 ? openBatches : closedBatches;
+            for (u32 first = 0; first < geometry->meshletCount; first += kBatchMeshlets) {
+                const u32 count = std::min<u32>(kBatchMeshlets, geometry->meshletCount - first);
+                target.push_back({global, first, count, 0});
+            }
         }
+        definitionBase += u32(model.definitionInfos.size());
+        occurrenceBase += u32(model.occurrences.size());
+        idBase += document.idCount();
     }
 
     const usize batchCount = closedBatches.size() + openBatches.size();
@@ -400,28 +459,32 @@ void Renderer::setScene(scene::MappedBlob& blob) {
         bases[i] = u32(i * kMaxBatchesPerDraw);
     }
 
-    if (s.hasScene) {
-        // The GPU may still be reading the old scene, and residency must outlast that.
-        if (s.frameCount != 0) {
-            const bool finished = [s.frameFinished waitUntilSignaledValue:s.frameCount
-                                                                timeoutMS:kFrameTimeoutMs];
-            GEO_ASSERT(finished);
-        }
-        for (id<MTLBuffer> old in
-             @[ s.blobBuffer, s.definitions, s.occurrences, s.batches, s.drawBases ]) {
-            [s.residency removeAllocation:old];
+    // The last frame may still read the old tables, so they go when it finishes.
+    State::Retired retired;
+    retired.frame = s.frameCount;
+    for (id<MTLBuffer> old : {s.definitions, s.occurrences, s.batches, s.drawBases}) {
+        if (old != nil) {
+            retired.buffers.push_back(old);
         }
     }
-    s.blobBuffer = buffer;
+    for (const auto& [segment, buffer] : s.segmentBuffers) {
+        if (!segments.contains(segment)) {
+            retired.buffers.push_back(buffer);
+        }
+    }
+    if (!retired.buffers.empty()) {
+        s.retired.push_back(std::move(retired));
+    }
+
+    s.segmentBuffers = std::move(segments);
     s.definitions = definitions;
     s.occurrences = occurrences;
     s.batches = batches;
     s.drawBases = drawBases;
     s.batchCount = batchCount;
     s.openBatchStart = closedBatches.size();
-    s.bounds = bounds;
-    s.hasScene = true;
-    for (id<MTLBuffer> resource in @[ buffer, definitions, occurrences, batches, drawBases ]) {
+    s.hasScene = batchCount != 0;
+    for (id<MTLBuffer> resource : {definitions, occurrences, batches, drawBases}) {
         [s.residency addAllocation:resource];
     }
     [s.residency commit];
@@ -429,15 +492,13 @@ void Renderer::setScene(scene::MappedBlob& blob) {
     // Residency wires pages synchronously, which takes tens of milliseconds for a large file, and
     // it must not stall the engine thread. A frame arriving first simply waits for the pages it
     // needs.
-    id<MTLResidencySet> residency = s.residency;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        [residency requestResidency];
-    });
+    if (residencyChanged) {
+        id<MTLResidencySet> residency = s.residency;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            [residency requestResidency];
+        });
+    }
 }
-
-bool Renderer::hasScene() const { return state_->hasScene; }
-
-Aabb Renderer::sceneBounds() const { return state_->bounds; }
 
 void Renderer::resize(u32 width, u32 height) {
     State& s = *state_;

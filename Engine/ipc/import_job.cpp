@@ -2,21 +2,26 @@
 
 #include "base/types.h"
 #include "format/blob.h"
+#include "format/helper_messages.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <dirent.h>
 #include <fcntl.h>
 #include <format>
+#include <mutex>
+#include <signal.h>
 #include <spawn.h>
-#include <string_view>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 
 extern char** environ;
 
@@ -46,25 +51,25 @@ private:
     int fd_;
 };
 
-// Reads the helper's result line, which is short, until the helper closes its end.
-std::string readAll(int fd) {
-    std::string text;
-    std::array<char, 512> buffer{};
-    while (true) {
-        const ssize_t count = read(fd, buffer.data(), buffer.size());
+bool readExactly(int fd, void* data, usize size) {
+    auto* cursor = static_cast<u8*>(data);
+    while (size != 0) {
+        const ssize_t count = read(fd, cursor, size);
         if (count > 0) {
-            text.append(buffer.data(), usize(count));
+            cursor += count;
+            size -= usize(count);
         } else if (count == 0 || errno != EINTR) {
-            return text;
+            return false;
         }
     }
+    return true;
 }
 
 // Starts the helper with exactly three inherited descriptors beyond stderr.
 // POSIX_SPAWN_CLOEXEC_DEFAULT closes everything else, so it cannot reach any other file this
 // process has open.
-bool spawnHelper(const std::string& helper, int sourceFd, int outputFd, int resultFd, pid_t& pid,
-                 std::string& error) {
+bool spawnHelper(const std::string& helper, const std::vector<std::string>& options, int sourceFd,
+                 int outputFd, int resultFd, pid_t& pid, std::string& error) {
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
     posix_spawn_file_actions_adddup2(&actions, sourceFd, kSourceFd);
@@ -77,9 +82,13 @@ bool spawnHelper(const std::string& helper, int sourceFd, int outputFd, int resu
     posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
 
     const std::string source = std::to_string(kSourceFd), output = std::to_string(kOutputFd);
-    std::array<char*, 4> arguments = {const_cast<char*>(helper.c_str()),
-                                      const_cast<char*>(source.c_str()),
-                                      const_cast<char*>(output.c_str()), nullptr};
+    std::vector<char*> arguments = {const_cast<char*>(helper.c_str()),
+                                    const_cast<char*>(source.c_str()),
+                                    const_cast<char*>(output.c_str())};
+    for (const std::string& option : options) {
+        arguments.push_back(const_cast<char*>(option.c_str()));
+    }
+    arguments.push_back(nullptr);
     const int status =
         posix_spawn(&pid, helper.c_str(), &actions, &attributes, arguments.data(), environ);
     posix_spawn_file_actions_destroy(&actions);
@@ -109,18 +118,55 @@ std::string cachePathFor(const std::string& sourcePath, const ImportPaths& paths
     return std::format("{}/{:016x}.geoblob", paths.cacheDirectory, key);
 }
 
-ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths) {
-    ImportOutcome outcome;
-    const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
-    if (blobPath.empty()) {
-        return outcome;
-    }
-    outcome.blobPath = blobPath;
-    if (access(blobPath.c_str(), R_OK) == 0) {
-        outcome.ok = true;
-        return outcome;
-    }
+namespace {
 
+// Delivers every segment of a finished cache file. Returns false if the file is damaged.
+bool deliverCached(const std::string& blobPath, ImportListener& listener) {
+    ScopedFd cached(open(blobPath.c_str(), O_RDONLY));
+    if (cached.get() < 0) {
+        return false;
+    }
+    std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+    std::string error;
+    if (!scene::openCacheFile(cached.get(), segments, error)) {
+        return false;
+    }
+    for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+        listener.segmentReady(std::move(segment));
+    }
+    return true;
+}
+
+// Finer levels saved for a cache file, coarsest first, so finer ones replace them as they load.
+std::vector<std::string> refinementsOf(const std::string& blobPath) {
+    const usize slash = blobPath.rfind('/');
+    const std::string directory = blobPath.substr(0, slash);
+    const std::string prefix = blobPath.substr(slash + 1, blobPath.size() - slash - 1 -
+                                                              std::string_view(".geoblob").size()) +
+                               ".r";
+    std::vector<std::string> names;
+    if (DIR* listing = opendir(directory.c_str())) {
+        while (const dirent* entry = readdir(listing)) {
+            const std::string_view name(entry->d_name);
+            if (name.starts_with(prefix) && name.ends_with(".geoblob")) {
+                names.emplace_back(name);
+            }
+        }
+        closedir(listing);
+    }
+    std::sort(names.begin(), names.end());
+    for (std::string& name : names) {
+        name = directory + "/" + name;
+    }
+    return names;
+}
+
+// Runs the helper to write `blobPath`, passing its segments on as they arrive.
+ImportOutcome runHelper(const std::string& sourcePath, const std::string& blobPath,
+                        const ImportPaths& paths, const std::vector<std::string>& options,
+                        ImportListener& listener, ImportCancel* cancel) {
+    ImportOutcome outcome;
+    outcome.blobPath = blobPath;
     ScopedFd source(open(sourcePath.c_str(), O_RDONLY));
     if (source.get() < 0) {
         outcome.message = "This file could not be opened.";
@@ -141,27 +187,88 @@ ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths
     ScopedFd readEnd(pipeEnds[0]), writeEnd(pipeEnds[1]);
 
     pid_t pid = 0;
-    if (!spawnHelper(paths.helper, source.get(), output.get(), writeEnd.get(), pid,
+    if (!spawnHelper(paths.helper, options, source.get(), output.get(), writeEnd.get(), pid,
                      outcome.message)) {
         unlink(temporary.c_str());
         return outcome;
     }
     writeEnd.reset(); // otherwise reading would never see end of file
-    const std::string result = readAll(readEnd.get());
+    if (cancel != nullptr) {
+        cancel->setHelper(pid);
+    }
+    bool done = false, failed = false;
+    std::string failure;
+    while (!done && !failed) {
+        format::MessageHeader header{};
+        if (!readExactly(readEnd.get(), &header, sizeof(header)) ||
+            header.size > format::kMaxMessagePayload) {
+            break;
+        }
+        std::array<char, format::kMaxMessagePayload> payload;
+        if (!readExactly(readEnd.get(), payload.data(), header.size)) {
+            break;
+        }
+        switch (format::HelperMessage(header.kind)) {
+        case format::HelperMessage::Segment: {
+            format::SegmentMessage message{};
+            if (header.size != sizeof(message)) {
+                failed = true;
+                break;
+            }
+            std::memcpy(&message, payload.data(), sizeof(message));
+            std::string error;
+            std::shared_ptr<scene::MappedSegment> segment =
+                scene::MappedSegment::open(output.get(), message.offset, message.size, error);
+            if (!segment) {
+                failed = true;
+                failure = error;
+                break;
+            }
+            listener.segmentReady(std::move(segment));
+            break;
+        }
+        case format::HelperMessage::Progress: {
+            format::ProgressMessage message{};
+            if (header.size == sizeof(message)) {
+                std::memcpy(&message, payload.data(), sizeof(message));
+                listener.progress(message.done, message.total);
+            }
+            break;
+        }
+        case format::HelperMessage::Warning:
+            listener.warning(std::string(payload.data(), header.size));
+            break;
+        case format::HelperMessage::Done:
+            done = true;
+            break;
+        case format::HelperMessage::Failed:
+            failed = true;
+            failure.assign(payload.data(), header.size);
+            break;
+        }
+    }
+    if (failed && failure.empty()) {
+        failure = "The import helper sent something unexpected.";
+    }
+    if (failed) {
+        kill(pid, SIGKILL);
+    }
 
     int status = 0;
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
     }
-    if (!WIFEXITED(status)) {
-        outcome.message = "The import helper stopped unexpectedly. This file may be damaged.";
+    if (cancel != nullptr) {
+        cancel->setHelper(0);
+    }
+    if (cancel != nullptr && cancel->cancelled()) {
+        outcome.message = "The import was cancelled.";
         unlink(temporary.c_str());
         return outcome;
     }
-    if (WEXITSTATUS(status) != 0 || !result.starts_with("ok")) {
-        constexpr std::string_view kPrefix = "error ";
-        outcome.message = result.starts_with(kPrefix)
-                              ? result.substr(kPrefix.size(), result.find('\n') - kPrefix.size())
-                              : "The file could not be imported.";
+    if (!done) {
+        outcome.message = !failure.empty()
+                              ? failure
+                              : "The import helper stopped unexpectedly. This file may be damaged.";
         unlink(temporary.c_str());
         return outcome;
     }
@@ -172,6 +279,91 @@ ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths
     }
     outcome.ok = true;
     return outcome;
+}
+
+} // namespace
+
+ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
+                         ImportListener& listener, ImportCancel* cancel) {
+    ImportOutcome outcome;
+    const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
+    if (blobPath.empty()) {
+        return outcome;
+    }
+    if (deliverCached(blobPath, listener)) {
+        // Finer levels from earlier sessions come back too, so a part zoomed into before is sharp
+        // at once.
+        for (const std::string& refinement : refinementsOf(blobPath)) {
+            if (!deliverCached(refinement, listener)) {
+                unlink(refinement.c_str());
+            }
+        }
+        outcome.ok = true;
+        outcome.fromCache = true;
+        outcome.blobPath = blobPath;
+        return outcome;
+    }
+    // A damaged cache, and anything refined from it, must not stop the file opening.
+    unlink(blobPath.c_str());
+    for (const std::string& refinement : refinementsOf(blobPath)) {
+        unlink(refinement.c_str());
+    }
+    return runHelper(sourcePath, blobPath, paths, {}, listener, cancel);
+}
+
+ImportOutcome refineFile(const std::string& sourcePath, const ImportPaths& paths, u32 level,
+                         std::span<const u32> definitions, ImportListener& listener,
+                         ImportCancel* cancel) {
+    ImportOutcome outcome;
+    const std::string basePath = cachePathFor(sourcePath, paths, outcome.message);
+    if (basePath.empty() || definitions.empty()) {
+        return outcome;
+    }
+    std::string list;
+    for (const u32 definition : definitions) {
+        list += std::format("{}{}", list.empty() ? "" : ",", definition);
+    }
+    const u64 key = XXH3_64bits(list.data(), list.size());
+    const std::string stem =
+        basePath.substr(0, basePath.size() - std::string_view(".geoblob").size());
+    const std::string blobPath = std::format("{}.r{}-{:016x}.geoblob", stem, level, key);
+    if (deliverCached(blobPath, listener)) {
+        outcome.ok = true;
+        outcome.fromCache = true;
+        outcome.blobPath = blobPath;
+        return outcome;
+    }
+    return runHelper(sourcePath, blobPath, paths,
+                     {"--level", std::to_string(level), "--definitions", list}, listener, cancel);
+}
+
+struct ImportCancel::State {
+    std::mutex mutex;
+    pid_t helper = 0;
+    bool cancelled = false;
+};
+
+ImportCancel::ImportCancel() : state_(std::make_shared<State>()) {}
+
+void ImportCancel::cancel() {
+    std::lock_guard lock(state_->mutex);
+    state_->cancelled = true;
+    if (state_->helper != 0) {
+        kill(state_->helper, SIGTERM);
+    }
+}
+
+void ImportCancel::setHelper(int pid) {
+    std::lock_guard lock(state_->mutex);
+    state_->helper = pid;
+    if (pid != 0 && state_->cancelled) {
+        kill(pid, SIGTERM);
+    }
+}
+
+bool ImportCancel::cancelled() const {
+    std::lock_guard lock(state_->mutex);
+    return state_->cancelled;
 }
 
 } // namespace geo::ipc

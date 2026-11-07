@@ -5,8 +5,7 @@
 *.dSYM/
 
 # Third-party build trees (sources are pinned in ThirdParty/manifest.toml)
-/ThirdParty/build/
-/ThirdParty/src/occt/
+/ThirdParty/.occt/
 
 # Editors and OS
 .DS_Store

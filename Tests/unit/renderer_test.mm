@@ -1,12 +1,14 @@
 // Renders known geometry on the real GPU and checks the results, including the pick path that hover
 // and adaptive rotation depend on.
-#include "cache/blob_writer.h"
 #include "gpu/renderer.h"
+#include "import.h"
 #include "nav/camera.h"
 #include "render/view.h"
+#include "scene/scene.h"
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <doctest/doctest.h>
 #include <fcntl.h>
 #include <set>
@@ -26,25 +28,37 @@ void addQuad(std::vector<float>& corners, std::array<float, 3> a, std::array<flo
     }
 }
 
+// Writes triangles as a binary STL, so tests import through the real path.
+std::string binaryStl(const std::vector<float>& corners) {
+    const u32 triangles = u32(corners.size() / 9);
+    std::string file(84 + usize(triangles) * 50, '\0');
+    std::memcpy(file.data() + 80, &triangles, sizeof(triangles));
+    for (u32 t = 0; t < triangles; ++t) {
+        std::memcpy(file.data() + 84 + usize(t) * 50 + 12, corners.data() + usize(t) * 9, 36);
+    }
+    return file;
+}
+
 // A closed box from (-1, -1, -1) to (1, 1, 1), wound outward.
-import::TriangleSoup box() {
-    import::TriangleSoup soup;
-    auto& c = soup.corners;
+std::vector<float> box() {
+    std::vector<float> c;
     addQuad(c, {-1, -1, -1}, {-1, 1, -1}, {1, 1, -1}, {1, -1, -1});
     addQuad(c, {-1, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1});
     addQuad(c, {-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1});
     addQuad(c, {-1, 1, -1}, {-1, 1, 1}, {1, 1, 1}, {1, 1, -1});
     addQuad(c, {-1, -1, -1}, {-1, -1, 1}, {-1, 1, 1}, {-1, 1, -1});
     addQuad(c, {1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {1, -1, 1});
-    return soup;
+    return c;
 }
 
 struct Stage {
     std::unique_ptr<gpu::Renderer> renderer;
     nav::Viewport viewport{double(kWidth), double(kHeight)};
     nav::Camera camera;
+    scene::Scene scene;
+    Aabb bounds{};
 
-    explicit Stage(const import::TriangleSoup& soup, bool perspective = false) {
+    explicit Stage(const std::vector<float>& corners, bool perspective = false) {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         const bool hasDevice = device != nil; // doctest cannot print an Objective-C pointer
         REQUIRE(hasDevice);
@@ -55,23 +69,30 @@ struct Stage {
         const int fd = mkstemp(path);
         REQUIRE(fd >= 0);
         std::string error;
-        REQUIRE(import::writeBlob(fd, import::packMesh(import::buildIndexedMesh(soup)), {}, error));
-        scene::MappedBlob blob;
-        REQUIRE_MESSAGE(blob.open(fd, error), error);
+        const std::string stl = binaryStl(corners);
+        import::ImportResult result;
+        REQUIRE(import::importMesh({reinterpret_cast<const u8*>(stl.data()), stl.size()}, fd,
+                                   nullptr, result, error));
+        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+        REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
         close(fd);
         unlink(path);
-        renderer->setScene(blob);
+        scene::Document& document = scene.document(scene.addDocument());
+        for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+            REQUIRE_MESSAGE(document.add(std::move(segment), error), error);
+        }
+        renderer->syncScene(scene);
         renderer->resize(kWidth, kHeight);
+        bounds = scene.bounds().value();
 
         camera.perspective = perspective;
         camera.fovY = 40.0 * M_PI / 180.0;
-        const Aabb bounds = renderer->sceneBounds();
         camera.lookAt(simd_make_double3(3, 2, 4), bounds.center(), simd_make_double3(0, 1, 0));
         nav::fit(camera, bounds, viewport, 1.2);
     }
 
     render::ViewState view(u32 hovered = 0, u32 selected = 0) const {
-        render::ViewState state = render::makeView(camera, viewport, renderer->sceneBounds());
+        render::ViewState state = render::makeView(camera, viewport, bounds);
         state.uniforms.hoveredId = hovered;
         state.uniforms.selectedId = selected;
         return state;
@@ -198,12 +219,12 @@ TEST_CASE("hover changes only the hovered face, and selection shows through it")
 
 TEST_CASE("an open surface shows both sides") {
     @autoreleasepool {
-        import::TriangleSoup soup;
-        addQuad(soup.corners, {-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}); // faces +z
-        Stage stage(soup);
+        std::vector<float> corners;
+        addQuad(corners, {-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}); // faces +z
+        Stage stage(corners);
         stage.camera.lookAt(simd_make_double3(0, 0, -5), simd_make_double3(0, 0, 0),
                             simd_make_double3(0, 1, 0)); // looks at its back
-        nav::fit(stage.camera, stage.renderer->sceneBounds(), stage.viewport, 1.2);
+        nav::fit(stage.camera, stage.bounds, stage.viewport, 1.2);
         const render::ViewState view = stage.view();
         stage.renderer->renderOffscreen(view);
         CHECK(stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth).has_value());
@@ -223,10 +244,10 @@ TEST_CASE("a closed surface culls its back faces, so a pick finds the near side"
 TEST_CASE("a wide definition decodes through its high bits") {
     @autoreleasepool {
         // One tiny detail far from a large triangle forces the 24-bit grid.
-        import::TriangleSoup soup = box();
+        std::vector<float> corners = box();
         const std::array<float, 9> far = {100000, 0, 0, 100001, 0, 0, 100000, 1, 0};
-        soup.corners.insert(soup.corners.end(), far.begin(), far.end());
-        Stage stage(soup);
+        corners.insert(corners.end(), far.begin(), far.end());
+        Stage stage(corners);
         const Aabb detail{simd_make_double3(-1, -1, -1), simd_make_double3(1, 1, 1)};
         nav::fit(stage.camera, detail, stage.viewport, 1.2);
         const render::ViewState view = stage.view();

@@ -16,8 +16,9 @@
 #include "nav/camera.h"
 #include "nav/orbit_policy.h"
 #include "nav/pointer_controller.h"
+#include "render/refinement.h"
 #include "render/view.h"
-#include "scene/mapped_blob.h"
+#include "scene/scene.h"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -48,6 +49,8 @@ constexpr usize kCommandCapacity = 4096;
 constexpr double kFitMargin = 1.12;
 constexpr double kDefaultAzimuth = 35.0 * M_PI / 180.0;
 constexpr double kDefaultElevation = 25.0 * M_PI / 180.0;
+// Refinement waits for the view to settle, so a drag never starts work it would then outrun.
+constexpr double kRefineDelaySeconds = 0.3;
 
 // Seconds since this process started, for measuring launch.
 double secondsSinceProcessStart() {
@@ -109,6 +112,23 @@ struct GeoEngine {
     GeoEventCallback eventCallback = nullptr;
     void* eventContext = nullptr;
     u64 openGeneration = 0; // a newer open supersedes one still importing
+
+    scene::Scene scene;
+    Aabb bounds{simd_make_double3(-1, -1, -1), simd_make_double3(1, 1, 1)};
+    bool sceneChanged = false;
+    bool hasFramed = false;
+    bool userMovedCamera = false;
+    std::shared_ptr<ipc::ImportCancel> activeImport;
+    std::string openedPath;
+    bool importing = false;
+
+    // Finer geometry for what the view shows closely. One job runs at a time.
+    struct Refinement {
+        CFRunLoopTimerRef timer = nullptr;
+        bool running = false;
+        std::vector<u32> requested; // the finest level asked for, per definition
+        std::shared_ptr<ipc::ImportCancel> cancel;
+    } refinement;
 
     nav::Camera camera;
     nav::Viewport viewport;
@@ -214,6 +234,8 @@ struct GeoEngine {
         }
 
         if (response.cameraMoved) {
+            userMovedCamera = true;
+            scheduleRefinement();
             pendingInputTime = pendingInputTime == 0.0 ? event.timestamp : pendingInputTime;
             requestFrame();
         }
@@ -224,7 +246,6 @@ struct GeoEngine {
     }
 
     void resetCamera() {
-        const Aabb bounds = renderer->sceneBounds();
         const Vec3 direction = simd_make_double3(
             std::cos(kDefaultElevation) * std::sin(kDefaultAzimuth),
             -std::cos(kDefaultElevation) * std::cos(kDefaultAzimuth), std::sin(kDefaultElevation));
@@ -236,10 +257,11 @@ struct GeoEngine {
 
     void perform(GeoAction action) {
         lastActivity = nowSeconds();
+        scheduleRefinement();
         switch (action) {
         case GeoActionFit:
-            if (renderer->hasScene()) {
-                nav::fit(camera, renderer->sceneBounds(), viewport, kFitMargin);
+            if (scene.hasGeometry()) {
+                nav::fit(camera, bounds, viewport, kFitMargin);
                 orbit.navigated();
             }
             break;
@@ -248,13 +270,48 @@ struct GeoEngine {
             break;
         case GeoActionToggleProjection:
             camera.perspective = !camera.perspective;
-            if (renderer->hasScene()) {
-                nav::fit(camera, renderer->sceneBounds(), viewport, kFitMargin);
+            if (scene.hasGeometry()) {
+                nav::fit(camera, bounds, viewport, kFitMargin);
             }
             orbit.navigated();
             break;
         }
         requestFrame();
+    }
+
+    // Delivers import results to the engine thread, tagged so a superseded import is ignored.
+    class ImportBridge final : public ipc::ImportListener {
+    public:
+        ImportBridge(GeoEngine* engine, u64 generation)
+            : engine_(engine), generation_(generation) {}
+
+        void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
+            GeoEngine* engine = engine_;
+            const u64 generation = generation_;
+            engine->perform([=] { engine->addSegment(generation, segment); });
+        }
+        void progress(u32 done, u32 total) override {
+            GeoEngine* engine = engine_;
+            const u64 generation = generation_;
+            engine->perform([=] { engine->reportProgress(generation, done, total); });
+        }
+        void warning(const std::string& text) override {
+            std::fprintf(stderr, "import: %s\n", text.c_str());
+        }
+
+    private:
+        GeoEngine* engine_;
+        u64 generation_;
+    };
+
+    // Runs `work` on the engine thread.
+    template <typename Work> void perform(Work work) {
+        CFRunLoopPerformBlock(runLoop, kCFRunLoopCommonModes, ^{
+            @autoreleasepool {
+                work();
+            }
+        });
+        CFRunLoopWakeUp(runLoop);
     }
 
     // By value: a block copies C++ objects it captures, but only the reference if given one, and
@@ -265,50 +322,191 @@ struct GeoEngine {
         emit(GeoEventLoading, name.c_str());
         const double start = nowSeconds();
 
+        if (activeImport) {
+            activeImport->cancel();
+        }
+        if (refinement.cancel) {
+            refinement.cancel->cancel();
+        }
+        activeImport = std::make_shared<ipc::ImportCancel>();
+        std::shared_ptr<ipc::ImportCancel> cancel = activeImport;
+        openedPath = path;
+        importing = true;
+        refinement.running = false;
+        refinement.requested.clear();
+
+        scene.clear();
+        scene.addDocument();
+        sceneChanged = true;
+        hasFramed = false;
+        userMovedCamera = false;
+        hoveredId = 0;
+        selectedId = 0;
+        requestFrame();
+
         // The import can take seconds, and the engine thread must keep drawing.
         const ipc::ImportPaths paths = importPaths;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            ipc::ImportOutcome outcome = ipc::importFile(path, paths);
-            CFRunLoopPerformBlock(runLoop, kCFRunLoopCommonModes, ^{
-                @autoreleasepool {
-                    finishOpen(generation, outcome, start);
-                }
-            });
-            CFRunLoopWakeUp(runLoop);
+            ImportBridge bridge(this, generation);
+            ipc::ImportOutcome outcome = ipc::importFile(path, paths, bridge, cancel.get());
+            perform([=, this] { finishOpen(generation, outcome, start); });
         });
+    }
+
+    void addSegment(u64 generation, const std::shared_ptr<scene::MappedSegment>& segment) {
+        if (generation != openGeneration) {
+            return;
+        }
+        std::string error;
+        if (!scene.document(0).add(segment, error)) {
+            emit(GeoEventFailed, error.c_str());
+            return;
+        }
+        const bool hadBounds = hasFramed;
+        sceneChanged = true;
+        if (!hadBounds) {
+            frameScene(true);
+        }
+        requestFrame();
+    }
+
+    void reportProgress(u64 generation, u32 done, u32 total) {
+        if (generation == openGeneration && traceLaunch) {
+            std::fprintf(stderr, "trace: imported %u of %u\n", done, total);
+        }
+    }
+
+    // Takes new scene bounds, and frames them unless the user has already moved the camera.
+    void frameScene(bool reset) {
+        const std::optional<Aabb> current = scene.bounds();
+        if (!current) {
+            return;
+        }
+        bounds = *current;
+        if (reset) {
+            resetCamera();
+            hasFramed = true;
+        } else if (!userMovedCamera) {
+            nav::fit(camera, bounds, viewport, kFitMargin);
+            orbit.setVisibleBounds(bounds);
+        }
     }
 
     void finishOpen(u64 generation, const ipc::ImportOutcome& outcome, double start) {
         if (generation != openGeneration) {
             return; // the user has already opened something else
         }
+        importing = false;
+        scheduleRefinement();
         if (!outcome.ok) {
             emit(GeoEventFailed, outcome.message.c_str());
             return;
         }
-        const int fd = open(outcome.blobPath.c_str(), O_RDONLY);
-        scene::MappedBlob blob;
-        std::string error;
-        if (fd < 0 || !blob.open(fd, error)) {
-            if (fd >= 0) {
-                close(fd);
-            }
-            // A damaged cache must not stop the file opening next time.
-            unlink(outcome.blobPath.c_str());
-            emit(GeoEventFailed, error.empty() ? "The cache could not be read." : error.c_str());
-            return;
-        }
-        close(fd);
-        renderer->setScene(blob);
-        hoveredId = 0;
-        selectedId = 0;
-        resetCamera();
+        frameScene(false); // estimated bounds become exact now that all geometry is here
         requestFrame();
         if (traceLaunch) {
             std::fprintf(stderr, "trace: scene ready %.1f ms after opening\n",
                          (nowSeconds() - start) * 1e3);
         }
         emit(GeoEventSceneReady, "");
+    }
+
+    void scheduleRefinement() {
+        if (refinement.timer != nullptr) {
+            CFRunLoopTimerSetNextFireDate(refinement.timer,
+                                          CFAbsoluteTimeGetCurrent() + kRefineDelaySeconds);
+        }
+    }
+
+    // Asks for finer geometry where the settled view shows more than half a pixel of chord error.
+    void refine() {
+        if (importing || refinement.running || scene.documentCount() == 0) {
+            return;
+        }
+        const scene::Document& document = scene.document(0);
+        if (!document.hasModel() || document.model().modelInfo.empty()) {
+            return;
+        }
+        const format::SegmentView& model = document.model();
+        const format::ModelInfo& info = model.modelInfo[0];
+        const render::RefinementPolicy policy{info.linearDeflection, info.maxLevel, 0.5};
+        if (policy.linearDeflection <= 0.0) {
+            return;
+        }
+
+        std::vector<render::PlacedExtent> placed;
+        placed.reserve(model.occurrences.size());
+        for (const format::OccurrenceRecord& occurrence : model.occurrences) {
+            const format::DefinitionInfo& definition = model.definitionInfos[occurrence.definition];
+            const std::array<float, 12>& t = occurrence.transform;
+            const simd_double3 lo = {definition.boundsMin[0], definition.boundsMin[1],
+                                     definition.boundsMin[2]};
+            const simd_double3 hi = {definition.boundsMax[0], definition.boundsMax[1],
+                                     definition.boundsMax[2]};
+            const simd_double3 c = (lo + hi) * 0.5;
+            const Vec3 center = {t[0] * c.x + t[3] * c.y + t[6] * c.z + t[9],
+                                 t[1] * c.x + t[4] * c.y + t[7] * c.z + t[10],
+                                 t[2] * c.x + t[5] * c.y + t[8] * c.z + t[11]};
+            placed.push_back({center, simd_length(hi - lo) * 0.5, occurrence.definition});
+        }
+        const std::vector<u32> needed =
+            render::neededLevels(placed, model.definitionInfos.size(), camera, viewport, policy);
+
+        refinement.requested.resize(needed.size(), 0);
+        u32 level = 0;
+        std::vector<u32> definitions;
+        for (u32 d = 0; d < needed.size(); ++d) {
+            const format::DefinitionRecord* geometry = document.geometry(d);
+            const u32 have = std::max(refinement.requested[d], geometry ? geometry->level : 0);
+            if (needed[d] <= have) {
+                continue;
+            }
+            // The finest level needed goes first: it is what the view is closest to.
+            if (needed[d] > level) {
+                level = needed[d];
+                definitions.clear();
+            }
+            if (needed[d] == level) {
+                definitions.push_back(d);
+            }
+        }
+        if (definitions.empty()) {
+            return;
+        }
+        for (const u32 d : definitions) {
+            refinement.requested[d] = level;
+        }
+        startRefinement(level, std::move(definitions));
+    }
+
+    void startRefinement(u32 level, std::vector<u32> definitions) {
+        refinement.running = true;
+        refinement.cancel = std::make_shared<ipc::ImportCancel>();
+        std::shared_ptr<ipc::ImportCancel> cancel = refinement.cancel;
+        const u64 generation = openGeneration;
+        const std::string path = openedPath;
+        const ipc::ImportPaths paths = importPaths;
+        const double start = nowSeconds();
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            ImportBridge bridge(this, generation);
+            const ipc::ImportOutcome outcome =
+                ipc::refineFile(path, paths, level, definitions, bridge, cancel.get());
+            perform([=, this] {
+                if (generation != openGeneration) {
+                    return;
+                }
+                refinement.running = false;
+                if (traceLaunch) {
+                    std::fprintf(stderr,
+                                 "trace: refined %zu definitions to level %u in %.1f ms%s\n",
+                                 definitions.size(), level, (nowSeconds() - start) * 1e3,
+                                 outcome.ok ? "" : " (failed)");
+                }
+                if (outcome.ok) {
+                    refine(); // there may be more to do at coarser levels
+                }
+            });
+        });
     }
 
     void drainCommands() {
@@ -363,7 +561,11 @@ struct GeoEngine {
         if (needsFrame) {
             needsFrame = false;
             const double start = nowSeconds();
-            render::ViewState view = render::makeView(camera, viewport, renderer->sceneBounds());
+            if (sceneChanged) {
+                sceneChanged = false;
+                renderer->syncScene(scene);
+            }
+            render::ViewState view = render::makeView(camera, viewport, bounds);
             view.uniforms.hoveredId = hoveredId;
             view.uniforms.selectedId = selectedId;
             publishedHover.store(hoveredId, std::memory_order_relaxed);
@@ -414,6 +616,13 @@ struct GeoEngine {
             };
             source = CFRunLoopSourceCreate(nullptr, 0, &context);
             CFRunLoopAddSource(runLoop, source, kCFRunLoopCommonModes);
+            refinement.timer = CFRunLoopTimerCreateWithHandler(
+                nullptr, CFAbsoluteTimeGetCurrent() + 1e9, 1e9, 0, 0, ^(CFRunLoopTimerRef) {
+                    @autoreleasepool {
+                        refine();
+                    }
+                });
+            CFRunLoopAddTimer(runLoop, refinement.timer, kCFRunLoopCommonModes);
             ready.store(true, std::memory_order_release);
             ready.notify_one();
             while (!stopping) {
@@ -421,6 +630,8 @@ struct GeoEngine {
             }
             CFRunLoopRemoveSource(runLoop, source, kCFRunLoopCommonModes);
             CFRelease(source);
+            CFRunLoopTimerInvalidate(refinement.timer);
+            CFRelease(refinement.timer);
         }
     }
 };

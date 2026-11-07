@@ -12,6 +12,8 @@ Status: early development. See [Docs/PLAN.md](Docs/PLAN.md) for the design and m
 - macOS 26 or later on Apple silicon
 - Xcode 27 with the Metal Toolchain component
 - CMake, Ninja and LLVM (`brew install cmake ninja llvm`)
+- OCCT, for STEP files: run `ThirdParty/build_occt.sh` once, which builds the pinned version in
+  about five minutes. Without it everything else still builds, and STEP files will not open.
 
 ## Build and run
 
@@ -21,7 +23,8 @@ cmake --build --preset release
 open build/release/App/Geometry.app
 ```
 
-Drop an STL file on the window, or press ⌘O. STEP support is in progress.
+Drop a STEP or STL file on the window, or press ⌘O. Large STEP files appear while they import, and
+parts you zoom into are retessellated more finely once the view settles.
 
 | Input | Action |
 |---|---|
@@ -40,6 +43,21 @@ Drop an STL file on the window, or press ⌘O. STEP support is in progress.
 ```sh
 cmake --preset debug && cmake --build --preset debug
 ctest --preset debug              # unit, GPU and layering tests
+```
+
+`gcli` imports, checks and renders files without the app:
+
+```sh
+build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometry-occt-worker
+build/release/Tools/gcli stats part.geoblob
+build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png
+```
+
+`Tools/step_equivalence.py` compares STEP imports with OCCT reading each file whole, on face count,
+area, volume and bounds:
+
+```sh
+Tools/step_equivalence.py build/release files.txt --jobs 6
 ```
 
 The `asan` and `tsan` presets run the same tests under sanitizers.
