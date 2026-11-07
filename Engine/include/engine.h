@@ -211,6 +211,10 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
                                 float bottom);
 
+/// Writes the current view, as drawn, to a PNG at `path`, on the engine thread. The file appears
+/// once it is complete.
+void geo_engine_write_snapshot(GeoEngine* engine, const char* path);
+
 /// Prints input-to-present latency to stderr when GEOMETRY_LATENCY is set.
 void geo_engine_report_latency(GeoEngine* engine);
 

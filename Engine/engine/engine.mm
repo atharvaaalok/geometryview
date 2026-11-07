@@ -10,6 +10,7 @@
 #include "base/trace.h"
 #include "engine/allocation_counter.h"
 #include "engine/latency_probe.h"
+#include "engine/png.h"
 #include "gpu/frame_source.h"
 #include "gpu/renderer.h"
 #include "ipc/import_job.h"
@@ -96,6 +97,7 @@ struct Command {
         SelectNode,
         HoverNode,
         SetInsets,
+        Snapshot,
         RequestFrame,
         Stop
     };
@@ -890,6 +892,10 @@ struct GeoEngine {
                 insetPoints = command->insets;
                 applyInsets();
                 break;
+            case Command::Kind::Snapshot:
+                writeSnapshot(command->path);
+                std::free(command->path);
+                break;
             case Command::Kind::RequestFrame:
                 requestFrame();
                 break;
@@ -901,6 +907,26 @@ struct GeoEngine {
         }
         if (pointerMoved) {
             updateHover();
+        }
+    }
+
+    // Draws the current view offscreen and saves it, written to a temporary name first so the file
+    // only ever appears whole.
+    void writeSnapshot(const std::string& path) {
+        renderer->syncState(interaction.state());
+        render::ViewState view = render::makeView(camera, viewport, bounds);
+        view.uniforms.hoverFirst = hover.first;
+        view.uniforms.hoverEnd = hover.second;
+        render::Overlay overlay;
+        if (scene.hasGeometry()) {
+            overlay = render::makeOverlay(camera, viewport, view.uniforms.viewRotation,
+                                          pixelsPerPoint, renderer->glyphAdvance(), cubeHover);
+        }
+        const std::vector<u8> pixels = renderer->renderOffscreen(view, &overlay);
+        const std::string temporary = path + ".partial";
+        if (engine::writePng(temporary.c_str(), pixels, u32(viewport.width),
+                             u32(viewport.height))) {
+            rename(temporary.c_str(), path.c_str());
         }
     }
 
@@ -1150,6 +1176,13 @@ void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float 
     Command command{};
     command.kind = Command::Kind::SetInsets;
     command.insets = {left, top, right, bottom};
+    engine->post(command);
+}
+
+void geo_engine_write_snapshot(GeoEngine* engine, const char* path) {
+    Command command{};
+    command.kind = Command::Kind::Snapshot;
+    command.path = strdup(path);
     engine->post(command);
 }
 
