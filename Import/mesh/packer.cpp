@@ -343,7 +343,10 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
             sortedTriangles[t] = {u64(face) << 32 | position, u32(t)};
         }
     });
-    parallelSort(sortedTriangles, [](const SortedTriangle& t) { return t.key; });
+    // Triangles in one cell of a face tie on their key, so their index orders them.
+    parallelSort(
+        sortedTriangles, [](const SortedTriangle& t) { return t.key; },
+        [](const SortedTriangle& t) { return t.triangle; });
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
     const PackContext context{mesh,

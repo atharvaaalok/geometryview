@@ -119,7 +119,8 @@ std::vector<Segment> matchSides(const IndexedMesh& mesh, const EdgeLayout& layou
             }
         }
     });
-    parallelSort(ends, [](const Keyed& k) { return k.key; });
+    parallelSort(
+        ends, [](const Keyed& k) { return k.key; }, [](const Keyed& k) { return k.index; });
     std::vector<u32> pointOf(ends.size());
     u32 points = 0;
     for (usize i = 0; i < ends.size(); ++i) {
@@ -135,7 +136,8 @@ std::vector<Segment> matchSides(const IndexedMesh& mesh, const EdgeLayout& layou
         const u32 p = pointOf[s * 2], q = pointOf[s * 2 + 1];
         pairs[s] = {u64(std::min(p, q)) << 32 | std::max(p, q), u32(s)};
     }
-    parallelSort(pairs, [](const Keyed& k) { return k.key; });
+    parallelSort(
+        pairs, [](const Keyed& k) { return k.key; }, [](const Keyed& k) { return k.index; });
 
     const auto normal = [&](u32 vertex) { return meshVector(mesh.normals, vertex); };
     std::vector<Segment> segments;
