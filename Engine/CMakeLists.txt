@@ -1,5 +1,5 @@
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
-    base/*.cpp math/*.cpp scene/*.cpp render/*.cpp gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
+    base/*.cpp math/*.cpp nav/*.cpp scene/*.cpp render/*.cpp gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
 add_library(engine STATIC ${engine_sources})
 target_include_directories(engine PUBLIC include PRIVATE .)
 target_link_libraries(engine
