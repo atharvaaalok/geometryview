@@ -532,6 +532,17 @@ final class MainWindow: NSWindow {
             if environment["GEOMETRY_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
             }
+            // GEOMETRY_SNAPSHOT_GHOSTS ghosts the selection, drawn as shell, lines or both (1 to 3),
+            // and then clears it.
+            if let ghosts = environment["GEOMETRY_SNAPSHOT_GHOSTS"].flatMap(Int.init)
+                .flatMap(Look.Ghosts.init(rawValue:))
+            {
+                var next = look
+                next.ghosts = ghosts
+                apply(next)
+                engine.perform(GeoActionGhostSelection)
+                engine.perform(GeoActionClearSelection)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
                 ChromeSnapshot.capture(self, engine: engine)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
