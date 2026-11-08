@@ -35,7 +35,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     private enum Transport: String { case scheme, loopback }
     private struct Run {
         let transport: Transport
-        let page: String  // census or spike
+        let page: String  // census, spike, or spike/import.html
         let label: String
         let query: String // without the label
         // The name the page reports under, for notes about a run the system stopped.
@@ -62,6 +62,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     // Other runs can be asked for at launch, comma-separated, each one of
     //   transport:census:mode[:suffix]     for example loopback:census:wasm-memory:again
     //   transport:spike:query[:suffix]     for example loopback:spike:model=pack&w=804&h=1748
+    //   transport:import:query[:suffix]    for example loopback:import:model=ple120&workers=2
     // where a suffix keeps a repeat's report apart.
     private static func requestedRuns() -> [Run]? {
         let arguments = CommandLine.arguments
@@ -78,8 +79,9 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 return census(transport, mode: parts[2], suffix: suffix)
             }
             let label = label(transport, suffix)
-            return Run(transport: transport, page: "spike", label: label, query: parts[2],
-                       name: "\(label)-spike")
+            let page = parts[1] == "import" ? "spike/import.html" : "spike"
+            return Run(transport: transport, page: page, label: label, query: parts[2],
+                       name: "\(label)-\(parts[1])")
         }
     }
     private var runIndex = 0
@@ -153,7 +155,8 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             return
         }
         let run = runs[runIndex]
-        let path = "/\(run.page)/?label=\(run.label)&\(run.query)"
+        let page = run.page.hasSuffix(".html") ? "/\(run.page)" : "/\(run.page)/"
+        let path = "\(page)?label=\(run.label)&\(run.query)"
         switch run.transport {
         case .scheme:
             webView?.load(URLRequest(url: URL(string: "\(SchemeHandler.scheme)://local\(path)")!))

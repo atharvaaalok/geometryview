@@ -1,8 +1,9 @@
-// Serves the renderer spike on this machine only: the page, the WebAssembly build and the cache
-// fixtures, with cross-origin isolation, and saves each run's report.
+// Serves the renderer and import spikes on this machine only: the pages, the WebAssembly builds
+// and the fixtures, with cross-origin isolation, and saves each run's report.
 //
 // Usage: node Web/spike/serve.mjs [port]
 // Open http://127.0.0.1:<port>/?model=stl10m&label=<where it runs>[&w=2880&h=1800&copies=1]
+// or http://127.0.0.1:<port>/import.html?model=ple120&workers=4&label=<where it runs>
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -12,13 +13,16 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../..");
-const reports = join(root, "Docs/measurements/phase0/renderer");
+// Reports go beside the spike they came from.
+const reportsFor = (label) => join(root, "Docs/measurements/phase0",
+                                   label.includes("-import-") ? "import" : "renderer");
 const port = Number(process.argv[2] ?? 7342);
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
                 ".wasm": "application/wasm", ".json": "application/json" };
 // What each URL prefix serves.
 const mounts = [
   ["/build/", join(root, "build/wasm-webgpu/Tools/spikes/webgpu")],
+  ["/occt/", join(root, "build/wasm-release/Import")],
   ["/fixtures/", join(root, "build/fixtures")],
   ["/", here],
 ];
@@ -36,6 +40,7 @@ const server = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const report = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const label = String(report.label ?? "unlabelled").replace(/[^\w.-]+/g, "-");
+    const reports = reportsFor(label);
     await mkdir(reports, { recursive: true });
     const file = join(reports, `${label}${report.partial ? ".partial" : ""}.json`);
     await writeFile(file, JSON.stringify(report, null, 2) + "\n");
