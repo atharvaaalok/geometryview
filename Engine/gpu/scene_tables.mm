@@ -46,14 +46,14 @@ struct BatchList {
 void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene::Scene& scene) {
     // Geometry stays in the mapped file: each buffer wraps its segment without copying. See ADR
     // 0002. The deallocator holds the mapping for as long as Metal holds the buffer.
-    std::unordered_map<const scene::MappedSegment*, SegmentResidency> segments;
+    std::unordered_map<const scene::Segment*, SegmentResidency> segments;
     for (u32 d = 0; d < scene.documentCount(); ++d) {
-        for (const std::shared_ptr<scene::MappedSegment>& segment : scene.document(d).segments()) {
+        for (const std::shared_ptr<scene::Segment>& segment : scene.document(d).segments()) {
             if (const auto it = segments_.find(segment.get()); it != segments_.end()) {
                 segments.emplace(it->first, it->second);
                 continue;
             }
-            std::shared_ptr<scene::MappedSegment> owner = segment;
+            std::shared_ptr<scene::Segment> owner = segment;
             id<MTLBuffer> buffer =
                 [context.device newBufferWithBytesNoCopy:segment->data()
                                                   length:segment->size()
@@ -110,7 +110,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
                 out = {};
                 continue;
             }
-            const scene::MappedSegment* segment = document.geometrySegment(i);
+            const scene::Segment* segment = document.geometrySegment(i);
             id<MTLBuffer> buffer = segments.at(segment).buffer;
             const format::SegmentView& view = segment->view();
             const auto* base = static_cast<const u8*>(segment->data());

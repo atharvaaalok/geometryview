@@ -128,12 +128,12 @@ bool deliverCached(const std::string& blobPath, ImportListener& listener) {
     if (cached.get() < 0) {
         return false;
     }
-    std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+    std::vector<std::shared_ptr<scene::Segment>> segments;
     std::string error;
     if (!scene::openCacheFile(cached.get(), segments, error)) {
         return false;
     }
-    for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+    for (std::shared_ptr<scene::Segment>& segment : segments) {
         listener.segmentReady(std::move(segment));
     }
     return true;
@@ -219,8 +219,8 @@ ImportOutcome runHelper(const std::string& sourcePath, const std::string& blobPa
             }
             std::memcpy(&message, payload.data(), sizeof(message));
             std::string error;
-            std::shared_ptr<scene::MappedSegment> segment =
-                scene::MappedSegment::open(output.get(), message.offset, message.size, error);
+            std::shared_ptr<scene::Segment> segment =
+                scene::Segment::open(output.get(), message.offset, message.size, error);
             if (!segment) {
                 failed = true;
                 failure = error;

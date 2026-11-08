@@ -5,7 +5,7 @@
 
 #include "base/types.h"
 #include "math/geometry.h"
-#include "scene/mapped_segment.h"
+#include "scene/segment.h"
 
 #include <memory>
 #include <optional>
@@ -17,17 +17,17 @@ namespace geo::scene {
 class Document {
 public:
     /// Adds a segment. Returns false and sets `error` if it contradicts the model.
-    bool add(std::shared_ptr<MappedSegment> segment, std::string& error);
+    bool add(std::shared_ptr<Segment> segment, std::string& error);
 
     bool hasModel() const { return model_ != nullptr; }
     const format::SegmentView& model() const { return model_->view(); }
-    const std::vector<std::shared_ptr<MappedSegment>>& segments() const { return segments_; }
+    const std::vector<std::shared_ptr<Segment>>& segments() const { return segments_; }
 
     /// The geometry to draw for a definition, or null if none has arrived.
     const format::DefinitionRecord* geometry(u32 definition) const {
         return definitions_[definition].record;
     }
-    const MappedSegment* geometrySegment(u32 definition) const {
+    const Segment* geometrySegment(u32 definition) const {
         return definitions_[definition].segment;
     }
     /// True once every definition has geometry.
@@ -40,14 +40,14 @@ public:
 private:
     struct DefinitionState {
         const format::DefinitionRecord* record = nullptr;
-        const MappedSegment* segment = nullptr;
+        const Segment* segment = nullptr;
     };
 
-    bool attachModel(const std::shared_ptr<MappedSegment>& segment, std::string& error);
-    bool attachGeometry(const MappedSegment& segment, std::string& error);
+    bool attachModel(const std::shared_ptr<Segment>& segment, std::string& error);
+    bool attachGeometry(const Segment& segment, std::string& error);
 
-    std::vector<std::shared_ptr<MappedSegment>> segments_;
-    std::shared_ptr<MappedSegment> model_;
+    std::vector<std::shared_ptr<Segment>> segments_;
+    std::shared_ptr<Segment> model_;
     std::vector<DefinitionState> definitions_;
     std::vector<u32> idBases_;
     u32 idCount_ = 0;

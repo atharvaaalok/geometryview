@@ -2,7 +2,7 @@
 #include "engine.h"
 
 #include "base/types.h"
-#include "engine/look_state.h"
+#include "core/look_state.h"
 #include "engine/png.h"
 #include "gpu/renderer.h"
 #include "model/face_state.h"
@@ -88,14 +88,14 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
             std::fprintf(stderr, "Could not open %s.\n", blob_path);
             return false;
         }
-        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+        std::vector<std::shared_ptr<scene::Segment>> segments;
         std::string error;
         const bool opened = scene::openCacheFile(fd, segments, error);
         close(fd);
         scene::Scene scene;
         scene::Document& document = scene.document(scene.addDocument());
         bool added = opened;
-        for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+        for (std::shared_ptr<scene::Segment>& segment : segments) {
             added = added && document.add(std::move(segment), error);
         }
         const std::optional<Aabb> sceneBounds = scene.bounds();

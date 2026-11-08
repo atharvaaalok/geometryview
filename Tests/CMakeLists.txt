@@ -2,8 +2,8 @@ if(GEO_TARGET STREQUAL "wasm")
     # The portable unit tests, run by Node. Tests of Metal, the import processes and the engine
     # thread stay native.
     set(portable_tests
-        blob camera edges face_state flight indexed_mesh interaction name_index overlay packer
-        parallel_sort part21 pointer_controller refinement shell spsc_ring step_structure
+        blob camera core edges face_state flight indexed_mesh interaction name_index overlay packer
+        parallel_sort part21 pointer_controller refinement segment shell spsc_ring step_structure
         stl_reader style)
     list(TRANSFORM portable_tests PREPEND unit/)
     list(TRANSFORM portable_tests APPEND _test.cpp)

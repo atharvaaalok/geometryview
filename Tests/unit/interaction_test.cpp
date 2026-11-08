@@ -40,7 +40,7 @@ struct Rig {
         import::BlobStream stream(fd, nullptr);
         REQUIRE(stream.writeModel(model));
         REQUIRE(stream.finish({}));
-        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+        std::vector<std::shared_ptr<scene::Segment>> segments;
         std::string error;
         REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
         close(fd);

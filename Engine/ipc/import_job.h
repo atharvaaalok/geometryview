@@ -2,7 +2,7 @@
 #pragma once
 
 #include "base/types.h"
-#include "scene/mapped_segment.h"
+#include "scene/segment.h"
 
 #include <memory>
 #include <span>
@@ -26,7 +26,7 @@ struct ImportOutcome {
 class ImportListener {
 public:
     virtual ~ImportListener() = default;
-    virtual void segmentReady(std::shared_ptr<scene::MappedSegment> segment) = 0;
+    virtual void segmentReady(std::shared_ptr<scene::Segment> segment) = 0;
     virtual void progress(u32 done, u32 total) = 0;
     virtual void warning(const std::string& text) = 0;
 };

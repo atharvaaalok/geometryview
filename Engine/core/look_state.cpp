@@ -1,6 +1,6 @@
-#include "engine/look_state.h"
+#include "core/look_state.h"
 
-#include "gpu/renderer.h"
+#include "render/backend.h"
 
 #include <algorithm>
 
@@ -36,7 +36,7 @@ void LookState::setScale(float pixelsPerPoint) {
     }
 }
 
-void LookState::apply(gpu::Renderer& renderer, const scene::Scene& scene) {
+void LookState::apply(render::Backend& renderer, const scene::Scene& scene) {
     const render::Style& style = render::styleNamed(settings_.style);
     if (looksDirty_) {
         looks_ = render::assignLooks(scene, settings_.colorMode);

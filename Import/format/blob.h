@@ -177,6 +177,12 @@ struct SegmentView {
 bool parseHeader(std::span<const u8> file, std::span<const SegmentEntry>& segments,
                  std::string& error);
 
+/// Validates a header from the start of a file that may still be arriving: `prefix` holds at least
+/// the header's 16 KB. Returns the segment table, checked against the size the header declares,
+/// which is also returned, so each segment can be read as soon as its bytes are in.
+bool parseHeaderPrefix(std::span<const u8> prefix, std::span<const SegmentEntry>& segments,
+                       u64& fileSize, std::string& error);
+
 /// Validates `bytes` as a segment and fills `view`. A cache file is untrusted input, because the
 /// sandboxed helper that writes it parses untrusted files and could have been compromised. So every
 /// size and offset the viewer relies on is checked here, and shaders clamp what is too costly to

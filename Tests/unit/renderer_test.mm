@@ -75,12 +75,12 @@ struct Stage {
         import::ImportResult result;
         REQUIRE(import::importMesh({reinterpret_cast<const u8*>(stl.data()), stl.size()}, fd,
                                    nullptr, result, error));
-        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+        std::vector<std::shared_ptr<scene::Segment>> segments;
         REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
         close(fd);
         unlink(path);
         scene::Document& document = scene.document(scene.addDocument());
-        for (std::shared_ptr<scene::MappedSegment>& segment : segments) {
+        for (std::shared_ptr<scene::Segment>& segment : segments) {
             REQUIRE_MESSAGE(document.add(std::move(segment), error), error);
         }
         renderer->syncScene(scene);

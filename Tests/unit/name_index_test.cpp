@@ -2,7 +2,7 @@
 #include "base/time.h"
 #include "cache/blob_writer.h"
 #include "model/name_index.h"
-#include "scene/mapped_segment.h"
+#include "scene/segment.h"
 
 #include <cstdio>
 #include <doctest/doctest.h>
@@ -16,7 +16,7 @@ namespace {
 
 // A flat model with one root and the given names under it.
 struct Names {
-    std::shared_ptr<scene::MappedSegment> segment;
+    std::shared_ptr<scene::Segment> segment;
 
     explicit Names(const std::vector<std::string>& names) {
         import::ModelData model;
@@ -35,7 +35,7 @@ struct Names {
         import::BlobStream stream(fd, nullptr);
         REQUIRE(stream.writeModel(model));
         REQUIRE(stream.finish({}));
-        std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+        std::vector<std::shared_ptr<scene::Segment>> segments;
         std::string error;
         REQUIRE(scene::openCacheFile(fd, segments, error));
         close(fd);
