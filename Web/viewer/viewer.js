@@ -647,7 +647,9 @@ function bridgeHandlers() {
 // ---- Scripted checks --------------------------------------------------------------------------
 
 function testLabel() {
-  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${model}`;
+  // A report's name is a file's, so an imported fixture's folder joins it with a dash.
+  const name = model.replaceAll("/", "-");
+  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${name}`;
 }
 
 async function post(report) {
