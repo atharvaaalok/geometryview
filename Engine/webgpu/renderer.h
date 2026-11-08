@@ -49,6 +49,11 @@ public:
     /// Jittered samples per frame, from 1 to 4. Offscreen renders always take 4.
     void setSamples(u32 samples);
 
+    /// The GPU time of the latest frame timed, from timestamps, where the device has them, and
+    /// how many frames have been timed so far.
+    double gpuMilliseconds() const;
+    u64 timedFrames() const;
+
 private:
     Renderer();
     struct State;

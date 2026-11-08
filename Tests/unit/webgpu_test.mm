@@ -430,5 +430,68 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
     }
 }
 
+// Picking reads ids and depths back a few frames late, but what it reads must be what Metal
+// reads at once: the same face and nearly the same depth, across the view and the cube's grid.
+TEST_CASE("the WebGPU renderer picks as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        options.overlay = false;
+        engine::OffscreenView metalFrame, webFrame;
+        REQUIRE(engine::prepareOffscreen(*metal, openBlob(blob), options, metalFrame, error));
+        REQUIRE(engine::prepareOffscreen(*web, openBlob(blob), options, webFrame, error));
+        metal->renderOffscreen(metalFrame.view, nullptr);
+
+        wgpu::TextureDescriptor descriptor{};
+        descriptor.size = {kWidth, kHeight, 1};
+        descriptor.format = wgpu::TextureFormat::BGRA8Unorm;
+        descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+        const wgpu::Texture target = dawn.device.CreateTexture(&descriptor);
+        const render::DepthDecoder& decoder = webFrame.view.depth;
+        // Four samples, so the ids left are sample 0's, as Metal's are.
+        web->setSamples(4);
+        u32 hits = 0, checked = 0;
+        for (int y = 30; y < int(kHeight); y += 60) {
+            for (int x = 30; x < int(kWidth); x += 60) {
+                CAPTURE(x);
+                CAPTURE(y);
+                // Asking moves the probe here; a few frames later it has come back.
+                web->readPixel(x, y, decoder);
+                for (int frame = 0; frame < 4; ++frame) {
+                    web->render(target, webFrame.view);
+                    dawn.instance.WaitAny(
+                        dawn.device.GetQueue().OnSubmittedWorkDone(
+                            wgpu::CallbackMode::WaitAnyOnly,
+                            [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
+                        UINT64_MAX);
+                }
+                web->render(target, webFrame.view); // processes the last readback's arrival
+                const std::optional<render::PixelHit> expected =
+                    metal->readPixel(x, y, metalFrame.view.depth);
+                const std::optional<render::PixelHit> got = web->readPixel(x, y, decoder);
+                ++checked;
+                REQUIRE(got.has_value() == expected.has_value());
+                if (got) {
+                    ++hits;
+                    CHECK(got->id == expected->id);
+                    CHECK(got->viewDepth == doctest::Approx(expected->viewDepth).epsilon(1e-3));
+                }
+            }
+        }
+        CHECK(hits > checked / 4);
+        unlink(blob.c_str());
+    }
+}
+
 #endif
 #endif // GEO_HAS_WEBGPU

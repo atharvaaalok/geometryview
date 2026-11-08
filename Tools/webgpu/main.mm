@@ -64,7 +64,19 @@ bool makeDawn(Dawn& dawn) {
     wgpu::Limits limits{};
     limits.maxBufferSize = adapterLimits.maxBufferSize;
     limits.maxStorageBufferBindingSize = adapterLimits.maxStorageBufferBindingSize;
+    std::vector<wgpu::FeatureName> features;
+    if (adapter.HasFeature(wgpu::FeatureName::TimestampQuery)) {
+        features.push_back(wgpu::FeatureName::TimestampQuery);
+    }
+    // Dawn rounds timestamps unless asked not to, which hides short frames.
+    static const char* const disabledToggles[] = {"timestamp_quantization"};
+    static wgpu::DawnTogglesDescriptor toggles{};
+    toggles.disabledToggleCount = 1;
+    toggles.disabledToggles = disabledToggles;
     wgpu::DeviceDescriptor descriptor{};
+    descriptor.nextInChain = &toggles;
+    descriptor.requiredFeatureCount = features.size();
+    descriptor.requiredFeatures = features.data();
     descriptor.requiredLimits = &limits;
     descriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView message) {
@@ -223,7 +235,8 @@ int benchCommand(int argc, const char** argv) {
     // An orbit about the model's centre, as prepareOffscreen frames it.
     const std::optional<Aabb> bounds = frame.scene.bounds();
     const nav::Viewport viewport{double(options.width), double(options.height)};
-    std::vector<double> times;
+    std::vector<double> times, gpuTimes;
+    u64 timed = web->timedFrames();
     for (u32 f = 0; f < frames + 10; ++f) {
         const double azimuth = (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi /
                                180.0;
@@ -248,17 +261,28 @@ int benchCommand(int argc, const char** argv) {
                               UINT64_MAX);
         if (f >= 10) { // the first frames build pipelines
             times.push_back(
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() *
+                1e3);
+            // The previous frame's timestamps arrive while this one is encoded.
+            if (web->timedFrames() != timed) {
+                timed = web->timedFrames();
+                gpuTimes.push_back(web->gpuMilliseconds());
+            }
         }
     }
-    std::sort(times.begin(), times.end());
-    const auto at = [&](double p) {
-        return times[std::min(times.size() - 1, usize(p * double(times.size())))] * 1e3;
+    const auto at = [](std::vector<double> values, double p) {
+        if (values.empty()) {
+            return 0.0;
+        }
+        std::sort(values.begin(), values.end());
+        return values[std::min(values.size() - 1, usize(p * double(values.size())))];
     };
     std::println("{{\"frames\": {}, \"samples\": {}, \"width\": {}, \"height\": {}, "
-                 "\"triangles\": {}, \"p50\": {:.2f}, \"p90\": {:.2f}, \"p99\": {:.2f}}}",
+                 "\"triangles\": {}, \"wall\": [{:.2f}, {:.2f}, {:.2f}], "
+                 "\"gpu\": [{:.2f}, {:.2f}, {:.2f}], \"timed\": {}}}",
                  times.size(), samples, options.width, options.height, web->sceneTriangles(),
-                 at(0.5), at(0.9), at(0.99));
+                 at(times, 0.5), at(times, 0.9), at(times, 0.99), at(gpuTimes, 0.5),
+                 at(gpuTimes, 0.9), at(gpuTimes, 0.99), gpuTimes.size());
     return 0;
 }
 

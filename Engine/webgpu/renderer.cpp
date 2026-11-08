@@ -241,6 +241,46 @@ struct Renderer::State {
     u64 stateVersion = ~u64(0);
     bool hasGhosts = false, hasShells = false;
 
+    // Natively, map callbacks run when the renderer processes events at each frame; in the
+    // browser, whenever they arrive.
+#ifdef __EMSCRIPTEN__
+    static constexpr wgpu::CallbackMode kCallbacks = wgpu::CallbackMode::AllowSpontaneous;
+#else
+    static constexpr wgpu::CallbackMode kCallbacks = wgpu::CallbackMode::AllowProcessEvents;
+#endif
+    struct Readback {
+        wgpu::Buffer buffer;
+        bool busy = false;
+    };
+    // The hover probe: a window of ids and depths around where the engine last asked, and a
+    // grid of samples across the view for the orbit's fallback pivots, read back from each frame
+    // through a ring, so asking never waits for the GPU. See readPixel.
+    static constexpr u32 kProbeSize = 64;
+    static constexpr u32 kProbeSamples = 9;
+    static constexpr u64 kProbePlane = u64(kProbeSize) * 256;
+    static constexpr u64 kProbeBytes = 2 * kProbePlane + 2 * kProbeSamples * 256;
+    struct Probe {
+        i32 x0 = 0, y0 = 0;
+        u32 width = 0, height = 0;
+        std::vector<u32> ids;
+        std::vector<float> depths;
+        std::array<std::array<i32, 2>, kProbeSamples> samplePixels{};
+        std::array<u32, kProbeSamples> sampleIds{};
+        std::array<float, kProbeSamples> sampleDepths{};
+    };
+    std::array<Readback, 3> probeRing;
+    Probe probe;
+    // Readback callbacks hold this weakly, so one arriving after the renderer is gone, when
+    // another processes the instance's events, does nothing.
+    std::shared_ptr<int> lifetime = std::make_shared<int>(0);
+    mutable i32 probeX = -1, probeY = -1; // where the engine last asked
+    // GPU time per frame, from timestamps around the frame's passes, where the device has them.
+    wgpu::QuerySet timestamps;
+    wgpu::Buffer timestampResolve;
+    std::array<Readback, 3> timingRing;
+    double gpuMilliseconds = 0.0;
+    u64 timedFrames = 0;
+
     StyleUniforms style{};
     bool physical = false;
     bool reducedDetail = false;
@@ -931,7 +971,15 @@ struct Renderer::State {
 
     void encodeCull(const wgpu::CommandEncoder& encoder, bool shadow, bool edges) {
         const u32 offset = u32(kViewSlot * kUniformStride);
-        wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+        wgpu::PassTimestampWrites begin{};
+        wgpu::ComputePassDescriptor descriptor{};
+        if (timestamps) {
+            begin.querySet = timestamps;
+            begin.beginningOfPassWriteIndex = 0;
+            begin.endOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
+            descriptor.timestampWrites = &begin;
+        }
+        wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&descriptor);
         pass.SetBindGroup(0, sceneGroup, 1, &offset);
         pass.SetBindGroup(1, cullGroup);
         if (surfaceInstances != 0) {
@@ -1086,6 +1134,9 @@ struct Renderer::State {
     }
 
     void encodeFrame(const wgpu::Texture& target, const render::ViewState& view, u32 count) {
+#ifndef __EMSCRIPTEN__
+        instance.ProcessEvents(); // earlier frames' readbacks
+#endif
         ensureGroups();
         queue.WriteBuffer(styleBuffer, 0, &style, sizeof(style));
         for (u32 s = 0; s < count; ++s) {
@@ -1123,6 +1174,13 @@ struct Renderer::State {
         wgpu::RenderPassDescriptor descriptor{};
         descriptor.colorAttachmentCount = 1;
         descriptor.colorAttachments = &output;
+        wgpu::PassTimestampWrites end{};
+        if (timestamps) {
+            end.querySet = timestamps;
+            end.beginningOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
+            end.endOfPassWriteIndex = 1;
+            descriptor.timestampWrites = &end;
+        }
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
         const u32 offset = u32(kViewSlot * kUniformStride);
         pass.SetPipeline(composite);
@@ -1130,8 +1188,133 @@ struct Renderer::State {
         pass.SetBindGroup(1, compositeGroup);
         pass.Draw(3);
         pass.End();
+        Readback* probeReadback = encodeProbe(encoder);
+        Readback* timingReadback = nullptr;
+        if (timestamps) {
+            encoder.ResolveQuerySet(timestamps, 0, 2, timestampResolve, 0);
+            timingReadback = freeReadback(timingRing, 16, "timing");
+            if (timingReadback != nullptr) {
+                encoder.CopyBufferToBuffer(timestampResolve, 0, timingReadback->buffer, 0, 16);
+            }
+        }
         const wgpu::CommandBuffer commands = encoder.Finish();
         queue.Submit(1, &commands);
+        if (probeReadback != nullptr) {
+            mapProbe(*probeReadback);
+        }
+        if (timingReadback != nullptr) {
+            mapTiming(*timingReadback);
+        }
+    }
+
+    // A readback of the ring not waiting on the GPU, or none if all are.
+    Readback* freeReadback(std::array<Readback, 3>& ring, u64 size, const char* label) {
+        for (Readback& readback : ring) {
+            if (!readback.busy) {
+                if (!readback.buffer) {
+                    readback.buffer = buffer(size, U::MapRead | U::CopyDst, label);
+                }
+                readback.busy = true;
+                return &readback;
+            }
+        }
+        return nullptr;
+    }
+
+    // Copies the probe's window and samples out of sample 0's ids and depths.
+    Readback* encodeProbe(const wgpu::CommandEncoder& encoder) {
+        Readback* readback = freeReadback(probeRing, kProbeBytes, "probe");
+        if (readback == nullptr) {
+            return nullptr;
+        }
+        const u32 w = std::min(kProbeSize, width), h = std::min(kProbeSize, height);
+        const i32 cx = probeX >= 0 ? probeX : i32(width / 2);
+        const i32 cy = probeY >= 0 ? probeY : i32(height / 2);
+        const u32 x0 = u32(std::clamp(cx - i32(w / 2), 0, i32(width - w)));
+        const u32 y0 = u32(std::clamp(cy - i32(h / 2), 0, i32(height - h)));
+        const auto copy = [&](const wgpu::Texture& texture, u32 x, u32 y, u32 cw, u32 ch,
+                              u64 offset) {
+            wgpu::TexelCopyTextureInfo source{};
+            source.texture = texture;
+            source.origin = {x, y, 0};
+            wgpu::TexelCopyBufferInfo destination{};
+            destination.buffer = readback->buffer;
+            destination.layout.offset = offset;
+            destination.layout.bytesPerRow = 256;
+            destination.layout.rowsPerImage = ch;
+            const wgpu::Extent3D extent = {cw, ch, 1};
+            encoder.CopyTextureToBuffer(&source, &destination, &extent);
+        };
+        copy(ids, x0, y0, w, h, 0);
+        copy(depthCopy, x0, y0, w, h, kProbePlane);
+        Probe next;
+        next.x0 = i32(x0);
+        next.y0 = i32(y0);
+        next.width = w;
+        next.height = h;
+        for (u32 k = 0; k < kProbeSamples; ++k) {
+            const u32 x = width * (1 + 2 * (k % 3)) / 6, y = height * (1 + 2 * (k / 3)) / 6;
+            next.samplePixels[k] = {i32(x), i32(y)};
+            copy(ids, x, y, 1, 1, 2 * kProbePlane + k * 256);
+            copy(depthCopy, x, y, 1, 1, 2 * kProbePlane + (kProbeSamples + k) * 256);
+        }
+        pendingProbes.push_back({readback, std::move(next)});
+        return readback;
+    }
+    std::vector<std::pair<Readback*, Probe>> pendingProbes;
+
+    void mapProbe(Readback& readback) {
+        readback.buffer.MapAsync(
+            wgpu::MapMode::Read, 0, usize(kProbeBytes), kCallbacks,
+            [this, &readback, alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
+                                                                     wgpu::StringView) {
+                if (alive.expired()) {
+                    return;
+                }
+                const auto found = std::find_if(pendingProbes.begin(), pendingProbes.end(),
+                                                [&](const auto& p) { return p.first == &readback; });
+                if (status == wgpu::MapAsyncStatus::Success && found != pendingProbes.end()) {
+                    Probe& next = found->second;
+                    const auto* bytes = static_cast<const u8*>(
+                        readback.buffer.GetConstMappedRange(0, usize(kProbeBytes)));
+                    next.ids.resize(usize(kProbeSize) * next.height);
+                    next.depths.resize(next.ids.size());
+                    std::memcpy(next.ids.data(), bytes, next.ids.size() * 4);
+                    std::memcpy(next.depths.data(), bytes + kProbePlane, next.depths.size() * 4);
+                    for (u32 k = 0; k < kProbeSamples; ++k) {
+                        std::memcpy(&next.sampleIds[k], bytes + 2 * kProbePlane + k * 256, 4);
+                        std::memcpy(&next.sampleDepths[k],
+                                    bytes + 2 * kProbePlane + (kProbeSamples + k) * 256, 4);
+                    }
+                    probe = std::move(next);
+                    readback.buffer.Unmap();
+                }
+                if (found != pendingProbes.end()) {
+                    pendingProbes.erase(found);
+                }
+                readback.busy = false;
+            });
+    }
+
+    void mapTiming(Readback& readback) {
+        readback.buffer.MapAsync(
+            wgpu::MapMode::Read, 0, 16, kCallbacks,
+            [this, &readback, alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
+                                                                     wgpu::StringView) {
+                if (alive.expired()) {
+                    return;
+                }
+                if (status == wgpu::MapAsyncStatus::Success) {
+                    u64 ticks[2];
+                    std::memcpy(ticks, readback.buffer.GetConstMappedRange(0, 16), 16);
+                    if (ticks[1] > ticks[0]) {
+                        gpuMilliseconds = double(ticks[1] - ticks[0]) * 1e-6;
+                        ++timedFrames;
+                    }
+                    readback.buffer.Unmap();
+                }
+                readback.busy = false;
+            });
     }
 
     // Blocks until `future` completes. Only native hosts may.
@@ -1158,6 +1341,13 @@ std::unique_ptr<Renderer> Renderer::create(wgpu::Instance instance, wgpu::Device
     }
     s.createLayouts();
     s.createFixedPipelines();
+    if (device.HasFeature(wgpu::FeatureName::TimestampQuery)) {
+        wgpu::QuerySetDescriptor queries{};
+        queries.type = wgpu::QueryType::Timestamp;
+        queries.count = 2;
+        s.timestamps = device.CreateQuerySet(&queries);
+        s.timestampResolve = s.buffer(16, U::QueryResolve | U::CopySrc, "timestamps");
+    }
     s.style =
         render::makeStyleUniforms(render::styleNamed(render::StyleName::Illustration), {}, 2.0f);
     return renderer;
@@ -1213,9 +1403,39 @@ void Renderer::resize(u32 width, u32 height) { state_->resize(width, height); }
 float Renderer::glyphAdvance() const { return 0.0f; }
 void Renderer::setSamples(u32 samples) { state_->samples = std::clamp(samples, 1u, 4u); }
 
-std::optional<render::PixelHit> Renderer::readPixel(int, int, const render::DepthDecoder&) const {
-    return std::nullopt;
+// From the newest probe that has come back: what the frame before last or so drew. Asking also
+// moves the next frames' window here, so a pointer that stops is answered exactly.
+std::optional<render::PixelHit> Renderer::readPixel(int x, int y,
+                                                    const render::DepthDecoder& depth) const {
+    const State& s = *state_;
+    s.probeX = x;
+    s.probeY = y;
+    const State::Probe& p = s.probe;
+    u32 id = 0;
+    float value = 0.0f;
+    bool found = false;
+    if (x >= p.x0 && y >= p.y0 && x < p.x0 + i32(p.width) && y < p.y0 + i32(p.height) &&
+        !p.ids.empty()) {
+        const usize at = usize(y - p.y0) * State::kProbeSize + usize(x - p.x0);
+        id = p.ids[at];
+        value = p.depths[at];
+        found = true;
+    }
+    for (u32 k = 0; k < State::kProbeSamples && !found; ++k) {
+        if (p.samplePixels[k][0] == x && p.samplePixels[k][1] == y) {
+            id = p.sampleIds[k];
+            value = p.sampleDepths[k];
+            found = true;
+        }
+    }
+    if (!found || id == 0) {
+        return std::nullopt;
+    }
+    return render::PixelHit{id, depth.viewDepth(value)};
 }
+
+double Renderer::gpuMilliseconds() const { return state_->gpuMilliseconds; }
+u64 Renderer::timedFrames() const { return state_->timedFrames; }
 
 render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState&, u32) { return {}; }
 
