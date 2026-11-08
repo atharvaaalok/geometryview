@@ -40,6 +40,7 @@ constexpr float kSamplePositions[4][2] = {
 
 constexpr Format kColorFormat = Format::RGBA8Unorm;
 constexpr Format kIdFormat = Format::R32Uint;
+constexpr Format kDepthCopyFormat = Format::R32Float;
 constexpr Format kInkFormat = Format::RGBA8Unorm;
 constexpr Format kTagFormat = Format::RG8Uint;
 constexpr Format kDepthFormat = Format::Depth32Float;
@@ -245,7 +246,8 @@ struct Renderer::State {
 
     // Targets for one size.
     u32 width = 0, height = 0;
-    wgpu::Texture color, ids, ink, tags, depth, shadowMask, occlusionTexture, accum, offscreen;
+    wgpu::Texture color, ids, depthCopy, ink, tags, depth, shadowMask, occlusionTexture, accum;
+    wgpu::Texture offscreen;
     wgpu::BindGroup sceneGroup, cullGroup, surfaceGroup, edgeGroup, sheetGroup, resolveGroup;
     wgpu::BindGroup occlusionGroup, compositeGroup;
 
@@ -300,7 +302,8 @@ struct Renderer::State {
             bufferLayout(4, Stage::Compute, B::Storage),
         });
         surfaceLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
-        wgpu::BindGroupLayoutEntry frontDepths = textureLayout(2, Stage::Fragment, TS::Depth);
+        wgpu::BindGroupLayoutEntry frontDepths =
+            textureLayout(2, Stage::Fragment, TS::UnfilterableFloat);
         peelLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage),
                                          textureLayout(1, Stage::Fragment, TS::Uint),
                                          frontDepths});
@@ -320,13 +323,14 @@ struct Renderer::State {
         occlusionOut.storageTexture.format = kOcclusionFormat;
         occlusionOut.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
         occlusionLayout = makeLayout(device, {textureLayout(2, Stage::Compute, TS::Uint),
-                                              textureLayout(3, Stage::Compute, TS::Depth),
+                                              textureLayout(3, Stage::Compute,
+                                                            TS::UnfilterableFloat),
                                               occlusionOut});
         // The occlusion is read without filtering, so it can be a 32-bit float.
         compositeLayout = makeLayout(device, {
             textureLayout(0, Stage::Fragment, TS::Float),
             textureLayout(2, Stage::Fragment, TS::Uint),
-            textureLayout(3, Stage::Fragment, TS::Depth),
+            textureLayout(3, Stage::Fragment, TS::UnfilterableFloat),
             textureLayout(4, Stage::Fragment, TS::UnfilterableFloat),
         });
 
@@ -370,12 +374,12 @@ struct Renderer::State {
         farOnly.format = kDepthFormat;
         farOnly.depthWriteEnabled = wgpu::OptionalBool::False;
         farOnly.depthCompare = wgpu::CompareFunction::GreaterEqual;
-        std::array<wgpu::ColorTargetState, 4> targets = mainTargets();
-        for (u32 t = 1; t < 4; ++t) {
+        std::array<wgpu::ColorTargetState, 5> targets = mainTargets();
+        for (u32 t = 1; t < 5; ++t) {
             targets[t].writeMask = wgpu::ColorWriteMask::None;
         }
         sheet = screenPipeline(sheetModule, "sheetFragment", sheetPipelineLayout, targets.data(),
-                               4, &farOnly, "sheet");
+                               5, &farOnly, "sheet");
 
         // Each sample adds its share into the accumulated colour.
         wgpu::BlendState share{};
@@ -415,16 +419,18 @@ struct Renderer::State {
         return device.CreateRenderPipeline(&descriptor);
     }
 
-    // The main pass's targets, as every pipeline drawn in it must declare them: colour, pick id,
-    // edge ink and body tags, each written or not as a pipeline chooses.
-    static std::array<wgpu::ColorTargetState, 4> mainTargets() {
-        std::array<wgpu::ColorTargetState, 4> targets{};
+    // The main pass's targets, as every pipeline drawn in it must declare them, in Metal's order:
+    // colour, pick id, depth at the pixel's centre, edge ink and body tags, each written or not
+    // as a pipeline chooses.
+    static std::array<wgpu::ColorTargetState, 5> mainTargets() {
+        std::array<wgpu::ColorTargetState, 5> targets{};
         targets[0].format = kColorFormat;
         targets[1].format = kIdFormat;
-        targets[2].format = kInkFormat;
-        targets[2].writeMask = wgpu::ColorWriteMask::None;
-        targets[3].format = kTagFormat;
+        targets[2].format = kDepthCopyFormat;
+        targets[3].format = kInkFormat;
         targets[3].writeMask = wgpu::ColorWriteMask::None;
+        targets[4].format = kTagFormat;
+        targets[4].writeMask = wgpu::ColorWriteMask::None;
         return targets;
     }
 
@@ -471,11 +477,11 @@ struct Renderer::State {
                             wgpu::BlendFactor::One};
         keepLarger.alpha = keepLarger.color;
 
-        std::array<wgpu::ColorTargetState, 4> targets = mainTargets();
+        std::array<wgpu::ColorTargetState, 5> targets = mainTargets();
         wgpu::ColorTargetState shadowTarget{};
         shadowTarget.format = kShadowFormat;
         const char* fragmentEntry = edges ? "edgeFragment" : "surfaceFragment";
-        u32 targetCount = 4;
+        u32 targetCount = 5;
         const wgpu::ColorTargetState* targetList = targets.data();
 
         wgpu::DepthStencilState depthTest{};
@@ -487,14 +493,15 @@ struct Renderer::State {
 
         switch (key.kind) {
         case Kind::Solid:
-            targets[3].writeMask = CW::Red;
+            targets[4].writeMask = CW::Red;
             // Back faces seen through a cut are its caps.
             cull = key.closed && !key.section ? wgpu::CullMode::Back : wgpu::CullMode::None;
             break;
         case Kind::Ghost:
             targets[0].blend = &alphaBlend;
             targets[1].writeMask = key.pickable ? CW::All : CW::None;
-            targets[3].writeMask = CW::Green;
+            targets[2].writeMask = key.pickable ? CW::All : CW::None;
+            targets[4].writeMask = CW::Green;
             depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
             cull = key.closed && !key.section ? wgpu::CullMode::Back : wgpu::CullMode::None;
             break;
@@ -504,13 +511,15 @@ struct Renderer::State {
         case Kind::ShellDepth:
             targets[0].writeMask = CW::None;
             targets[1].writeMask = CW::None;
+            targets[2].writeMask = CW::None;
             fragmentEntry = "depthFragment";
             break;
         case Kind::ShellFront:
             // Blended once, at the depth the shell's nearest front faces left.
             targets[0].blend = &alphaBlend;
             targets[1].writeMask = CW::None;
-            targets[3].writeMask = CW::Green;
+            targets[2].writeMask = CW::None;
+            targets[4].writeMask = CW::Green;
             depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
             depthTest.depthCompare = wgpu::CompareFunction::Equal;
             break;
@@ -524,8 +533,9 @@ struct Renderer::State {
         case Kind::Edges:
             targets[0].writeMask = CW::None;
             targets[1].writeMask = CW::None;
-            targets[2].writeMask = CW::All;
-            targets[2].blend = &keepLarger;
+            targets[2].writeMask = CW::None;
+            targets[3].writeMask = CW::All;
+            targets[3].blend = &keepLarger;
             depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
             cull = wgpu::CullMode::None;
             break;
@@ -849,9 +859,11 @@ struct Renderer::State {
         const Usage attachment = Usage::RenderAttachment | Usage::TextureBinding;
         color = texture(width, height, kColorFormat, attachment, "colour");
         ids = texture(width, height, kIdFormat, attachment | Usage::CopySrc, "ids");
+        depthCopy = texture(width, height, kDepthCopyFormat, attachment | Usage::CopySrc,
+                            "depth copy");
         ink = texture(width, height, kInkFormat, attachment, "ink");
         tags = texture(width, height, kTagFormat, attachment, "tags");
-        depth = texture(width, height, kDepthFormat, attachment | Usage::CopySrc, "depth");
+        depth = texture(width, height, kDepthFormat, Usage::RenderAttachment, "depth");
         const u32 halfWidth = (width + 1) / 2, halfHeight = (height + 1) / 2;
         shadowMask = texture(halfWidth, halfHeight, kShadowFormat, attachment, "shadow mask");
         occlusionTexture = texture(halfWidth, halfHeight, kOcclusionFormat,
@@ -869,11 +881,11 @@ struct Renderer::State {
                                                          textureEntry(1, ink),
                                                          textureEntry(2, tags)});
         occlusionGroup = makeGroup(device, occlusionLayout, {textureEntry(2, tags),
-                                                             textureEntry(3, depth),
+                                                             textureEntry(3, depthCopy),
                                                              textureEntry(5, occlusionTexture)});
         compositeGroup = makeGroup(device, compositeLayout, {textureEntry(0, accum),
                                                              textureEntry(2, tags),
-                                                             textureEntry(3, depth),
+                                                             textureEntry(3, depthCopy),
                                                              textureEntry(4, occlusionTexture)});
     }
 
@@ -972,9 +984,9 @@ struct Renderer::State {
     void encodeMain(const wgpu::CommandEncoder& encoder, u32 slot,
                     const render::ViewState& view) {
         const bool section = view.uniforms.sectionPlaneCount > 0;
-        wgpu::RenderPassColorAttachment attachments[4] = {};
-        const wgpu::Texture* textures[4] = {&color, &ids, &ink, &tags};
-        for (u32 t = 0; t < 4; ++t) {
+        wgpu::RenderPassColorAttachment attachments[5] = {};
+        const wgpu::Texture* textures[5] = {&color, &ids, &depthCopy, &ink, &tags};
+        for (u32 t = 0; t < 5; ++t) {
             attachments[t].view = textures[t]->CreateView();
             attachments[t].loadOp = wgpu::LoadOp::Clear;
             attachments[t].storeOp = wgpu::StoreOp::Store;
@@ -986,7 +998,7 @@ struct Renderer::State {
         depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
         depthAttachment.depthClearValue = 0.0f; // reversed depth
         wgpu::RenderPassDescriptor descriptor{};
-        descriptor.colorAttachmentCount = 4;
+        descriptor.colorAttachmentCount = 5;
         descriptor.colorAttachments = attachments;
         descriptor.depthStencilAttachment = &depthAttachment;
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);

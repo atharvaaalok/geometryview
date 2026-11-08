@@ -9,7 +9,7 @@
 @group(1) @binding(0) var colorTexture: texture_2d<f32>;
 @group(1) @binding(1) var inkTexture: texture_2d<f32>;
 @group(1) @binding(2) var tagTexture: texture_2d<u32>;
-@group(1) @binding(3) var depthTexture: texture_depth_2d;
+@group(1) @binding(3) var depthTexture: texture_2d<f32>; // the main pass's depth copy
 @group(1) @binding(4) var occlusionTexture: texture_2d<f32>; // half resolution
 @group(1) @binding(5) var occlusionOut: texture_storage_2d<r32float, write>;
 
@@ -54,7 +54,7 @@ fn resolveFragment(in: ScreenVertex) -> @location(0) vec4f {
 
 fn depthAt(q: vec2i) -> f32 {
     let last = vec2i(textureDimensions(depthTexture)) - 1;
-    return textureLoad(depthTexture, clamp(q, vec2i(0), last), 0);
+    return textureLoad(depthTexture, clamp(q, vec2i(0), last), 0).r;
 }
 
 // A pixel's position in view space, looking down -z.

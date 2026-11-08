@@ -2,7 +2,9 @@
 // view, must match as the goldens must match Metal. Built only with GEO_WEBGPU, natively on Dawn.
 // Set GEOMETRY_WEBGPU_IMAGES to a folder to keep both images of each scene.
 #if defined(GEO_HAS_WEBGPU)
+#include "core/look_state.h"
 #include "core/offscreen_view.h"
+#include "model/face_state.h"
 #include "drive_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
@@ -15,6 +17,7 @@
 #include <doctest/doctest.h>
 #include <fcntl.h>
 #include <format>
+#include <functional>
 #include <unistd.h>
 #include <webgpu/webgpu_cpp.h>
 
@@ -304,6 +307,123 @@ TEST_CASE("the WebGPU renderer draws every style as Metal does") {
                 CHECK(d.mean < 1.0);
                 CHECK(d.changed < 0.005);
             }
+        }
+        unlink(blob.c_str());
+    }
+}
+
+// What a scenario changes after the shared setup, on whichever renderer draws it.
+using Scenario = std::function<void(engine::OffscreenView&, render::Backend&)>;
+
+std::vector<u8> renderScenario(render::Backend& backend, const std::string& blob,
+                               const GeoRenderOptions& options, const Scenario& change) {
+    engine::OffscreenView frame;
+    std::string error;
+    REQUIRE_MESSAGE(engine::prepareOffscreen(backend, openBlob(blob), options, frame, error),
+                    error);
+    change(frame, backend);
+    return backend.renderOffscreen(frame.view, nullptr);
+}
+
+// The states the viewer shows, each drawn by both renderers: sections and their caps, ghosts,
+// hiding, selection and hover, the hide tool, see-through and perspective.
+TEST_CASE("the WebGPU renderer draws states as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
+
+        const auto whole = [](u32 occurrence) {
+            return model::Target{occurrence, model::Target::kWholeOccurrence};
+        };
+        const auto withState = [](std::function<void(model::FaceState&)> edit) {
+            return [edit](engine::OffscreenView& frame, render::Backend& backend) {
+                model::FaceState state;
+                state.resize(frame.scene.faceCounts());
+                edit(state);
+                backend.syncState(state);
+            };
+        };
+        const auto hover = [](engine::OffscreenView& frame, u32 occurrence) {
+            const u32 first = frame.scene.document(0).idBase(occurrence) + 1;
+            frame.view.uniforms.hoverFirst = first;
+            frame.view.uniforms.hoverEnd = first + 6;
+        };
+        struct Case {
+            const char* name;
+            GeoStyle style;
+            bool perspective = false;
+            std::array<bool, 3> section{};
+            Scenario change = [](engine::OffscreenView&, render::Backend&) {};
+        };
+        const std::vector<Case> cases = {
+            {"section-x", GeoStyleIllustration, false, {true, false, false}},
+            {"section-xz-metal", GeoStyleMetal, false, {true, false, true}},
+            {"ghosts", GeoStyleIllustration, false, {},
+             withState([&](model::FaceState& state) {
+                 state.set(whole(1), kStateGhost, true);
+                 state.set({2, 0}, kStateGhost, true);
+             })},
+            {"hidden-selected-hovered", GeoStyleIllustration, false, {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 withState([&](model::FaceState& state) {
+                     state.set(whole(3), kStateHidden, true);
+                     state.set(whole(4), kStateSelected, true);
+                     state.set({2, 1}, kStateSelected, true);
+                 })(frame, backend);
+                 hover(frame, 5);
+             }},
+            {"hide-tool", GeoStyleClay, false, {},
+             [&](engine::OffscreenView& frame, render::Backend&) {
+                 hover(frame, 1);
+                 frame.view.uniforms.hoverHides = 1;
+             }},
+            {"see-through", GeoStyleIllustration, false, {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 engine::LookState looks;
+                 looks.set(engine::lookSettings(geo_default_look()));
+                 std::vector<u8> shells(frame.scene.occurrenceCount(), 0);
+                 shells[0] = 1;
+                 looks.setShells(shells);
+                 looks.apply(backend, frame.scene);
+                 frame.view.uniforms.seeThrough = 0.6f;
+             }},
+            {"perspective-metal", GeoStyleMetal, true},
+        };
+        for (const Case& c : cases) {
+            CAPTURE(c.name);
+            GeoRenderOptions options = geo_default_render_options();
+            options.width = kWidth;
+            options.height = kHeight;
+            options.overlay = false;
+            options.perspective = c.perspective;
+            options.look.style = c.style;
+            options.look.cast_shadow = geo_style_casts_shadow(c.style);
+            for (int axis = 0; axis < 3; ++axis) {
+                options.section.enabled[axis] = c.section[axis];
+                options.section.position[axis] = 0.4f;
+            }
+            const std::vector<u8> expected = renderScenario(*metal, blob, options, c.change);
+            const std::vector<u8> image = renderScenario(*web, blob, options, c.change);
+            REQUIRE(image.size() == expected.size());
+            if (keep != nullptr) {
+                engine::writePng(std::format("{}/{}-metal.png", keep, c.name).c_str(), expected,
+                                 kWidth, kHeight);
+                engine::writePng(std::format("{}/{}-webgpu.png", keep, c.name).c_str(), image,
+                                 kWidth, kHeight);
+            }
+            const Difference d = compare(image, expected);
+            CAPTURE(d.mean);
+            CAPTURE(d.changed);
+            CHECK(d.mean < 1.0);
+            CHECK(d.changed < 0.005);
         }
         unlink(blob.c_str());
     }

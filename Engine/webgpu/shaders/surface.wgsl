@@ -7,7 +7,7 @@
 
 @group(1) @binding(0) var<storage, read> slots: array<vec2u>; // occurrence, meshlet
 @group(1) @binding(1) var frontIds: texture_2d<u32>;          // the peel pass's front surface
-@group(1) @binding(2) var frontDepths: texture_depth_2d;
+@group(1) @binding(2) var frontDepths: texture_2d<f32>;
 
 // The ghost pass draws only ghosted faces, blended over everything opaque.
 override kGhostPass: bool = false;
@@ -255,7 +255,15 @@ fn capHatch(pixel: vec2f, tag: u32) -> f32 {
 struct SurfaceOutput {
     @location(0) color: vec4f,
     @location(1) id: u32,
-    @location(3) tags: vec2u, // the pipeline's write mask picks solid or ghost
+    @location(2) depth: f32, // at the pixel's centre, as Metal's depth copy is
+    @location(4) tags: vec2u, // the pipeline's write mask picks solid or ghost
+}
+
+// The fragment's depth at the pixel's centre. Metal shades once per pixel, there, for all four
+// samples; a jittered sample moves its depth back along the surface.
+fn centreDepth(position: vec4f) -> f32 {
+    let toCentre = -frame.sampleOffset;
+    return position.z + dpdx(position.z) * toCentre.x + dpdy(position.z) * toCentre.y;
 }
 
 @fragment
@@ -263,6 +271,7 @@ fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) 
     if (kSection && sectionCuts(in.world)) {
         discard;
     }
+    let depth = centreDepth(in.position);
     let flags = in.flags & 0x77u; // state, without the shell and open bits
     var tag = (in.flags >> 8u) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.
@@ -313,13 +322,13 @@ fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) 
         // The shell's far walls lie under everything, over the sheet they are mixed into.
         let wall = mix(color, style.sheetTop, 0.55);
         return SurfaceOutput(vec4f(mix(sheetColor(in.position.xy), wall, 0.5 * frame.seeThrough),
-                                   1.0), in.id, vec2u(0u));
+                                   1.0), in.id, depth, vec2u(0u));
     }
     if (kShellLayer == 3u) {
         if (hovered) {
             color = mix(color, style.hover, style.hoverAmount * select(1.0, 0.5, selected));
         }
-        return SurfaceOutput(vec4f(color, 1.0 - 0.8 * frame.seeThrough), in.id,
+        return SurfaceOutput(vec4f(color, 1.0 - 0.8 * frame.seeThrough), in.id, depth,
                              vec2u(0u, kTagShell | tag));
     }
     if (kGhostPass) {
@@ -331,7 +340,7 @@ fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) 
             color = mix(color, style.hover, style.hoverAmount);
             alpha = max(alpha, style.ghostAlpha) * 1.6;
         }
-        return SurfaceOutput(vec4f(color, alpha), in.id, vec2u(tag));
+        return SurfaceOutput(vec4f(color, alpha), in.id, depth, vec2u(tag));
     }
     if (hovered) {
         // On a selection hover lifts only half as much, so the selection stays readable.
@@ -341,26 +350,27 @@ fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) 
             color = mix(color, style.hover, style.hoverAmount * select(1.0, 0.5, selected));
         }
     }
-    return SurfaceOutput(vec4f(color, 1.0), in.id, vec2u(tag));
+    return SurfaceOutput(vec4f(color, 1.0), in.id, depth, vec2u(tag));
 }
 
 // Classifying the shell: occurrence ids only. The peel pass keeps only what lies behind the
 // front surface, and belongs to another part.
 struct IdOutput {
     @location(1) id: u32,
+    @location(2) depth: f32,
 }
 
 @fragment
 fn classifyFragment(in: SurfaceVertex) -> IdOutput {
     if (kPeel) {
         let p = vec2i(in.position.xy);
-        let front = textureLoad(frontDepths, p, 0);
+        let front = textureLoad(frontDepths, p, 0).r;
         if (textureLoad(frontIds, p, 0).r == in.id ||
             in.position.z >= front - (1e-5 * front + 1e-7)) {
             discard;
         }
     }
-    return IdOutput(in.id);
+    return IdOutput(in.id, in.position.z);
 }
 
 // The shadow mask: coverage only.

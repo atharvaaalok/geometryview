@@ -142,7 +142,7 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
 }
 
 @fragment
-fn edgeFragment(in: EdgeVertex) -> @location(2) vec4f {
+fn edgeFragment(in: EdgeVertex) -> @location(3) vec4f {
     // Metal's four samples share one evaluation at the pixel's centre, so a jittered sample moves
     // its position across and along the line back there.
     let toCentre = -frame.sampleOffset;
