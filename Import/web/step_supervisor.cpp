@@ -1,0 +1,188 @@
+// The STEP importer in the browser: the portable StepImport, whose jobs the page hands to its own
+// pool of OCCT Web Workers. The page calls, in turn:
+//
+//   step_open(size)              room for the file, in the heap, for the page to fill
+//   step_begin()                 indexes the file and writes the model: 0 if it will be sliced,
+//                                1 if it needs a whole-file read, which the browser cannot do yet,
+//                                or -1 on error (step_error says why)
+//   step_next()                  a job's id, with its text at step_text() for step_text_size()
+//                                bytes and its tolerances at step_request(); -1 if none is queued
+//                                now but replies are due; -2 once every job is answered
+//   step_payload(size)           room for a reply's payload, for the page to fill
+//   step_reply(id, ...)          what a worker made of the job, with that payload
+//   step_crash(id)               the job's worker trapped or ran out of memory
+//   step_finish()                completes the cache file: step_blob() for step_blob_size() bytes
+//   step_stats()                 timings and counts, as doubles (see below)
+#include "import.h"
+#include "occt/worker_protocol.h"
+#include "step/slicing.h"
+
+#include <emscripten/emscripten.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <iterator>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+using namespace geo;
+using namespace geo::import;
+
+namespace {
+
+constexpr const char* kOutputPath = "/import.geoblob";
+
+struct Session {
+    std::vector<u8> file;
+    int output = -1;
+    StepOptions options;
+    StepStats stats;
+    StepImport import;
+    std::optional<SliceWriter> writer;
+    std::unordered_map<u32, Job> pending;
+    u32 nextId = 0;
+    std::string text;
+    std::vector<u8> payload;
+    worker::Request request{};
+    double tolerances[3] = {0, 0, 0};
+    std::vector<u8> blob;
+    std::string error;
+    double values[16] = {};
+};
+
+std::unique_ptr<Session> session;
+
+} // namespace
+
+extern "C" {
+
+/// The file is read into the session's own buffer, so it is in memory once, and outlives the
+/// import, which keeps views into it.
+EMSCRIPTEN_KEEPALIVE u8* step_open(u32 size) {
+    session = std::make_unique<Session>();
+    session->file.resize(size);
+    return session->file.data();
+}
+
+EMSCRIPTEN_KEEPALIVE int step_begin() {
+    Session& s = *session;
+    s.output = open(kOutputPath, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (s.output < 0) {
+        s.error = "The cache file could not be created.";
+        return -1;
+    }
+    if (!s.import.begin(s.file, s.output, nullptr, s.options, s.stats, s.error)) {
+        return -1;
+    }
+    if (s.import.needsWholeFile()) {
+        s.error = "This file needs OCCT's whole-file read, which the browser does not do yet.";
+        return 1;
+    }
+    s.import.scheduler().start();
+    s.writer.emplace(s.import.index());
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int step_next() {
+    Session& s = *session;
+    const std::optional<Job> job = s.import.scheduler().takeJob();
+    if (!job) {
+        return s.import.scheduler().finished() ? -2 : -1;
+    }
+    s.import.scheduler().prepare(*job, *s.writer, s.text, s.request);
+    s.tolerances[0] = s.request.linearDeflection;
+    s.tolerances[1] = s.request.angularDeflection;
+    s.tolerances[2] = s.request.minSize;
+    const u32 id = s.nextId++;
+    s.pending.emplace(id, *job);
+    return int(id);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* step_text() { return session->text.data(); }
+EMSCRIPTEN_KEEPALIVE u32 step_text_size() { return u32(session->text.size()); }
+/// The job's linear deflection, angular deflection and minimum size.
+EMSCRIPTEN_KEEPALIVE const double* step_request() { return session->tolerances; }
+
+EMSCRIPTEN_KEEPALIVE u8* step_payload(u32 size) {
+    session->payload.resize(size);
+    return session->payload.data();
+}
+
+EMSCRIPTEN_KEEPALIVE void step_reply(u32 id, u32 status, u32 faces, u32 unmapped, u32 unmeshed,
+                                     double read, double transfer, double mesh) {
+    Session& s = *session;
+    std::vector<u8> payload = std::move(s.payload);
+    s.payload = {};
+    const auto it = s.pending.find(id);
+    if (it == s.pending.end()) {
+        return;
+    }
+    const Job job = it->second;
+    s.pending.erase(it);
+    worker::Reply reply{};
+    reply.magic = worker::kMagic;
+    reply.status = status;
+    reply.faceCount = faces;
+    reply.unmappedFaces = unmapped;
+    reply.unmeshedFaces = unmeshed;
+    reply.payloadBytes = u32(payload.size());
+    reply.readSeconds = read;
+    reply.transferSeconds = transfer;
+    reply.meshSeconds = mesh;
+    s.import.scheduler().onReply(job, reply, std::move(payload));
+}
+
+EMSCRIPTEN_KEEPALIVE void step_crash(u32 id) {
+    Session& s = *session;
+    const auto it = s.pending.find(id);
+    if (it == s.pending.end()) {
+        return;
+    }
+    const Job job = it->second;
+    s.pending.erase(it);
+    s.import.scheduler().onCrash(job);
+}
+
+EMSCRIPTEN_KEEPALIVE int step_finish() {
+    Session& s = *session;
+    if (!s.import.finish(s.stats, s.error)) {
+        return -1;
+    }
+    const off_t size = lseek(s.output, 0, SEEK_END);
+    s.blob.resize(usize(size));
+    if (pread(s.output, s.blob.data(), s.blob.size(), 0) != ssize_t(size)) {
+        s.error = "The cache file could not be read back.";
+        return -1;
+    }
+    close(s.output);
+    unlink(kOutputPath);
+    s.output = -1;
+    s.file = {}; // no longer needed
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE const u8* step_blob() { return session->blob.data(); }
+EMSCRIPTEN_KEEPALIVE u32 step_blob_size() { return u32(session->blob.size()); }
+EMSCRIPTEN_KEEPALIVE const char* step_error() { return session ? session->error.c_str() : ""; }
+
+/// tokenize, structure and definition seconds; OCCT's read, transfer and mesh seconds summed over
+/// jobs; pack seconds; then records, bodies, definitions, faces, triangles, failed faces, unmapped
+/// faces, crashed workers, meshlets.
+EMSCRIPTEN_KEEPALIVE const double* step_stats() {
+    Session& s = *session;
+    const StepStats& t = s.stats;
+    const double values[16] = {t.tokenizeSeconds, t.structureSeconds, t.definitionSeconds,
+                               t.readSeconds, t.transferSeconds, t.meshSeconds, t.packSeconds,
+                               double(t.records), double(t.bodies), double(t.definitions),
+                               double(t.faces), double(t.triangles), double(t.failedFaces),
+                               double(t.unmappedFaces), double(t.crashedWorkers),
+                               double(t.meshlets)};
+    std::copy(std::begin(values), std::end(values), s.values);
+    return s.values;
+}
+
+} // extern "C"
