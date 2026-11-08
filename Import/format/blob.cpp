@@ -10,8 +10,7 @@ namespace {
 
 template <typename T>
 bool readSection(const SegmentHeader& header, u64 segmentSize, const SectionBytes& bytes,
-                 SectionKind kind, std::span<const T>& out, SegmentView& view,
-                 std::string& error) {
+                 SectionKind kind, std::span<const T>& out, SegmentView& view, std::string& error) {
     out = {};
     for (u32 i = 0; i < header.sectionCount; ++i) {
         const SectionEntry& section = header.sections[i];
@@ -92,7 +91,8 @@ bool validateDefinition(const SegmentView& view, const DefinitionRecord& d, std:
     }
     if (d.firstEdgeChunk > view.edgeChunks.size() ||
         d.edgeChunkCount > view.edgeChunks.size() - d.firstEdgeChunk ||
-        d.firstEdgeSegment > edgeSegments || d.edgeSegmentCount > edgeSegments - d.firstEdgeSegment) {
+        d.firstEdgeSegment > edgeSegments ||
+        d.edgeSegmentCount > edgeSegments - d.firstEdgeSegment) {
         error = "A definition points outside its edges.";
         return false;
     }
