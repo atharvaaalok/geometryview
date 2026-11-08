@@ -106,6 +106,7 @@ struct Web {
     std::vector<u8> staging;
     std::string lastError; // the first GPU errors, for diagnosing
     u32 errors = 0;
+    u32 adapterRequests = 0; // asked for the adapter, which may come only on a later try
 };
 
 Web web;
@@ -291,27 +292,22 @@ void deviceReady() {
     jsReady(u32(web.format));
 }
 
-} // namespace
-
-extern "C" {
-
-/// Starts the engine on the canvas `selector`, `width` by `height` pixels at `scale` pixels per
-/// CSS pixel. `flags`: 1 reduce motion, 2 a phone. Answers through geoHost.ready or .failed.
-EMSCRIPTEN_KEEPALIVE void geo_web_start(const char* selector, u32 width, u32 height, float scale,
-                                        u32 flags) {
-    web.canvas = selector;
-    web.width = std::max(width, 1u);
-    web.height = std::max(height, 1u);
-    web.scale = scale;
-    web.reduceMotion = (flags & 1) != 0;
-    web.phone = (flags & 2) != 0;
-    web.instance = wgpu::CreateInstance(nullptr);
+// Asks for the GPU's adapter, then its device, and starts the engine on it.
+void requestAdapter() {
+    ++web.adapterRequests;
     wgpu::RequestAdapterOptions options{};
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     web.instance.RequestAdapter(
         &options, wgpu::CallbackMode::AllowSpontaneous,
         [](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
             if (status != wgpu::RequestAdapterStatus::Success) {
+                // Chrome on Linux answers a page that asks in the first moments after the browser
+                // starts, as when the launcher has just opened it, with no adapter, and with the
+                // GPU's a moment later: ask again, for up to two seconds.
+                if (status == wgpu::RequestAdapterStatus::Unavailable && web.adapterRequests < 8) {
+                    emscripten_async_call([](void*) { requestAdapter(); }, nullptr, 250);
+                    return;
+                }
                 jsFailed(std::string(message.data, message.length).c_str());
                 return;
             }
@@ -349,6 +345,24 @@ EMSCRIPTEN_KEEPALIVE void geo_web_start(const char* selector, u32 width, u32 hei
                     deviceReady();
                 });
         });
+}
+
+} // namespace
+
+extern "C" {
+
+/// Starts the engine on the canvas `selector`, `width` by `height` pixels at `scale` pixels per
+/// CSS pixel. `flags`: 1 reduce motion, 2 a phone. Answers through geoHost.ready or .failed.
+EMSCRIPTEN_KEEPALIVE void geo_web_start(const char* selector, u32 width, u32 height, float scale,
+                                        u32 flags) {
+    web.canvas = selector;
+    web.width = std::max(width, 1u);
+    web.height = std::max(height, 1u);
+    web.scale = scale;
+    web.reduceMotion = (flags & 1) != 0;
+    web.phone = (flags & 2) != 0;
+    web.instance = wgpu::CreateInstance(nullptr);
+    requestAdapter();
 }
 
 EMSCRIPTEN_KEEPALIVE void geo_web_resize(u32 width, u32 height, float scale) {

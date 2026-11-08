@@ -123,9 +123,15 @@ async function webgpu() {
   if (!navigator.gpu) {
     return { available: false };
   }
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  // Chrome on Linux has no adapter for a page that asks just after the browser starts, and has one
+  // a moment later, so ask for up to two seconds and say how many tries it took.
+  let adapter = null, adapterTries = 0;
+  while (!adapter && adapterTries < 8) {
+    if (adapterTries++ > 0) await new Promise((resolve) => setTimeout(resolve, 250));
+    adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  }
   if (!adapter) {
-    return { available: true, adapter: false };
+    return { available: true, adapter: false, adapterTries };
   }
   const info = adapter.info ?? {};
   const limits = limitsOf(adapter.limits);
@@ -153,6 +159,7 @@ async function webgpu() {
   return {
     available: true,
     adapter: true,
+    adapterTries,
     info: { vendor: info.vendor, architecture: info.architecture, device: info.device,
             description: info.description },
     isFallbackAdapter: adapter.isFallbackAdapter ?? info.isFallbackAdapter ?? null,
