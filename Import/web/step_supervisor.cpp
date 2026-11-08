@@ -211,10 +211,14 @@ EMSCRIPTEN_KEEPALIVE int step_take_segment(double* out) {
 /// `size` bytes of the cache file being written, from `offset`, or null if they cannot be read.
 EMSCRIPTEN_KEEPALIVE const u8* step_read(double offset, u32 size) {
     Session& s = *session;
+    // Once finished, the file is no longer open, and its bytes are in the blob.
+    if (s.output < 0) {
+        return offset >= 0 && u64(offset) + size <= s.blob.size() ? s.blob.data() + u64(offset)
+                                                                  : nullptr;
+    }
     s.read.resize(size);
-    return s.output >= 0 && pread(s.output, s.read.data(), size, off_t(offset)) == ssize_t(size)
-               ? s.read.data()
-               : nullptr;
+    return pread(s.output, s.read.data(), size, off_t(offset)) == ssize_t(size) ? s.read.data()
+                                                                                : nullptr;
 }
 
 EMSCRIPTEN_KEEPALIVE int mesh_import() {

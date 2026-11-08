@@ -77,8 +77,11 @@ That is about 250 bytes a triangle, and the browser's import peaks the same way.
 
 - **A STEP file shows while it imports.** Its segments go to the page as the importer writes them,
   as on the Mac, so an assembly fills in part by part. The hard file is a single part, so it still
-  appears only at the end. Import times are unchanged: PLE120 0.73 s, the hard file 3.04 s, the
-  pack 0.62 s in Chrome.
+  appears only at the end.
+  - Import times in Chrome, with every triangle in place: the pack 0.56 s, the hard file 3.22 s.
+  - The first version lost the segments written as the import finished, because the supervisor had
+    closed its file by then: PLE120 showed 78,670 of its 116,024 triangles. The launcher's
+    end-to-end test caught it, and now checks the exact count.
 - **A still view's four samples are drawn one a frame**, each costing one sample, rather than all
   four in a frame a touch would wait for.
   - The fourth step leaves exactly what four at once draw: a Dawn test compares them, with no
