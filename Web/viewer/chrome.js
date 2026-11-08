@@ -241,6 +241,8 @@ export class Toolbar {
     const parts = pill({ icon: icons.parts, help: "Parts and library", onPress: onParts });
     parts.classList.add("phone-only");
     const shortcuts = pill({ title: "?", style: "ghostly", help: "Shortcuts (?)", onPress: onShortcuts });
+    // A phone has the selection card's own buttons for these, and no keyboard.
+    for (const button of [hide, ghost, isolate, shortcuts]) button.classList.add("desktop-only");
     this.#needSelection = [hide, ghost, isolate];
     this.#needModel = [showAll, fit, views, undo, redo, seeThrough];
     this.viewsMenu = el("div.menu.views", { hidden: true, role: "menu" }, [
