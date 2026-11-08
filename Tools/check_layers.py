@@ -28,6 +28,7 @@ PORTABLE = ["Engine/base", "Engine/math", "Engine/scene", "Engine/model", "Engin
             "Engine/render", "Engine/core", "Engine/webgpu", "Import/step", "Import/stl", "Import/mesh", "Import/cache",
             "Import/format"]
 PLATFORM_CHOOSERS = {"Engine/base/simd.h", "Engine/base/parallel.h", "Engine/base/parallel.cpp",
+                     "Engine/base/trace.cpp",
                      "Engine/base/time.cpp", "Engine/base/xxhash.h", "Import/step/part21.cpp",
                      "Import/step/step_import.cpp"}
 APPLE_INCLUDE = re.compile(

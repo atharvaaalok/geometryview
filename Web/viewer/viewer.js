@@ -367,12 +367,27 @@ let importer = null;
 let importing = Promise.resolve();
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
 
+// What importing an STL file takes at its peak: the importer holds about 250 bytes a triangle
+// (2.4 GB for 10 million), with the file itself. A phone stops a page well before 2 GB, so there
+// a file that would pass about 1.2 GB is refused, with a way forward, rather than lost midway.
+function stlImportBytes(file) {
+  const binaryTriangles = Math.max(0, (file.size - 84) / 50);
+  return file.size + binaryTriangles * 250;
+}
+const kPhoneImportBudget = 1.2 * 1024 ** 3;
+
 function importFile(file, add) {
   importing = importing.then(async () => {
     const cached = await cachedImport(file);
     if (cached) {
       openCache(cached, file.name, add);
       return { type: "cached" };
+    }
+    if (phone && /\.stl$/i.test(file.name) && stlImportBytes(file) > kPhoneImportBudget) {
+      const message = `${file.name} is too large to import on a phone. Import it on a computer, ` +
+                      "then open its cache file here.";
+      status.showFailure(message);
+      return { type: "failed", message };
     }
     // STEP files go to the long-lived importer, whose OCCT pool stays warm; an STL file to one
     // of its own, ended afterwards, which frees its threads and memory.
