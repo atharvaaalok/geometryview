@@ -61,7 +61,8 @@ void parallelRanges(usize count, usize grain, Body&& body) {
     }
     const usize ranges = parallelRangeCount(count, grain);
     parallelFor(ranges, [&](usize range) {
-        body(count * range / ranges, count * (range + 1) / ranges, range);
+        // In 64 bits, since the products overflow a 32-bit usize, as in WebAssembly.
+        body(usize(u64(count) * range / ranges), usize(u64(count) * (range + 1) / ranges), range);
     });
 }
 
