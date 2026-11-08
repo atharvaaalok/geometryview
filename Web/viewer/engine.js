@@ -164,16 +164,55 @@ export class Engine {
     this.#withString(path, (pointer) => this.#module._geo_web_open(pointer, add ? 1 : 0));
   }
 
+  // Opens a document whose segments the page will hand over as an importer writes them, so the
+  // model shows while it imports. Resolves to the import's token.
+  openImport(name, { add = false } = {}) {
+    return new Promise((resolve) => {
+      const path = `${this.#nextSource++}/${name}`;
+      this.#sources.set(path, { importing: resolve });
+      this.#withString(path, (pointer) => this.#module._geo_web_open(pointer, add ? 1 : 0));
+    });
+  }
+
+  // One whole segment, for the import of `token`. False if the engine refused it or the import
+  // was cancelled.
+  importSegment(token, bytes) {
+    const m = this.#module;
+    const pointer = m._malloc(bytes.length);
+    m.HEAPU8.set(bytes, pointer);
+    const taken = m._geo_web_import_segment(token, pointer, bytes.length);
+    m._free(pointer);
+    return taken > 0;
+  }
+
+  // Ends the import of `token`: every segment handed over, or failed, as `message` says.
+  finishImport(token, message = null) {
+    if (message === null) this.#module._geo_web_import_end(token, 0);
+    else this.#withString(message, (pointer) => this.#module._geo_web_import_end(token, pointer));
+  }
+
   async #startImport(token, path) {
     const source = this.#sources.get(path);
+    if (source?.importing) {
+      source.importing(token);
+      return;
+    }
     const module = this.#module;
     let cancelled = false;
     let reader = null;
     this.#imports.set(token, { cancel: () => { cancelled = true; reader?.cancel(); } });
     try {
-      const body = typeof source === "string" ? (await fetch(source)).body
-                 : source instanceof Blob ? source.stream()
-                 : source;
+      let body = source, size = 0;
+      if (typeof source === "string") {
+        const response = await fetch(source);
+        body = response.body;
+        size = Number(response.headers.get("content-length") ?? 0);
+      } else if (source instanceof Blob) {
+        body = source.stream();
+        size = source.size;
+      }
+      // The file's real size bounds what its header may ask to be placed.
+      if (size > 0) module._geo_web_stream_size(token, size);
       reader = body.getReader();
       for (;;) {
         const { done, value } = await reader.read();

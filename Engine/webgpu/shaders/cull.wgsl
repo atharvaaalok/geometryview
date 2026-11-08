@@ -37,7 +37,7 @@ struct Lists {
     shadowOn: u32,
     groupsBase: u32, // where the workgroups' counts start in Counters.words
     chunkDraws: u32, // chunk draws over all lists
-    pad0: u32,
+    wide: u32,       // 32-bit indices naming their slots whole, one draw per list
     pad1: u32,
 }
 
@@ -238,7 +238,8 @@ var<workgroup> threadSlots: array<u32, 448>;   // per thread and list: 1 if it j
 var<workgroup> threadIndices: array<u32, 448>; // and how many indices it brings
 // Each thread's meshlet, for writing indices together: up to three lists per thread.
 var<workgroup> wantSlot: array<u32, 192>;  // the list's local slot, or none
-var<workgroup> wantIndex: array<u32, 192>; // where its indices start, in 16-bit indices
+var<workgroup> wantListBase: array<u32, 192>; // the list's first slot
+var<workgroup> wantIndex: array<u32, 192>; // where its indices start, counted in indices
 var<workgroup> wantInstance: array<u32, 192>;
 
 // Writes each workgroup's slots and indices where the scan said, its threads in order, and where
@@ -296,13 +297,15 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
         if (localSlot < region.slotCapacity && localIndex + own <= region.indexCapacity) {
             slot = localSlot;
             slotsOut[region.slotBase + localSlot] = instances[index];
-            // The first slot of a chunk says where the chunk's indices start.
-            if (localSlot % kChunkSlots == 0u) {
+            // The first slot of a chunk says where the chunk's indices start; a wide list is one
+            // chunk, starting where its region does.
+            if (lists.wide == 0u && localSlot % kChunkSlots == 0u) {
                 let draw = lists.chunks[list].x + localSlot / kChunkSlots;
                 counters.words[draw * 5u + 2u] = region.indexBase + localIndex;
             }
         }
         wantSlot[lid * 3u + joined] = slot;
+        wantListBase[lid * 3u + joined] = region.slotBase;
         wantIndex[lid * 3u + joined] = region.indexBase + localIndex;
         wantInstance[lid * 3u + joined] = index;
         joined++;
@@ -312,7 +315,8 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
     }
     workgroupBarrier();
 
-    // Together, write each visible meshlet's indices, two to a word.
+    // Together, write each visible meshlet's indices: two 16-bit ones to a word, naming the slot
+    // within its chunk, or in a wide list one to a word, naming the slot whole.
     for (var v = 0u; v < 192u; v++) {
         let localSlot = wantSlot[v];
         if (localSlot == 0xFFFFFFFFu) {
@@ -322,10 +326,23 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
         let d = definitions[occurrences[instance.x].definition];
         let m = meshletAt(d, instance.y);
         let count = m.triangleCount * 3u;
-        let words = paddedIndices(m.triangleCount) / 2u;
         // Clamped because a cache file is untrusted and per-index validation would read every
         // page.
         let last = max(m.vertexCount, 1u) - 1u;
+        if (lists.wide != 0u) {
+            let slotBits = (wantListBase[v] + localSlot) << kSlotShift;
+            let total = paddedIndices(m.triangleCount);
+            for (var j = lid; j < total; j += 64u) {
+                var vertex = 0u;
+                if (j < count) {
+                    let packed = geometry[d.triangles + m.triangleOffset + j / 3u];
+                    vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
+                }
+                indicesOut[wantIndex[v] + j] = slotBits | vertex;
+            }
+            continue;
+        }
+        let words = paddedIndices(m.triangleCount) / 2u;
         let slotBits = (localSlot % kChunkSlots) << kSlotShift;
         let firstWord = wantIndex[v] / 2u;
         for (var w = lid; w < words; w += 64u) {

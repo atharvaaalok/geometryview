@@ -93,11 +93,19 @@ public:
     CacheStream(const CacheStream&) = delete;
     CacheStream& operator=(const CacheStream&) = delete;
 
+    /// The file's real size, where the host knows it, as from a File or a Content-Length. The
+    /// header must then agree, so what it asks to be placed is bounded by bytes that exist.
+    void expectSize(u64 size) { expectedSize_ = size; }
+
     /// Takes the file's next bytes. Returns false, and sets `error`, once the file proves invalid;
     /// nothing more is taken after that.
     bool append(std::span<const u8> bytes, std::string& error);
     /// After the last bytes: whether the whole file arrived.
     bool finish(std::string& error);
+
+    /// Takes one whole segment, outside any file, as an importer writes them one by one; it is
+    /// placed and handed over as a file's segments are. Not to be mixed with `append`.
+    bool takeSegment(std::span<const u8> bytes, std::string& error);
 
     u64 received() const { return received_; }
     /// The file's size, from its header, or 0 until the header is in.
@@ -116,6 +124,7 @@ private:
     usize next_ = 0;                            // the entry to read next
     u64 received_ = 0;
     u64 fileSize_ = 0;
+    u64 expectedSize_ = 0;
     bool failed_ = false;
     std::unique_ptr<Current> current_;
 };

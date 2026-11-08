@@ -164,6 +164,11 @@ struct CacheStream::Current {
         if (placement) {
             sink->write(*placement, at, bytes);
         } else {
+            // Grown as bytes arrive, so a header cannot make memory be taken for bytes that never
+            // come.
+            if (whole.size() < usize(at) + bytes.size()) {
+                whole.resize(usize(at) + bytes.size());
+            }
             std::memcpy(whole.data() + usize(at), bytes.data(), bytes.size());
         }
         const u64 end = at + bytes.size();
@@ -189,6 +194,10 @@ bool CacheStream::takeHeader(std::span<const u8>& bytes, std::string& error) {
     }
     std::span<const format::SegmentEntry> entries;
     if (!format::parseHeaderPrefix(prefix_, entries, fileSize_, error)) {
+        return false;
+    }
+    if (expectedSize_ != 0 && fileSize_ != expectedSize_) {
+        error = "The cache file's size does not match its header.";
         return false;
     }
     entries_.assign(entries.begin(), entries.end());
@@ -260,9 +269,6 @@ bool CacheStream::beginSegment(std::string& error) {
         }
     }
     c.placement = sink_ != nullptr ? sink_->place(size) : nullptr;
-    if (!c.placement) {
-        c.whole.resize(usize(size));
-    }
     c.begun = true;
     c.route(sink_, 0, c.headerBytes);
     return true;
@@ -343,6 +349,31 @@ bool CacheStream::append(std::span<const u8> bytes, std::string& error) {
         if (position == entry.offset + entry.size && !endSegment(error)) {
             return fail();
         }
+    }
+    return true;
+}
+
+bool CacheStream::takeSegment(std::span<const u8> bytes, std::string& error) {
+    if (failed_) {
+        error = "The cache file was already found invalid.";
+        return false;
+    }
+    if (bytes.size() < sizeof(format::SegmentHeader)) {
+        error = "A cache segment is too short.";
+        return false;
+    }
+    current_ = std::make_unique<Current>();
+    current_->entry = {0, bytes.size()};
+    std::memcpy(current_->headerBytes.data(), bytes.data(), sizeof(format::SegmentHeader));
+    if (!beginSegment(error)) {
+        current_.reset();
+        return false;
+    }
+    current_->route(sink_, sizeof(format::SegmentHeader),
+                    bytes.subspan(sizeof(format::SegmentHeader)));
+    if (!endSegment(error)) {
+        current_.reset();
+        return false;
     }
     return true;
 }

@@ -57,17 +57,23 @@ bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listene
         start = now;
     };
 
-    TriangleSoup soup;
-    if (!readStl(file, soup, error)) {
-        return false;
+    // Each stage's input is freed once the next has what it needs, so the soup and the indexed
+    // mesh are never held while packing's own arrays are at their largest.
+    PackedDefinition packed;
+    {
+        IndexedMesh mesh;
+        {
+            TriangleSoup soup;
+            if (!readStl(file, soup, error)) {
+                return false;
+            }
+            result.warnings = std::move(soup.warnings);
+            lap(result.times.parse);
+            mesh = buildIndexedMesh(soup);
+        }
+        lap(result.times.regions);
+        packed = packMesh(mesh);
     }
-    result.warnings = std::move(soup.warnings);
-    lap(result.times.parse);
-
-    const IndexedMesh mesh = buildIndexedMesh(soup);
-    lap(result.times.regions);
-
-    PackedDefinition packed = packMesh(mesh);
     lap(result.times.pack);
 
     result.triangles = packed.triangles.size();

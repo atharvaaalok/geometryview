@@ -208,7 +208,8 @@ function refreshMasthead() {
   }
   let detail = names.length === 1 ? "" : names.join(", ");
   if (bodies > 0) {
-    const counts = `${parts.toLocaleString("en-US")} parts · ${bodies.toLocaleString("en-US")} bodies`;
+    const count = (n, one, many) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+    const counts = `${count(parts, "part", "parts")} · ${count(bodies, "body", "bodies")}`;
     detail = detail ? `${counts} · ${detail}` : counts;
   } else {
     detail = "Reading…";
@@ -367,6 +368,15 @@ let importer = null;
 let importing = Promise.resolve();
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
 
+// What importing an STL file takes at its peak: the importer holds about 250 bytes a triangle
+// (2.4 GB for 10 million), with the file itself. A phone stops a page well before 2 GB, so there
+// a file that would pass about 1.2 GB is refused, with a way forward, rather than lost midway.
+function stlImportBytes(file) {
+  const binaryTriangles = Math.max(0, (file.size - 84) / 50);
+  return file.size + binaryTriangles * 250;
+}
+const kPhoneImportBudget = 1.2 * 1024 ** 3;
+
 function importFile(file, add) {
   importing = importing.then(async () => {
     const cached = await cachedImport(file);
@@ -374,28 +384,57 @@ function importFile(file, add) {
       openCache(cached, file.name, add);
       return { type: "cached" };
     }
+    if (phone && /\.stl$/i.test(file.name) && stlImportBytes(file) > kPhoneImportBudget) {
+      const message = `${file.name} is too large to import on a phone. Import it on a computer, ` +
+                      "then open its cache file here.";
+      status.showFailure(message);
+      return { type: "failed", message };
+    }
     // STEP files go to the long-lived importer, whose OCCT pool stays warm; an STL file to one
     // of its own, ended afterwards, which frees its threads and memory.
     const stl = /\.stl$/i.test(file.name);
     const worker = stl ? new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" })
                        : (importer ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" }));
+    // A STEP file's document opens at once and fills as its segments are written, as on the Mac;
+    // an STL file's single segment comes at the end, so it opens from the library when done.
+    let token = null, document = -1, shown = false;
+    if (!stl) {
+      if (!add) forget();
+      token = await engine.openImport(file.name, { add });
+      document = names.length - 1;
+    }
     status.showImporting(file.name, 0, 0);
     const result = await new Promise((resolve) => {
       worker.onmessage = ({ data }) => {
-        if (data.type === "progress") status.showImporting(file.name, data.done, data.total);
-        else resolve(data);
+        if (data.type === "segment") {
+          if (token !== null && engine.importSegment(token, data.bytes) && !shown) {
+            shown = true; // something to look at: the progress moves to the masthead
+            status.hide();
+          }
+        } else if (data.type === "progress") {
+          if (shown) {
+            progress.set(document, data.total > 0 ? data.done / data.total : 0);
+            refreshMasthead();
+          } else {
+            status.showImporting(file.name, data.done, data.total);
+          }
+        } else {
+          resolve(data);
+        }
       };
       worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
       worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name,
-                           workers: importWorkers, threads: stl });
+                           workers: importWorkers, threads: stl, progressive: !stl });
     });
     if (stl) worker.terminate();
     lastImport = result;
     if (result.type !== "done") {
-      status.showFailure(result.message);
+      if (token !== null) engine.finishImport(token, result.message);
+      else status.showFailure(result.message);
       return result;
     }
-    openCache(await keptFile(file.name), file.name, add);
+    if (token !== null) engine.finishImport(token);
+    else openCache(await keptFile(file.name), file.name, add);
     return result;
   });
   return importing;
@@ -450,6 +489,24 @@ if (params.has("import")) {
 } else if (model) {
   openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
 }
+
+// In the iOS shell: documents the person opens from Files or the share sheet arrive here.
+window.geometryShell = {
+  async open(url, name, lastModified) {
+    if (/\.geoblob$/i.test(name)) {
+      openCache(url, name, false);
+      return;
+    }
+    status.showLoading(name);
+    const response = await fetch(url);
+    if (!response.ok) {
+      status.showFailure(`${name} could not be read.`);
+      return;
+    }
+    await importFile(new File([await response.blob()], name, { lastModified }), false);
+  },
+};
+window.webkit?.messageHandlers?.shell?.postMessage({ ready: true });
 
 // Opened by the launcher: take the AI app's requests.
 if (params.has("token")) {
@@ -590,7 +647,9 @@ function bridgeHandlers() {
 // ---- Scripted checks --------------------------------------------------------------------------
 
 function testLabel() {
-  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${model}`;
+  // A report's name is a file's, so an imported fixture's folder joins it with a dash.
+  const name = model.replaceAll("/", "-");
+  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${name}`;
 }
 
 async function post(report) {

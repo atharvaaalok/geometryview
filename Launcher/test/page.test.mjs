@@ -43,7 +43,8 @@ test("the page opens a STEP file, lists it and pictures it", { skip: !enabled },
   });
   assert.equal(described.parts, 37);
   assert.equal(described.bodies, 89);
-  assert.ok(described.triangles > 100_000);
+  // Every segment arrived, the last ones too, written as the import finished.
+  assert.equal(described.triangles, 116_024, JSON.stringify(described));
 
   const nodes = await viewer.bridge.request("structure", {});
   assert.ok(nodes.some((node) => node.name === "housing" && node.kind === "assembly"));

@@ -391,6 +391,8 @@ kbd.cap {
   scrollbar-width: none;
 }
 .toolbar::-webkit-scrollbar { display: none; }
+/* Tools keep their size; a row too long for the window scrolls. */
+.toolbar > * { flex: none; }
 .toolbar .rule { flex: none; width: var(--line); height: 22px; background: var(--rule); }
 
 .menu {
@@ -489,6 +491,7 @@ kbd.cap {
 
 .phone-only { display: none !important; }
 body.phone .phone-only { display: inline-flex !important; }
+body.phone .desktop-only { display: none !important; }
 
 body.phone .structure { left: 8px; right: 8px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; height: 45%; }
 body.phone .selection { right: 8px; left: 8px; top: calc(56px + env(safe-area-inset-top)); width: auto; }

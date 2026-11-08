@@ -6,8 +6,8 @@ Measured on 2026-11-07 (evening, Pacific Time) on the M4 Max:
 
 The raw reports are in `runtime/`. The design is in ADR 0015.
 
-**The iPhone has not been measured yet.** It was unreachable from this Mac all evening, so the
-memory gate, the gate P4 was meant to close, is still open (see the end).
+**The iPhone** was measured the next night, 2026-11-08 at about 2:20–2:50 AM Pacific Time, once
+it could be reached again: see "The iPhone" below. **The memory gate passes.**
 
 ## What P4 built
 
@@ -97,6 +97,50 @@ file in the library.
   is packed and the cache file at once. Ending its worker frees all of it. The supervisor may now
   grow to 4 GB.
 
+## The iPhone
+
+The iPhone 16 Pro, in the P6 shell over loopback HTTP, at DPR 2 (804×1748). The viewer was built
+with P7's first round (progressive STEP imports, four samples one a frame). Reports are in
+`runtime/iphone-*`.
+
+**The memory gate passes.** The 10M STL open in the viewer, from Instruments' Activity Monitor
+template:
+
+| Process | P4 viewer | P3 bench page | Phase 0 spike |
+|---|---|---|---|
+| WebContent (page and WebAssembly) | 390–470 MB | 938 MB | 868 MB |
+| GPU process | 160–225 MB | 264 MB | 226 MB |
+| **Both at once** | **at most 630 MB** (the two peaks, summed: 695 MB) | 1,202 MB | 1,094 MB (gate: 900 MB) |
+
+- Streaming the cache into GPU buffers removed the CPU copies, as planned: the WebAssembly heap is
+  16 MB. The renderer holds 268.8 MB of buffers and 41.9 MB of targets.
+- Instruments kept the phone for whole recordings this time (18–20 s each, sampled about once a
+  second). The page was never stopped.
+
+**The frame loop on the phone**, from the viewer's scripted check (`test=idle`):
+
+| | Pack | 10M STL |
+|---|---|---|
+| From navigation to an engine ready to draw | 62 ms | 50 ms |
+| Frames in 3 s still | 0 | 0 |
+| Frames in a 2 s drag | 118 | 118 |
+| Frames after the drag settles | 1 | 1 |
+| Hover picks that found a face | 35 | 1 (one face) |
+
+The STL holds 60 fps while dragged because the phone's detail budget (3M triangles) leaves out
+edges and the shadow in motion.
+
+**Imports on the phone**, with 2 workers, each shown as it imports:
+
+| File | Time | Triangles shown | Memory at peak |
+|---|---|---|---|
+| Pack | 2.0–2.3 s | 331,520, all | |
+| PLE120 | 3.4 s | 116,024, all | |
+| Hard file (52.7 MB) | 19.9 s (gate 30 s; P2's import page 16.5–18.2 s) | 340,646, all | WebContent 570 MB, GPU process 135 MB |
+
+The viewer's import peaks higher than P2's import page (464 MB in all). It also holds the viewer,
+its engine, the file as fetched, and the cache as it goes to the library.
+
 ## The interface
 
 Headless Chrome screenshots, at 1600×1000 and as an iPhone 16 Pro (402×874), showed:
@@ -123,17 +167,10 @@ P4 changed the core (classification, the detail budget) and the scene and format
 
 ## Open
 
-- **The iPhone runs**:
-  - the memory gate with the 10M STL (P3: 938 MB page and 264 MB GPU process; gate 900 MB);
-  - frame times through the real runtime;
-  - an import on the phone.
-
-  The shell is ready to run them (`loopback:viewer:model=stl10m&test=idle&fixtures=/spike/fixtures/`).
-- **Import memory.** The STL import's 2.75 GB peak is far over a phone's budget. The importer
-  should stream the file and write its cache in segments.
-- **Imports show nothing until they finish.** The Mac shows segments as they are written. The
-  supervisor's `SegmentListener` could post them to the page as they come.
+- **Import memory.** The STL import's 2.75 GB peak is far over a phone's budget, which now refuses
+  STL files over about 1.2 GB. The importer should stream the file and write its cache in segments.
 - **Refinement** (finer geometry for a close view) is refused in the browser. It needs OCCT for
   an open file.
-- **Settled antialiasing is all at once.** Spreading the four samples over four frames would keep
-  them on phones too.
+
+Done in P7's first round: imports show as they go, and a still view's four samples are drawn one a
+frame (`p7/p7-hardening.md`).

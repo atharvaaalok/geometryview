@@ -1,0 +1,22 @@
+{
+  "label": "mac-chrome-prog-p4-import-step/ple120.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 731,
+  "import": {
+    "type": "done",
+    "triangles": 79760,
+    "faces": 2677,
+    "failedFaces": 0,
+    "slices": 244,
+    "importMs": 709,
+    "cacheBytes": 1851392,
+    "supervisorMB": 71
+  },
+  "cached": false,
+  "workers": 12,
+  "triangles": 43032,
+  "bufferMB": 1.137664794921875,
+  "heapMB": 16
+}

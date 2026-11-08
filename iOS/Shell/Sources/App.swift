@@ -2,18 +2,20 @@ import SwiftUI
 import WebKit
 
 /// The shell: the viewer's web files in a full-screen web view, served locally, with no network.
+/// STEP and STL files opened in it from Files or the share sheet go to the viewer.
 @main
 struct GeometryShellApp: App {
     var body: some Scene {
         WindowGroup {
             WebView()
                 .ignoresSafeArea()
+                .onOpenURL { url in Host.shared.open(url) }
         }
     }
 }
 
 struct WebView: UIViewRepresentable {
-    func makeCoordinator() -> Host { Host() }
+    func makeCoordinator() -> Host { Host.shared }
 
     func makeUIView(context: Context) -> WKWebView {
         context.coordinator.makeWebView()
@@ -22,10 +24,12 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {}
 }
 
-/// Owns the web view, serves it the bundled files, and saves what the page reports.
+/// Owns the web view, serves it the bundled files, and hands it the documents the person opens.
 ///
-/// For Phase 0 it runs the capability census several times, and the renderer spike when asked at
-/// launch. Pages are served two ways: from the geo:// scheme, and over HTTP on the phone's own
+/// Launched as an app, it shows the viewer, and if iOS stops the page's process, as it may when the
+/// phone runs short of memory, loads it again and reopens the last document. Launched with
+/// `--runs`, it makes Phase 0's and later measurements instead: the capability census, the
+/// renderer and import spikes, and the viewer's scripted checks. Pages are served two ways: from the geo:// scheme, and over HTTP on the phone's own
 /// loopback address, which is what WebKit needs to make them cross-origin isolated. Memory runs
 /// find how much iOS grants before it stops the page.
 /// Reports go to Documents/census, where `devicectl` can copy them off the phone. A page stopped by
@@ -42,11 +46,17 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let name: String
     }
 
-    private let runs = Host.requestedRuns() ?? [
-        Host.census(.scheme, mode: "core"),
-        Host.census(.loopback, mode: "core"),
-        Host.census(.loopback, mode: "shared-memory"),
+    static let shared = Host()
+
+    // Measurements when asked for at launch; otherwise the viewer itself.
+    private let measuring = Host.requestedRuns() != nil
+    private lazy var runs = Host.requestedRuns() ?? [
+        Run(transport: .loopback, page: "viewer", label: "", query: "", name: "viewer"),
     ]
+    private let opened = OpenedFiles()
+    private var pageReady = false
+    private var pending: String?    // a document to hand the page once it is ready
+    private var lastOpened: String? // the last document handed over, to reopen after a restart
 
     private static func label(_ transport: Transport, _ suffix: String?) -> String {
         let base = "iphone-\(transport == .scheme ? "wkwebview" : "loopback")"
@@ -103,19 +113,25 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     func makeWebView() -> WKWebView {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let files = WebFiles(bundle: Bundle.main.resourceURL!,
-                             files: caches.appendingPathComponent("files", isDirectory: true))
-        Self.makeStreamFile(in: files.files)
+                             files: caches.appendingPathComponent("files", isDirectory: true),
+                             opened: opened)
+        if measuring {
+            Self.makeStreamFile(in: files.files)
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(SchemeHandler(files: files), forURLScheme: SchemeHandler.scheme)
         configuration.userContentController.add(self, name: "census")
+        configuration.userContentController.add(self, name: "shell")
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.isInspectable = true
+        view.isOpaque = false
+        view.backgroundColor = UIColor(red: 0xF2 / 255, green: 0xEF / 255, blue: 0xE7 / 255, alpha: 1)
         webView = view
         try? FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
         // Measurements run for minutes with nobody touching the phone; keep it awake meanwhile.
-        UIApplication.shared.isIdleTimerDisabled = true
+        UIApplication.shared.isIdleTimerDisabled = measuring
         NotificationCenter.default.addObserver(
             self, selector: #selector(memoryWarning),
             name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
@@ -161,7 +177,8 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         }
         let run = runs[runIndex]
         let page = run.page.hasSuffix(".html") ? "/\(run.page)" : "/\(run.page)/"
-        let path = "\(page)?label=\(run.label)&\(run.query)"
+        let path = measuring ? "\(page)?label=\(run.label)&\(run.query)" : page
+        pageReady = false
         switch run.transport {
         case .scheme:
             webView?.load(URLRequest(url: URL(string: "\(SchemeHandler.scheme)://local\(path)")!))
@@ -179,9 +196,53 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         load()
     }
 
-    // The page posts its report after each step, and once more, not partial, when done.
+    // MARK: Documents
+
+    /// A STEP or STL file opened from Files or the share sheet: served to the page under a path of
+    /// its own, and opened there as soon as the page is ready.
+    func open(_ url: URL) {
+        guard ["step", "stp", "stl", "geoblob"].contains(url.pathExtension.lowercased()) else {
+            return
+        }
+        let id = opened.add(url)
+        let name = url.lastPathComponent
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate?.timeIntervalSince1970 ?? 0
+        let path = "/open/\(id)/\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)"
+        let call = "geometryShell.open(\(Self.quoted(path)), \(Self.quoted(name)), \(Int(modified * 1000)))"
+        lastOpened = call
+        if pageReady {
+            webView?.evaluateJavaScript(call)
+        } else {
+            pending = call
+        }
+    }
+
+    private static func quoted(_ text: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: [text])
+        let array = data.map { String(decoding: $0, as: UTF8.self) } ?? "[\"\"]"
+        return String(array.dropFirst().dropLast())
+    }
+
+    // The viewer says it is ready for documents.
+    private func viewerReady() {
+        pageReady = true
+        if let call = pending {
+            pending = nil
+            webView?.evaluateJavaScript(call)
+        }
+    }
+
+    // The page posts its report after each step, and once more, not partial, when done. The viewer
+    // says, on the shell's own channel, when it is ready.
     func userContentController(_ controller: WKUserContentController,
                                didReceive message: WKScriptMessage) {
+        if message.name == "shell" {
+            if (message.body as? [String: Any])?["ready"] as? Bool == true {
+                viewerReady()
+            }
+            return
+        }
         guard let text = message.body as? String,
             let received = text.data(using: .utf8),
             var report = try? JSONSerialization.jsonObject(with: received) as? [String: Any],
@@ -210,15 +271,24 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         runs[min(runIndex, runs.count - 1)].name
     }
 
-    // iOS stopped the page, as the memory measurements expect it to. Its last partial report is
-    // already saved, so note why and go on.
+    // iOS stopped the page. In a measurement, as the memory runs expect, its last partial report is
+    // already saved, so note why and go on; in the viewer, load it again and reopen the document it
+    // had, which its library then opens without importing again.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard measuring else {
+            pending = lastOpened
+            load()
+            return
+        }
         note("terminated", ["terminatedAt": ISO8601DateFormatter().string(from: Date())])
         next()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: any Error) {
+        guard measuring else {
+            return
+        }
         note("failed", ["error": String(describing: error)])
         next()
     }
