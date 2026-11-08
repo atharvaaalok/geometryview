@@ -567,6 +567,7 @@ if (params.has("token")) {
 }
 
 if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "refine") runRefineTest().catch((error) => post({ error: error.message }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
 // ---- The launcher's bridge ---------------------------------------------------------------------
@@ -742,6 +743,32 @@ async function runImportTest() {
   await post({ totalMs: Math.round(totalMs), import: lastImport, cached: lastImport === null,
                workers: importWorkers, triangles: stats.triangles, bufferMB: stats.bufferMB,
                heapMB: stats.heapMB });
+}
+
+// Waits for an imported file's scene, zooms in on the middle of the view, and reports how many
+// triangles refinement brought, and how long after the view settled they were all in.
+async function runRefineTest() {
+  const ready = await waitFor(Events.SceneReady);
+  if (ready.kind === Events.Failed) throw new Error(ready.message);
+  await sleep(1500);
+  const before = engine.stats().triangles;
+  const { Pointer, Buttons } = await import("./engine.js");
+  for (let i = 0; i < Number(params.get("zoom") ?? 6); ++i) {
+    engine.pointer(Pointer.Scroll, Buttons.None, canvas.width / 2, canvas.height / 2, 120);
+    await new Promise(requestAnimationFrame);
+  }
+  const zoomed = performance.now();
+  let triangles = before, changed = zoomed;
+  while (performance.now() - Math.max(changed, zoomed + 3000) < 3000 && performance.now() - zoomed < 30000) {
+    await sleep(100);
+    const now = engine.stats().triangles;
+    if (now !== triangles) {
+      triangles = now;
+      changed = performance.now();
+    }
+  }
+  await post({ before, after: triangles, refinedMs: triangles === before ? null : Math.round(changed - zoomed),
+               workers: importWorkers });
 }
 
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the
