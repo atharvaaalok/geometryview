@@ -98,12 +98,15 @@ socket.addEventListener("message", (message) => {
     console.error("exception:", details.exception?.description ?? details.text);
   }
   if (event.method === "Network.requestWillBeSent") {
-    const { request } = event.params;
-    if (request.method === "POST" && new URL(request.url).pathname === "/report" && request.postData) {
-      try {
-        const report = JSON.parse(request.postData);
+    const { request, requestId } = event.params;
+    if (request.method === "POST" && new URL(request.url).pathname === "/report") {
+      // Chrome leaves a large body out of the event, to be asked for.
+      const body = request.postData !== undefined ? Promise.resolve(request.postData)
+        : send("Network.getRequestPostData", { requestId }).then((answer) => answer.result?.postData);
+      body.then((text) => {
+        const report = JSON.parse(text);
         if (!report.partial) reported(report);
-      } catch {}
+      }).catch(() => {});
     }
   }
 });
