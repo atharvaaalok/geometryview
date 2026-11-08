@@ -13,6 +13,42 @@ target_link_libraries(import_core
 )
 
 if(GEO_TARGET STREQUAL "wasm")
+    # The OCCT worker as WebAssembly, when ThirdParty/build_occt_wasm.sh has run. For now it runs
+    # under Node, to replay slices saved from the native worker.
+    set(GEO_OCCT_WASM_ROOT "${CMAKE_SOURCE_DIR}/ThirdParty/.occt-wasm/install")
+    if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a")
+        add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
+        set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
+        target_include_directories(geometry-occt-worker PRIVATE .)
+        target_include_directories(geometry-occt-worker SYSTEM PRIVATE
+            "${GEO_OCCT_WASM_ROOT}/include/opencascade")
+        # WebAssembly's own exceptions, as OCCT was built with; JavaScript's are far slower.
+        target_compile_options(geometry-occt-worker PRIVATE -fwasm-exceptions)
+        file(GLOB occt_wasm_libraries CONFIGURE_DEPENDS "${GEO_OCCT_WASM_ROOT}/lib/*.a")
+        target_link_libraries(geometry-occt-worker PRIVATE
+            geo_base geo_warnings
+            -Wl,--start-group ${occt_wasm_libraries} -Wl,--end-group)
+        target_link_options(geometry-occt-worker PRIVATE
+            -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1
+            -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=8MB -sEXIT_RUNTIME=1)
+
+        # The same meshing as a module for a Web Worker, called directly by the page's script.
+        add_executable(geometry-occt-web occt/web_worker.cpp occt/mesh_shape.cpp)
+        set_target_properties(geometry-occt-web PROPERTIES GEO_ALLOW_EXCEPTIONS ON SUFFIX ".mjs")
+        target_include_directories(geometry-occt-web PRIVATE .)
+        target_include_directories(geometry-occt-web SYSTEM PRIVATE
+            "${GEO_OCCT_WASM_ROOT}/include/opencascade")
+        target_compile_options(geometry-occt-web PRIVATE -fwasm-exceptions)
+        target_link_libraries(geometry-occt-web PRIVATE
+            geo_base geo_warnings
+            -Wl,--start-group ${occt_wasm_libraries} -Wl,--end-group)
+        target_link_options(geometry-occt-web PRIVATE
+            -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sALLOW_MEMORY_GROWTH=1
+            -sMAXIMUM_MEMORY=2GB -sSTACK_SIZE=8MB -sENVIRONMENT=worker -sMODULARIZE=1
+            -sEXPORT_ES6=1 -sEXPORT_NAME=createOcct
+            -sEXPORTED_FUNCTIONS=_occt_init,_occt_mesh,_occt_stats,_occt_payload,_malloc,_free
+            -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF64)
+    endif()
     return()
 endif()
 
