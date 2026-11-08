@@ -10,6 +10,7 @@
 #include "scene/scene.h"
 #include "shaders/shared/gpu_types.h"
 
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
@@ -43,8 +44,7 @@ public:
     virtual void setStyle(const StyleUniforms& style, bool physical) = 0;
 
     /// Sets each occurrence's look, in global order, and the palette: three texels per look.
-    virtual void syncLooks(std::span<const u16> lookOfOccurrence,
-                           std::span<const u32> palette) = 0;
+    virtual void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) = 0;
 
     /// While set, frames leave out feature edges and the cast shadow, for heavy scenes in motion.
     virtual void setReducedDetail(bool reduced) = 0;
@@ -66,6 +66,14 @@ public:
 
     /// Renders the occurrence ids of a square view, `size` pixels wide, and waits for them.
     virtual OccurrenceIds renderOccurrenceIds(const ViewState& view, u32 size) = 0;
+
+    /// The same ids, handed to `done`: at once by a renderer that can wait for the GPU, or once
+    /// they are read back, a frame or more later, by one that cannot. `done` is never called
+    /// after the renderer is gone.
+    virtual void requestOccurrenceIds(const ViewState& view, u32 size,
+                                      std::function<void(OccurrenceIds)> done) {
+        done(renderOccurrenceIds(view, size));
+    }
 
     /// Renders and returns BGRA pixels, for snapshots and tests. Blocks until done.
     virtual std::vector<u8> renderOffscreen(const ViewState& view,

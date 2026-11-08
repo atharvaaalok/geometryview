@@ -1639,16 +1639,9 @@ struct Renderer::State {
 
     // Each pixel's nearest occurrence, and the nearest other occurrence behind it, in a square
     // view: the front pass, then a peel that keeps only what lies behind the front, as Metal's.
-    render::OccurrenceIds classify(const render::ViewState& view, u32 size) {
-        render::OccurrenceIds result;
-        if (surfaceInstances == 0 || size == 0) {
-            return result;
-        }
-#ifdef __EMSCRIPTEN__
-        // The browser cannot wait for the GPU; the web runtime asks for these asynchronously.
-        (void)view;
-        return result;
-#else
+    // Submits the passes and a copy of both id planes into a buffer to map, which it returns.
+    // Requests can overlap: each has its own buffer, and the queue orders the rest.
+    wgpu::Buffer encodeClassify(const render::ViewState& view, u32 size) {
         ensureGroups();
         ensureClassify(size);
         writeFrame(kClassifySlot, view.uniforms, nullptr);
@@ -1698,11 +1691,18 @@ struct Renderer::State {
         }
         const wgpu::CommandBuffer commands = encoder.Finish();
         queue.Submit(1, &commands);
-        wait(readback.MapAsync(wgpu::MapMode::Read, 0, usize(plane * 2),
-                               wgpu::CallbackMode::WaitAnyOnly,
-                               [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
+        return readback;
+    }
+
+    static u64 classifyBytes(u32 size) { return u64((size * 4 + 255) & ~255u) * size * 2; }
+
+    // The mapped planes, unpadded, after which the buffer is unmapped.
+    static render::OccurrenceIds decodeClassify(wgpu::Buffer& readback, u32 size) {
+        const u32 stride = (size * 4 + 255) & ~255u;
+        const u64 plane = u64(stride) * size;
         const auto* bytes =
             static_cast<const u8*>(readback.GetConstMappedRange(0, usize(plane * 2)));
+        render::OccurrenceIds result;
         result.front.resize(usize(size) * size);
         result.behind.resize(usize(size) * size);
         for (u32 y = 0; y < size; ++y) {
@@ -1712,7 +1712,45 @@ struct Renderer::State {
         }
         readback.Unmap();
         return result;
+    }
+
+    render::OccurrenceIds classify(const render::ViewState& view, u32 size) {
+        if (surfaceInstances == 0 || size == 0) {
+            return {};
+        }
+#ifdef __EMSCRIPTEN__
+        // The browser cannot wait for the GPU: requestOccurrenceIds is the way there.
+        (void)view;
+        return {};
+#else
+        wgpu::Buffer readback = encodeClassify(view, size);
+        wait(readback.MapAsync(wgpu::MapMode::Read, 0, usize(classifyBytes(size)),
+                               wgpu::CallbackMode::WaitAnyOnly,
+                               [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
+        return decodeClassify(readback, size);
 #endif
+    }
+
+    void classifyLater(const render::ViewState& view, u32 size,
+                       std::function<void(render::OccurrenceIds)> done) {
+        if (surfaceInstances == 0 || size == 0) {
+            done({});
+            return;
+        }
+        wgpu::Buffer readback = encodeClassify(view, size);
+        readback.MapAsync(wgpu::MapMode::Read, 0, usize(classifyBytes(size)), kCallbacks,
+                          [readback, size, done = std::move(done),
+                           alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
+                                                                 wgpu::StringView) mutable {
+                              if (!alive.lock()) {
+                                  return;
+                              }
+                              if (status != wgpu::MapAsyncStatus::Success) {
+                                  done({});
+                                  return;
+                              }
+                              done(decodeClassify(readback, size));
+                          });
     }
 
     // Blocks until `future` completes. Only native hosts may.
@@ -1934,6 +1972,15 @@ u64 Renderer::timedFrames() const {
 
 render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 size) {
     return state_->classify(view, size);
+}
+
+void Renderer::requestOccurrenceIds(const render::ViewState& view, u32 size,
+                                    std::function<void(render::OccurrenceIds)> done) {
+#ifdef __EMSCRIPTEN__
+    state_->classifyLater(view, size, std::move(done));
+#else
+    done(state_->classify(view, size));
+#endif
 }
 
 void Renderer::render(const wgpu::Texture& target, const render::ViewState& view,

@@ -42,6 +42,8 @@ public:
     std::optional<render::PixelHit> readPixel(int x, int y,
                                               const render::DepthDecoder& depth) const override;
     render::OccurrenceIds renderOccurrenceIds(const render::ViewState& view, u32 size) override;
+    void requestOccurrenceIds(const render::ViewState& view, u32 size,
+                              std::function<void(render::OccurrenceIds)> done) override;
     std::vector<u8> renderOffscreen(const render::ViewState& view,
                                     const render::Overlay* overlay = nullptr) override;
 

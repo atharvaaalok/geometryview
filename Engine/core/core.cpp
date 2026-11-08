@@ -99,14 +99,16 @@ void Core::requestFrame() {
 
 // The view cube's face under a pixel, plus one, or zero.
 u32 Core::cubeFaceAt(double x, double y) const {
-    const std::optional<render::PixelHit> pixel = renderer_.readPixel(int(x), int(y), depthDecoder_);
+    const std::optional<render::PixelHit> pixel =
+        renderer_.readPixel(int(x), int(y), depthDecoder_);
     return pixel && pixel->id >= kCubeIdBase ? pixel->id - kCubeIdBase + 1 : 0;
 }
 
 // The model's surface under a pixel. The view cube is not a surface: it is no pivot to turn about,
 // and clicking it is handled on its own.
 std::optional<nav::SurfaceHit> Core::pickAt(double x, double y) {
-    const std::optional<render::PixelHit> pixel = renderer_.readPixel(int(x), int(y), depthDecoder_);
+    const std::optional<render::PixelHit> pixel =
+        renderer_.readPixel(int(x), int(y), depthDecoder_);
     if (!pixel || pixel->id >= kCubeIdBase) {
         return std::nullopt;
     }
@@ -368,13 +370,16 @@ void Core::pointer(const GeoPointerEvent& event) {
     }
 }
 
-void Core::pointerSettled() { updateHover(); }
+void Core::pointerSettled() {
+    updateHover();
+}
 
 void Core::resetCamera() {
     const Vec3 direction = simd_make_double3(
         std::cos(kDefaultElevation) * std::sin(kDefaultAzimuth),
         -std::cos(kDefaultElevation) * std::cos(kDefaultAzimuth), std::sin(kDefaultElevation));
-    camera_.lookAt(bounds_.center() + direction, bounds_.center(), simd_make_double3(0.0, 0.0, 1.0));
+    camera_.lookAt(bounds_.center() + direction, bounds_.center(),
+                   simd_make_double3(0.0, 0.0, 1.0));
     nav::fit(camera_, bounds_, viewport_, kFitMargin, insets_);
 }
 
@@ -544,6 +549,7 @@ void Core::closeAll() {
     }
     host_.cancelRefinement();
     refining_ = false;
+    classifying_.reset();
     documents_.clear();
     scene_.clear();
     interaction_.reset();
@@ -802,16 +808,18 @@ void Core::publishState() {
 }
 
 // Finds the shell that see-through fades, from 14 small views of occurrence ids, in two rounds.
-// Runs once, when see-through is first asked for, and again after the scene changes.
+// Runs once, when see-through is first asked for, and again after the scene changes. The views are
+// read back at once on the Mac, and frames later in the browser.
 void Core::classifyShells() {
     const std::optional<Aabb> sceneBounds = scene_.bounds();
     if (!sceneBounds || !scene_.hasGeometry()) {
         return;
     }
-    StageTrace trace("shell");
+    ShellClassification& c = classifying_.emplace();
+    c.generation = ++classifyGeneration_;
+    c.started = host_.now();
     // Each occurrence's name and world bounds.
-    std::vector<render::ShellPart> parts;
-    parts.reserve(scene_.occurrenceCount());
+    c.parts.reserve(scene_.occurrenceCount());
     for (u32 d = 0; d < scene_.documentCount(); ++d) {
         const scene::Document& document = scene_.document(d);
         if (!document.hasModel()) {
@@ -835,49 +843,81 @@ void Core::classifyShells() {
                 box.min = simd_min(box.min, p);
                 box.max = simd_max(box.max, p);
             }
-            parts.push_back({name, box});
+            c.parts.push_back({name, box});
         }
     }
-
-    const Aabb all = *sceneBounds;
-    const double radius = std::max(all.radius(), 1e-9);
-    const nav::Viewport square{double(kShellViewSize), double(kShellViewSize)};
-    const u32 count = u32(parts.size());
-    const auto measure = [&](bool excludeShells) {
-        render::ShellCounts counts(count);
-        for (const Vec3 direction : render::shellViewDirections()) {
-            nav::Camera view;
-            const Vec3 up = std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0)
-                                                        : simd_make_double3(0, 0, 1);
-            view.lookAt(all.center() - direction * (2.0 * radius), all.center(), up);
-            view.orthoHalfHeight = radius;
-            render::ViewState state = render::makeView(view, square, all);
-            state.uniforms.excludeShells = excludeShells ? 1 : 0;
-            const render::OccurrenceIds ids = renderer_.renderOccurrenceIds(state, kShellViewSize);
-            counts.accumulate(ids.front, ids.behind);
-        }
-        return counts;
-    };
     renderer_.syncState(interaction_.state());
     look_.apply(renderer_, scene_);
-    const std::vector<u8> first = render::decideShell(measure(false), parts, 0.3);
-    std::vector<u8> shell = first;
-    if (std::any_of(first.begin(), first.end(), [](u8 s) { return s != 0; })) {
-        // The second layer must hide inner parts decisively, so the mechanism stays solid.
-        look_.setShells(first);
-        look_.apply(renderer_, scene_);
-        const std::vector<u8> second = render::decideShell(measure(true), parts, 0.5);
-        usize visibleSolid = 0;
-        for (u32 p = 0; p < count; ++p) {
-            shell[p] = u8(first[p] | second[p]);
-            visibleSolid += shell[p] == 0 ? 1 : 0;
-        }
-        if (visibleSolid == 0) {
-            shell = first;
+    requestShellViews(false);
+}
+
+void Core::requestShellViews(bool excludeShells) {
+    ShellClassification& c = *classifying_;
+    c.secondRound = excludeShells;
+    c.arrived = 0;
+    c.counts = render::ShellCounts(u32(c.parts.size()));
+    const Aabb all = *scene_.bounds();
+    const double radius = std::max(all.radius(), 1e-9);
+    const nav::Viewport square{double(kShellViewSize), double(kShellViewSize)};
+    const u64 generation = c.generation;
+    for (const Vec3 direction : render::shellViewDirections()) {
+        nav::Camera view;
+        const Vec3 up =
+            std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0) : simd_make_double3(0, 0, 1);
+        view.lookAt(all.center() - direction * (2.0 * radius), all.center(), up);
+        view.orthoHalfHeight = radius;
+        render::ViewState state = render::makeView(view, square, all);
+        state.uniforms.excludeShells = excludeShells ? 1 : 0;
+        renderer_.requestOccurrenceIds(
+            state, kShellViewSize,
+            [this, alive = std::weak_ptr<int>(alive_), generation](render::OccurrenceIds ids) {
+                if (alive.lock()) {
+                    shellViewArrived(generation, ids);
+                }
+            });
+        // On the Mac each view arrives within the call, and the last may have ended this round.
+        if (!classifying_ || classifying_->generation != generation ||
+            classifying_->secondRound != excludeShells) {
+            return;
         }
     }
-    look_.setShells(shell);
-    trace.lap("classify");
+}
+
+void Core::shellViewArrived(u64 generation, const render::OccurrenceIds& ids) {
+    if (!classifying_ || classifying_->generation != generation) {
+        return; // a newer classification, or the scene it measured is gone
+    }
+    ShellClassification& c = *classifying_;
+    c.counts.accumulate(ids.front, ids.behind);
+    if (++c.arrived < render::shellViewDirections().size()) {
+        return;
+    }
+    if (!c.secondRound) {
+        c.first = render::decideShell(c.counts, c.parts, 0.3);
+        if (std::any_of(c.first.begin(), c.first.end(), [](u8 s) { return s != 0; })) {
+            // The second layer must hide inner parts decisively, so the mechanism stays solid.
+            look_.setShells(c.first);
+            look_.apply(renderer_, scene_);
+            requestShellViews(true);
+            return;
+        }
+        look_.setShells(c.first);
+    } else {
+        const std::vector<u8> second = render::decideShell(c.counts, c.parts, 0.5);
+        std::vector<u8> shell = c.first;
+        usize visibleSolid = 0;
+        for (usize p = 0; p < shell.size(); ++p) {
+            shell[p] = u8(c.first[p] | second[p]);
+            visibleSolid += shell[p] == 0 ? 1 : 0;
+        }
+        look_.setShells(visibleSolid == 0 ? c.first : shell);
+    }
+    if (traceLaunch_) {
+        std::fprintf(stderr, "trace: shell classified in %.1f ms\n",
+                     (host_.now() - c.started) * 1e3);
+    }
+    classifying_.reset();
+    requestFrame();
 }
 
 render::OverlayLayout Core::overlayLayout() const {
@@ -967,9 +1007,9 @@ std::vector<u8> Core::snapshot() {
     const render::ViewState view = frameView();
     render::Overlay overlay;
     if (scene_.hasGeometry()) {
-        overlay = render::makeOverlay(camera_, viewport_, view.uniforms.viewRotation,
-                                      pixelsPerPoint_, renderer_.glyphAdvance(), cubeHover_,
-                                      overlayLayout());
+        overlay =
+            render::makeOverlay(camera_, viewport_, view.uniforms.viewRotation, pixelsPerPoint_,
+                                renderer_.glyphAdvance(), cubeHover_, overlayLayout());
     }
     return renderer_.renderOffscreen(view, &overlay);
 }
