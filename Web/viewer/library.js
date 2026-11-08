@@ -26,10 +26,22 @@ export async function libraryEntries() {
   return entries.sort((a, b) => b.modified - a.modified);
 }
 
-// A writable stream for a cache file kept under `name`, replacing one kept before.
-export async function keepInLibrary(name) {
-  const handle = await (await folder()).getFileHandle(`${name}.geoblob`, { create: true });
-  return handle.createWritable();
+// The cache file an import of `file` made before, if the file is unchanged since: its size and
+// modification time match the note kept with it.
+export async function cachedImport(file) {
+  try {
+    const dir = await folder();
+    const note = JSON.parse(await (await (await dir.getFileHandle(`${file.name}.json`)).getFile()).text());
+    if (note.size !== file.size || note.lastModified !== file.lastModified) return null;
+    return (await dir.getFileHandle(`${file.name}.geoblob`)).getFile();
+  } catch {
+    return null;
+  }
+}
+
+// A kept cache file, by the name of the file it came from.
+export async function keptFile(name) {
+  return (await (await folder()).getFileHandle(`${name}.geoblob`)).getFile();
 }
 
 export class LibraryCard {

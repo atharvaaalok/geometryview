@@ -55,6 +55,10 @@ targets:
           mkdir -p "$viewer/build" "$viewer/fonts"
           cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometry-web."{mjs,wasm} "$viewer/build/"
           cp "${SRCROOT}/../../ThirdParty/ibm-plex-mono/"*.ttf "$viewer/fonts/"
+          # Its importers: the supervisor, single- and multi-threaded, and OCCT for its workers.
+          mkdir -p "$viewer/occt" "$viewer/occt-threads"
+          cp "${SRCROOT}/../../build/wasm-release/Import/geometry-"{step,occt}"-web."{mjs,wasm} "$viewer/occt/"
+          cp "${SRCROOT}/../../build/wasm-threads/Import/geometry-step-web."{mjs,wasm} "$viewer/occt-threads/"
     # Generated from here at `xcodegen` time and merged with the keys below. The page's loopback
     # server is plain HTTP on 127.0.0.1, which App Transport Security allows only when asked.
     info:

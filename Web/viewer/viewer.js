@@ -7,7 +7,7 @@
 import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
 import { ViewportInput } from "./input.js";
 import { StructureCard } from "./structure.js";
-import { LibraryCard } from "./library.js";
+import { LibraryCard, cachedImport, keptFile } from "./library.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
          ShortcutsSheet, StatusCard, Styles, Toolbar } from "./chrome.js";
 import { el } from "./ui.js";
@@ -335,15 +335,72 @@ function openCache(source, name, add) {
   engine.open(source, name, { add });
 }
 
-function openFiles(files, adding) {
-  files.forEach((file, index) => {
+async function openFiles(files, adding) {
+  for (const [index, file] of files.entries()) {
     const add = adding || index > 0;
     if (/\.geoblob$/i.test(file.name)) {
       openCache(file, file.name, add);
+    } else if (/\.(step|stp|stl)$/i.test(file.name)) {
+      await importFile(file, add);
     } else {
-      status.showFailure(`${file.name} needs importing, which this page does not do yet. Open its cache file instead.`);
+      status.showFailure(`${file.name} is not a STEP, STL or cache file.`);
     }
+  }
+}
+
+// ---- Importing --------------------------------------------------------------------------------
+
+// The importer runs in a worker, with its own pool of OCCT workers, one file at a time. Phones
+// get two OCCT workers, as P2 measured best; desktops one per core, less two for the page.
+let importer = null;
+let importing = Promise.resolve();
+const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
+
+function importFile(file, add) {
+  importing = importing.then(async () => {
+    const cached = await cachedImport(file);
+    if (cached) {
+      openCache(cached, file.name, add);
+      return;
+    }
+    // STEP files go to the long-lived importer, whose OCCT pool stays warm; an STL file to one
+    // of its own, ended afterwards, which frees its threads and memory.
+    const stl = /\.stl$/i.test(file.name);
+    const worker = stl ? new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" })
+                       : (importer ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" }));
+    status.showImporting(file.name, 0, 0);
+    const result = await new Promise((resolve) => {
+      worker.onmessage = ({ data }) => {
+        if (data.type === "progress") status.showImporting(file.name, data.done, data.total);
+        else resolve(data);
+      };
+      worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
+      worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name,
+                           workers: importWorkers, threads: stl });
+    });
+    if (stl) worker.terminate();
+    lastImport = result;
+    if (result.type !== "done") {
+      status.showFailure(result.message);
+      return;
+    }
+    openCache(await keptFile(file.name), file.name, add);
   });
+  return importing;
+}
+
+let lastImport = null;
+let importStarted = 0;
+
+// Removes a kept import, so the next open imports again.
+async function forgetImport(name) {
+  try {
+    const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("library");
+    await folder.removeEntry(`${name}.geoblob`);
+    await folder.removeEntry(`${name}.json`);
+  } catch {
+    // Nothing kept.
+  }
 }
 
 // Dropping files: holding ⌘ adds them to what is shown.
@@ -368,11 +425,22 @@ addEventListener("drop", (e) => {
 
 // The fixtures are beside the page when served from the build, and in the spike's folder in the
 // iOS shell, which passes fixtures=/spike/fixtures/.
-const model = params.get("model");
+const model = params.get("model") ?? params.get("import");
 const fixtures = params.get("fixtures") ?? "fixtures/";
-if (model) openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
+if (params.has("import")) {
+  // A fixture imported as a dropped file would be: import=step/ple120.step.
+  const path = params.get("import");
+  const response = await fetch(`${fixtures}${path}`);
+  const file = new File([await response.blob()], path.split("/").pop(), { lastModified: 1 });
+  if (params.has("fresh")) await forgetImport(file.name);
+  importStarted = performance.now();
+  importFile(file, false);
+} else if (model) {
+  openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
+}
 
-if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
+if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
+else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
 // ---- Scripted checks --------------------------------------------------------------------------
 
@@ -399,6 +467,19 @@ async function postSnapshot() {
       new ImageData(new Uint8ClampedArray(image.pixels.buffer), image.width, image.height), 0, 0);
   const png = await picture.convertToBlob({ type: "image/png" });
   await fetch(`/png?label=${encodeURIComponent(testLabel())}`, { method: "POST", body: png }).catch(() => {});
+}
+
+// Imports a fixture, opens what it made, and reports how long each took and what was made.
+async function runImportTest() {
+  const ready = await waitFor(Events.SceneReady);
+  if (ready.kind === Events.Failed) throw new Error(ready.message);
+  const totalMs = performance.now() - importStarted;
+  await sleep(1500);
+  const stats = engine.stats();
+  if (!params.has("nosnapshot")) await postSnapshot();
+  await post({ totalMs: Math.round(totalMs), import: lastImport, cached: lastImport === null,
+               workers: importWorkers, triangles: stats.triangles, bufferMB: stats.bufferMB,
+               heapMB: stats.heapMB });
 }
 
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the

@@ -311,6 +311,10 @@ export class StatusCard {
     this.#show("Nothing open yet", "Drop a STEP, STL or cache file here, or press ⌘O to choose one.", true);
   }
   showLoading(name) { this.#show(`Opening ${name}`, "This only takes a moment."); }
+  showImporting(name, done, total) {
+    this.#show(`Importing ${name}`, total > 0 ? `${done} of ${total} pieces meshed.`
+                                              : "Reading its structure…");
+  }
   showFailure(message) { this.#show("That did not open", message, true); }
   hide() { this.element.hidden = true; }
 

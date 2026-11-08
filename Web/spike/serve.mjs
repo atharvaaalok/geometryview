@@ -18,9 +18,9 @@ const root = join(here, "../..");
 // Reports go beside the spike they came from; whole STEP imports are P2's, the viewer's own
 // renderer P3's.
 const reportsFor = (label) => {
+  if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
-  if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 };
 const port = Number(process.argv[2] ?? 7342);
@@ -33,6 +33,8 @@ const mounts = [
   ["/viewer/build/", join(root, "build/wasm-webgpu/Engine")],
   ["/viewer/fonts/", join(root, "ThirdParty/ibm-plex-mono")],
   ["/viewer/fixtures/", join(root, "build/fixtures")],
+  ["/viewer/occt/", join(root, "build/wasm-release/Import")],
+  ["/viewer/occt-threads/", join(root, "build/wasm-threads/Import")],
   ["/viewer/", join(root, "Web/viewer")],
   ["/build/", join(root, "build/wasm-webgpu/Tools/spikes/webgpu")],
   ["/occt/", join(root, "build/wasm-release/Import")],
