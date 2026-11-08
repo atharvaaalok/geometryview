@@ -1,0 +1,23 @@
+{
+  "label": "linux-t4-x11-b-p4-idle-pack",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "width": 3200,
+  "height": 2000,
+  "startupMs": 729,
+  "loadMs": 61,
+  "idleFrames": 0,
+  "idleSettledFrames": 0,
+  "looping": false,
+  "dragFrames": 118,
+  "dragMs": 699,
+  "gpuMs": 2.6870719999999997,
+  "hovered": 2,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 5.6326446533203125,
+  "targetMB": 190.73486328125,
+  "heapMB": 16,
+  "triangles": 331520
+}

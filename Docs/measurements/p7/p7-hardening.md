@@ -285,3 +285,92 @@ GPU; drawing on either system needs a machine with one.
   compositing off. It is a property of that setup, not of the viewer.
 - **A fix it led to:** a picture that fails now tells the AI app why, rather than only that it
   failed.
+
+**On AWS, with a GPU.** Two g4dn.xlarge instances in us-east-2: an NVIDIA Tesla T4 and 4 vCPUs of
+a 2.5 GHz Xeon each.
+- **Windows:** Server 2025 with NVIDIA's GRID driver 596.86.
+- **Linux:** Ubuntu 22.04 with NVIDIA's 595.112.
+- **Software on both:** Chrome 157, Firefox 159 and Node 22.23; Edge is the Windows default.
+- **Cleanup:** the instances, their security group and key were removed afterwards.
+
+**How they were set up.** A browser on a server's desktop must match a PC's for the result to
+mean anything:
+- **Headless Chrome, with no desktop:** in Windows' service session, or on Linux without X, the
+  engine ran but nothing was presented.
+  - On Windows the GPU process crashed once at start.
+  - On Linux there was no shared-image path for the WebGPU swap chain.
+- **Windows:** checks run on the signed-in desktop, through a scheduled task.
+  - The instance's display was a basic display adapter, with the T4 render-only. There Chrome
+    found no adapter.
+  - Disabling the basic adapter, as is usual on a GRID instance, made the T4 drive the desktop,
+    as a PC's GPU does.
+- **Linux:** an X server runs on the T4 (Xorg with NVIDIA's driver, a virtual 1920×1200 screen).
+
+**The renderer** at 2880×1800, three frames a refresh, GPU ms p50 at the three zooms (`p3/renderer/`):
+
+| Scene | Windows, Chrome (D3D12) | Windows, Firefox 159 | Linux, Chrome (Vulkan) | Mac M4 Max, Chrome (Metal) |
+|---|---|---|---|---|
+| 13S4P pack | 2.25 / 2.67 / 2.47 | 3.56 / 3.80 / 3.51 | 2.82 / 3.18 / 3.20 | 2.00 / 3.99 / 3.35 |
+| 10M STL | 7.39 / 6.32 / 5.30 | 10.17 / 8.88 / 6.96 | 7.32 / 6.46 / 5.34 | 6.18 / 4.70 / 3.48 |
+| 1M-part rack | 8.66 / 7.85 / 7.63 | 11.05 / 10.72 / 10.39 | 8.78 / 8.27 / 7.44 | 6.02 / 6.40 / 6.27 |
+
+- **Load:** the Mac ran with a load average of 7–14 from other work. Even so, a T4, a 2018 data-centre
+  GPU, draws every scene well inside a 60 Hz frame.
+- **Firefox:** its WebGPU (wgpu, not Chrome's Dawn) takes about 1.4× Chrome's time on the same GPU.
+  It slows a covered window's frames to a crawl: with the launcher's Edge window in front, its
+  first runs drew one frame in six seconds.
+- **The picture:** one fixed frame of each scene was read back on each system and compared with the
+  Mac's. In Chrome on Windows and Linux, and in Firefox, at most 0.002% of pixels are more than 8
+  levels off (0% for the pack and the rack), against the plan's gate of 0.5%. The STL's few are
+  scattered single pixels.
+
+**The viewer**, in a window on each desktop:
+- **The pack:** 0 frames while still, 118 of 120 while dragged, and hover picks answered. The
+  pictures match the Mac's.
+- **Imports, with two workers** (four vCPUs): Windows first, then Linux.
+
+  | File | Windows | Linux |
+  |---|---|---|
+  | The pack | 4.9 s | 4.6 s |
+  | PLE120 | 7.8 s | 7.0 s |
+  | The hard file | 38.4 s | 37.1 s |
+
+  - No face failed, and every triangle count is the Mac's.
+  - These cores take about twice as long as the iPhone 16 Pro's: the hard file takes 19.9 s
+    there, also with two workers.
+- **Refinement:**
+  - PLE120 went from 116,024 to 388,092 triangles, in 6.3 s on Windows and 5.1 s on Linux.
+  - The hard file went to 967,300, in 67–68 s on each: level 1, then level 2.
+- **Firefox 159 on Windows:**
+  - The pack: 0 frames while still, 119 of 120 while dragged, hover picks answered.
+  - It loads the cache in 1.5 s, where Chrome takes 0.2 s.
+  - Imports: PLE120 in 6.4 s; the hard file in 50.1 s, run with its window covered.
+  - Refinement: PLE120 refined to 213,900 triangles in 5.3 s. Firefox draws at one pixel per
+    point there, so it needs a coarser level than Chrome at two.
+
+**The launcher and its packages:**
+- **Its tests:** on Windows, 10 pass and the one needing the Mac's native engine is skipped;
+  likewise on Linux. This includes the end-to-end test: open PLE120, list it, picture it.
+- **As an AI app uses it, over MCP:** `open_model`, then `render_view`, on PLE120.
+  - On Windows the launcher opened the viewer in Edge, the default browser, and answered in 13.6 s
+    with Edge's start.
+  - On Linux it opened its own Chrome window, as below, in 8.2 s.
+- **The `.mcpb`:** unpacked and run with Node, as Claude Desktop runs it, on both. It listed its
+  four tools, opened the pack in 4.3–4.9 s and pictured it.
+- **The npm package:** a global install and `npx` both answered. A local tarball needs
+  `npx --package=<tarball> geometry-viewer`.
+
+**What the runs found, and the fixes:**
+- **Chrome on Linux has no adapter in roughly the first 200 ms after the browser starts.** A page
+  that asks then gets none, and a moment later gets the GPU's. The launcher opens the viewer in a
+  browser it has just started, so the engine now asks again for up to two seconds.
+- **Stock Chrome 157 on Linux gives a page no WebGPU on the NVIDIA GPU.** With Vulkan on
+  (`chrome://flags/#enable-vulkan`) it gets the T4, and no unsafe flag is needed.
+  - On Linux the launcher now opens the viewer in a Chrome app window of its own, with its own
+    profile and Vulkan on, since flags cannot reach a Chrome already running. Without Chrome or
+    Chromium it opens the default browser.
+  - Where WebGPU is missing, the viewer says how to turn Vulkan on.
+- **Firefox 159 on Linux has no WebGPU at all.** The viewer says to open it in Chrome, Edge or
+  Safari.
+- **Two of the launcher's tests failed on Windows only:** a file URL's pathname used as a path, and
+  a path written with `/`. Both are fixed; the shipped code was already right.

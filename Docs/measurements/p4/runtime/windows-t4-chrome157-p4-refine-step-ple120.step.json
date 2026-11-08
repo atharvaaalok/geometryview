@@ -1,0 +1,22 @@
+{
+  "label": "windows-t4-chrome157-p4-refine-step-ple120.step",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "before": 116024,
+  "after": 388092,
+  "refinedMs": 6277,
+  "workers": 2,
+  "refinements": [
+    {
+      "name": "ple120.step",
+      "level": 2,
+      "definitions": 49,
+      "waitedMs": 0,
+      "ms": 5954,
+      "ok": true,
+      "cancelled": false,
+      "note": ""
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "label": "windows-t4-firefox159-p4-refine-step-ple120.step",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "before": 116024,
+  "after": 213900,
+  "refinedMs": 5344,
+  "workers": 2,
+  "refinements": [
+    {
+      "name": "ple120.step",
+      "level": 1,
+      "definitions": 51,
+      "waitedMs": 0,
+      "ms": 4995,
+      "ok": true,
+      "cancelled": false,
+      "note": ""
+    }
+  ]
+}

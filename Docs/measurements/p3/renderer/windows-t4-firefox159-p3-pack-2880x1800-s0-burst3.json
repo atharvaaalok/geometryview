@@ -1,0 +1,86 @@
+{
+  "label": "windows-t4-firefox159-p3-pack-2880x1800-s0-burst3",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0",
+  "devicePixelRatio": 1,
+  "model": "pack",
+  "style": 0,
+  "samples": 1,
+  "burst": 3,
+  "phaseSeconds": 6,
+  "fileMB": 1.6,
+  "fetchMs": 66,
+  "loadMs": 6,
+  "heapMB": 16,
+  "adapter": " ",
+  "width": 2880,
+  "height": 1800,
+  "triangles": 331520,
+  "edgeSegments": 167486,
+  "probes": 1738,
+  "probesFailed": 0,
+  "probeIds": 4096,
+  "probeDepths": 4096,
+  "bufferMB": 5.6,
+  "targetMB": 154.5,
+  "zooms": [
+    {
+      "zoom": 1,
+      "frames": 360,
+      "timedFrames": 217,
+      "gpuMs": {
+        "p50": 3.558,
+        "p99": 3.66
+      },
+      "frameIntervalMs": {
+        "p50": 16.66,
+        "p99": 16.68
+      },
+      "cpuSubmitMs": {
+        "p50": 1.5,
+        "p99": 2.5
+      },
+      "picks": 361,
+      "pickHits": 155
+    },
+    {
+      "zoom": 2,
+      "frames": 359,
+      "timedFrames": 189,
+      "gpuMs": {
+        "p50": 3.796,
+        "p99": 4.17
+      },
+      "frameIntervalMs": {
+        "p50": 16.66,
+        "p99": 16.68
+      },
+      "cpuSubmitMs": {
+        "p50": 1.4,
+        "p99": 2.52
+      },
+      "picks": 360,
+      "pickHits": 244
+    },
+    {
+      "zoom": 4,
+      "frames": 359,
+      "timedFrames": 187,
+      "gpuMs": {
+        "p50": 3.512,
+        "p99": 4.385
+      },
+      "frameIntervalMs": {
+        "p50": 16.66,
+        "p99": 17.24
+      },
+      "cpuSubmitMs": {
+        "p50": 1.28,
+        "p99": 3.72
+      },
+      "picks": 360,
+      "pickHits": 237
+    }
+  ],
+  "diagnostics": "",
+  "captureFormat": 27
+}

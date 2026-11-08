@@ -177,7 +177,13 @@ The plan was, from the spike's indexed path:
 **P7, hardening.** Begun 2026-11-07 (`Docs/measurements/p7/p7-hardening.md`):
 - done: the 1M rack's frame (8.3 to 5.3 ms, below the spike's 5.6 ms), fuzzing the streamed cache reader, GPU timing that cannot break frames, progressive STEP imports and stepwise antialiasing in the page, the faults the phone showed, and the browser's STL import heap halved (2.6 to 1.3 GB for 10M triangles);
 - refinement in the browser, as on the Mac, from a STEP source the library keeps;
-- to do: a Windows and a Linux run of the census and spikes, and on the iPhone: an STL import near the phone's new limit, refinement's memory, and the new cull's frame times (Safari on the Mac runs it without errors).
+- Windows and Linux, run 2026-11-08 on AWS GPU instances (NVIDIA T4) in Chrome, Edge and Firefox. The viewer, imports, refinement, the launcher, its MCP tools and both packages work.
+  - Pictures match the Mac's to within 0.002% of pixels.
+  - The 10M STL draws in 5.3–7.4 ms at 2880×1800.
+  - Chrome on Linux needs Vulkan on for WebGPU, so there the launcher opens its own Chrome window with Vulkan on.
+  - Firefox on Linux has no WebGPU.
+- On the iPhone: an 8.4M-triangle STL imports, near the phone's limit (1.27 GB page at its peak), and PLE120 refines within 620 MB.
+- to do on the iPhone: the hard file's refinement, and the new cull's frame times (Safari on the Mac runs it without errors).
 
 ## Learned along the way
 

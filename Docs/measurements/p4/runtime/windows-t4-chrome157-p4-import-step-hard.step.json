@@ -1,0 +1,22 @@
+{
+  "label": "windows-t4-chrome157-p4-import-step-hard.step",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 38421,
+  "import": {
+    "type": "done",
+    "triangles": 340646,
+    "faces": 12188,
+    "failedFaces": 0,
+    "slices": 614,
+    "importMs": 38361,
+    "cacheBytes": 9453568,
+    "supervisorMB": 163
+  },
+  "cached": false,
+  "workers": 2,
+  "triangles": 340646,
+  "bufferMB": 13.098953247070312,
+  "heapMB": 16
+}
