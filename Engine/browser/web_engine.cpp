@@ -89,6 +89,8 @@ struct Web {
     std::vector<std::vector<model::NodeVisibility>> nodeStates;
     engine::Summary summary;
     std::vector<u8> staging;
+    std::string lastError; // the first GPU errors, for diagnosing
+    u32 errors = 0;
 };
 
 Web web;
@@ -300,6 +302,10 @@ EMSCRIPTEN_KEEPALIVE void geo_web_start(const char* selector, u32 width, u32 hei
             descriptor.requiredLimits = &limits;
             descriptor.SetUncapturedErrorCallback(
                 [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView error) {
+                    if (web.errors < 3) {
+                        web.lastError += std::string(error.data, error.length) + " | ";
+                    }
+                    ++web.errors;
                     std::fprintf(stderr, "webgpu: %.*s\n", int(error.length), error.data);
                 });
             web.adapter.RequestDevice(
@@ -427,8 +433,10 @@ EMSCRIPTEN_KEEPALIVE void geo_web_stream_end(double token, const char* message) 
 /// Draws the current view with all its samples into a texture and reads it back; the pixels
 /// arrive through geoHost.snapshot, valid only during that call.
 EMSCRIPTEN_KEEPALIVE void geo_web_snapshot() {
-    if (!web.last) {
-        web.last = web.core->frame();
+    // The latest view, made here rather than waiting for the frame loop, which a browser pauses
+    // while the page is out of sight, as it is when an AI app asks for a picture.
+    if (std::optional<engine::Frame> frame = web.core->frame()) {
+        web.last = std::move(frame);
     }
     if (!web.last) {
         jsSnapshot(nullptr, 0, 0, 0);
@@ -439,9 +447,18 @@ EMSCRIPTEN_KEEPALIVE void geo_web_snapshot() {
     descriptor.format = web.format;
     descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
     const wgpu::Texture target = web.device.CreateTexture(&descriptor);
+    web.device.PushErrorScope(wgpu::ErrorFilter::Validation);
     web.renderer->setSamples(4);
     web.renderer->render(target, web.last->view, &web.last->overlay);
     web.renderer->setSamples(1);
+    web.device.PopErrorScope(wgpu::CallbackMode::AllowSpontaneous,
+                             [](wgpu::PopErrorScopeStatus, wgpu::ErrorType type,
+                                wgpu::StringView message) {
+                                 if (type != wgpu::ErrorType::NoError && web.errors++ < 3) {
+                                     web.lastError +=
+                                         "snapshot: " + std::string(message.data, message.length);
+                                 }
+                             });
     const u32 stride = (web.width * 4 + 255) & ~255u;
     wgpu::BufferDescriptor bufferDescriptor{};
     bufferDescriptor.size = u64(stride) * web.height;
@@ -484,8 +501,27 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_atlas(const u8* pixels, u32 size, float gl
     web.core->requestFrame();
 }
 
+EMSCRIPTEN_KEEPALIVE const char* geo_web_last_error() { return web.lastError.c_str(); }
+
 EMSCRIPTEN_KEEPALIVE void geo_web_request_frame() {
     web.core->requestFrame();
+}
+
+/// Looks at what is shown from a direction, framed: for pictures an AI app asks for.
+EMSCRIPTEN_KEEPALIVE void geo_web_set_view(double azimuthDegrees, double elevationDegrees,
+                                           int perspective) {
+    web.core->setViewDirection(azimuthDegrees, elevationDegrees, perspective != 0);
+}
+
+/// The scene's bounds (min x, y, z, then max), its face count and its triangle count; zeros while
+/// nothing is open.
+EMSCRIPTEN_KEEPALIVE void geo_web_scene_info(double* out) {
+    const std::optional<Aabb> bounds = web.core->sceneBounds();
+    const double values[8] = {bounds ? bounds->min.x : 0, bounds ? bounds->min.y : 0,
+                              bounds ? bounds->min.z : 0, bounds ? bounds->max.x : 0,
+                              bounds ? bounds->max.y : 0, bounds ? bounds->max.z : 0,
+                              double(web.core->sceneFaces()), double(web.core->sceneTriangles())};
+    std::copy(std::begin(values), std::end(values), out);
 }
 
 // ---- What the page reads back ----------------------------------------------------------------

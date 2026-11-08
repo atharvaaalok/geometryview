@@ -1,17 +1,18 @@
 {
   "name": "geometry-viewer",
   "version": "0.1.0",
-  "description": "Lets AI apps open, inspect and picture STEP and STL models on this machine.",
+  "description": "A STEP and STL viewer for this machine, in the browser, that AI apps can open, inspect and picture models with.",
   "type": "module",
   "bin": {
     "geometry-viewer": "bin/geometry-viewer.mjs"
   },
-  "files": ["bin", "src"],
+  "files": ["bin", "src", "web"],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "prepack": "node scripts/web.mjs"
   },
   "license": "UNLICENSED",
   "private": true

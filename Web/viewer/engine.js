@@ -136,6 +136,23 @@ export class Engine {
   hoverNode(document, node) { this.#module._geo_web_hover_node(document, node); }
   nodeAction(document, node, action) { this.#module._geo_web_node_action(document, node, action); }
   requestFrame() { this.#module._geo_web_request_frame(); }
+  // Looks at what is shown from a direction, in degrees around Z and above the XY plane.
+  setView(azimuth, elevation, perspective) {
+    this.#module._geo_web_set_view(azimuth, elevation, perspective ? 1 : 0);
+  }
+
+  // The latest GPU error the engine saw, for diagnosing.
+  lastError() { return this.#module.UTF8ToString(this.#module._geo_web_last_error()); }
+
+  // The scene's bounds and face count.
+  sceneInfo() {
+    const m = this.#module;
+    const out = m._malloc(8 * 8);
+    m._geo_web_scene_info(out);
+    const v = new Float64Array(m.HEAPU8.buffer, out, 8).slice();
+    m._free(out);
+    return { min: [v[0], v[1], v[2]], max: [v[3], v[4], v[5]], faces: v[6], triangles: v[7] };
+  }
 
   // ---- Files -------------------------------------------------------------------------------
 

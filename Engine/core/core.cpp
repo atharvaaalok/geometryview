@@ -509,6 +509,49 @@ void Core::setMouse(const GeoMouseSettings& settings) {
                       std::clamp(double(settings.zoom_speed), 0.1, 10.0)});
 }
 
+void Core::setViewDirection(double azimuthDegrees, double elevationDegrees, bool perspective) {
+    const double azimuth = azimuthDegrees * M_PI / 180.0;
+    const double elevation = elevationDegrees * M_PI / 180.0;
+    const Vec3 direction =
+        simd_make_double3(std::cos(elevation) * std::sin(azimuth),
+                          -std::cos(elevation) * std::cos(azimuth), std::sin(elevation));
+    const Aabb box = visible_.min.x <= visible_.max.x ? visible_ : bounds_;
+    flight_.cancel();
+    camera_.perspective = perspective;
+    camera_.lookAt(box.center() + direction, box.center(), simd_make_double3(0.0, 0.0, 1.0));
+    nav::fit(camera_, box, viewport_, kFitMargin, insets_);
+    userMovedCamera_ = true;
+    navigated();
+    requestFrame();
+}
+
+u64 Core::sceneFaces() const {
+    u64 faces = 0;
+    for (u32 d = 0; d < scene_.documentCount(); ++d) {
+        faces += scene_.document(d).idCount();
+    }
+    return faces;
+}
+
+// Every placed triangle, counted from the scene rather than from the renderer, which knows only
+// once a frame has synced it.
+u64 Core::sceneTriangles() const {
+    u64 triangles = 0;
+    for (u32 d = 0; d < scene_.documentCount(); ++d) {
+        const scene::Document& document = scene_.document(d);
+        if (!document.hasModel()) {
+            continue;
+        }
+        for (const format::OccurrenceRecord& occurrence : document.model().occurrences) {
+            if (const format::DefinitionRecord* geometry =
+                    document.geometry(occurrence.definition)) {
+                triangles += geometry->triangleCount;
+            }
+        }
+    }
+    return triangles;
+}
+
 void Core::setDetailBudget(u64 triangles, u64 edgeSegments) {
     detailTriangles_ = triangles;
     detailEdgeSegments_ = edgeSegments;

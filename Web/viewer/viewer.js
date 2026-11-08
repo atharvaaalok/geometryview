@@ -61,6 +61,8 @@ const progress = new Map();
 let hovered = null; // { document, node, face }
 // The tree and library card: always open on a desktop, a sheet opened when wanted on a phone.
 let panelOpen = !phone;
+// What the chrome covers of the view, in CSS pixels, as framing keeps clear of it.
+let insets = { left: 0, top: 0, right: 0, bottom: 0 };
 let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
@@ -301,7 +303,8 @@ function applyLook(next) {
 // the model in the rest.
 function updateInsets() {
   const covered = !phone && (!structure.element.hidden || !library.element.hidden);
-  engine.setInsets(covered ? kEdge + kCardWidth : 0, kCardTop - 16, 0, kCardBottom - 16);
+  insets = { left: covered ? kEdge + kCardWidth : 0, top: kCardTop - 16, right: 0, bottom: kCardBottom - 16 };
+  engine.setInsets(insets.left, insets.top, insets.right, insets.bottom);
 }
 
 function showEmpty() {
@@ -369,7 +372,7 @@ function importFile(file, add) {
     const cached = await cachedImport(file);
     if (cached) {
       openCache(cached, file.name, add);
-      return;
+      return { type: "cached" };
     }
     // STEP files go to the long-lived importer, whose OCCT pool stays warm; an STL file to one
     // of its own, ended afterwards, which frees its threads and memory.
@@ -390,9 +393,10 @@ function importFile(file, add) {
     lastImport = result;
     if (result.type !== "done") {
       status.showFailure(result.message);
-      return;
+      return result;
     }
     openCache(await keptFile(file.name), file.name, add);
+    return result;
   });
   return importing;
 }
@@ -447,8 +451,141 @@ if (params.has("import")) {
   openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
 }
 
+// Opened by the launcher: take the AI app's requests.
+if (params.has("token")) {
+  const { connectBridge } = await import("./bridge.js");
+  connectBridge(params.get("token"), bridgeHandlers());
+}
+
 if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
+
+// ---- The launcher's bridge ---------------------------------------------------------------------
+
+// What the AI app's tools ask of the page, when the launcher opened it. Each answers with plain
+// data; a picture comes back as a PNG in base64.
+function bridgeHandlers() {
+  const kinds = ["assembly", "part", "body"];
+  let isolatedByRequest = false;
+
+  const describe = () => {
+    const info = engine.sceneInfo();
+    let assemblies = 0, parts = 0, bodies = 0;
+    for (const d of structure.tree.documents) {
+      if (!d.model) continue;
+      for (const n of d.model) {
+        if (n.kind === NodeKinds.Assembly) assemblies += 1;
+        else if (n.kind === NodeKinds.Part) parts += 1;
+      }
+      bodies += d.model.reduce((most, n) => Math.max(most, n.occurrenceEnd), 0);
+    }
+    return { names: names.filter(Boolean), assemblies, parts, bodies, faces: info.faces,
+             triangles: info.triangles, min: info.min, max: info.max };
+  };
+
+  const toBase64 = (bytes) => {
+    let text = "";
+    for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    return btoa(text);
+  };
+
+  return {
+    async open({ url, name, add = false, lastModified }) {
+      const ready = waitFor(Events.SceneReady);
+      if (/\.geoblob$/i.test(name)) {
+        openCache(url, name, add);
+      } else {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`The launcher could not serve ${name}.`);
+        const file = new File([await response.blob()], name, { lastModified: lastModified ?? Date.now() });
+        const result = await importFile(file, add);
+        if (result.type === "failed") throw new Error(result.message);
+      }
+      const event = await ready;
+      if (event.kind === Events.Failed) throw new Error(event.message);
+      isolatedByRequest = false;
+      return describe();
+    },
+
+    async describe() {
+      if (names.length === 0) throw new Error("Nothing is open in the viewer.");
+      return describe();
+    },
+
+    async structure({ document = 0 }) {
+      const model = engine.model(document);
+      if (!model) throw new Error("Nothing is open in the viewer.");
+      return model.map((n) => ({ parent: n.parent, kind: kinds[n.kind] ?? "body", name: n.name,
+                                 bodies: [n.firstOccurrence, n.occurrenceEnd] }));
+    },
+
+    // A picture as the AI app asked: a direction, a style and colours, parts shown alone, and
+    // cuts. The viewer shows it too, so the person sees what the AI looked at.
+    async render({ azimuth = 35, elevation = 25, perspective: persp = false, style, colour,
+                   isolate = [], section = [], width = 1200, height = 800 }) {
+      if (names.length === 0) throw new Error("Nothing is open in the viewer.");
+      const next = Object.assign(new Look(), look);
+      if (style !== undefined) next.choose(style);
+      if (colour !== undefined) next.colour = colour;
+      look = next;
+      lookCard.show(next);
+      engine.setLook(next.engineLook);
+
+      sectionCard.cuts.forEach((cut) => { cut.enabled = false; });
+      for (const cut of section) {
+        const axis = "xyz".indexOf(cut.axis);
+        if (axis >= 0) Object.assign(sectionCard.cuts[axis], { enabled: true, position: cut.at, flip: Boolean(cut.flip) });
+      }
+      sectionCard.show();
+      engine.setSection(sectionCard.cuts);
+
+      if (isolate.length > 0 || isolatedByRequest) engine.perform(Actions.ShowAll);
+      isolatedByRequest = false;
+      if (isolate.length > 0) {
+        const wanted = isolate.map((n) => n.toLowerCase());
+        engine.perform(Actions.ClearSelection);
+        let found = 0;
+        structure.tree.documents.forEach((d, document) => {
+          d.model?.forEach((n, node) => {
+            if (n.kind !== NodeKinds.Body && wanted.some((w) => n.name.toLowerCase().includes(w))) {
+              engine.selectNode(document, node, true);
+              found += 1;
+            }
+          });
+        });
+        if (found === 0) throw new Error(`No part's name contains ${isolate.join(" or ")}.`);
+        engine.perform(Actions.Isolate);
+        engine.perform(Actions.ClearSelection);
+        isolatedByRequest = true;
+      }
+
+      perspective = persp;
+      toolbar.projection.selected = persp ? 1 : 0;
+      engine.setView(azimuth, elevation, persp);
+      const image = await engine.snapshot();
+      if (!image) throw new Error("The viewer could not draw a picture.");
+
+      // The part of the view the cards leave clear, fitted into the size asked for.
+      const scale = engine.scale;
+      const x = Math.round(insets.left * scale), y = Math.round(insets.top * scale);
+      const w = image.width - x - Math.round(insets.right * scale);
+      const h = image.height - y - Math.round(insets.bottom * scale);
+      const whole = new OffscreenCanvas(image.width, image.height);
+      whole.getContext("2d").putImageData(
+          new ImageData(new Uint8ClampedArray(image.pixels.buffer), image.width, image.height), 0, 0);
+      const picture = new OffscreenCanvas(width, height);
+      const context = picture.getContext("2d");
+      // Letterboxed with the picture's own background, from its corner.
+      const corner = (y * image.width + x) * 4;
+      context.fillStyle = `rgb(${image.pixels[corner]}, ${image.pixels[corner + 1]}, ${image.pixels[corner + 2]})`;
+      context.fillRect(0, 0, width, height);
+      const fit = Math.min(width / w, height / h);
+      context.drawImage(whole, x, y, w, h, (width - w * fit) / 2, (height - h * fit) / 2, w * fit, h * fit);
+      const png = new Uint8Array(await (await picture.convertToBlob({ type: "image/png" })).arrayBuffer());
+      return { png: toBase64(png), width, height };
+    },
+  };
+}
 
 // ---- Scripted checks --------------------------------------------------------------------------
 

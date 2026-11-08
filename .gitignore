@@ -22,6 +22,7 @@ __pycache__/
 *.pyc
 .venv/
 Launcher/dist/
+Launcher/web/
 iOS/Shell/*.xcodeproj/
 iOS/Shell/build/
 iOS/Shell/.team

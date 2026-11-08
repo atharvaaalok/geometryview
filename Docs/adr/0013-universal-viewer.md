@@ -164,7 +164,7 @@ The plan was, from the spike's indexed path:
   - DPR 2 on phones.
 - From P2: the import supervisor in a worker, and the warm pool started on a small slice.
 
-**P5, launcher, MCP and packaging.** Extend S1's launcher:
+**P5, launcher, MCP and packaging.** Done 2026-11-07; see ADR 0016. Extend S1's launcher:
 - serve the web viewer;
 - bridge the page and the AI app over a token-guarded WebSocket;
 - package as `.mcpb`, and for `npx` and `~/.codex/config.toml`.
