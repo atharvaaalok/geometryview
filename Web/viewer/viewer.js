@@ -679,7 +679,13 @@ async function postSnapshot() {
 
 // Imports a fixture, opens what it made, and reports how long each took and what was made.
 async function runImportTest() {
-  const ready = await waitFor(Events.SceneReady);
+  // An import the page refuses, or that fails in its worker, never reaches the engine.
+  const refused = importing.then((result) => result?.type === "failed" ? result : new Promise(() => {}));
+  const ready = await Promise.race([waitFor(Events.SceneReady), refused]);
+  if (ready.type === "failed") {
+    await post({ failed: ready.message, workers: importWorkers });
+    return;
+  }
   if (ready.kind === Events.Failed) throw new Error(ready.message);
   const totalMs = performance.now() - importStarted;
   await sleep(1500);
