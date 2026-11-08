@@ -57,6 +57,8 @@ let perspective = false;
 let names = [];
 const progress = new Map();
 let hovered = null; // { document, node, face }
+// The tree and library card: always open on a desktop, a sheet opened when wanted on a phone.
+let panelOpen = !phone;
 let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
@@ -82,6 +84,10 @@ const toolbar = new Toolbar({
   onLook: () => toggleCard(lookCard),
   onSection: () => toggleCard(sectionCard),
   onOpen: () => chooseFile(false),
+  onParts: () => {
+    panelOpen = !panelOpen;
+    showLibrary(names.length === 0);
+  },
 });
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
@@ -301,7 +307,7 @@ function showEmpty() {
   structure.element.hidden = true;
   library.element.hidden = true;
   library.refresh().then(() => {
-    if (names.length === 0 && library.element.querySelector(".entry")) showLibrary(true);
+    if (names.length === 0 && panelOpen && library.element.querySelector(".entry")) showLibrary(true);
   });
   updateInsets();
   toolbar.update({ hasSelection: false, hasModel: false });
@@ -309,8 +315,8 @@ function showEmpty() {
 
 function showLibrary(show) {
   if (show) library.refresh();
-  library.element.hidden = !show;
-  structure.element.hidden = show || names.length === 0;
+  library.element.hidden = !show || !panelOpen;
+  structure.element.hidden = show || names.length === 0 || !panelOpen;
   library.switcher.selected = show ? 0 : 1;
   structure.switcher.selected = show ? 0 : 1;
   updateInsets();

@@ -487,6 +487,9 @@ kbd.cap {
 
 /* ---- Phones: the tree and cards give way to the view ------------------------------------ */
 
+.phone-only { display: none !important; }
+body.phone .phone-only { display: inline-flex !important; }
+
 body.phone .structure { left: 8px; right: 8px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; height: 45%; }
 body.phone .selection { right: 8px; left: 8px; top: calc(56px + env(safe-area-inset-top)); width: auto; }
 body.phone .toolbar { left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); max-width: calc(100% - 16px); }

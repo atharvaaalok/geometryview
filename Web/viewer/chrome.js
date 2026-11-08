@@ -217,7 +217,7 @@ export class Toolbar {
   #needSelection = [];
   #needModel = [];
 
-  constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen }) {
+  constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen, onParts }) {
     this.pick = segmented(["Face", "Body", "Part"], {
       help: "What a click selects (1, 2, 3)",
       tips: ["Clicks select single faces (1)", "Clicks select whole bodies (2)", "Clicks select whole parts (3)"],
@@ -237,6 +237,9 @@ export class Toolbar {
     const views = pill({ icon: icons.cube, help: "Standard views", onPress: () => this.#toggleViews(views) });
     const fit = pill({ icon: icons.fit, help: "Fit to view (F)", onPress: act(Actions.Fit) });
     const open = pill({ icon: icons.open, help: "Open a file (⌘O)", onPress: onOpen });
+    // On a phone the tree is a sheet over the view, opened from here.
+    const parts = pill({ icon: icons.parts, help: "Parts and library", onPress: onParts });
+    parts.classList.add("phone-only");
     const shortcuts = pill({ title: "?", style: "ghostly", help: "Shortcuts (?)", onPress: onShortcuts });
     this.#needSelection = [hide, ghost, isolate];
     this.#needModel = [showAll, fit, views, undo, redo, seeThrough];
@@ -248,7 +251,7 @@ export class Toolbar {
                                           onclick: () => { this.viewsMenu.hidden = true; onAction(a); } })));
     const rule = () => el("span.rule");
     this.element = el("nav.card.toolbar", { "aria-label": "Tools" }, [
-      open, rule(), this.pick.element, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(),
+      parts, open, rule(), this.pick.element, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(),
       seeThrough, cut, look, this.projection.element, views, fit, shortcuts,
     ]);
     this.update({ hasSelection: false, hasModel: false });
