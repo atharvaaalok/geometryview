@@ -30,6 +30,7 @@ constexpr u64 kUniformStride = (sizeof(FrameUniforms) + 255) & ~u64(255);
 // after, and one for classifying the shell.
 constexpr u32 kFrameSlots = 6;
 constexpr u32 kViewSlot = 4;
+constexpr u32 kClassifySlot = 5;
 constexpr u32 kListShadow = 6;
 constexpr u32 kEdgeVertices = 192; // six per segment, for a chunk of 32
 
@@ -609,6 +610,7 @@ struct Renderer::State {
         keepLarger.alpha = keepLarger.color;
 
         std::array<wgpu::ColorTargetState, 5> targets = mainTargets();
+        std::array<wgpu::ColorTargetState, 3> classifyTargets{};
         wgpu::ColorTargetState shadowTarget{};
         shadowTarget.format = kShadowFormat;
         const char* fragmentEntry = edges ? "edgeFragment" : "surfaceFragment";
@@ -671,7 +673,12 @@ struct Renderer::State {
             cull = wgpu::CullMode::None;
             break;
         case Kind::Classify:
-            targets[0].writeMask = CW::None;
+            // Ids and the depth copy only, into targets of the classifying views' own.
+            classifyTargets[0].format = Format::Undefined;
+            classifyTargets[1].format = kIdFormat;
+            classifyTargets[2].format = kDepthCopyFormat;
+            targetList = classifyTargets.data();
+            targetCount = 3;
             fragmentEntry = "classifyFragment";
             break;
         }
@@ -684,8 +691,11 @@ struct Renderer::State {
         fragment.constantCount = fragmentConstants.size();
         fragment.constants = fragmentConstants.data();
         wgpu::RenderPipelineDescriptor descriptor{};
-        descriptor.layout = edges ? edgePipelineLayout
-                                  : (key.peel ? peelPipelineLayout : surfacePipelineLayout);
+        // The classifying passes share the peel's layout: its fragment stage names the front's
+        // textures, peeling or not.
+        descriptor.layout =
+            edges ? edgePipelineLayout
+                  : (key.kind == Kind::Classify ? peelPipelineLayout : surfacePipelineLayout);
         descriptor.vertex.module = fragment.module;
         descriptor.vertex.entryPoint = edges ? "edgeVertex" : "surfaceVertex";
         descriptor.vertex.constantCount = vertexConstants.size();
@@ -928,6 +938,7 @@ struct Renderer::State {
                 cullGroup = nullptr;
                 surfaceGroup = nullptr;
                 edgeGroup = nullptr;
+                peelGroup = nullptr;
             }
         };
         grow(slots, (slotTotal + edgeTotal) * 8, U::Storage, "slots");
@@ -1082,11 +1093,11 @@ struct Renderer::State {
     std::vector<DrawIndexed> resetDraws;
 
     // The shadow's list fills in the same passes, when resetCounters said it is on.
-    void encodeCull(const wgpu::CommandEncoder& encoder, bool edges) {
-        const u32 offset = u32(kViewSlot * kUniformStride);
+    void encodeCull(const wgpu::CommandEncoder& encoder, bool edges, u32 slot = kViewSlot) {
+        const u32 offset = u32(slot * kUniformStride);
         wgpu::PassTimestampWrites begin{};
         wgpu::ComputePassDescriptor descriptor{};
-        if (timestamps) {
+        if (timestamps && slot == kViewSlot) {
             // Both ends of each timed pass are written: the browser's WebGPU does not take an
             // index left undefined.
             begin.querySet = timestamps;
@@ -1454,6 +1465,113 @@ struct Renderer::State {
             });
     }
 
+    // ---- Classifying the shell -------------------------------------------------------------
+
+    u32 classifySize = 0;
+    wgpu::Texture classifyFrontIds, classifyBehindIds, classifyFrontDepths, classifyScratch;
+    wgpu::Texture classifyDepth;
+    wgpu::BindGroup peelGroup, frontGroup; // the front pass binds stand-ins for what it writes
+
+    void ensureClassify(u32 size) {
+        if (size == classifySize && peelGroup) {
+            return;
+        }
+        classifySize = size;
+        const Usage target = Usage::RenderAttachment;
+        classifyFrontIds = texture(size, size, kIdFormat,
+                                   target | Usage::TextureBinding | Usage::CopySrc, "front ids");
+        classifyBehindIds = texture(size, size, kIdFormat, target | Usage::CopySrc, "behind ids");
+        classifyFrontDepths =
+            texture(size, size, kDepthCopyFormat, target | Usage::TextureBinding, "front depths");
+        classifyScratch = texture(size, size, kDepthCopyFormat, target, "behind depths");
+        classifyDepth = texture(size, size, kDepthFormat, target, "classify depth");
+        peelGroup = makeGroup(device, peelLayout, {bufferEntry(0, slots),
+                                                   textureEntry(1, classifyFrontIds),
+                                                   textureEntry(2, classifyFrontDepths)});
+        frontGroup = makeGroup(
+            device, peelLayout,
+            {bufferEntry(0, slots),
+             textureEntry(1, texture(1, 1, kIdFormat, Usage::TextureBinding, "no ids")),
+             textureEntry(2, texture(1, 1, kDepthCopyFormat, Usage::TextureBinding, "no depths"))});
+    }
+
+    // Each pixel's nearest occurrence, and the nearest other occurrence behind it, in a square
+    // view: the front pass, then a peel that keeps only what lies behind the front, as Metal's.
+    render::OccurrenceIds classify(const render::ViewState& view, u32 size) {
+        render::OccurrenceIds result;
+        if (surfaceInstances == 0 || size == 0) {
+            return result;
+        }
+#ifdef __EMSCRIPTEN__
+        // The browser cannot wait for the GPU; the web runtime asks for these asynchronously.
+        return result;
+#else
+        ensureGroups();
+        ensureClassify(size);
+        writeFrame(kClassifySlot, view.uniforms, nullptr);
+        resetCounters(false);
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        encodeCull(encoder, false, kClassifySlot);
+        for (const bool peel : {false, true}) {
+            wgpu::RenderPassColorAttachment attachments[3] = {};
+            const wgpu::Texture* textures[2] = {peel ? &classifyBehindIds : &classifyFrontIds,
+                                                peel ? &classifyScratch : &classifyFrontDepths};
+            for (u32 t = 0; t < 2; ++t) {
+                attachments[t + 1].view = textures[t]->CreateView();
+                attachments[t + 1].loadOp = wgpu::LoadOp::Clear;
+                attachments[t + 1].storeOp = wgpu::StoreOp::Store;
+                attachments[t + 1].clearValue = {0, 0, 0, 0};
+            }
+            wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+            depthAttachment.view = classifyDepth.CreateView();
+            depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+            depthAttachment.depthStoreOp = wgpu::StoreOp::Discard;
+            depthAttachment.depthClearValue = 0.0f;
+            wgpu::RenderPassDescriptor descriptor{};
+            descriptor.colorAttachmentCount = 3;
+            descriptor.colorAttachments = attachments;
+            descriptor.depthStencilAttachment = &depthAttachment;
+            wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+            const u32 offset = u32(kClassifySlot * kUniformStride);
+            pass.SetBindGroup(0, sceneGroup, 1, &offset);
+            pass.SetBindGroup(1, peel ? peelGroup : frontGroup);
+            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
+            drawPair(pass, {.kind = Kind::Classify, .peel = peel}, 0);
+            pass.End();
+        }
+        const u32 stride = (size * 4 + 255) & ~255u;
+        const u64 plane = u64(stride) * size;
+        wgpu::Buffer readback = buffer(plane * 2, U::MapRead | U::CopyDst, "classify readback");
+        for (u32 t = 0; t < 2; ++t) {
+            wgpu::TexelCopyTextureInfo source{};
+            source.texture = t == 0 ? classifyFrontIds : classifyBehindIds;
+            wgpu::TexelCopyBufferInfo destination{};
+            destination.buffer = readback;
+            destination.layout.offset = t * plane;
+            destination.layout.bytesPerRow = stride;
+            destination.layout.rowsPerImage = size;
+            const wgpu::Extent3D extent = {size, size, 1};
+            encoder.CopyTextureToBuffer(&source, &destination, &extent);
+        }
+        const wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+        wait(readback.MapAsync(wgpu::MapMode::Read, 0, usize(plane * 2),
+                               wgpu::CallbackMode::WaitAnyOnly,
+                               [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
+        const auto* bytes =
+            static_cast<const u8*>(readback.GetConstMappedRange(0, usize(plane * 2)));
+        result.front.resize(usize(size) * size);
+        result.behind.resize(usize(size) * size);
+        for (u32 y = 0; y < size; ++y) {
+            std::memcpy(result.front.data() + usize(y) * size, bytes + usize(y) * stride, size * 4);
+            std::memcpy(result.behind.data() + usize(y) * size, bytes + plane + usize(y) * stride,
+                        size * 4);
+        }
+        readback.Unmap();
+        return result;
+#endif
+    }
+
     // Blocks until `future` completes. Only native hosts may.
     void wait(const wgpu::Future& future) {
         instance.WaitAny(future, UINT64_MAX);
@@ -1613,7 +1731,9 @@ std::array<u64, 2> Renderer::probeContents() const {
 }
 u64 Renderer::timedFrames() const { return state_->timedFrames; }
 
-render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState&, u32) { return {}; }
+render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 size) {
+    return state_->classify(view, size);
+}
 
 void Renderer::render(const wgpu::Texture& target, const render::ViewState& view,
                       const render::Overlay* overlay) {

@@ -5,6 +5,8 @@
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
 #include "model/face_state.h"
+#include "nav/camera.h"
+#include "render/shell.h"
 #include "drive_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
@@ -542,6 +544,59 @@ TEST_CASE("the WebGPU renderer draws the overlay as Metal does") {
             CHECK(d.mean < 1.0);
             CHECK(d.changed < 0.005);
         }
+        unlink(blob.c_str());
+    }
+}
+
+// Classifying the shell draws occurrence ids in square views, the front and what lies behind it,
+// as the engine asks; WebGPU's must be Metal's, pixel for pixel but for a few at silhouettes.
+TEST_CASE("the WebGPU renderer classifies the shell as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        engine::OffscreenView metalFrame, webFrame;
+        REQUIRE(engine::prepareOffscreen(*metal, openBlob(blob), options, metalFrame, error));
+        REQUIRE(engine::prepareOffscreen(*web, openBlob(blob), options, webFrame, error));
+        const Aabb all = *webFrame.scene.bounds();
+        const double radius = all.radius();
+        constexpr u32 kSize = 64;
+        const nav::Viewport square{double(kSize), double(kSize)};
+        usize pixels = 0, frontSame = 0, behindSame = 0, covered = 0;
+        for (const bool exclude : {false, true}) {
+            for (const Vec3 direction : render::shellViewDirections()) {
+                nav::Camera camera;
+                const Vec3 up = std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0)
+                                                            : simd_make_double3(0, 0, 1);
+                camera.lookAt(all.center() - direction * (2.0 * radius), all.center(), up);
+                camera.orthoHalfHeight = radius;
+                render::ViewState view = render::makeView(camera, square, all);
+                view.uniforms.excludeShells = exclude ? 1 : 0;
+                const render::OccurrenceIds expected = metal->renderOccurrenceIds(view, kSize);
+                const render::OccurrenceIds got = web->renderOccurrenceIds(view, kSize);
+                REQUIRE(got.front.size() == expected.front.size());
+                for (usize p = 0; p < got.front.size(); ++p) {
+                    ++pixels;
+                    frontSame += got.front[p] == expected.front[p] ? 1 : 0;
+                    behindSame += got.behind[p] == expected.behind[p] ? 1 : 0;
+                    covered += expected.front[p] != 0 ? 1 : 0;
+                }
+            }
+        }
+        CAPTURE(pixels);
+        CAPTURE(covered);
+        CHECK(covered > pixels / 10);
+        CHECK(double(frontSame) / double(pixels) > 0.995);
+        CHECK(double(behindSame) / double(pixels) > 0.99);
         unlink(blob.c_str());
     }
 }
