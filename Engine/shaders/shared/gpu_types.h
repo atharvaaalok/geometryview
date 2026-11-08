@@ -280,4 +280,8 @@ struct FrameUniforms {
     uint32_t sectionPlaneCount;
     float seeThrough;       // k: 0 solid, 1 fully see-through
     uint32_t excludeShells; // classifying: leave out parts already found to be shell
+    // Where this frame samples each pixel, from its centre, in pixels with y down. Zero but in
+    // the WebGPU renderer's jittered samples, whose shaders move what Metal evaluates once per
+    // pixel back to the centre.
+    simd_float2 sampleOffset;
 };

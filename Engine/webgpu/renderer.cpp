@@ -1,0 +1,1241 @@
+#include "webgpu/renderer.h"
+
+#include "base/assert.h"
+#include "render/style.h"
+#include "scene/scene.h"
+#include "shaders/shared/gpu_types.h"
+#include "webgpu/wgsl.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace geo::webgpu {
+namespace {
+
+using U = wgpu::BufferUsage;
+using Usage = wgpu::TextureUsage;
+using Stage = wgpu::ShaderStage;
+using Format = wgpu::TextureFormat;
+
+// Uniform slots are this far apart: the frame's uniforms, rounded up to the 256 bytes any device
+// may ask dynamic offsets to be aligned to.
+constexpr u64 kUniformStride = (sizeof(FrameUniforms) + 255) & ~u64(255);
+// Four jittered samples per frame, then the frame as it is, for culling, the shadow and the passes
+// after, and one for classifying the shell.
+constexpr u32 kFrameSlots = 6;
+constexpr u32 kViewSlot = 4;
+constexpr u32 kListShadow = 6;
+constexpr u32 kEdgeVertices = 192; // six per segment, for a chunk of 32
+
+// Metal's standard 4x sample positions, from a pixel's top left. Sample 0 is drawn last, so its
+// ids, tags and depth are left for the occlusion, the composite and picking, as Metal's are.
+constexpr float kSamplePositions[4][2] = {
+    {0.375f, 0.125f}, {0.875f, 0.375f}, {0.125f, 0.625f}, {0.625f, 0.875f}};
+
+constexpr Format kColorFormat = Format::RGBA8Unorm;
+constexpr Format kIdFormat = Format::R32Uint;
+constexpr Format kInkFormat = Format::RGBA8Unorm;
+constexpr Format kTagFormat = Format::RG8Uint;
+constexpr Format kDepthFormat = Format::Depth32Float;
+constexpr Format kShadowFormat = Format::R8Unorm;
+constexpr Format kAccumFormat = Format::RGBA16Float;
+constexpr Format kOcclusionFormat = Format::R32Float;
+
+// The shaders' Definition: where a definition's streams start in the geometry buffer, in words.
+struct GpuDefinitionW {
+    u32 meshlets, vertices, highBits, triangles;
+    u32 edgeSegments, edgeChunks, vertexCount, faceCount;
+    float boundsMin[3];
+    float boundsStep;
+    float decodeScale[3];
+    u32 flags;
+    float boundsScale[3];
+    u32 meshletCount;
+};
+static_assert(sizeof(GpuDefinitionW) == 80);
+
+struct GpuState {
+    u32 flags, facePage, look, pad;
+};
+
+struct Region {
+    u32 slotBase, slotCapacity, indexBase, indexCapacity;
+};
+
+struct Lists {
+    Region regions[8];
+    Region edgeRegions[2];
+    u32 instanceCount, edgeInstanceCount, pad0, pad1;
+};
+static_assert(sizeof(Lists) == 176);
+
+struct DrawIndexed {
+    u32 indexCount, instanceCount, firstIndex;
+    i32 baseVertex;
+    u32 firstInstance;
+};
+
+struct Draw {
+    u32 vertexCount, instanceCount, firstVertex, firstInstance;
+};
+
+struct Counters {
+    DrawIndexed surfaces[8];
+    Draw edges[2];
+    u32 slots[8];
+    u32 edgeSlots[2];
+};
+static_assert(sizeof(Counters) == 232);
+constexpr u64 kEdgeDrawOffset = offsetof(Counters, edges);
+
+// What each surface list draws with: which kind of pass, and closed or open.
+enum class Kind : u32 { Solid, Ghost, ShellBack, ShellDepth, ShellFront, Shadow, Edges, Classify };
+
+struct PipelineKey {
+    Kind kind = Kind::Solid;
+    bool physical = false, section = false, closed = false, pickable = false;
+    bool ghostLines = false, peel = false;
+
+    u32 bits() const {
+        return u32(kind) | u32(physical) << 4 | u32(section) << 5 | u32(closed) << 6 |
+               u32(pickable) << 7 | u32(ghostLines) << 8 | u32(peel) << 9;
+    }
+};
+
+wgpu::ShaderModule makeModule(const wgpu::Device& device, const std::string& code,
+                              const char* label) {
+    wgpu::ShaderSourceWGSL wgsl{};
+    wgsl.code = code.c_str();
+    wgpu::ShaderModuleDescriptor descriptor{};
+    descriptor.nextInChain = &wgsl;
+    descriptor.label = label;
+    return device.CreateShaderModule(&descriptor);
+}
+
+wgpu::BindGroupLayoutEntry bufferLayout(u32 binding, wgpu::ShaderStage visibility,
+                                        wgpu::BufferBindingType type, bool dynamic = false) {
+    wgpu::BindGroupLayoutEntry entry{};
+    entry.binding = binding;
+    entry.visibility = visibility;
+    entry.buffer.type = type;
+    entry.buffer.hasDynamicOffset = dynamic;
+    return entry;
+}
+
+wgpu::BindGroupLayoutEntry textureLayout(u32 binding, wgpu::ShaderStage visibility,
+                                         wgpu::TextureSampleType type) {
+    wgpu::BindGroupLayoutEntry entry{};
+    entry.binding = binding;
+    entry.visibility = visibility;
+    entry.texture.sampleType = type;
+    entry.texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    return entry;
+}
+
+wgpu::BindGroupLayout makeLayout(const wgpu::Device& device,
+                                 std::initializer_list<wgpu::BindGroupLayoutEntry> entries) {
+    const std::vector<wgpu::BindGroupLayoutEntry> list(entries);
+    wgpu::BindGroupLayoutDescriptor descriptor{};
+    descriptor.entryCount = list.size();
+    descriptor.entries = list.data();
+    return device.CreateBindGroupLayout(&descriptor);
+}
+
+wgpu::BindGroupEntry bufferEntry(u32 binding, const wgpu::Buffer& buffer, u64 size = 0) {
+    wgpu::BindGroupEntry entry{};
+    entry.binding = binding;
+    entry.buffer = buffer;
+    if (size != 0) {
+        entry.size = size;
+    }
+    return entry;
+}
+
+wgpu::BindGroupEntry textureEntry(u32 binding, const wgpu::Texture& texture) {
+    wgpu::BindGroupEntry entry{};
+    entry.binding = binding;
+    entry.textureView = texture.CreateView();
+    return entry;
+}
+
+wgpu::BindGroup makeGroup(const wgpu::Device& device, const wgpu::BindGroupLayout& layout,
+                          std::initializer_list<wgpu::BindGroupEntry> entries) {
+    const std::vector<wgpu::BindGroupEntry> list(entries);
+    wgpu::BindGroupDescriptor descriptor{};
+    descriptor.layout = layout;
+    descriptor.entryCount = list.size();
+    descriptor.entries = list.data();
+    return device.CreateBindGroup(&descriptor);
+}
+
+wgpu::PipelineLayout makePipelineLayout(const wgpu::Device& device,
+                                        std::initializer_list<wgpu::BindGroupLayout> groups) {
+    const std::vector<wgpu::BindGroupLayout> list(groups);
+    wgpu::PipelineLayoutDescriptor descriptor{};
+    descriptor.bindGroupLayoutCount = list.size();
+    descriptor.bindGroupLayouts = list.data();
+    return device.CreatePipelineLayout(&descriptor);
+}
+
+wgpu::ConstantEntry constant(const char* key, double value) {
+    wgpu::ConstantEntry entry{};
+    entry.key = key;
+    entry.value = value;
+    return entry;
+}
+
+// Groups for dispatching `count` threads in workgroups of 64, two-dimensional past the limit.
+std::array<u32, 2> dispatchSize(u64 count) {
+    const u64 groups = (count + 63) / 64;
+    const u32 x = u32(std::min<u64>(groups, 65535));
+    return {x, x == 0 ? 0 : u32((groups + x - 1) / x)};
+}
+
+} // namespace
+
+struct Renderer::State {
+    wgpu::Instance instance;
+    wgpu::Device device;
+    wgpu::Queue queue;
+    Format outputFormat = Format::BGRA8Unorm;
+    wgpu::Limits limits{};
+
+    wgpu::ShaderModule cullModule, surfaceModule, edgeModule, sheetModule, postModule;
+    wgpu::BindGroupLayout sceneLayout, cullLayout, surfaceLayout, peelLayout, edgeLayout;
+    wgpu::BindGroupLayout sheetLayout, resolveLayout, occlusionLayout, compositeLayout;
+    wgpu::PipelineLayout cullPipelineLayout, surfacePipelineLayout, peelPipelineLayout;
+    wgpu::PipelineLayout edgePipelineLayout, sheetPipelineLayout, resolvePipelineLayout;
+    wgpu::PipelineLayout occlusionPipelineLayout, compositePipelineLayout;
+    wgpu::ComputePipeline cullSurfaces, cullShadow, cullEdges, occlusion;
+    wgpu::RenderPipeline sheet, resolve, composite;
+    std::unordered_map<u32, wgpu::RenderPipeline> pipelines;
+    wgpu::Sampler linearClamp;
+
+    // The scene's tables. Geometry is every segment's bytes, one after another.
+    wgpu::Buffer frames, styleBuffer, definitions, occurrences, geometry, instances;
+    // Slots hold the surface lists' regions, then the edge lists'.
+    wgpu::Buffer states, faceStates, palette, lists, counters, slots, indices;
+    std::vector<const scene::Segment*> segments;
+    struct OccurrenceInfo {
+        u32 meshlets = 0, triangles = 0, edgeChunks = 0;
+        bool open = false;
+    };
+    std::vector<OccurrenceInfo> occurrenceInfo;
+    u32 surfaceInstances = 0, edgeInstances = 0;
+    u64 triangles = 0, edgeSegments = 0;
+    Lists listTable{};
+
+    // What the states and looks last said, for planning the lists.
+    std::vector<OccurrenceState> words;
+    std::vector<u16> looks;
+    u64 stateVersion = ~u64(0);
+    bool hasGhosts = false, hasShells = false;
+
+    StyleUniforms style{};
+    bool physical = false;
+    bool reducedDetail = false;
+    bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
+    u32 samples = 1;
+
+    // Targets for one size.
+    u32 width = 0, height = 0;
+    wgpu::Texture color, ids, ink, tags, depth, shadowMask, occlusionTexture, accum, offscreen;
+    wgpu::BindGroup sceneGroup, cullGroup, surfaceGroup, edgeGroup, sheetGroup, resolveGroup;
+    wgpu::BindGroup occlusionGroup, compositeGroup;
+
+    wgpu::Buffer buffer(u64 size, wgpu::BufferUsage usage, const char* label) {
+        wgpu::BufferDescriptor descriptor{};
+        descriptor.label = label;
+        descriptor.size = std::max<u64>((size + 15) & ~u64(15), 16);
+        descriptor.usage = usage;
+        return device.CreateBuffer(&descriptor);
+    }
+
+    wgpu::Texture texture(u32 w, u32 h, Format format, wgpu::TextureUsage usage,
+                          const char* label) {
+        wgpu::TextureDescriptor descriptor{};
+        descriptor.label = label;
+        descriptor.size = {std::max(w, 1u), std::max(h, 1u), 1};
+        descriptor.format = format;
+        descriptor.usage = usage;
+        return device.CreateTexture(&descriptor);
+    }
+
+    bool createModules() {
+        const std::string common = wgsl::kCommon;
+        cullModule = makeModule(device, common + wgsl::kCull, "cull");
+        surfaceModule = makeModule(device, common + wgsl::kSurface, "surface");
+        edgeModule = makeModule(device, common + wgsl::kEdges, "edges");
+        sheetModule = makeModule(device, common + wgsl::kSheet, "sheet");
+        postModule = makeModule(device, common + wgsl::kPost, "post");
+        return cullModule && surfaceModule && edgeModule && sheetModule && postModule;
+    }
+
+    void createLayouts() {
+        using B = wgpu::BufferBindingType;
+        using TS = wgpu::TextureSampleType;
+        const Stage geometryStages = Stage::Vertex | Stage::Compute;
+        const Stage all = Stage::Vertex | Stage::Fragment | Stage::Compute;
+        sceneLayout = makeLayout(device, {
+            bufferLayout(0, all, B::Uniform, true),
+            bufferLayout(1, all, B::Uniform),
+            bufferLayout(2, geometryStages, B::ReadOnlyStorage),
+            bufferLayout(3, geometryStages, B::ReadOnlyStorage),
+            bufferLayout(4, geometryStages, B::ReadOnlyStorage),
+            bufferLayout(5, geometryStages, B::ReadOnlyStorage),
+            bufferLayout(6, Stage::Vertex, B::ReadOnlyStorage),
+            bufferLayout(7, Stage::Fragment, B::ReadOnlyStorage),
+        });
+        cullLayout = makeLayout(device, {
+            bufferLayout(0, Stage::Compute, B::Uniform),
+            bufferLayout(1, Stage::Compute, B::ReadOnlyStorage),
+            bufferLayout(2, Stage::Compute, B::Storage),
+            bufferLayout(3, Stage::Compute, B::Storage),
+            bufferLayout(4, Stage::Compute, B::Storage),
+        });
+        surfaceLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
+        wgpu::BindGroupLayoutEntry frontDepths = textureLayout(2, Stage::Fragment, TS::Depth);
+        peelLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage),
+                                         textureLayout(1, Stage::Fragment, TS::Uint),
+                                         frontDepths});
+        edgeLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
+        wgpu::BindGroupLayoutEntry sampler{};
+        sampler.binding = 1;
+        sampler.visibility = Stage::Fragment;
+        sampler.sampler.type = wgpu::SamplerBindingType::Filtering;
+        sheetLayout = makeLayout(device, {textureLayout(0, Stage::Fragment, TS::Float), sampler});
+        resolveLayout = makeLayout(device, {textureLayout(0, Stage::Fragment, TS::Float),
+                                            textureLayout(1, Stage::Fragment, TS::Float),
+                                            textureLayout(2, Stage::Fragment, TS::Uint)});
+        wgpu::BindGroupLayoutEntry occlusionOut{};
+        occlusionOut.binding = 5;
+        occlusionOut.visibility = Stage::Compute;
+        occlusionOut.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+        occlusionOut.storageTexture.format = kOcclusionFormat;
+        occlusionOut.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
+        occlusionLayout = makeLayout(device, {textureLayout(2, Stage::Compute, TS::Uint),
+                                              textureLayout(3, Stage::Compute, TS::Depth),
+                                              occlusionOut});
+        // The occlusion is read without filtering, so it can be a 32-bit float.
+        compositeLayout = makeLayout(device, {
+            textureLayout(0, Stage::Fragment, TS::Float),
+            textureLayout(2, Stage::Fragment, TS::Uint),
+            textureLayout(3, Stage::Fragment, TS::Depth),
+            textureLayout(4, Stage::Fragment, TS::UnfilterableFloat),
+        });
+
+        cullPipelineLayout = makePipelineLayout(device, {sceneLayout, cullLayout});
+        surfacePipelineLayout = makePipelineLayout(device, {sceneLayout, surfaceLayout});
+        peelPipelineLayout = makePipelineLayout(device, {sceneLayout, peelLayout});
+        edgePipelineLayout = makePipelineLayout(device, {sceneLayout, edgeLayout});
+        sheetPipelineLayout = makePipelineLayout(device, {sceneLayout, sheetLayout});
+        resolvePipelineLayout = makePipelineLayout(device, {sceneLayout, resolveLayout});
+        occlusionPipelineLayout = makePipelineLayout(device, {sceneLayout, occlusionLayout});
+        compositePipelineLayout = makePipelineLayout(device, {sceneLayout, compositeLayout});
+
+        wgpu::SamplerDescriptor linear{};
+        linear.magFilter = wgpu::FilterMode::Linear;
+        linear.minFilter = wgpu::FilterMode::Linear;
+        linearClamp = device.CreateSampler(&linear);
+    }
+
+    wgpu::ComputePipeline computePipeline(const wgpu::ShaderModule& module, const char* entry,
+                                          const wgpu::PipelineLayout& layout,
+                                          std::vector<wgpu::ConstantEntry> constants = {}) {
+        wgpu::ComputePipelineDescriptor descriptor{};
+        descriptor.label = entry;
+        descriptor.layout = layout;
+        descriptor.compute.module = module;
+        descriptor.compute.entryPoint = entry;
+        descriptor.compute.constantCount = constants.size();
+        descriptor.compute.constants = constants.data();
+        return device.CreateComputePipeline(&descriptor);
+    }
+
+    void createFixedPipelines() {
+        cullSurfaces = computePipeline(cullModule, "cullSurfaces", cullPipelineLayout);
+        cullShadow = computePipeline(cullModule, "cullSurfaces", cullPipelineLayout,
+                                     {constant("kShadowCull", 1)});
+        cullEdges = computePipeline(cullModule, "cullEdges", cullPipelineLayout);
+        occlusion = computePipeline(postModule, "ambientOcclusion", occlusionPipelineLayout);
+
+        // The sheet only where nothing was drawn: at the far plane, depth 0 with reversed depth.
+        wgpu::DepthStencilState farOnly{};
+        farOnly.format = kDepthFormat;
+        farOnly.depthWriteEnabled = wgpu::OptionalBool::False;
+        farOnly.depthCompare = wgpu::CompareFunction::GreaterEqual;
+        std::array<wgpu::ColorTargetState, 4> targets = mainTargets();
+        for (u32 t = 1; t < 4; ++t) {
+            targets[t].writeMask = wgpu::ColorWriteMask::None;
+        }
+        sheet = screenPipeline(sheetModule, "sheetFragment", sheetPipelineLayout, targets.data(),
+                               4, &farOnly, "sheet");
+
+        // Each sample adds its share into the accumulated colour.
+        wgpu::BlendState share{};
+        share.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::Constant,
+                       wgpu::BlendFactor::One};
+        share.alpha = share.color;
+        wgpu::ColorTargetState accumTarget{};
+        accumTarget.format = kAccumFormat;
+        accumTarget.blend = &share;
+        resolve = screenPipeline(postModule, "resolveFragment", resolvePipelineLayout,
+                                 &accumTarget, 1, nullptr, "resolve");
+
+        wgpu::ColorTargetState output{};
+        output.format = outputFormat;
+        composite = screenPipeline(postModule, "compositeFragment", compositePipelineLayout,
+                                   &output, 1, nullptr, "composite");
+    }
+
+    wgpu::RenderPipeline screenPipeline(const wgpu::ShaderModule& module, const char* entry,
+                                        const wgpu::PipelineLayout& layout,
+                                        const wgpu::ColorTargetState* targets, u32 targetCount,
+                                        const wgpu::DepthStencilState* depthState,
+                                        const char* label) {
+        wgpu::FragmentState fragment{};
+        fragment.module = module;
+        fragment.entryPoint = entry;
+        fragment.targetCount = targetCount;
+        fragment.targets = targets;
+        wgpu::RenderPipelineDescriptor descriptor{};
+        descriptor.label = label;
+        descriptor.layout = layout;
+        descriptor.vertex.module = module;
+        descriptor.vertex.entryPoint = "screenVertex";
+        descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+        descriptor.depthStencil = depthState;
+        descriptor.fragment = &fragment;
+        return device.CreateRenderPipeline(&descriptor);
+    }
+
+    // The main pass's targets, as every pipeline drawn in it must declare them: colour, pick id,
+    // edge ink and body tags, each written or not as a pipeline chooses.
+    static std::array<wgpu::ColorTargetState, 4> mainTargets() {
+        std::array<wgpu::ColorTargetState, 4> targets{};
+        targets[0].format = kColorFormat;
+        targets[1].format = kIdFormat;
+        targets[2].format = kInkFormat;
+        targets[2].writeMask = wgpu::ColorWriteMask::None;
+        targets[3].format = kTagFormat;
+        targets[3].writeMask = wgpu::ColorWriteMask::None;
+        return targets;
+    }
+
+    // A surface or edge pipeline, made the first time it is drawn with.
+    const wgpu::RenderPipeline& pipeline(const PipelineKey& key) {
+        const auto found = pipelines.find(key.bits());
+        if (found != pipelines.end()) {
+            return found->second;
+        }
+        return pipelines.emplace(key.bits(), makePipeline(key)).first->second;
+    }
+
+    wgpu::RenderPipeline makePipeline(const PipelineKey& key) {
+        using CW = wgpu::ColorWriteMask;
+        const bool edges = key.kind == Kind::Edges;
+        std::vector<wgpu::ConstantEntry> constants;
+        if (edges) {
+            constants = {constant("kGhostLinePass", key.ghostLines), constant("kSection", key.section)};
+        } else {
+            constants = {constant("kGhostPass", key.kind == Kind::Ghost),
+                         constant("kPhysical", key.physical),
+                         constant("kShadowPass", key.kind == Kind::Shadow),
+                         constant("kSection", key.section),
+                         constant("kOccurrenceIds", key.kind == Kind::Classify),
+                         constant("kPeel", key.peel)};
+            u32 layer = 0;
+            if (key.kind == Kind::ShellBack) {
+                layer = 1;
+            } else if (key.kind == Kind::ShellDepth) {
+                layer = 2;
+            } else if (key.kind == Kind::ShellFront) {
+                layer = 3;
+            }
+            constants.push_back(constant("kShellLayer", layer));
+        }
+
+        wgpu::BlendState alphaBlend{};
+        alphaBlend.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::SrcAlpha,
+                            wgpu::BlendFactor::OneMinusSrcAlpha};
+        alphaBlend.alpha = {wgpu::BlendOperation::Add, wgpu::BlendFactor::One,
+                            wgpu::BlendFactor::OneMinusSrcAlpha};
+        wgpu::BlendState keepLarger{};
+        keepLarger.color = {wgpu::BlendOperation::Max, wgpu::BlendFactor::One,
+                            wgpu::BlendFactor::One};
+        keepLarger.alpha = keepLarger.color;
+
+        std::array<wgpu::ColorTargetState, 4> targets = mainTargets();
+        wgpu::ColorTargetState shadowTarget{};
+        shadowTarget.format = kShadowFormat;
+        const char* fragmentEntry = edges ? "edgeFragment" : "surfaceFragment";
+        u32 targetCount = 4;
+        const wgpu::ColorTargetState* targetList = targets.data();
+
+        wgpu::DepthStencilState depthTest{};
+        depthTest.format = kDepthFormat;
+        depthTest.depthWriteEnabled = wgpu::OptionalBool::True;
+        depthTest.depthCompare = wgpu::CompareFunction::Greater;
+        const wgpu::DepthStencilState* depthState = &depthTest;
+        wgpu::CullMode cull = key.closed ? wgpu::CullMode::Back : wgpu::CullMode::None;
+
+        switch (key.kind) {
+        case Kind::Solid:
+            targets[3].writeMask = CW::Red;
+            // Back faces seen through a cut are its caps.
+            cull = key.closed && !key.section ? wgpu::CullMode::Back : wgpu::CullMode::None;
+            break;
+        case Kind::Ghost:
+            targets[0].blend = &alphaBlend;
+            targets[1].writeMask = key.pickable ? CW::All : CW::None;
+            targets[3].writeMask = CW::Green;
+            depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
+            cull = key.closed && !key.section ? wgpu::CullMode::Back : wgpu::CullMode::None;
+            break;
+        case Kind::ShellBack:
+            cull = wgpu::CullMode::Front;
+            break;
+        case Kind::ShellDepth:
+            targets[0].writeMask = CW::None;
+            targets[1].writeMask = CW::None;
+            fragmentEntry = "depthFragment";
+            break;
+        case Kind::ShellFront:
+            // Blended once, at the depth the shell's nearest front faces left.
+            targets[0].blend = &alphaBlend;
+            targets[1].writeMask = CW::None;
+            targets[3].writeMask = CW::Green;
+            depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
+            depthTest.depthCompare = wgpu::CompareFunction::Equal;
+            break;
+        case Kind::Shadow:
+            fragmentEntry = "shadowFragment";
+            targetList = &shadowTarget;
+            targetCount = 1;
+            depthState = nullptr;
+            cull = wgpu::CullMode::None;
+            break;
+        case Kind::Edges:
+            targets[0].writeMask = CW::None;
+            targets[1].writeMask = CW::None;
+            targets[2].writeMask = CW::All;
+            targets[2].blend = &keepLarger;
+            depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
+            cull = wgpu::CullMode::None;
+            break;
+        case Kind::Classify:
+            targets[0].writeMask = CW::None;
+            fragmentEntry = "classifyFragment";
+            break;
+        }
+
+        wgpu::FragmentState fragment{};
+        fragment.module = edges ? edgeModule : surfaceModule;
+        fragment.entryPoint = fragmentEntry;
+        fragment.targetCount = targetCount;
+        fragment.targets = targetList;
+        fragment.constantCount = constants.size();
+        fragment.constants = constants.data();
+        wgpu::RenderPipelineDescriptor descriptor{};
+        descriptor.layout = edges ? edgePipelineLayout
+                                  : (key.peel ? peelPipelineLayout : surfacePipelineLayout);
+        descriptor.vertex.module = fragment.module;
+        descriptor.vertex.entryPoint = edges ? "edgeVertex" : "surfaceVertex";
+        descriptor.vertex.constantCount = constants.size();
+        descriptor.vertex.constants = constants.data();
+        descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+        descriptor.primitive.frontFace = wgpu::FrontFace::CCW;
+        descriptor.primitive.cullMode = cull;
+        descriptor.depthStencil = depthState;
+        descriptor.fragment = &fragment;
+        return device.CreateRenderPipeline(&descriptor);
+    }
+
+    // ---- Tables -----------------------------------------------------------------------------
+
+    void syncScene(const scene::Scene& scene) {
+        std::vector<const scene::Segment*> present;
+        for (u32 d = 0; d < scene.documentCount(); ++d) {
+            for (const std::shared_ptr<scene::Segment>& segment : scene.document(d).segments()) {
+                present.push_back(segment.get());
+            }
+        }
+        // Each segment's bytes, one after another, so a definition is found by word offsets.
+        std::unordered_map<const scene::Segment*, u64> wordBase;
+        u64 bytes = 0;
+        for (const scene::Segment* segment : present) {
+            wordBase.emplace(segment, bytes / 4);
+            bytes += (segment->size() + 15) & ~usize(15);
+        }
+        if (present != segments) {
+            if (bytes > limits.maxStorageBufferBindingSize) {
+                std::fprintf(stderr, "The scene's geometry is larger than the GPU can bind.\n");
+                bytes = 0;
+                wordBase.clear();
+                present.clear();
+            }
+            geometry = buffer(bytes, U::Storage | U::CopyDst, "geometry");
+            for (const scene::Segment* segment : present) {
+                queue.WriteBuffer(geometry, wordBase.at(segment) * 4, segment->data(),
+                                  segment->size());
+            }
+            segments = present;
+        }
+
+        std::vector<GpuDefinitionW> gpuDefinitions;
+        std::vector<GpuOccurrence> gpuOccurrences;
+        std::vector<std::array<u32, 2>> surfaceList, edgeList;
+        occurrenceInfo.clear();
+        u32 definitionBase = 0, idBase = 0;
+        triangles = 0;
+        edgeSegments = 0;
+        for (u32 d = 0; d < scene.documentCount(); ++d) {
+            const scene::Document& document = scene.document(d);
+            if (!document.hasModel()) {
+                continue;
+            }
+            const format::SegmentView& model = document.model();
+            for (u32 i = 0; i < model.definitionInfos.size(); ++i) {
+                GpuDefinitionW out{};
+                const format::DefinitionRecord* record = document.geometry(i);
+                const scene::Segment* segment = document.geometrySegment(i);
+                if (record != nullptr && wordBase.contains(segment)) {
+                    const format::SegmentView& view = segment->view();
+                    const auto* base = static_cast<const u8*>(segment->data());
+                    const u64 first = wordBase.at(segment);
+                    const auto wordOf = [&](const void* pointer) {
+                        const u64 offset = u64(static_cast<const u8*>(pointer) - base);
+                        GEO_ASSERT(offset % 4 == 0);
+                        return u32(first + offset / 4);
+                    };
+                    out.meshlets = wordOf(view.meshlets.data() + record->firstMeshlet);
+                    out.vertices = wordOf(view.vertices.data() + record->firstVertex);
+                    out.highBits = (record->flags & kDefinitionWide) != 0
+                                       ? wordOf(view.highBits.data() + record->firstHighBits)
+                                       : 0;
+                    out.triangles = wordOf(view.triangles.data() + record->firstTriangle);
+                    out.edgeSegments =
+                        wordOf(view.edgeSegments.data() + record->firstEdgeSegment);
+                    out.edgeChunks = wordOf(view.edgeChunks.data() + record->firstEdgeChunk);
+                    out.vertexCount = record->vertexCount;
+                    out.faceCount = record->faceCount;
+                    out.meshletCount = record->meshletCount;
+                    out.flags = record->flags;
+                    for (int a = 0; a < 3; ++a) {
+                        out.boundsMin[a] = record->boundsMin[a];
+                        out.decodeScale[a] = record->decodeScale[a];
+                        out.boundsScale[a] = record->boundsScale[a];
+                    }
+                    out.boundsStep =
+                        std::max({record->boundsScale[0], record->boundsScale[1],
+                                  record->boundsScale[2]});
+                }
+                gpuDefinitions.push_back(out);
+            }
+            for (u32 i = 0; i < model.occurrences.size(); ++i) {
+                const format::OccurrenceRecord& record = model.occurrences[i];
+                const std::array<float, 12>& t = record.transform;
+                const u32 global = u32(gpuOccurrences.size());
+                GpuOccurrence out{};
+                out.rows[0] = simd_make_float4(t[0], t[3], t[6], t[9]);
+                out.rows[1] = simd_make_float4(t[1], t[4], t[7], t[10]);
+                out.rows[2] = simd_make_float4(t[2], t[5], t[8], t[11]);
+                out.definition = definitionBase + record.definition;
+                out.idBase = idBase + document.idBase(i);
+                gpuOccurrences.push_back(out);
+                OccurrenceInfo info;
+                const format::DefinitionRecord* geometryRecord =
+                    document.geometry(record.definition);
+                if (geometryRecord != nullptr &&
+                    wordBase.contains(document.geometrySegment(record.definition))) {
+                    info.meshlets = geometryRecord->meshletCount;
+                    info.triangles = geometryRecord->triangleCount;
+                    info.edgeChunks = geometryRecord->edgeChunkCount;
+                    info.open = (geometryRecord->flags & kDefinitionOpen) != 0;
+                    triangles += geometryRecord->triangleCount;
+                    edgeSegments += geometryRecord->edgeSegmentCount;
+                    for (u32 m = 0; m < info.meshlets; ++m) {
+                        surfaceList.push_back({global, m});
+                    }
+                    for (u32 c = 0; c < info.edgeChunks; ++c) {
+                        edgeList.push_back({global, c});
+                    }
+                }
+                occurrenceInfo.push_back(info);
+            }
+            definitionBase += u32(model.definitionInfos.size());
+            idBase += document.idCount();
+        }
+        definitions = buffer(gpuDefinitions.size() * sizeof(GpuDefinitionW),
+                             U::Storage | U::CopyDst, "definitions");
+        queue.WriteBuffer(definitions, 0, gpuDefinitions.data(),
+                          gpuDefinitions.size() * sizeof(GpuDefinitionW));
+        occurrences = buffer(gpuOccurrences.size() * sizeof(GpuOccurrence),
+                             U::Storage | U::CopyDst, "occurrences");
+        queue.WriteBuffer(occurrences, 0, gpuOccurrences.data(),
+                          gpuOccurrences.size() * sizeof(GpuOccurrence));
+        surfaceInstances = u32(surfaceList.size());
+        edgeInstances = u32(edgeList.size());
+        surfaceList.insert(surfaceList.end(), edgeList.begin(), edgeList.end());
+        instances = buffer(surfaceList.size() * 8, U::Storage | U::CopyDst, "instances");
+        queue.WriteBuffer(instances, 0, surfaceList.data(), surfaceList.size() * 8);
+
+        cullGroup = nullptr; // it binds the instances
+        // States and looks follow the scene's occurrences, until synced again.
+        words.assign(gpuOccurrences.size(), OccurrenceState{0, 0});
+        looks.assign(gpuOccurrences.size(), 0);
+        faceStates = buffer(16, U::Storage | U::CopyDst, "face states");
+        stateVersion = ~u64(0);
+        uploadStates();
+        planLists();
+    }
+
+    void uploadStates() {
+        std::vector<GpuState> gpu(std::max<usize>(words.size(), 1));
+        hasGhosts = false;
+        hasShells = false;
+        for (usize o = 0; o < words.size(); ++o) {
+            const u16 look = o < looks.size() ? looks[o] : 0;
+            gpu[o] = {words[o].flags, words[o].facePage, look, 0};
+            hasGhosts = hasGhosts || (words[o].flags & (kStateGhost | kStateFaceGhost)) != 0;
+            hasShells = hasShells || (look & kLookShell) != 0;
+        }
+        states = buffer(gpu.size() * sizeof(GpuState), U::Storage | U::CopyDst, "states");
+        queue.WriteBuffer(states, 0, gpu.data(), gpu.size() * sizeof(GpuState));
+        sceneGroup = nullptr;
+    }
+
+    // Sizes each list's region for the most it could hold given the states and looks, so a
+    // frame's cull never overflows one.
+    void planLists() {
+        std::array<u64, 8> slotNeed{}, indexNeed{};
+        std::array<u64, 2> edgeNeed{};
+        const bool shadow = style.shadowOn != 0;
+        for (usize o = 0; o < occurrenceInfo.size(); ++o) {
+            const OccurrenceInfo& info = occurrenceInfo[o];
+            const u32 flags = o < words.size() ? words[o].flags : 0;
+            if ((flags & kStateHidden) != 0 || info.meshlets == 0) {
+                continue;
+            }
+            const u32 open = info.open ? 1 : 0;
+            const bool ghostWhole = (flags & kStateGhost) != 0;
+            const bool ghost = (flags & (kStateGhost | kStateFaceGhost)) != 0;
+            const bool shell = o < looks.size() && (looks[o] & kLookShell) != 0;
+            const auto need = [&](u32 list) {
+                slotNeed[list] += info.meshlets;
+                indexNeed[list] += u64(info.triangles) * 3;
+            };
+            if (!ghostWhole) {
+                need(open);
+            }
+            if (ghost) {
+                need(2 + open);
+            }
+            if (shell && !ghostWhole) {
+                need(4 + open);
+            }
+            if (shadow && !ghostWhole) {
+                need(kListShadow);
+            }
+            edgeNeed[0] += info.edgeChunks;
+            if (ghost) {
+                edgeNeed[1] += info.edgeChunks;
+            }
+        }
+        Lists table{};
+        u64 slotTotal = 0, indexTotal = 0, edgeTotal = 0;
+        for (u32 list = 0; list < 8; ++list) {
+            table.regions[list] = {u32(slotTotal), u32(slotNeed[list]), u32(indexTotal),
+                                   u32(indexNeed[list])};
+            slotTotal += slotNeed[list];
+            indexTotal += indexNeed[list];
+        }
+        for (u32 list = 0; list < 2; ++list) {
+            table.edgeRegions[list] = {u32(slotTotal + edgeTotal), u32(edgeNeed[list]), 0, 0};
+            edgeTotal += edgeNeed[list];
+        }
+        table.instanceCount = surfaceInstances;
+        table.edgeInstanceCount = edgeInstances;
+        listTable = table;
+        if (!lists) {
+            lists = buffer(sizeof(Lists), U::Uniform | U::CopyDst, "lists");
+        }
+        queue.WriteBuffer(lists, 0, &table, sizeof(table));
+        const auto grow = [&](wgpu::Buffer& target, u64 size, wgpu::BufferUsage usage,
+                              const char* label) {
+            if (!target || target.GetSize() < size) {
+                target = buffer(std::max<u64>(size, 16), usage, label);
+                cullGroup = nullptr;
+                surfaceGroup = nullptr;
+                edgeGroup = nullptr;
+            }
+        };
+        grow(slots, (slotTotal + edgeTotal) * 8, U::Storage, "slots");
+        grow(indices, indexTotal * 4, U::Storage | U::Index, "indices");
+        if (indexTotal * 4 > limits.maxStorageBufferBindingSize) {
+            std::fprintf(stderr, "The scene's draw lists are larger than the GPU can bind.\n");
+        }
+    }
+
+    // ---- Bind groups ---------------------------------------------------------------------
+
+    void ensureGroups() {
+        if (!frames) {
+            frames = buffer(kUniformStride * kFrameSlots, U::Uniform | U::CopyDst, "frames");
+        }
+        if (!styleBuffer) {
+            styleBuffer = buffer(sizeof(StyleUniforms), U::Uniform | U::CopyDst, "style");
+        }
+        if (!palette) {
+            const std::array<u32, 3> neutral = {0xFFF3FAFBu, 0xFFD2E0E3u, 0xFFA6B8BDu};
+            palette = buffer(sizeof(neutral), U::Storage | U::CopyDst, "palette");
+            queue.WriteBuffer(palette, 0, neutral.data(), sizeof(neutral));
+        }
+        if (!definitions) {
+            definitions = buffer(80, U::Storage | U::CopyDst, "definitions");
+            occurrences = buffer(64, U::Storage | U::CopyDst, "occurrences");
+            geometry = buffer(16, U::Storage | U::CopyDst, "geometry");
+            instances = buffer(16, U::Storage | U::CopyDst, "instances");
+            faceStates = buffer(16, U::Storage | U::CopyDst, "face states");
+            uploadStates();
+            planLists();
+        }
+        if (!sceneGroup) {
+            sceneGroup = makeGroup(device, sceneLayout, {
+                bufferEntry(0, frames, sizeof(FrameUniforms)),
+                bufferEntry(1, styleBuffer),
+                bufferEntry(2, definitions),
+                bufferEntry(3, occurrences),
+                bufferEntry(4, geometry),
+                bufferEntry(5, states),
+                bufferEntry(6, faceStates),
+                bufferEntry(7, palette),
+            });
+        }
+        if (!counters) {
+            counters = buffer(sizeof(Counters), U::Storage | U::Indirect | U::CopyDst, "counters");
+        }
+        if (!cullGroup) {
+            cullGroup = makeGroup(device, cullLayout, {
+                bufferEntry(0, lists),
+                bufferEntry(1, instances),
+                bufferEntry(2, slots),
+                bufferEntry(3, indices),
+                bufferEntry(4, counters),
+            });
+        }
+        if (!surfaceGroup) {
+            surfaceGroup = makeGroup(device, surfaceLayout, {bufferEntry(0, slots)});
+        }
+        if (!edgeGroup) {
+            edgeGroup = makeGroup(device, edgeLayout, {bufferEntry(0, slots)});
+        }
+    }
+
+    // ---- Targets ---------------------------------------------------------------------------
+
+    void resize(u32 w, u32 h) {
+        if (w == width && h == height && color) {
+            return;
+        }
+        width = std::max(w, 1u);
+        height = std::max(h, 1u);
+        const Usage attachment = Usage::RenderAttachment | Usage::TextureBinding;
+        color = texture(width, height, kColorFormat, attachment, "colour");
+        ids = texture(width, height, kIdFormat, attachment | Usage::CopySrc, "ids");
+        ink = texture(width, height, kInkFormat, attachment, "ink");
+        tags = texture(width, height, kTagFormat, attachment, "tags");
+        depth = texture(width, height, kDepthFormat, attachment | Usage::CopySrc, "depth");
+        const u32 halfWidth = (width + 1) / 2, halfHeight = (height + 1) / 2;
+        shadowMask = texture(halfWidth, halfHeight, kShadowFormat, attachment, "shadow mask");
+        occlusionTexture = texture(halfWidth, halfHeight, kOcclusionFormat,
+                                   Usage::StorageBinding | Usage::TextureBinding, "occlusion");
+        accum = texture(width, height, kAccumFormat, attachment, "accumulated colour");
+        offscreen = texture(width, height, outputFormat,
+                            Usage::RenderAttachment | Usage::CopySrc, "offscreen");
+        sheetGroup = makeGroup(device, sheetLayout, {textureEntry(0, shadowMask), [&] {
+                                   wgpu::BindGroupEntry entry{};
+                                   entry.binding = 1;
+                                   entry.sampler = linearClamp;
+                                   return entry;
+                               }()});
+        resolveGroup = makeGroup(device, resolveLayout, {textureEntry(0, color),
+                                                         textureEntry(1, ink),
+                                                         textureEntry(2, tags)});
+        occlusionGroup = makeGroup(device, occlusionLayout, {textureEntry(2, tags),
+                                                             textureEntry(3, depth),
+                                                             textureEntry(5, occlusionTexture)});
+        compositeGroup = makeGroup(device, compositeLayout, {textureEntry(0, accum),
+                                                             textureEntry(2, tags),
+                                                             textureEntry(3, depth),
+                                                             textureEntry(4, occlusionTexture)});
+    }
+
+    // ---- Frames ----------------------------------------------------------------------------
+
+    bool castsShadow(const render::ViewState& view) const {
+        return surfaceInstances != 0 && !reducedDetail && style.shadowOn != 0 &&
+               view.uniforms.shadowVisibility > 0.0f;
+    }
+
+    // This sample's frame uniforms: the view moved by a fraction of a pixel, so the pixel's
+    // centre falls where Metal's sample would.
+    void writeFrame(u32 slot, const FrameUniforms& base, const float* position) {
+        FrameUniforms uniforms = base;
+        if (position != nullptr) {
+            const float dx = -2.0f * (position[0] - 0.5f) / float(width);
+            const float dy = 2.0f * (position[1] - 0.5f) / float(height);
+            for (int c = 0; c < 4; ++c) {
+                uniforms.viewProjection.columns[c][0] += dx * uniforms.viewProjection.columns[c][3];
+                uniforms.viewProjection.columns[c][1] += dy * uniforms.viewProjection.columns[c][3];
+            }
+            uniforms.sampleOffset = simd_make_float2(position[0] - 0.5f, position[1] - 0.5f);
+        }
+        queue.WriteBuffer(frames, slot * kUniformStride, &uniforms, sizeof(uniforms));
+    }
+
+    void resetCounters() {
+        Counters reset{};
+        for (u32 list = 0; list < 8; ++list) {
+            reset.surfaces[list] = {0, 1, listTable.regions[list].indexBase, 0, 0};
+        }
+        for (u32 list = 0; list < 2; ++list) {
+            reset.edges[list] = {0, 1, listTable.edgeRegions[list].slotBase * kEdgeVertices, 0};
+        }
+        queue.WriteBuffer(counters, 0, &reset, sizeof(reset));
+    }
+
+    void encodeCull(const wgpu::CommandEncoder& encoder, bool shadow, bool edges) {
+        const u32 offset = u32(kViewSlot * kUniformStride);
+        wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+        pass.SetBindGroup(1, cullGroup);
+        if (surfaceInstances != 0) {
+            const auto [x, y] = dispatchSize(surfaceInstances);
+            pass.SetPipeline(cullSurfaces);
+            pass.DispatchWorkgroups(x, y);
+            if (shadow) {
+                pass.SetPipeline(cullShadow);
+                pass.DispatchWorkgroups(x, y);
+            }
+        }
+        if (edges && edgeInstances != 0) {
+            const auto [x, y] = dispatchSize(edgeInstances);
+            pass.SetPipeline(cullEdges);
+            pass.DispatchWorkgroups(x, y);
+        }
+        pass.End();
+    }
+
+    void drawList(const wgpu::RenderPassEncoder& pass, u32 list) {
+        pass.DrawIndexedIndirect(counters, list * sizeof(DrawIndexed));
+    }
+
+    // Closed surfaces, then open ones, of a pair of lists, with the pipelines for each.
+    void drawPair(const wgpu::RenderPassEncoder& pass, PipelineKey key, u32 closedList) {
+        key.closed = true;
+        pass.SetPipeline(pipeline(key));
+        drawList(pass, closedList);
+        key.closed = false;
+        pass.SetPipeline(pipeline(key));
+        drawList(pass, closedList + 1);
+    }
+
+    void encodeShadow(const wgpu::CommandEncoder& encoder, bool section) {
+        wgpu::RenderPassColorAttachment attachment{};
+        attachment.view = shadowMask.CreateView();
+        attachment.loadOp = wgpu::LoadOp::Clear;
+        attachment.storeOp = wgpu::StoreOp::Store;
+        attachment.clearValue = {0, 0, 0, 0};
+        wgpu::RenderPassDescriptor descriptor{};
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &attachment;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        const u32 offset = u32(kViewSlot * kUniformStride);
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+        pass.SetBindGroup(1, surfaceGroup);
+        pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint32);
+        PipelineKey key{.kind = Kind::Shadow, .section = section};
+        pass.SetPipeline(pipeline(key));
+        drawList(pass, kListShadow);
+        pass.End();
+    }
+
+    // The main pass for one sample: opaque surfaces, the sheet behind them, creases and
+    // highlights, the see-through shell, ghosts over all of it with their dashed lines.
+    void encodeMain(const wgpu::CommandEncoder& encoder, u32 slot,
+                    const render::ViewState& view) {
+        const bool section = view.uniforms.sectionPlaneCount > 0;
+        wgpu::RenderPassColorAttachment attachments[4] = {};
+        const wgpu::Texture* textures[4] = {&color, &ids, &ink, &tags};
+        for (u32 t = 0; t < 4; ++t) {
+            attachments[t].view = textures[t]->CreateView();
+            attachments[t].loadOp = wgpu::LoadOp::Clear;
+            attachments[t].storeOp = wgpu::StoreOp::Store;
+            attachments[t].clearValue = {0, 0, 0, 0};
+        }
+        wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+        depthAttachment.view = depth.CreateView();
+        depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+        depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+        depthAttachment.depthClearValue = 0.0f; // reversed depth
+        wgpu::RenderPassDescriptor descriptor{};
+        descriptor.colorAttachmentCount = 4;
+        descriptor.colorAttachments = attachments;
+        descriptor.depthStencilAttachment = &depthAttachment;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        const u32 offset = u32(slot * kUniformStride);
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+
+        const bool hasScene = surfaceInstances != 0;
+        if (hasScene) {
+            pass.SetBindGroup(1, surfaceGroup);
+            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint32);
+            drawPair(pass, {.kind = Kind::Solid, .physical = physical, .section = section}, 0);
+        }
+        const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
+        if (seeThrough) {
+            // The shell's far walls: back faces, held just in front of the sheet by a depth
+            // range of their own, so they always lie under the mechanism.
+            pass.SetViewport(0, 0, float(width), float(height), 1e-6f, 1e-4f);
+            drawPair(pass, {.kind = Kind::ShellBack, .physical = physical, .section = section}, 4);
+            pass.SetViewport(0, 0, float(width), float(height), 0.0f, 1.0f);
+        }
+
+        // The sheet only where nothing was drawn.
+        pass.SetPipeline(sheet);
+        pass.SetBindGroup(1, sheetGroup);
+        pass.Draw(3);
+        if (hasScene && drawsEdges && !reducedDetail) {
+            pass.SetBindGroup(1, edgeGroup);
+            pass.SetPipeline(pipeline({.kind = Kind::Edges, .section = section}));
+            pass.DrawIndirect(counters, kEdgeDrawOffset);
+        }
+        if (hasScene) {
+            pass.SetBindGroup(1, surfaceGroup);
+        }
+        if (seeThrough) {
+            // The shell's nearest front faces, over everything opaque: into depth, then blended
+            // once.
+            drawPair(pass, {.kind = Kind::ShellDepth, .section = section}, 4);
+            drawPair(pass, {.kind = Kind::ShellFront, .physical = physical, .section = section}, 4);
+        }
+        // Ghosts last, blended over everything opaque and writing no depth.
+        if (hasScene && hasGhosts) {
+            drawPair(pass, {.kind = Kind::Ghost, .physical = physical, .section = section,
+                            .pickable = view.uniforms.ghostPickable != 0},
+                     2);
+            if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges && !reducedDetail) {
+                pass.SetBindGroup(1, edgeGroup);
+                pass.SetPipeline(
+                    pipeline({.kind = Kind::Edges, .section = section, .ghostLines = true}));
+                pass.DrawIndirect(counters, kEdgeDrawOffset + sizeof(Draw));
+            }
+        }
+        pass.End();
+    }
+
+    // Inks this sample and adds its share into the accumulated colour.
+    void encodeResolve(const wgpu::CommandEncoder& encoder, bool first, u32 count) {
+        wgpu::RenderPassColorAttachment attachment{};
+        attachment.view = accum.CreateView();
+        attachment.loadOp = first ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+        attachment.storeOp = wgpu::StoreOp::Store;
+        attachment.clearValue = {0, 0, 0, 0};
+        wgpu::RenderPassDescriptor descriptor{};
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &attachment;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        const u32 offset = u32(kViewSlot * kUniformStride);
+        pass.SetPipeline(resolve);
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+        pass.SetBindGroup(1, resolveGroup);
+        const double share = 1.0 / double(count);
+        const wgpu::Color constantColor = {share, share, share, share};
+        pass.SetBlendConstant(&constantColor);
+        pass.Draw(3);
+        pass.End();
+    }
+
+    void encodeFrame(const wgpu::Texture& target, const render::ViewState& view, u32 count) {
+        ensureGroups();
+        queue.WriteBuffer(styleBuffer, 0, &style, sizeof(style));
+        for (u32 s = 0; s < count; ++s) {
+            writeFrame(s, view.uniforms, count > 1 ? kSamplePositions[s] : nullptr);
+        }
+        writeFrame(kViewSlot, view.uniforms, nullptr);
+        resetCounters();
+        const bool section = view.uniforms.sectionPlaneCount > 0;
+        const bool shadow = castsShadow(view);
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        encodeCull(encoder, shadow, true);
+        if (shadow) {
+            encodeShadow(encoder, section);
+        }
+        // Sample 0 last, so its ids, tags and depth remain.
+        for (u32 n = 0; n < count; ++n) {
+            const u32 s = (n + 1) % count;
+            encodeMain(encoder, s, view);
+            encodeResolve(encoder, n == 0, count);
+        }
+        if (style.ao > 0.0f) {
+            wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+            const u32 offset = u32(kViewSlot * kUniformStride);
+            pass.SetPipeline(occlusion);
+            pass.SetBindGroup(0, sceneGroup, 1, &offset);
+            pass.SetBindGroup(1, occlusionGroup);
+            pass.DispatchWorkgroups(((width + 1) / 2 + 7) / 8, ((height + 1) / 2 + 7) / 8);
+            pass.End();
+        }
+        wgpu::RenderPassColorAttachment output{};
+        output.view = target.CreateView();
+        output.loadOp = wgpu::LoadOp::Clear;
+        output.storeOp = wgpu::StoreOp::Store;
+        output.clearValue = {0, 0, 0, 1};
+        wgpu::RenderPassDescriptor descriptor{};
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &output;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        const u32 offset = u32(kViewSlot * kUniformStride);
+        pass.SetPipeline(composite);
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+        pass.SetBindGroup(1, compositeGroup);
+        pass.Draw(3);
+        pass.End();
+        const wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+    }
+
+    // Blocks until `future` completes. Only native hosts may.
+    void wait(const wgpu::Future& future) {
+        instance.WaitAny(future, UINT64_MAX);
+    }
+};
+
+Renderer::Renderer() : state_(std::make_unique<State>()) {}
+Renderer::~Renderer() = default;
+
+std::unique_ptr<Renderer> Renderer::create(wgpu::Instance instance, wgpu::Device device,
+                                           wgpu::TextureFormat outputFormat, std::string& error) {
+    std::unique_ptr<Renderer> renderer(new Renderer);
+    State& s = *renderer->state_;
+    s.instance = instance;
+    s.device = device;
+    s.queue = device.GetQueue();
+    s.outputFormat = outputFormat;
+    device.GetLimits(&s.limits);
+    if (!s.createModules()) {
+        error = "The WebGPU shaders could not be compiled.";
+        return nullptr;
+    }
+    s.createLayouts();
+    s.createFixedPipelines();
+    s.style =
+        render::makeStyleUniforms(render::styleNamed(render::StyleName::Illustration), {}, 2.0f);
+    return renderer;
+}
+
+void Renderer::syncScene(const scene::Scene& scene) { state_->syncScene(scene); }
+
+void Renderer::syncState(const model::FaceState& state) {
+    State& s = *state_;
+    if (state.version() == s.stateVersion) {
+        return;
+    }
+    s.stateVersion = state.version();
+    const std::span<const OccurrenceState> words = state.occurrenceWords();
+    s.words.assign(words.begin(), words.end());
+    s.words.resize(s.occurrenceInfo.size(), OccurrenceState{0, 0});
+    const std::span<const u8> faces = state.faceBytes();
+    std::vector<u8> padded(std::max<usize>((faces.size() + 3) & ~usize(3), 4), 0);
+    std::copy(faces.begin(), faces.end(), padded.begin());
+    if (!s.faceStates || s.faceStates.GetSize() < padded.size()) {
+        s.faceStates = s.buffer(padded.size(), U::Storage | U::CopyDst, "face states");
+    }
+    s.queue.WriteBuffer(s.faceStates, 0, padded.data(), padded.size());
+    s.uploadStates();
+    s.planLists();
+}
+
+void Renderer::setStyle(const StyleUniforms& style, bool physical) {
+    State& s = *state_;
+    const bool shadowChanged = (style.shadowOn != 0) != (s.style.shadowOn != 0);
+    s.style = style;
+    s.physical = physical;
+    if (shadowChanged) {
+        s.planLists();
+    }
+}
+
+void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) {
+    State& s = *state_;
+    s.looks.assign(lookOfOccurrence.begin(), lookOfOccurrence.end());
+    s.looks.resize(s.occurrenceInfo.size(), 0);
+    s.palette = s.buffer(std::max<usize>(palette.size_bytes(), 12), U::Storage | U::CopyDst,
+                         "palette");
+    s.queue.WriteBuffer(s.palette, 0, palette.data(), palette.size_bytes());
+    s.uploadStates();
+    s.planLists();
+}
+
+void Renderer::setReducedDetail(bool reduced) { state_->reducedDetail = reduced; }
+u64 Renderer::sceneTriangles() const { return state_->triangles; }
+u64 Renderer::sceneEdgeSegments() const { return state_->edgeSegments; }
+void Renderer::resize(u32 width, u32 height) { state_->resize(width, height); }
+float Renderer::glyphAdvance() const { return 0.0f; }
+void Renderer::setSamples(u32 samples) { state_->samples = std::clamp(samples, 1u, 4u); }
+
+std::optional<render::PixelHit> Renderer::readPixel(int, int, const render::DepthDecoder&) const {
+    return std::nullopt;
+}
+
+render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState&, u32) { return {}; }
+
+void Renderer::render(const wgpu::Texture& target, const render::ViewState& view,
+                      const render::Overlay*) {
+    state_->encodeFrame(target, view, state_->samples);
+}
+
+std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
+                                          const render::Overlay*) {
+    State& s = *state_;
+    s.encodeFrame(s.offscreen, view, 4);
+    const u32 stride = (s.width * 4 + 255) & ~255u;
+    wgpu::Buffer readback = s.buffer(u64(stride) * s.height, U::MapRead | U::CopyDst, "readback");
+    wgpu::TexelCopyTextureInfo source{};
+    source.texture = s.offscreen;
+    wgpu::TexelCopyBufferInfo destination{};
+    destination.buffer = readback;
+    destination.layout.bytesPerRow = stride;
+    const wgpu::Extent3D extent = {s.width, s.height, 1};
+    wgpu::CommandEncoder encoder = s.device.CreateCommandEncoder();
+    encoder.CopyTextureToBuffer(&source, &destination, &extent);
+    const wgpu::CommandBuffer commands = encoder.Finish();
+    s.queue.Submit(1, &commands);
+    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, readback.GetSize(),
+                             wgpu::CallbackMode::WaitAnyOnly,
+                             [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
+    const auto* bytes = static_cast<const u8*>(readback.GetConstMappedRange(0, readback.GetSize()));
+    std::vector<u8> pixels(usize(s.width) * s.height * 4);
+    const bool swap = s.outputFormat == Format::RGBA8Unorm;
+    for (u32 y = 0; y < s.height; ++y) {
+        for (u32 x = 0; x < s.width; ++x) {
+            const u8* from = bytes + usize(y) * stride + usize(x) * 4;
+            u8* to = pixels.data() + (usize(y) * s.width + x) * 4;
+            to[0] = swap ? from[2] : from[0];
+            to[1] = from[1];
+            to[2] = swap ? from[0] : from[2];
+            to[3] = from[3];
+        }
+    }
+    readback.Unmap();
+    return pixels;
+}
+
+} // namespace geo::webgpu
