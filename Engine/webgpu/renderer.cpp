@@ -1504,6 +1504,7 @@ struct Renderer::State {
         }
 #ifdef __EMSCRIPTEN__
         // The browser cannot wait for the GPU; the web runtime asks for these asynchronously.
+        (void)view;
         return result;
 #else
         ensureGroups();
