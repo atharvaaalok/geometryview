@@ -9,7 +9,8 @@ than 5% over its baseline fails, unless it is within 10 ms, below which timer no
 Run it on AC power with nothing else busy.
 
 Fixtures live outside the repository, under $GEOMETRY_FIXTURES, which defaults to the folder they
-were measured from.
+were measured from. Those since archived out of that folder are also looked for in build/fixtures,
+where the spikes keep their copies.
 
 Usage: perf_gate.py <build-dir> [--update] [--runs N]
 """
@@ -40,6 +41,11 @@ FIXTURES = {
     "stl_10m": "geometry_testing/CADBench/benchmark_data/browse/benchO/stl/"
     "d2e68f88b6e34e61874a0c2709704309.stl",
 }
+# Local copies of the fixtures whose folder was archived to S3.
+LOCAL_COPIES = {
+    "hard_52mb": ROOT / "build" / "fixtures" / "hard_52mb.step",
+    "stl_10m": ROOT / "build" / "fixtures" / "stl10m.stl",
+}
 
 
 def import_seconds(build: Path, source: Path) -> float:
@@ -69,6 +75,8 @@ def main() -> int:
     failed = False
     for name, relative in FIXTURES.items():
         source = root / relative
+        if not source.exists() and name in LOCAL_COPIES:
+            source = LOCAL_COPIES[name]
         if not source.exists():
             print(f"{name:12} skipped: {source} not found")
             continue
