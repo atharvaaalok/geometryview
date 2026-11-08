@@ -81,9 +81,19 @@ static inline bool isVisible(const device Meshlet& m, const device GpuDefinition
         return false;
     }
     const float3 offset = center - frame.eye;
+    if (kSection) {
+        // Wholly on the cut side of a plane, it would be clipped away.
+        for (uint k = 0; k < frame.sectionPlaneCount; ++k) {
+            const float4 plane = frame.sectionPlanes[k];
+            if (dot(plane.xyz, center) + plane.w > radius) {
+                return false;
+            }
+        }
+    }
 
-    // An open surface shows both sides, so a normal cone proves nothing about it.
-    if ((definition.flags & kDefinitionOpen) != 0) {
+    // An open surface shows both sides, so a normal cone proves nothing about it; nor does it
+    // where back faces are drawn: as caps through a section, and as the shell's far walls.
+    if ((definition.flags & kDefinitionOpen) != 0 || kSection || kShellLayer == kShellBack) {
         return true;
     }
     const float3 axis = transformDirection(occurrence, float3(m.coneX, m.coneY, m.coneZ) / 127.0);
