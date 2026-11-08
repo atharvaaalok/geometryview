@@ -192,44 +192,58 @@ fn countSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
 var<workgroup> scanScratch: array<u32, 256>;
 
 // Turns the workgroups' counts into where each one's writes start, list by list, in one
-// workgroup, and keeps each list's totals.
+// workgroup, and keeps each list's totals. Each thread takes a run of workgroups: it sums its run,
+// the threads' sums are scanned together, and each thread then numbers its run from where its sum
+// starts. A workgroup's counts lie together, slots and indices for each list in turn, so a thread
+// reads its run once for all of them. A scene of a million meshlets has some 16,000 workgroups,
+// and scanning them 256 at a time took 1.4 ms, nearly all of it barriers.
+const kSeries = 14u; // slots and indices for each of the lists
+
 @compute @workgroup_size(256)
 fn scanSurfaces(@builtin(local_invocation_index) lid: u32) {
     let groupCount = lists.groupCount;
-    for (var list = 0u; list < kLists; list++) {
-        for (var value = 0u; value < 2u; value++) {
-            var carry = 0u;
-            for (var base = 0u; base < groupCount; base += 256u) {
-                let i = base + lid;
-                var own = 0u;
-                if (i < groupCount) {
-                    own = counters.words[groupEntry(i, list) + value];
-                }
-                scanScratch[lid] = own;
-                workgroupBarrier();
-                for (var step = 1u; step < 256u; step <<= 1u) {
-                    var add = 0u;
-                    if (lid >= step) {
-                        add = scanScratch[lid - step];
-                    }
-                    workgroupBarrier();
-                    scanScratch[lid] += add;
-                    workgroupBarrier();
-                }
-                if (i < groupCount) {
-                    counters.words[groupEntry(i, list) + value] = carry + scanScratch[lid] - own;
-                }
-                carry += scanScratch[255];
-                workgroupBarrier();
+    let run = (groupCount + 255u) / 256u;
+    let first = min(lid * run, groupCount);
+    let last = min(first + run, groupCount);
+    var sums: array<u32, kSeries>;
+    for (var i = first; i < last; i++) {
+        let base = groupEntry(i, 0u);
+        for (var k = 0u; k < kSeries; k++) {
+            sums[k] += counters.words[base + k];
+        }
+    }
+    var starts: array<u32, kSeries>;
+    for (var k = 0u; k < kSeries; k++) {
+        scanScratch[lid] = sums[k];
+        workgroupBarrier();
+        for (var step = 1u; step < 256u; step <<= 1u) {
+            var add = 0u;
+            if (lid >= step) {
+                add = scanScratch[lid - step];
             }
-            if (lid == 0u) {
-                let region = lists.regions[list];
-                if (value == 0u) {
-                    counters.slots[list] = min(carry, region.slotCapacity);
-                } else {
-                    counters.indices[list] = min(carry, region.indexCapacity);
-                }
+            workgroupBarrier();
+            scanScratch[lid] += add;
+            workgroupBarrier();
+        }
+        starts[k] = scanScratch[lid] - sums[k];
+        if (lid == 255u) {
+            let list = k / 2u;
+            let total = scanScratch[255];
+            let region = lists.regions[list];
+            if (k % 2u == 0u) {
+                counters.slots[list] = min(total, region.slotCapacity);
+            } else {
+                counters.indices[list] = min(total, region.indexCapacity);
             }
+        }
+        workgroupBarrier();
+    }
+    for (var i = first; i < last; i++) {
+        let base = groupEntry(i, 0u);
+        for (var k = 0u; k < kSeries; k++) {
+            let own = counters.words[base + k];
+            counters.words[base + k] = starts[k];
+            starts[k] += own;
         }
     }
 }
