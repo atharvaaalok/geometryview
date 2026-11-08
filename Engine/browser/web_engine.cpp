@@ -31,6 +31,10 @@ namespace {
 
 // How long the view must be still before it is drawn again with all four samples.
 constexpr double kSettleSeconds = 0.35;
+// The four samples are drawn in one frame, so a touch that lands meanwhile waits for it: where a
+// frame takes so long that four would pass this, as the 10M STL does on a phone, the still view
+// keeps its one sample.
+constexpr double kSettleBudgetMs = 64.0;
 
 // JavaScript, which clang-format would break.
 // clang-format off
@@ -207,11 +211,13 @@ bool tick(double, void*) {
         web.settled = false;
         ++web.framesDrawn;
     } else if (!web.settled && web.last && now - web.lastDrawn >= kSettleSeconds) {
-        web.renderer->setSamples(4);
-        draw(*web.last);
-        web.renderer->setSamples(1);
+        if (web.renderer->gpuMilliseconds() * 4.0 <= kSettleBudgetMs) {
+            web.renderer->setSamples(4);
+            draw(*web.last);
+            web.renderer->setSamples(1);
+            ++web.settledFrames;
+        }
         web.settled = true;
-        ++web.settledFrames;
     }
     web.looping = web.coreWantsFrames || !web.settled;
     if (!web.looping) {
