@@ -398,7 +398,8 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
             {"perspective-metal", GeoStyleMetal, true},
         };
         for (const Case& c : cases) {
-            CAPTURE(c.name);
+            const std::string caseName = c.name;
+            CAPTURE(caseName);
             GeoRenderOptions options = geo_default_render_options();
             options.width = kWidth;
             options.height = kHeight;

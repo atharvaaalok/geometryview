@@ -3,6 +3,11 @@
 // by, and exactly as many indices as its triangles need, written by its workgroup together. An
 // index is slot << kSlotShift | vertex within the meshlet, so the hardware reuses vertices.
 //
+// The surface lists keep the instances' order, so surfaces at equal depth, which a section
+// exposes where parts touch, and overlapping ghosts draw the same way every frame: one pass counts
+// what each workgroup adds to each list, one turns the counts into offsets, and one writes. The
+// shadow and the edges, whose results do not depend on order, take one pass with atomics.
+//
 // Lists, as the Metal renderer's passes keep or drop occurrences:
 //   0, 1  solid surfaces, closed and open
 //   2, 3  ghosts, closed and open: occurrences ghosted whole or in part
@@ -22,8 +27,8 @@ struct Lists {
     edgeRegions: array<Region, 2>,
     instanceCount: u32,
     edgeInstanceCount: u32,
+    groupCount: u32, // workgroups the surface passes dispatch
     pad0: u32,
-    pad1: u32,
 }
 
 struct DrawIndexed {
@@ -41,15 +46,18 @@ struct Draw {
     firstInstance: u32,
 }
 
-// Reset by the CPU before each frame's cull.
+// The draws' arguments, reset by the CPU before each frame's cull, then what each workgroup adds
+// to each ordered list: slots, then indices, which the scan turns into where its writes start.
 struct Counters {
     surfaces: array<DrawIndexed, 8>,
     edges: array<Draw, 2>,
     slots: array<atomic<u32>, 8>,
     edgeSlots: array<atomic<u32>, 2>,
+    groups: array<u32>,
 }
 
 const kLists = 7u;
+const kOrderedLists = 6u;
 const kListShadow = 6u;
 const kEdgeVertices = 192u; // six per segment, for a chunk of 32
 // Edges of a chunk smaller than this on screen, in pixels of radius, would only blot it with ink,
@@ -76,6 +84,13 @@ fn meshletVisible(m: Meshlet, d: Definition, o: Occurrence, cone: bool) -> bool 
     }
     if (!sphereInView(center, radius)) {
         return false;
+    }
+    // Wholly on the cut side of a plane, it would be clipped away.
+    for (var k = 0u; k < frame.sectionPlaneCount; k++) {
+        let plane = frame.sectionPlanes[k];
+        if (dot(plane.xyz, center) + plane.w > radius) {
+            return false;
+        }
     }
     // An open surface shows both sides, so a normal cone proves nothing about it.
     if (!cone || (d.flags & kDefinitionOpen) != 0u) {
@@ -131,8 +146,9 @@ fn instanceIndex(lid: u32, group: vec3u, groups: vec3u) -> u32 {
     return (group.y * groups.x + group.x) * 64u + lid;
 }
 
+// The shadow's list, in whatever order workgroups finish: one pass, with atomics.
 @compute @workgroup_size(64)
-fn cullSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
+fn cullUnordered(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
                 @builtin(num_workgroups) groups: vec3u) {
     let index = instanceIndex(lid, group, groups);
     if (lid < kLists) {
@@ -205,6 +221,186 @@ fn cullSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id
         let count = m.triangleCount * 3u;
         // Clamped because a cache file is untrusted and per-index validation would read every
         // page.
+        let last = max(m.vertexCount, 1u) - 1u;
+        let first = wantIndex[v];
+        for (var j = lid; j < count; j += 64u) {
+            let packed = geometry[d.triangles + m.triangleOffset + j / 3u];
+            let vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
+            indicesOut[first + j] = (slot << kSlotShift) | vertex;
+        }
+    }
+}
+
+// ---- The ordered surface lists ---------------------------------------------------------------
+
+fn groupIndex(group: vec3u, groups: vec3u) -> u32 {
+    return group.y * groups.x + group.x;
+}
+
+fn groupEntry(group: u32, list: u32) -> u32 {
+    return (group * kOrderedLists + list) * 2u;
+}
+
+// What each workgroup adds to each list.
+@compute @workgroup_size(64)
+fn countSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
+                 @builtin(num_workgroups) groups: vec3u) {
+    let index = instanceIndex(lid, group, groups);
+    if (lid < kOrderedLists) {
+        atomicStore(&slotCount[lid], 0u);
+        atomicStore(&indexCount[lid], 0u);
+    }
+    workgroupBarrier();
+    if (index < lists.instanceCount) {
+        let instance = instances[index];
+        let o = occurrences[instance.x];
+        let d = definitions[o.definition];
+        if (instance.y < d.meshletCount) {
+            let m = meshletAt(d, instance.y);
+            let bits = membership(instance.x, m, d, o);
+            for (var list = 0u; list < kOrderedLists; list++) {
+                if ((bits & (1u << list)) != 0u) {
+                    atomicAdd(&slotCount[list], 1u);
+                    atomicAdd(&indexCount[list], m.triangleCount * 3u);
+                }
+            }
+        }
+    }
+    workgroupBarrier();
+    if (lid < kOrderedLists) {
+        let at = groupEntry(groupIndex(group, groups), lid);
+        counters.groups[at] = atomicLoad(&slotCount[lid]);
+        counters.groups[at + 1u] = atomicLoad(&indexCount[lid]);
+    }
+}
+
+var<workgroup> scanScratch: array<u32, 256>;
+
+// Turns the workgroups' counts into where each one's writes start, list by list, in one
+// workgroup, and sets each list's draw to its total.
+@compute @workgroup_size(256)
+fn scanSurfaces(@builtin(local_invocation_index) lid: u32) {
+    let groupCount = lists.groupCount;
+    for (var list = 0u; list < kOrderedLists; list++) {
+        for (var value = 0u; value < 2u; value++) {
+            var carry = 0u;
+            for (var base = 0u; base < groupCount; base += 256u) {
+                let i = base + lid;
+                var own = 0u;
+                if (i < groupCount) {
+                    own = counters.groups[groupEntry(i, list) + value];
+                }
+                scanScratch[lid] = own;
+                workgroupBarrier();
+                for (var step = 1u; step < 256u; step <<= 1u) {
+                    var add = 0u;
+                    if (lid >= step) {
+                        add = scanScratch[lid - step];
+                    }
+                    workgroupBarrier();
+                    scanScratch[lid] += add;
+                    workgroupBarrier();
+                }
+                if (i < groupCount) {
+                    counters.groups[groupEntry(i, list) + value] = carry + scanScratch[lid] - own;
+                }
+                carry += scanScratch[255];
+                workgroupBarrier();
+            }
+            if (lid == 0u) {
+                let region = lists.regions[list];
+                if (value == 0u) {
+                    atomicStore(&counters.slots[list], min(carry, region.slotCapacity));
+                } else {
+                    atomicStore(&counters.surfaces[list].indexCount,
+                                min(carry, region.indexCapacity));
+                }
+            }
+        }
+    }
+}
+
+var<workgroup> threadSlots: array<u32, 384>;   // per thread and list: 1 if it joins
+var<workgroup> threadIndices: array<u32, 384>; // and how many indices it brings
+
+// Writes each workgroup's slots and indices where the scan said, its threads in order.
+@compute @workgroup_size(64)
+fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
+                 @builtin(num_workgroups) groups: vec3u) {
+    let index = instanceIndex(lid, group, groups);
+    var bits = 0u;
+    var triangles = 0u;
+    if (index < lists.instanceCount) {
+        let instance = instances[index];
+        let o = occurrences[instance.x];
+        let d = definitions[o.definition];
+        if (instance.y < d.meshletCount) {
+            let m = meshletAt(d, instance.y);
+            bits = membership(instance.x, m, d, o);
+            triangles = m.triangleCount;
+        }
+    }
+    for (var list = 0u; list < kOrderedLists; list++) {
+        let joins = (bits & (1u << list)) != 0u;
+        threadSlots[lid * kOrderedLists + list] = select(0u, 1u, joins);
+        threadIndices[lid * kOrderedLists + list] = select(0u, triangles * 3u, joins);
+    }
+    workgroupBarrier();
+    // One thread per list counts off the workgroup's threads in order.
+    if (lid < kOrderedLists) {
+        var slots = 0u;
+        var indices = 0u;
+        for (var t = 0u; t < 64u; t++) {
+            let at = t * kOrderedLists + lid;
+            let ownSlot = threadSlots[at];
+            let ownIndices = threadIndices[at];
+            threadSlots[at] = slots;
+            threadIndices[at] = indices;
+            slots += ownSlot;
+            indices += ownIndices;
+        }
+    }
+    workgroupBarrier();
+    let entry = groupIndex(group, groups);
+    var joined = 0u;
+    for (var list = 0u; list < kOrderedLists; list++) {
+        var slot = 0xFFFFFFFFu;
+        var first = 0u;
+        if ((bits & (1u << list)) != 0u && joined < 2u) {
+            let region = lists.regions[list];
+            let at = groupEntry(entry, list);
+            let localSlot = counters.groups[at] + threadSlots[lid * kOrderedLists + list];
+            let localIndex = counters.groups[at + 1u] + threadIndices[lid * kOrderedLists + list];
+            // Past its capacity a list drops the rest rather than write beyond it.
+            if (localSlot < region.slotCapacity &&
+                localIndex + triangles * 3u <= region.indexCapacity) {
+                slot = region.slotBase + localSlot;
+                first = region.indexBase + localIndex;
+                slotsOut[slot] = instances[index];
+            }
+        }
+        if ((bits & (1u << list)) != 0u && joined < 2u) {
+            wantSlot[lid * 2u + joined] = slot;
+            wantIndex[lid * 2u + joined] = first;
+            wantInstance[lid * 2u + joined] = index;
+            joined++;
+        }
+    }
+    for (var k = joined; k < 2u; k++) {
+        wantSlot[lid * 2u + k] = 0xFFFFFFFFu;
+    }
+    workgroupBarrier();
+
+    // Together, write each visible meshlet's indices.
+    for (var v = 0u; v < 128u; v++) {
+        let slot = wantSlot[v];
+        if (slot == 0xFFFFFFFFu) {
+            continue;
+        }
+        let instance = instances[wantInstance[v]];
+        let d = definitions[occurrences[instance.x].definition];
+        let m = meshletAt(d, instance.y);
+        let count = m.triangleCount * 3u;
         let last = max(m.vertexCount, 1u) - 1u;
         let first = wantIndex[v];
         for (var j = lid; j < count; j += 64u) {

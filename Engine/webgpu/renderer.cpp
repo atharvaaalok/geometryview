@@ -72,7 +72,7 @@ struct Region {
 struct Lists {
     Region regions[8];
     Region edgeRegions[2];
-    u32 instanceCount, edgeInstanceCount, pad0, pad1;
+    u32 instanceCount, edgeInstanceCount, groupCount, pad0;
 };
 static_assert(sizeof(Lists) == 176);
 
@@ -93,6 +93,8 @@ struct Counters {
     u32 edgeSlots[2];
 };
 static_assert(sizeof(Counters) == 232);
+// After the draws' arguments: slots and indices per workgroup and ordered list.
+constexpr u32 kOrderedLists = 6;
 constexpr u64 kEdgeDrawOffset = offsetof(Counters, edges);
 
 // What each surface list draws with: which kind of pass, and closed or open.
@@ -213,7 +215,8 @@ struct Renderer::State {
     wgpu::PipelineLayout cullPipelineLayout, surfacePipelineLayout, peelPipelineLayout;
     wgpu::PipelineLayout edgePipelineLayout, sheetPipelineLayout, resolvePipelineLayout;
     wgpu::PipelineLayout occlusionPipelineLayout, compositePipelineLayout;
-    wgpu::ComputePipeline cullSurfaces, cullShadow, cullEdges, occlusion;
+    wgpu::ComputePipeline countSurfaces, scanSurfaces, writeSurfaces, cullShadow, cullEdges;
+    wgpu::ComputePipeline occlusion;
     wgpu::RenderPipeline sheet, resolve, composite;
     std::unordered_map<u32, wgpu::RenderPipeline> pipelines;
     wgpu::Sampler linearClamp;
@@ -363,8 +366,10 @@ struct Renderer::State {
     }
 
     void createFixedPipelines() {
-        cullSurfaces = computePipeline(cullModule, "cullSurfaces", cullPipelineLayout);
-        cullShadow = computePipeline(cullModule, "cullSurfaces", cullPipelineLayout,
+        countSurfaces = computePipeline(cullModule, "countSurfaces", cullPipelineLayout);
+        scanSurfaces = computePipeline(cullModule, "scanSurfaces", cullPipelineLayout);
+        writeSurfaces = computePipeline(cullModule, "writeSurfaces", cullPipelineLayout);
+        cullShadow = computePipeline(cullModule, "cullUnordered", cullPipelineLayout,
                                      {constant("kShadowCull", 1)});
         cullEdges = computePipeline(cullModule, "cullEdges", cullPipelineLayout);
         occlusion = computePipeline(postModule, "ambientOcclusion", occlusionPipelineLayout);
@@ -772,6 +777,8 @@ struct Renderer::State {
         }
         table.instanceCount = surfaceInstances;
         table.edgeInstanceCount = edgeInstances;
+        const auto [groupsX, groupsY] = dispatchSize(surfaceInstances);
+        table.groupCount = groupsX * groupsY;
         listTable = table;
         if (!lists) {
             lists = buffer(sizeof(Lists), U::Uniform | U::CopyDst, "lists");
@@ -787,6 +794,8 @@ struct Renderer::State {
             }
         };
         grow(slots, (slotTotal + edgeTotal) * 8, U::Storage, "slots");
+        grow(counters, sizeof(Counters) + u64(table.groupCount) * kOrderedLists * 8,
+             U::Storage | U::Indirect | U::CopyDst, "counters");
         grow(indices, indexTotal * 4, U::Storage | U::Index, "indices");
         if (indexTotal * 4 > limits.maxStorageBufferBindingSize) {
             std::fprintf(stderr, "The scene's draw lists are larger than the GPU can bind.\n");
@@ -827,9 +836,6 @@ struct Renderer::State {
                 bufferEntry(6, faceStates),
                 bufferEntry(7, palette),
             });
-        }
-        if (!counters) {
-            counters = buffer(sizeof(Counters), U::Storage | U::Indirect | U::CopyDst, "counters");
         }
         if (!cullGroup) {
             cullGroup = makeGroup(device, cullLayout, {
@@ -930,7 +936,11 @@ struct Renderer::State {
         pass.SetBindGroup(1, cullGroup);
         if (surfaceInstances != 0) {
             const auto [x, y] = dispatchSize(surfaceInstances);
-            pass.SetPipeline(cullSurfaces);
+            pass.SetPipeline(countSurfaces);
+            pass.DispatchWorkgroups(x, y);
+            pass.SetPipeline(scanSurfaces);
+            pass.DispatchWorkgroups(1);
+            pass.SetPipeline(writeSurfaces);
             pass.DispatchWorkgroups(x, y);
             if (shadow) {
                 pass.SetPipeline(cullShadow);
