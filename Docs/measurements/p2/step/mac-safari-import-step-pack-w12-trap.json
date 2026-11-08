@@ -1,0 +1,114 @@
+{
+  "label": "mac-safari-import-step-pack-w12-trap",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "model": "pack",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 73,
+  "poolMs": 23,
+  "importMs": 2043,
+  "beginMs": 159,
+  "meshMs": 1880,
+  "finishMs": 4,
+  "seconds": {
+    "tokenize": 0.073,
+    "structure": 0.011,
+    "definitions": 0.068,
+    "read": 4.188,
+    "transfer": 10.305,
+    "mesh": 4.937,
+    "pack": 0.056
+  },
+  "records": 554753,
+  "bodies": 837,
+  "definitions": 71,
+  "faces": 1381,
+  "triangles": 54482,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 12,
+  "meshlets": 506,
+  "slices": 114,
+  "recoveries": [
+    {
+      "id": 9,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 14.6
+    },
+    {
+      "id": 19,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 27.4
+    },
+    {
+      "id": 29,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 14.9
+    },
+    {
+      "id": 39,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 15.9
+    },
+    {
+      "id": 49,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 19.1
+    },
+    {
+      "id": 59,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 16.3
+    },
+    {
+      "id": 69,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 11.7
+    },
+    {
+      "id": 79,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 10.1
+    },
+    {
+      "id": 89,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 11
+    },
+    {
+      "id": 99,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 12.2
+    },
+    {
+      "id": 109,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 10.1
+    },
+    {
+      "id": 119,
+      "fault": "trap",
+      "error": "RuntimeError: Unreachable code should not be executed (evaluating 'occt._occt_trap()')",
+      "recoveryMs": 11.8
+    }
+  ],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 67,
+    "peakWorker": 23,
+    "peakPool": 199
+  },
+  "blobBytes": 1687552
+}

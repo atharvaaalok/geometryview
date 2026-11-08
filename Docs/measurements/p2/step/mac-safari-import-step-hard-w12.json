@@ -1,0 +1,41 @@
+{
+  "label": "mac-safari-import-step-hard-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "model": "hard",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 74,
+  "poolMs": 22,
+  "importMs": 4756,
+  "beginMs": 288,
+  "meshMs": 4460,
+  "finishMs": 8,
+  "seconds": {
+    "tokenize": 0.094,
+    "structure": 0.01,
+    "definitions": 0.174,
+    "read": 6.614,
+    "transfer": 36.68,
+    "mesh": 5.535,
+    "pack": 0.322
+  },
+  "records": 706701,
+  "bodies": 1,
+  "definitions": 1,
+  "faces": 12188,
+  "triangles": 340646,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 3005,
+  "slices": 614,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 163,
+    "peakWorker": 23,
+    "peakPool": 254
+  },
+  "blobBytes": 9453568
+}

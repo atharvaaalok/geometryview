@@ -1,0 +1,41 @@
+{
+  "label": "mac-chrome-import-step-ple120-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "model": "ple120",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 42,
+  "poolMs": 29,
+  "importMs": 605,
+  "beginMs": 120,
+  "meshMs": 482,
+  "finishMs": 2,
+  "seconds": {
+    "tokenize": 0.053,
+    "structure": 0.005,
+    "definitions": 0.057,
+    "read": 2.008,
+    "transfer": 1.842,
+    "mesh": 0.83,
+    "pack": 0.04
+  },
+  "records": 398234,
+  "bodies": 89,
+  "definitions": 63,
+  "faces": 2677,
+  "triangles": 79760,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 713,
+  "slices": 244,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 71,
+    "peakWorker": 33,
+    "peakPool": 259
+  },
+  "blobBytes": 1851392
+}

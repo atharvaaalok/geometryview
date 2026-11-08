@@ -1,0 +1,57 @@
+{
+  "label": "mac-chrome-import-step-hard-w12-p3",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "model": "hard",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 62,
+  "poolMs": 112,
+  "importMs": 2823,
+  "beginMs": 278,
+  "meshMs": 2540,
+  "finishMs": 5,
+  "seconds": {
+    "tokenize": 0.087,
+    "structure": 0.01,
+    "definitions": 0.167,
+    "read": 2.598,
+    "transfer": 20.485,
+    "mesh": 2.461,
+    "pack": 0.352
+  },
+  "records": 706701,
+  "bodies": 1,
+  "definitions": 1,
+  "faces": 12188,
+  "triangles": 340646,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 3005,
+  "slices": 614,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 163,
+    "peakWorker": 23,
+    "peakPool": 254
+  },
+  "blobBytes": 9453568,
+  "later": [
+    {
+      "importMs": 2268,
+      "beginMs": 188,
+      "meshMs": 2076,
+      "finishMs": 3,
+      "recoveries": 0
+    },
+    {
+      "importMs": 2254,
+      "beginMs": 181,
+      "meshMs": 2070,
+      "finishMs": 3,
+      "recoveries": 0
+    }
+  ]
+}

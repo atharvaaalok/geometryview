@@ -1,0 +1,114 @@
+{
+  "label": "mac-chrome-import-step-pack-w12-exhaust",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "model": "pack",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 30,
+  "poolMs": 28,
+  "importMs": 558,
+  "beginMs": 139,
+  "meshMs": 408,
+  "finishMs": 2,
+  "seconds": {
+    "tokenize": 0.068,
+    "structure": 0.01,
+    "definitions": 0.054,
+    "read": 0.996,
+    "transfer": 1.196,
+    "mesh": 0.513,
+    "pack": 0.034
+  },
+  "records": 554753,
+  "bodies": 837,
+  "definitions": 71,
+  "faces": 1381,
+  "triangles": 54482,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 12,
+  "meshlets": 506,
+  "slices": 114,
+  "recoveries": [
+    {
+      "id": 9,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 22.9
+    },
+    {
+      "id": 19,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 15.3
+    },
+    {
+      "id": 69,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 21.1
+    },
+    {
+      "id": 39,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 74.1
+    },
+    {
+      "id": 59,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 38.4
+    },
+    {
+      "id": 29,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 79.9
+    },
+    {
+      "id": 49,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 54.8
+    },
+    {
+      "id": 79,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 15.9
+    },
+    {
+      "id": 89,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 16.5
+    },
+    {
+      "id": 99,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 13.1
+    },
+    {
+      "id": 109,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 10
+    },
+    {
+      "id": 119,
+      "fault": "exhaust",
+      "error": "Error: out of memory at 448 MB",
+      "recoveryMs": 13.5
+    }
+  ],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 67,
+    "peakWorker": 23,
+    "peakPool": 206
+  },
+  "blobBytes": 1638400
+}

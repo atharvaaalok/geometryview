@@ -1,0 +1,41 @@
+{
+  "label": "mac-chrome-import-step-demo-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "model": "demo",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 23,
+  "poolMs": 21,
+  "importMs": 233,
+  "beginMs": 9,
+  "meshMs": 223,
+  "finishMs": 1,
+  "seconds": {
+    "tokenize": 0.003,
+    "structure": 0.001,
+    "definitions": 0.003,
+    "read": 0.821,
+    "transfer": 0.845,
+    "mesh": 0.209,
+    "pack": 0.01
+  },
+  "records": 18107,
+  "bodies": 29,
+  "definitions": 29,
+  "faces": 177,
+  "triangles": 12870,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 125,
+  "slices": 35,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 16,
+    "peakWorker": 16,
+    "peakPool": 192
+  },
+  "blobBytes": 311296
+}
