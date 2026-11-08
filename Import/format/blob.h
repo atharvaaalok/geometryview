@@ -153,7 +153,26 @@ struct FaceRecord {
 };
 static_assert(sizeof(FaceRecord) == 8);
 
-/// A validated view of a segment. Every span points into it.
+/// The section kinds, as indices: SectionKind's values run from 1 to 13.
+inline constexpr usize kSectionKinds = 14;
+
+/// Where a section lies in its segment, whether or not its bytes are in memory.
+struct SectionPlace {
+    u64 offset = 0; // bytes from the start of the segment
+    u64 count = 0;  // records
+
+    bool operator==(const SectionPlace&) const = default;
+};
+
+/// Whether a viewer reads a section on the CPU. The rest only the GPU reads, so a segment streamed
+/// to the GPU keeps only these in memory.
+bool readOnCpu(SectionKind kind);
+
+/// Where each section's bytes are in memory, by SectionKind: null for one held elsewhere.
+using SectionBytes = std::array<const u8*, kSectionKinds>;
+
+/// A validated view of a segment. Every span points into it, or into the memory holding its
+/// sections; a section held only on the GPU has an empty span and its place below.
 struct SegmentView {
     std::span<const ModelInfo> modelInfo; // one record, in the model's segment
     std::span<const DefinitionInfo> definitionInfos;
@@ -170,7 +189,12 @@ struct SegmentView {
     std::span<const EdgeSegment> edgeSegments;
     std::span<const EdgeChunk> edgeChunks;
 
+    /// Every section's place, by SectionKind, including those held only on the GPU.
+    std::array<SectionPlace, kSectionKinds> places{};
+
     bool hasModel() const { return !modelInfo.empty(); }
+    u64 count(SectionKind kind) const { return places[usize(kind)].count; }
+    u64 offset(SectionKind kind) const { return places[usize(kind)].offset; }
 };
 
 /// Validates a finished file's header and returns its segment table.
@@ -188,5 +212,11 @@ bool parseHeaderPrefix(std::span<const u8> prefix, std::span<const SegmentEntry>
 /// size and offset the viewer relies on is checked here, and shaders clamp what is too costly to
 /// check per element.
 bool parseSegment(std::span<const u8> bytes, SegmentView& view, std::string& error);
+
+/// Validates a segment whose sections are held apart: `header` is a copy of its header, `size` its
+/// size, and `bytes` where each section is in memory. Every section's layout is checked against the
+/// header; every section read on the CPU must be in memory, and is validated as parseSegment does.
+bool parseSegmentParts(const SegmentHeader& header, u64 size, const SectionBytes& bytes,
+                       SegmentView& view, std::string& error);
 
 } // namespace geo::format
