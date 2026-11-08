@@ -20,6 +20,15 @@ add_executable(gcli gcli/main.cpp)
 target_include_directories(gcli PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
 target_link_libraries(gcli PRIVATE engine import_core geo_warnings)
 
+# The WebGPU renderer on Dawn, compared with Metal and timed.
+if(GEO_WEBGPU)
+    add_executable(geometry-webgpu webgpu/main.mm)
+    target_include_directories(geometry-webgpu PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
+    target_link_libraries(geometry-webgpu PRIVATE engine engine_webgpu geo_warnings)
+    set_target_properties(geometry-webgpu PROPERTIES
+        BUILD_RPATH "${CMAKE_SOURCE_DIR}/ThirdParty/.dawn/install/lib")
+endif()
+
 # Spikes are small reproducible experiments. Their results are recorded in Docs/adr.
 add_executable(spike_geometry spikes/geometry_path.mm)
 target_include_directories(spike_geometry PRIVATE spikes)
