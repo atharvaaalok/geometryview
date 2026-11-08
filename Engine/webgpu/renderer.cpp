@@ -998,9 +998,11 @@ struct Renderer::State {
         queue.WriteBuffer(instances, 0, surfaceList.data(), surfaceList.size() * 8);
 
         cullGroup = nullptr; // it binds the instances
-        // States and looks follow the scene's occurrences, until synced again.
+        // States follow the scene's occurrences until synced again, which the core does each
+        // frame. Looks are kept, as Metal keeps them: the core sends them again only when the
+        // model changes, not as each segment of a file arrives.
         words.assign(gpuOccurrences.size(), OccurrenceState{0, 0});
-        looks.assign(gpuOccurrences.size(), 0);
+        looks.resize(gpuOccurrences.size(), 0);
         faceStates = buffer(16, U::Storage | U::CopyDst, "face states");
         stateVersion = ~u64(0);
         uploadStates();
@@ -1927,7 +1929,6 @@ void Renderer::setStyle(const StyleUniforms& style, bool physical) {
 void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) {
     State& s = *state_;
     s.looks.assign(lookOfOccurrence.begin(), lookOfOccurrence.end());
-    s.looks.resize(s.occurrenceInfo.size(), 0);
     s.palette =
         s.buffer(std::max<usize>(palette.size_bytes(), 12), U::Storage | U::CopyDst, "palette");
     s.queue.WriteBuffer(s.palette, 0, palette.data(), palette.size_bytes());

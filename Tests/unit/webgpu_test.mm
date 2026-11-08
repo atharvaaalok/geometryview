@@ -660,6 +660,37 @@ TEST_CASE("the WebGPU renderer draws a streamed file as it draws one read whole"
     }
 }
 
+// A file shown while it imports syncs the scene again as each segment arrives; the looks the core
+// sent before must hold, since it sends them again only when the model changes.
+TEST_CASE("the WebGPU renderer keeps its looks when the scene syncs again") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        engine::OffscreenView frame;
+        REQUIRE_MESSAGE(engine::prepareOffscreen(*web, openBlob(blob), options, frame, error),
+                        error);
+        const std::vector<u8> before = web->renderOffscreen(frame.view, nullptr);
+        // As the core's next frame does: the scene, then the states, then only looks that changed.
+        web->syncScene(frame.scene);
+        model::FaceState state;
+        state.resize(frame.scene.faceCounts());
+        web->syncState(state);
+        const std::vector<u8> after = web->renderOffscreen(frame.view, nullptr);
+        REQUIRE(after.size() == before.size());
+        const Difference d = compare(after, before);
+        CAPTURE(d.changed);
+        CHECK(d.mean == 0.0);
+        unlink(blob.c_str());
+    }
+}
+
 // A still view's four samples drawn one a frame, as the browser draws them, end as four drawn at
 // once do.
 TEST_CASE("the WebGPU renderer's four samples one a frame end as four at once") {
