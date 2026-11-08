@@ -1,6 +1,6 @@
 # ADR 0013: The universal viewer: what Phase 0 measured and decided
 
-Status: proposed. The build phases (P1–P7) start once this is reviewed.
+Status: accepted (2026-11-07). The build phases P1–P7 follow it.
 
 ## Context
 
