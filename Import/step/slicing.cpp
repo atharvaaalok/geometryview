@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <tuple>
 
 namespace geo::import {
 
@@ -455,9 +456,11 @@ void SliceScheduler::packDefinition(u32 d) {
 
     const std::vector<std::pair<u32, u32>> faceOfId = faceIds(definition);
 
-    // Slices are read before any whole-body retry, so a retry only ever fills gaps.
-    std::stable_sort(state.results.begin(), state.results.end(),
-                     [](const Result& a, const Result& b) { return a.retry < b.retry; });
+    // Slices are read in face order, so the mesh does not depend on which worker answered first,
+    // and before any whole-body retry, so a retry only ever fills gaps.
+    std::sort(state.results.begin(), state.results.end(), [](const Result& a, const Result& b) {
+        return std::tie(a.retry, a.firstFace) < std::tie(b.retry, b.firstFace);
+    });
 
     usize vertices = 0, triangles = 0;
     for (const Result& result : state.results) {
