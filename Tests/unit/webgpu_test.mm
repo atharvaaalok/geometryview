@@ -660,5 +660,32 @@ TEST_CASE("the WebGPU renderer draws a streamed file as it draws one read whole"
     }
 }
 
+// A still view's four samples drawn one a frame, as the browser draws them, end as four drawn at
+// once do.
+TEST_CASE("the WebGPU renderer's four samples one a frame end as four at once") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        engine::OffscreenView frame;
+        REQUIRE_MESSAGE(engine::prepareOffscreen(*web, openBlob(blob), options, frame, error),
+                        error);
+        const std::vector<u8> atOnce = web->renderOffscreen(frame.view, nullptr);
+        const std::vector<u8> inSteps = web->renderOffscreen(frame.view, nullptr, true);
+        REQUIRE(atOnce.size() == inSteps.size());
+        const Difference d = compare(inSteps, atOnce);
+        CAPTURE(d.mean);
+        CHECK(d.mean < 0.05);
+        CHECK(d.changed == 0.0);
+        unlink(blob.c_str());
+    }
+}
+
 #endif
 #endif // GEO_HAS_WEBGPU

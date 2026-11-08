@@ -29,12 +29,9 @@ using namespace geo;
 
 namespace {
 
-// How long the view must be still before it is drawn again with all four samples.
+// How long the view must be still before its four samples are drawn, one a frame, so a touch that
+// lands meanwhile waits for one sample's frame at most.
 constexpr double kSettleSeconds = 0.35;
-// The four samples are drawn in one frame, so a touch that lands meanwhile waits for it: where a
-// frame takes so long that four would pass this, as the 10M STL does on a phone, the still view
-// keeps its one sample.
-constexpr double kSettleBudgetMs = 64.0;
 
 // JavaScript, which clang-format would break.
 // clang-format off
@@ -74,6 +71,7 @@ struct Web {
     std::optional<engine::Frame> last;
     double lastDrawn = 0.0;
     bool settled = true;
+    u32 settleStep = 0; // of the still view's four samples
     bool pointerMoved = false;
     u64 framesDrawn = 0, settledFrames = 0;
 
@@ -187,18 +185,23 @@ void configureSurface() {
     web.surface.Configure(&configuration);
 }
 
-void draw(const engine::Frame& frame) {
+// Draws a frame with one sample, or a still view's step of its four.
+void draw(const engine::Frame& frame, std::optional<u32> step = std::nullopt) {
     wgpu::SurfaceTexture surfaceTexture;
     web.surface.GetCurrentTexture(&surfaceTexture);
     if (!surfaceTexture.texture) {
         return;
     }
-    web.renderer->render(surfaceTexture.texture, frame.view, &frame.overlay);
+    if (step) {
+        web.renderer->renderStep(surfaceTexture.texture, frame.view, &frame.overlay, *step);
+    } else {
+        web.renderer->render(surfaceTexture.texture, frame.view, &frame.overlay);
+    }
 }
 
 // One display refresh. The core decides whether anything changed; once the view has been still a
-// moment, its last frame is drawn once more with all four samples, and then nothing is submitted
-// until something changes again.
+// moment, its four samples are drawn, one a frame, and then nothing is submitted until something
+// changes again.
 bool tick(double, void*) {
     if (web.pointerMoved) {
         web.pointerMoved = false;
@@ -211,15 +214,14 @@ bool tick(double, void*) {
         web.last = std::move(frame);
         web.lastDrawn = now;
         web.settled = false;
+        web.settleStep = 0;
         ++web.framesDrawn;
     } else if (!web.settled && web.last && now - web.lastDrawn >= kSettleSeconds) {
-        if (web.renderer->gpuMilliseconds() * 4.0 <= kSettleBudgetMs) {
-            web.renderer->setSamples(4);
-            draw(*web.last);
-            web.renderer->setSamples(1);
+        draw(*web.last, web.settleStep);
+        if (++web.settleStep == 4) {
+            web.settled = true;
             ++web.settledFrames;
         }
-        web.settled = true;
     }
     web.looping = web.coreWantsFrames || !web.settled;
     if (!web.looping) {

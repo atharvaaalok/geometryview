@@ -104,6 +104,7 @@ static_assert(sizeof(DrawIndexed) == 20);
 constexpr u32 kLists = 7;
 // A list is drawn in chunks of this many slots, so its indices fit 16 bits. See cull.wgsl.
 constexpr u32 kChunkSlots = 512;
+constexpr u32 kNoStep = ~0u; // a frame drawn whole, not one step of a still view's four
 // A list longer than this many chunks, as a million one-meshlet parts make, is drawn with 32-bit
 // indices instead, in one draw: each indirect draw costs the GPU about 0.7 µs, and thousands of
 // them cost more than the index memory saved.
@@ -507,10 +508,11 @@ struct Renderer::State {
         sheet = screenPipeline(sheetModule, "sheetFragment", sheetPipelineLayout, targets.data(), 5,
                                &farOnly, "sheet");
 
-        // Each sample adds its share into the accumulated colour.
+        // Each sample joins the accumulated colour as a running mean: the n-th of them, from 1,
+        // weighs 1/n against what is there, so the samples can arrive in one frame or several.
         wgpu::BlendState share{};
         share.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::Constant,
-                       wgpu::BlendFactor::One};
+                       wgpu::BlendFactor::OneMinusConstant};
         share.alpha = share.color;
         wgpu::ColorTargetState accumTarget{};
         accumTarget.format = kAccumFormat;
@@ -1426,7 +1428,8 @@ struct Renderer::State {
     }
 
     // Inks this sample and adds its share into the accumulated colour.
-    void encodeResolve(const wgpu::CommandEncoder& encoder, bool first, u32 count) {
+    // `nth` counts the samples accumulated so far, this one included.
+    void encodeResolve(const wgpu::CommandEncoder& encoder, bool first, u32 nth) {
         wgpu::RenderPassColorAttachment attachment{};
         attachment.view = accum.CreateView();
         attachment.loadOp = first ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
@@ -1440,22 +1443,30 @@ struct Renderer::State {
         pass.SetPipeline(resolve);
         pass.SetBindGroup(0, sceneGroup, 1, &offset);
         pass.SetBindGroup(1, resolveGroup);
-        const double share = 1.0 / double(count);
+        const double share = 1.0 / double(nth);
         const wgpu::Color constantColor = {share, share, share, share};
         pass.SetBlendConstant(&constantColor);
         pass.Draw(3);
         pass.End();
     }
 
+    // Draws `count` samples, or with a `step` from 0 to 3, the step-th of a still view's four,
+    // one a frame: samples 1, 2, 3 and then 0, each joining the running mean, so the fourth step
+    // leaves what four samples in one frame do.
     void encodeFrame(const wgpu::Texture& target, const render::ViewState& view, u32 count,
-                     const render::Overlay* overlay) {
+                     const render::Overlay* overlay, u32 step = kNoStep) {
 #ifndef __EMSCRIPTEN__
         instance.ProcessEvents(); // earlier frames' readbacks
 #endif
         ensureGroups();
         queue.WriteBuffer(styleBuffer, 0, &style, sizeof(style));
-        for (u32 s = 0; s < count; ++s) {
-            writeFrame(s, view.uniforms, count > 1 ? kSamplePositions[s] : nullptr);
+        if (step != kNoStep) {
+            count = 1;
+            writeFrame(0, view.uniforms, kSamplePositions[(step + 1) % 4]);
+        } else {
+            for (u32 s = 0; s < count; ++s) {
+                writeFrame(s, view.uniforms, count > 1 ? kSamplePositions[s] : nullptr);
+            }
         }
         writeFrame(kViewSlot, view.uniforms, nullptr);
         if (overlay != nullptr && overlay->visible && overlayGroup) {
@@ -1474,10 +1485,15 @@ struct Renderer::State {
             encodeShadow(encoder, section);
         }
         // Sample 0 last, so its ids, tags and depth remain.
-        for (u32 n = 0; n < count; ++n) {
-            const u32 s = (n + 1) % count;
-            encodeMain(encoder, s, view, overlay);
-            encodeResolve(encoder, n == 0, count);
+        if (step != kNoStep) {
+            encodeMain(encoder, 0, view, overlay);
+            encodeResolve(encoder, step == 0, step + 1);
+        } else {
+            for (u32 n = 0; n < count; ++n) {
+                const u32 s = (n + 1) % count;
+                encodeMain(encoder, s, view, overlay);
+                encodeResolve(encoder, n == 0, n + 1);
+            }
         }
         if (style.ao > 0.0f) {
             wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
@@ -2062,14 +2078,30 @@ void Renderer::render(const wgpu::Texture& target, const render::ViewState& view
     state_->encodeFrame(target, view, state_->samples, overlay);
 }
 
+void Renderer::renderStep(const wgpu::Texture& target, const render::ViewState& view,
+                          const render::Overlay* overlay, u32 step) {
+    state_->encodeFrame(target, view, 1, overlay, std::min(step, 3u));
+}
+
 std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
                                           const render::Overlay* overlay) {
+    return renderOffscreen(view, overlay, false);
+}
+
+std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
+                                          const render::Overlay* overlay, bool inSteps) {
     State& s = *state_;
     if (!s.offscreen) {
         s.offscreen = s.texture(s.width, s.height, s.outputFormat,
                                 Usage::RenderAttachment | Usage::CopySrc, "offscreen");
     }
-    s.encodeFrame(s.offscreen, view, 4, overlay);
+    if (inSteps) {
+        for (u32 step = 0; step < 4; ++step) {
+            s.encodeFrame(s.offscreen, view, 1, overlay, step);
+        }
+    } else {
+        s.encodeFrame(s.offscreen, view, 4, overlay);
+    }
     const u32 stride = (s.width * 4 + 255) & ~255u;
     wgpu::Buffer readback = s.buffer(u64(stride) * s.height, U::MapRead | U::CopyDst, "readback");
     wgpu::TexelCopyTextureInfo source{};

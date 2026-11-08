@@ -60,6 +60,14 @@ public:
     /// Jittered samples per frame, from 1 to 4. Offscreen renders always take 4.
     void setSamples(u32 samples);
 
+    /// Draws step `step`, from 0 to 3, of a still view's four samples, one a frame, so a frame
+    /// costs one sample: after step 3, `target` holds what `render` with four samples draws.
+    void renderStep(const wgpu::Texture& target, const render::ViewState& view,
+                    const render::Overlay* overlay, u32 step);
+    /// An offscreen render drawn in those four steps rather than at once, for tests.
+    std::vector<u8> renderOffscreen(const render::ViewState& view, const render::Overlay* overlay,
+                                    bool inSteps);
+
     /// The overlay's text: coverage, one byte per pixel, kAtlasWidth by kAtlasHeight, as the
     /// host draws it, and a glyph's advance in atlas pixels. Until it is given, no overlay draws.
     void setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance);
