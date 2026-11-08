@@ -171,9 +171,17 @@ export class Engine {
     let reader = null;
     this.#imports.set(token, { cancel: () => { cancelled = true; reader?.cancel(); } });
     try {
-      const body = typeof source === "string" ? (await fetch(source)).body
-                 : source instanceof Blob ? source.stream()
-                 : source;
+      let body = source, size = 0;
+      if (typeof source === "string") {
+        const response = await fetch(source);
+        body = response.body;
+        size = Number(response.headers.get("content-length") ?? 0);
+      } else if (source instanceof Blob) {
+        body = source.stream();
+        size = source.size;
+      }
+      // The file's real size bounds what its header may ask to be placed.
+      if (size > 0) module._geo_web_stream_size(token, size);
       reader = body.getReader();
       for (;;) {
         const { done, value } = await reader.read();

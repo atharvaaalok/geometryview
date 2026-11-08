@@ -397,6 +397,13 @@ EMSCRIPTEN_KEEPALIVE u8* geo_web_staging(u32 size) {
     return web.staging.data();
 }
 
+/// The size of the file about to be streamed for `token`, where the page knows it.
+EMSCRIPTEN_KEEPALIVE void geo_web_stream_size(double token, double size) {
+    if (const auto found = web.streams.find(u64(token)); found != web.streams.end()) {
+        found->second.reader->expectSize(u64(size));
+    }
+}
+
 /// The next `size` bytes of the file being imported for `token`, at `bytes`. Returns 1 to go on,
 /// 0 if the import was cancelled, -1 if the file proved invalid, which ends the import.
 EMSCRIPTEN_KEEPALIVE int geo_web_stream_chunk(double token, const u8* bytes, u32 size) {

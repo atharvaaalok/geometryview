@@ -243,3 +243,14 @@ TEST_CASE("a streamed cache file that is cut short or damaged is refused") {
         CHECK(!reader.append(longer, error));
     }
 }
+
+TEST_CASE("a streamed cache file must be as large as the host knows it to be") {
+    const std::vector<u8> file = meshCacheFile();
+    std::string error;
+    TestSink sink;
+    scene::CacheStream reader(&sink, [](std::shared_ptr<scene::Segment>) {});
+    reader.expectSize(file.size() + format::kAlignment);
+    CHECK(!reader.append(file, error));
+    CHECK(error == "The cache file's size does not match its header.");
+    CHECK(sink.placed.empty());
+}
