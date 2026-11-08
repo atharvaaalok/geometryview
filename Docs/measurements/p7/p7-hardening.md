@@ -193,6 +193,9 @@ The run near the new limit was left undone, because the phone was in use.
     |---|---|---|
     | PLE120 | 116,024 to 375,198 | 0.7 s |
     | The hard file | 340,646 to 967,300 | 3.9 s |
+    | PLE120 in Safari, a window of another size | 116,024 to 388,092 | 1.1 s |
+
+    The Safari run is also the new cull's first under WebKit, with no errors (`viewer/`).
 
 ## P6, the iOS shell, run on the phone
 

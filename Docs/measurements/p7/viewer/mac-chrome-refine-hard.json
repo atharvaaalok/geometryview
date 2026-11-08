@@ -1,0 +1,10 @@
+{
+  "label": "refine-p4-refine-step-hard.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "before": 340646,
+  "after": 967300,
+  "refinedMs": 3873,
+  "workers": 12
+}

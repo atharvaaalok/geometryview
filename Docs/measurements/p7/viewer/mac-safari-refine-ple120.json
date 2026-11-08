@@ -1,0 +1,10 @@
+{
+  "label": "mac-safari-p7-p4-refine-step-ple120.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "before": 116024,
+  "after": 388092,
+  "refinedMs": 1109,
+  "workers": 6
+}
