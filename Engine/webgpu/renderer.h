@@ -11,6 +11,7 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -53,6 +54,10 @@ public:
     /// how many frames have been timed so far.
     double gpuMilliseconds() const;
     u64 timedFrames() const;
+    /// Hover probes that have come back, and those whose readback failed.
+    std::array<u64, 2> probeCounts() const;
+    /// Pixels of the newest probe window with an id, and with a depth, for diagnosing readbacks.
+    std::array<u64, 2> probeContents() const;
 
 private:
     Renderer();

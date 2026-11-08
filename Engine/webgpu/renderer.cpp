@@ -274,6 +274,7 @@ struct Renderer::State {
     // another processes the instance's events, does nothing.
     std::shared_ptr<int> lifetime = std::make_shared<int>(0);
     mutable i32 probeX = -1, probeY = -1; // where the engine last asked
+    u64 probesArrived = 0, probesFailed = 0;
     // GPU time per frame, from timestamps around the frame's passes, where the device has them.
     wgpu::QuerySet timestamps;
     wgpu::Buffer timestampResolve;
@@ -491,25 +492,36 @@ struct Renderer::State {
     wgpu::RenderPipeline makePipeline(const PipelineKey& key) {
         using CW = wgpu::ColorWriteMask;
         const bool edges = key.kind == Kind::Edges;
-        std::vector<wgpu::ConstantEntry> constants;
+        // Each stage is given only the constants it reads: Safari fails to build a stage given one
+        // it does not.
+        u32 layer = 0;
+        if (key.kind == Kind::ShellBack) {
+            layer = 1;
+        } else if (key.kind == Kind::ShellDepth) {
+            layer = 2;
+        } else if (key.kind == Kind::ShellFront) {
+            layer = 3;
+        }
+        std::vector<wgpu::ConstantEntry> vertexConstants, fragmentConstants;
         if (edges) {
-            constants = {constant("kGhostLinePass", key.ghostLines), constant("kSection", key.section)};
+            vertexConstants = {constant("kGhostLinePass", key.ghostLines)};
+            fragmentConstants = {constant("kGhostLinePass", key.ghostLines),
+                                 constant("kSection", key.section)};
         } else {
-            constants = {constant("kGhostPass", key.kind == Kind::Ghost),
-                         constant("kPhysical", key.physical),
-                         constant("kShadowPass", key.kind == Kind::Shadow),
-                         constant("kSection", key.section),
-                         constant("kOccurrenceIds", key.kind == Kind::Classify),
-                         constant("kPeel", key.peel)};
-            u32 layer = 0;
-            if (key.kind == Kind::ShellBack) {
-                layer = 1;
-            } else if (key.kind == Kind::ShellDepth) {
-                layer = 2;
-            } else if (key.kind == Kind::ShellFront) {
-                layer = 3;
+            vertexConstants = {constant("kGhostPass", key.kind == Kind::Ghost),
+                               constant("kShadowPass", key.kind == Kind::Shadow),
+                               constant("kOccurrenceIds", key.kind == Kind::Classify),
+                               constant("kShellLayer", layer)};
+            if (key.kind == Kind::Shadow || key.kind == Kind::ShellDepth) {
+                fragmentConstants = {constant("kSection", key.section)};
+            } else if (key.kind == Kind::Classify) {
+                fragmentConstants = {constant("kPeel", key.peel)};
+            } else {
+                fragmentConstants = {constant("kGhostPass", key.kind == Kind::Ghost),
+                                     constant("kPhysical", key.physical),
+                                     constant("kSection", key.section),
+                                     constant("kShellLayer", layer)};
             }
-            constants.push_back(constant("kShellLayer", layer));
         }
 
         wgpu::BlendState alphaBlend{};
@@ -595,15 +607,15 @@ struct Renderer::State {
         fragment.entryPoint = fragmentEntry;
         fragment.targetCount = targetCount;
         fragment.targets = targetList;
-        fragment.constantCount = constants.size();
-        fragment.constants = constants.data();
+        fragment.constantCount = fragmentConstants.size();
+        fragment.constants = fragmentConstants.data();
         wgpu::RenderPipelineDescriptor descriptor{};
         descriptor.layout = edges ? edgePipelineLayout
                                   : (key.peel ? peelPipelineLayout : surfacePipelineLayout);
         descriptor.vertex.module = fragment.module;
         descriptor.vertex.entryPoint = edges ? "edgeVertex" : "surfaceVertex";
-        descriptor.vertex.constantCount = constants.size();
-        descriptor.vertex.constants = constants.data();
+        descriptor.vertex.constantCount = vertexConstants.size();
+        descriptor.vertex.constants = vertexConstants.data();
         descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
         descriptor.primitive.frontFace = wgpu::FrontFace::CCW;
         descriptor.primitive.cullMode = cull;
@@ -974,9 +986,11 @@ struct Renderer::State {
         wgpu::PassTimestampWrites begin{};
         wgpu::ComputePassDescriptor descriptor{};
         if (timestamps) {
+            // Both ends of each timed pass are written: the browser's WebGPU does not take an
+            // index left undefined.
             begin.querySet = timestamps;
             begin.beginningOfPassWriteIndex = 0;
-            begin.endOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
+            begin.endOfPassWriteIndex = 1;
             descriptor.timestampWrites = &begin;
         }
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&descriptor);
@@ -1177,8 +1191,8 @@ struct Renderer::State {
         wgpu::PassTimestampWrites end{};
         if (timestamps) {
             end.querySet = timestamps;
-            end.beginningOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
-            end.endOfPassWriteIndex = 1;
+            end.beginningOfPassWriteIndex = 2;
+            end.endOfPassWriteIndex = 3;
             descriptor.timestampWrites = &end;
         }
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
@@ -1191,10 +1205,10 @@ struct Renderer::State {
         Readback* probeReadback = encodeProbe(encoder);
         Readback* timingReadback = nullptr;
         if (timestamps) {
-            encoder.ResolveQuerySet(timestamps, 0, 2, timestampResolve, 0);
-            timingReadback = freeReadback(timingRing, 16, "timing");
+            encoder.ResolveQuerySet(timestamps, 0, 4, timestampResolve, 0);
+            timingReadback = freeReadback(timingRing, 32, "timing");
             if (timingReadback != nullptr) {
-                encoder.CopyBufferToBuffer(timestampResolve, 0, timingReadback->buffer, 0, 16);
+                encoder.CopyBufferToBuffer(timestampResolve, 0, timingReadback->buffer, 0, 32);
             }
         }
         const wgpu::CommandBuffer commands = encoder.Finish();
@@ -1288,6 +1302,9 @@ struct Renderer::State {
                     }
                     probe = std::move(next);
                     readback.buffer.Unmap();
+                    ++probesArrived;
+                } else {
+                    ++probesFailed;
                 }
                 if (found != pendingProbes.end()) {
                     pendingProbes.erase(found);
@@ -1298,17 +1315,17 @@ struct Renderer::State {
 
     void mapTiming(Readback& readback) {
         readback.buffer.MapAsync(
-            wgpu::MapMode::Read, 0, 16, kCallbacks,
+            wgpu::MapMode::Read, 0, 32, kCallbacks,
             [this, &readback, alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
                                                                      wgpu::StringView) {
                 if (alive.expired()) {
                     return;
                 }
                 if (status == wgpu::MapAsyncStatus::Success) {
-                    u64 ticks[2];
-                    std::memcpy(ticks, readback.buffer.GetConstMappedRange(0, 16), 16);
-                    if (ticks[1] > ticks[0]) {
-                        gpuMilliseconds = double(ticks[1] - ticks[0]) * 1e-6;
+                    u64 ticks[4];
+                    std::memcpy(ticks, readback.buffer.GetConstMappedRange(0, 32), 32);
+                    if (ticks[3] > ticks[0]) {
+                        gpuMilliseconds = double(ticks[3] - ticks[0]) * 1e-6;
                         ++timedFrames;
                     }
                     readback.buffer.Unmap();
@@ -1344,9 +1361,9 @@ std::unique_ptr<Renderer> Renderer::create(wgpu::Instance instance, wgpu::Device
     if (device.HasFeature(wgpu::FeatureName::TimestampQuery)) {
         wgpu::QuerySetDescriptor queries{};
         queries.type = wgpu::QueryType::Timestamp;
-        queries.count = 2;
+        queries.count = 4;
         s.timestamps = device.CreateQuerySet(&queries);
-        s.timestampResolve = s.buffer(16, U::QueryResolve | U::CopySrc, "timestamps");
+        s.timestampResolve = s.buffer(32, U::QueryResolve | U::CopySrc, "timestamps");
     }
     s.style =
         render::makeStyleUniforms(render::styleNamed(render::StyleName::Illustration), {}, 2.0f);
@@ -1435,6 +1452,18 @@ std::optional<render::PixelHit> Renderer::readPixel(int x, int y,
 }
 
 double Renderer::gpuMilliseconds() const { return state_->gpuMilliseconds; }
+std::array<u64, 2> Renderer::probeCounts() const {
+    return {state_->probesArrived, state_->probesFailed};
+}
+std::array<u64, 2> Renderer::probeContents() const {
+    const State::Probe& p = state_->probe;
+    u64 ids = 0, depths = 0;
+    for (usize i = 0; i < p.ids.size(); ++i) {
+        ids += p.ids[i] != 0 ? 1 : 0;
+        depths += p.depths[i] != 0.0f ? 1 : 0;
+    }
+    return {ids, depths};
+}
 u64 Renderer::timedFrames() const { return state_->timedFrames; }
 
 render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState&, u32) { return {}; }
