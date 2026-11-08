@@ -254,3 +254,32 @@ TEST_CASE("a streamed cache file must be as large as the host knows it to be") {
     CHECK(error == "The cache file's size does not match its header.");
     CHECK(sink.placed.empty());
 }
+
+TEST_CASE("segments taken one by one, as an importer writes them, are placed as a file's are") {
+    const std::vector<u8> file = meshCacheFile();
+    std::span<const format::SegmentEntry> entries;
+    u64 fileSize = 0;
+    std::string error;
+    REQUIRE(format::parseHeaderPrefix(file, entries, fileSize, error));
+    TestSink sink;
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    scene::CacheStream reader(&sink, [&](std::shared_ptr<scene::Segment> segment) {
+        segments.push_back(std::move(segment));
+    });
+    for (const format::SegmentEntry& entry : entries) {
+        REQUIRE_MESSAGE(reader.takeSegment(std::span(file).subspan(usize(entry.offset),
+                                                                   usize(entry.size)),
+                                           error),
+                        error);
+    }
+    REQUIRE(segments.size() == entries.size());
+    for (usize i = 0; i < segments.size(); ++i) {
+        const std::vector<u8>& placed = static_cast<const Placed*>(segments[i]->placement())->bytes;
+        CHECK(std::memcmp(placed.data(), file.data() + entries[i].offset, placed.size()) == 0);
+    }
+    // A damaged one is refused.
+    std::vector<u8> damaged(file.begin() + std::ptrdiff_t(entries[0].offset),
+                            file.begin() + std::ptrdiff_t(entries[0].offset + entries[0].size));
+    damaged[0] ^= 0xFF;
+    CHECK(!reader.takeSegment(damaged, error));
+}
