@@ -281,7 +281,18 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
         positions.data(), globals.size(), sizeof(float) * 3, kMeshletMaxVertices,
         kMeshletMaxTriangles, kConeWeight);
 
+    // Each output is sized once, exactly: many units grow at once, and growing them a step at a
+    // time both copies and leaves room unused.
+    usize vertexTotal = 0, triangleTotal = 0;
+    for (usize i = 0; i < count; ++i) {
+        vertexTotal += built[i].vertex_count;
+        triangleTotal += built[i].triangle_count;
+    }
     out.meshlets.reserve(count);
+    out.vertices.reserve(vertexTotal);
+    out.sources.reserve(vertexTotal);
+    out.highBits.reserve(context.grid.wide ? vertexTotal : 0);
+    out.triangles.reserve(triangleTotal);
     for (usize i = 0; i < count; ++i) {
         const meshopt_Meshlet& m = built[i];
         unsigned* localVertices = &builtVertices[m.vertex_offset];
