@@ -20,8 +20,41 @@ the Phase 0 spike.
 | 10M STL | 5.29 ms | 5.33 ms | 268.8 MB, unchanged |
 | 13S4P pack | 1.21 ms | 1.21 ms | 5.7 MB |
 
-**What remains, about 1.5 ms, is not yet traced.** The rack is still faster than Metal on the same
-frames (19.35 ms with four samples).
+**The rest was in the cull, and is gone** (branch `p7-rack-frame`, 2026-11-08). Instruments'
+Metal System Trace timed the native bench's passes. Dawn merges consecutive compute passes into one
+Metal encoder, so a small buffer clear between the cull's dispatches was needed to time each:
+
+| The 1M rack's cull | Before | After |
+|---|---|---|
+| Count | 0.21 ms | 0.22 ms |
+| Scan: one workgroup over the workgroups' counts | 1.45 ms | under 0.44 ms |
+| Write slots and indices | 2.02 ms | 1.46 ms |
+| Chunk draws, edges | 0.20 ms | 0.20 ms |
+
+- **The scan** went 256 workgroups at a time, through fourteen series of counts: some 14,500
+  barriers for 16,000 workgroups.
+  - Now each thread sums a run of workgroups, the 256 sums are scanned, and each thread numbers its
+    run.
+  - A workgroup's fourteen counts lie together, so each run is read once for all of them.
+- **Writing indices:** the workgroup writes its meshlets' indices together, a meshlet at a time.
+  - Every thread loaded each meshlet anew, through four dependent reads.
+  - The thread that owns a meshlet now leaves what the others need in workgroup memory.
+- **Tried and left out:** spreading every index evenly over the threads, so that none idle on
+  small meshlets. Its bookkeeping cost more than it saved (5.40 against 5.31 ms).
+
+| Native Dawn, 2880×1800, one sample | P3 | Round 1 | Now |
+|---|---|---|---|
+| Rack of 1M parts | 8.28 ms | 7.12 ms | **5.29 ms** (the spike: 5.62 ms) |
+| Rack of 100k parts | 3.94 ms | 3.96 ms | 3.77 ms |
+| 10M STL | 5.29 ms | 5.33 ms | 5.23 ms |
+| 13S4P pack | 1.21 ms | 1.21 ms | 1.18 ms |
+
+**In Chrome**, with the renderer bench page at its three zooms, the 1M rack went from 8.78 / 8.10
+/ 7.35 ms to 7.26 / 6.95 / 6.29 ms, and 6.45 / 6.43 / 5.87 ms in a second run (`renderer/`).
+Other work on the machine was using the GPU at the time, so runs varied by about 0.8 ms.
+
+The main pass's vertex stage, 2.23 ms for 12M triangles, is now the frame's largest part. The rack
+is far faster than Metal on the same frames (19.35 ms with four samples).
 
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.

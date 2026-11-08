@@ -175,8 +175,8 @@ The plan was, from the spike's indexed path:
 - The loopback server's first-byte delay on large files (100–140 ms).
 
 **P7, hardening.** Begun 2026-11-07 (`Docs/measurements/p7/p7-hardening.md`):
-- done: the 1M rack's draws (8.3 to 7.1 ms), fuzzing the streamed cache reader, GPU timing that cannot break frames, import memory measured, progressive STEP imports and stepwise antialiasing in the page, and the faults the phone showed;
-- to do: a Windows and a Linux run of the census and spikes, the rack's remaining 1.5 ms, import memory (regions and the packer's open sides), and refinement in the browser.
+- done: the 1M rack's frame (8.3 to 5.3 ms, below the spike's 5.6 ms), fuzzing the streamed cache reader, GPU timing that cannot break frames, progressive STEP imports and stepwise antialiasing in the page, the faults the phone showed, and the browser's STL import heap halved (2.6 to 1.3 GB for 10M triangles);
+- to do: a Windows and a Linux run of the census and spikes, and refinement in the browser.
 
 ## Learned along the way
 
