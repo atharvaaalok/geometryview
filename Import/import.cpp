@@ -69,7 +69,7 @@ bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listene
             }
             result.warnings = std::move(soup.warnings);
             lap(result.times.parse);
-            mesh = buildIndexedMesh(soup);
+            mesh = buildIndexedMesh(std::move(soup));
         }
         lap(result.times.regions);
         packed = packMesh(mesh);

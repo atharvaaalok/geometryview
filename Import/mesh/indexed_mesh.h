@@ -35,6 +35,8 @@ struct RegionOptions {
     u32 maxLargeFaces = 20000;
 };
 
-IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& options = {});
+/// Takes the soup, whose corners it frees once they are welded: pass it with std::move where it is
+/// large, and nothing else needs it.
+IndexedMesh buildIndexedMesh(TriangleSoup soup, const RegionOptions& options = {});
 
 } // namespace geo::import
