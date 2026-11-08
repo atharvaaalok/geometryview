@@ -31,6 +31,18 @@ function nativeDirectory() {
                   "release`, or set GEOMETRY_NATIVE_DIR.");
 }
 
+/// Whether this machine has the native engine (a Mac with gcli built or bundled), unless
+/// GEOMETRY_ENGINE=page asks for the browser's.
+export function nativeAvailable() {
+  if (process.env.GEOMETRY_ENGINE === "page") return false;
+  try {
+    nativeDirectory();
+    return process.platform === "darwin";
+  } catch {
+    return false;
+  }
+}
+
 function binaries() {
   const directory = nativeDirectory();
   // A bundled copy is flat; a build directory keeps each target in its own folder.

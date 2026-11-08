@@ -58,6 +58,12 @@ public:
     void setMouse(const GeoMouseSettings& settings);
     /// Scenes larger than this draw without edges and the cast shadow while the view moves.
     void setDetailBudget(u64 triangles, u64 edgeSegments);
+    /// Looks at what is shown from a direction, in degrees around Z and above the XY plane, framed.
+    void setViewDirection(double azimuthDegrees, double elevationDegrees, bool perspective);
+    /// The scene's bounds and how many faces it has, for describing it.
+    std::optional<Aabb> sceneBounds() const { return scene_.bounds(); }
+    u64 sceneFaces() const;
+    u64 sceneTriangles() const;
     /// Opens a file, replacing what is open, or adding to it.
     void openFile(const std::string& path, bool add);
     void requestFrame();

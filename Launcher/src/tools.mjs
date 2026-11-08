@@ -1,7 +1,9 @@
 // The tools an AI app can call: open a model, read its parts, picture it, and show it to the user.
 
 import { basename } from "node:path";
-import { importModel, openInViewer, readStats, readTree, render } from "./native.mjs";
+import { importModel, nativeAvailable, openInViewer, readStats, readTree, render,
+         viewerApplication } from "./native.mjs";
+import { openInPage, pageRender, pageTree, viewerServer } from "./page.mjs";
 
 export const instructions =
   "Geometry views 3D CAD models (STEP .step/.stp and STL .stl files) on this computer. Use it " +
@@ -10,7 +12,9 @@ export const instructions =
   "get_structure lists the assemblies and parts; render_view returns a picture you can look " +
   "at, in any view and drawing style (illustration, metal, clay, blueprint, technical). To " +
   "study a part, pass names from get_structure as isolate, and use section to cut through the " +
-  "model. open_in_viewer shows the model to the user in the Geometry app.";
+  "model. open_in_viewer shows the model to the user. Where this computer has no native " +
+  "engine, the viewer opens in the user's browser and the pictures come from it, so the user " +
+  "sees what you look at.";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical"];
 const COLOURS = ["material", "parts", "mono", "file"];
@@ -98,15 +102,23 @@ export const tools = [
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
       const started = performance.now();
-      const { blob, source, fromCache } = await importModel(file);
-      const [nodes, stats] = await Promise.all([readTree(blob), readStats(blob)]);
+      let nodes, stats, how;
+      if (nativeAvailable()) {
+        const { blob, fromCache } = await importModel(file);
+        [nodes, stats] = await Promise.all([readTree(blob), readStats(blob)]);
+        how = fromCache ? "from cache" : "imported";
+      } else {
+        stats = await openInPage(file);
+        nodes = await pageTree(file);
+        how = "in the browser's viewer";
+      }
       const { assemblies, parts, bodies } = counts(nodes);
       const size = stats.max.map((high, axis) => round(high - stats.min[axis]));
       const seconds = ((performance.now() - started) / 1000).toFixed(2);
       return [{
         type: "text",
         text: [
-          `Opened ${basename(source)} (${fromCache ? "from cache" : "imported"} in ${seconds} s).`,
+          `Opened ${basename(file)} (${how}, ${seconds} s).`,
           `${assemblies} assemblies, ${parts} parts, ${bodies} bodies; ` +
             `${stats.faces} faces, ${stats.triangles} triangles.`,
           `Bounding box ${size.join(" × ")} (model units), from [${stats.min.map(round)}] to ` +
@@ -131,8 +143,9 @@ export const tools = [
       required: ["path"],
     },
     async call({ path: file, filter = "", max_lines: maxLines = 400 }) {
-      const { blob } = await importModel(file);
-      const text = outline(await readTree(blob), { filter, maxLines });
+      const nodes = nativeAvailable() ? await readTree((await importModel(file)).blob)
+                                      : await pageTree(file);
+      const text = outline(nodes, { filter, maxLines });
       return [{ type: "text", text: text || `No part's name contains "${filter}".` }];
     },
   },
@@ -173,7 +186,7 @@ export const tools = [
       required: ["path"],
     },
     async call(args) {
-      const { blob, source } = await importModel(args.path);
+      const source = args.path;
       const [azimuth, elevation] = VIEWS[args.view ?? "iso"] ?? VIEWS.iso;
       const view = {
         width: args.width ?? 1200,
@@ -189,7 +202,9 @@ export const tools = [
         isolate: args.isolate ?? [],
         overlay: true,
       };
-      const png = await render(blob, view);
+      const png = nativeAvailable()
+        ? await render((await importModel(args.path)).blob, view)
+        : await pageRender(args.path, { ...view, section: args.section ?? [] });
       const shown = view.isolate.length ? ` showing only ${view.isolate.join(", ")}` : "";
       return [
         { type: "image", data: png.toString("base64"), mimeType: "image/png" },
@@ -200,12 +215,18 @@ export const tools = [
   },
   {
     name: "open_in_viewer",
-    description: "Shows a STEP or STL model to the user in the Geometry app on this Mac, " +
-                 "where they can turn it, select parts and cut sections.",
+    description: "Shows a STEP or STL model to the user, in the Geometry app on a Mac that has " +
+                 "it, or else in the viewer in their browser, where they can turn it, select " +
+                 "parts and cut sections.",
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
-      await openInViewer(file);
-      return [{ type: "text", text: `Opened ${basename(file)} in Geometry.` }];
+      if (nativeAvailable() && viewerApplication()) {
+        await openInViewer(file);
+        return [{ type: "text", text: `Opened ${basename(file)} in Geometry.` }];
+      }
+      await openInPage(file);
+      const { address } = await viewerServer();
+      return [{ type: "text", text: `Opened ${basename(file)} in the viewer in the browser (${address}).` }];
     },
   },
 ];

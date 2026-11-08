@@ -1755,6 +1755,48 @@ struct Renderer::State {
 
     // Blocks until `future` completes. Only native hosts may.
     void wait(const wgpu::Future& future) { instance.WaitAny(future, UINT64_MAX); }
+
+    // The timing queries, used only once the GPU has made them: Metal allows a few counter
+    // buffers across the whole system, so making one can fail, as when many pages time their
+    // frames at once. Until then, or if it failed, frames go untimed rather than failing too.
+    void createTimestamps() {
+        static constexpr wgpu::ErrorFilter kFilters[] = {wgpu::ErrorFilter::Validation,
+                                                         wgpu::ErrorFilter::OutOfMemory,
+                                                         wgpu::ErrorFilter::Internal};
+        for (const wgpu::ErrorFilter filter : kFilters) {
+            device.PushErrorScope(filter);
+        }
+        wgpu::QuerySetDescriptor descriptor{};
+        descriptor.type = wgpu::QueryType::Timestamp;
+        descriptor.count = 4;
+        const wgpu::QuerySet queries = device.CreateQuerySet(&descriptor);
+        const wgpu::Buffer resolved = buffer(32, U::QueryResolve | U::CopySrc, "timestamps");
+        struct Check {
+            u32 answered = 0;
+            bool failed = false;
+        };
+        auto check = std::make_shared<Check>();
+        for (usize i = 0; i < std::size(kFilters); ++i) {
+            const auto answered =
+                [this, check, queries, resolved, alive = std::weak_ptr<int>(lifetime)](
+                    wgpu::PopErrorScopeStatus status, wgpu::ErrorType type, wgpu::StringView) {
+                    if (!alive.lock()) {
+                        return;
+                    }
+                    check->failed = check->failed || status != wgpu::PopErrorScopeStatus::Success ||
+                                    type != wgpu::ErrorType::NoError;
+                    if (++check->answered == std::size(kFilters) && !check->failed) {
+                        timestamps = queries;
+                        timestampResolve = resolved;
+                    }
+                };
+#ifdef __EMSCRIPTEN__
+            device.PopErrorScope(wgpu::CallbackMode::AllowSpontaneous, answered);
+#else
+            wait(device.PopErrorScope(wgpu::CallbackMode::WaitAnyOnly, answered));
+#endif
+        }
+    }
 };
 
 Renderer::Renderer() : state_(std::make_unique<State>()) {}
@@ -1776,11 +1818,7 @@ std::unique_ptr<Renderer> Renderer::create(wgpu::Instance instance, wgpu::Device
     s.createLayouts();
     s.createFixedPipelines();
     if (device.HasFeature(wgpu::FeatureName::TimestampQuery)) {
-        wgpu::QuerySetDescriptor queries{};
-        queries.type = wgpu::QueryType::Timestamp;
-        queries.count = 4;
-        s.timestamps = device.CreateQuerySet(&queries);
-        s.timestampResolve = s.buffer(32, U::QueryResolve | U::CopySrc, "timestamps");
+        s.createTimestamps();
     }
     s.style =
         render::makeStyleUniforms(render::styleNamed(render::StyleName::Illustration), {}, 2.0f);
