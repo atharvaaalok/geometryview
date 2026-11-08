@@ -451,6 +451,24 @@ if (params.has("import")) {
   openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
 }
 
+// In the iOS shell: documents the person opens from Files or the share sheet arrive here.
+window.geometryShell = {
+  async open(url, name, lastModified) {
+    if (/\.geoblob$/i.test(name)) {
+      openCache(url, name, false);
+      return;
+    }
+    status.showLoading(name);
+    const response = await fetch(url);
+    if (!response.ok) {
+      status.showFailure(`${name} could not be read.`);
+      return;
+    }
+    await importFile(new File([await response.blob()], name, { lastModified }), false);
+  },
+};
+window.webkit?.messageHandlers?.shell?.postMessage({ ready: true });
+
 // Opened by the launcher: take the AI app's requests.
 if (params.has("token")) {
   const { connectBridge } = await import("./bridge.js");

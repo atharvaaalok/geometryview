@@ -63,23 +63,54 @@ final class LoopbackServer: @unchecked Sendable {
             path = String(path[..<query])
         }
         let file = files.resolve(path)
-        let size = file.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
+        let size = file.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? 0
         let handle = file.flatMap { try? FileHandle(forReadingFrom: $0) }
         var headers = WebFiles.isolation
         headers["Content-Type"] = file.map(WebFiles.type(of:)) ?? "text/plain"
-        headers["Content-Length"] = String(handle == nil ? 0 : size ?? 0)
         headers["Connection"] = "close"
-        let status = handle == nil ? "404 Not Found" : "200 OK"
+        headers["Accept-Ranges"] = "bytes"
+        var status = handle == nil ? "404 Not Found" : "200 OK"
+        var remaining = handle == nil ? 0 : size
+        // A range asked for, as "bytes=first-last" or "bytes=first-": only that part is sent.
+        if let handle, let range = Self.range(in: head, size: size) {
+            try? handle.seek(toOffset: UInt64(range.lowerBound))
+            remaining = range.count
+            status = "206 Partial Content"
+            headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(size)"
+        }
+        headers["Content-Length"] = String(remaining)
         let text = (["HTTP/1.1 \(status)"] + headers.map { "\($0.key): \($0.value)" })
             .joined(separator: "\r\n") + "\r\n\r\n"
         connection.send(content: Data(text.utf8), completion: .contentProcessed { [self] _ in
-            pump(connection, handle)
+            pump(connection, handle, remaining: remaining)
         })
     }
 
-    // Sends the file a chunk at a time, each after the last is handed to the network stack.
-    private func pump(_ connection: NWConnection, _ handle: FileHandle?) {
-        guard let handle, let chunk = try? handle.read(upToCount: 2 << 20), !chunk.isEmpty else {
+    // The byte range a request's Range header asks for, within `size`, or nil for the whole file.
+    private static func range(in head: Data, size: Int) -> Range<Int>? {
+        let lines = String(decoding: head, as: UTF8.self).split(separator: "\r\n")
+        guard let line = lines.first(where: { $0.lowercased().hasPrefix("range:") }),
+            let equals = line.firstIndex(of: "=")
+        else {
+            return nil
+        }
+        let bounds = line[line.index(after: equals)...].split(separator: "-", omittingEmptySubsequences: false)
+        guard bounds.count == 2, let first = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+            first < size
+        else {
+            return nil
+        }
+        let last = Int(bounds[1].trimmingCharacters(in: .whitespaces)).map { min($0, size - 1) }
+            ?? size - 1
+        return last >= first ? first..<(last + 1) : nil
+    }
+
+    // Sends the file a chunk at a time, each after the last is handed to the network stack, until
+    // `remaining` bytes have gone.
+    private func pump(_ connection: NWConnection, _ handle: FileHandle?, remaining: Int) {
+        guard let handle, remaining > 0,
+            let chunk = try? handle.read(upToCount: min(2 << 20, remaining)), !chunk.isEmpty
+        else {
             try? handle?.close()
             connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
                             completion: .contentProcessed { _ in connection.cancel() })
@@ -90,7 +121,7 @@ final class LoopbackServer: @unchecked Sendable {
                 try? handle.close()
                 connection.cancel()
             } else {
-                pump(connection, handle)
+                pump(connection, handle, remaining: remaining - chunk.count)
             }
         })
     }

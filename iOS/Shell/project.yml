@@ -66,6 +66,22 @@ targets:
       properties:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # STEP and STL files open in the shell from Files and the share sheet.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: STEP model
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.iso.step]
+          - CFBundleTypeName: STL model
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.standard-tesselated-geometry-format]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.iso.step
+            UTTypeDescription: STEP model
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [step, stp]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aalok.geometry.shell
