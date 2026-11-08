@@ -1,0 +1,23 @@
+{
+  "label": "mac-safari-p4-idle-pack",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "width": 3456,
+  "height": 1986,
+  "startupMs": 86,
+  "loadMs": 113,
+  "idleFrames": 0,
+  "idleSettledFrames": 0,
+  "looping": false,
+  "dragFrames": 118,
+  "dragMs": 1978,
+  "gpuMs": 4.843375,
+  "hovered": 2,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 5.6326446533203125,
+  "targetMB": 204.55169677734375,
+  "heapMB": 16,
+  "triangles": 331520
+}
