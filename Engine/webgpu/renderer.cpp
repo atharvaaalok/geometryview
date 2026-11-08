@@ -1240,10 +1240,11 @@ std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
     encoder.CopyTextureToBuffer(&source, &destination, &extent);
     const wgpu::CommandBuffer commands = encoder.Finish();
     s.queue.Submit(1, &commands);
-    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, readback.GetSize(),
+    const usize size = usize(readback.GetSize());
+    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, size,
                              wgpu::CallbackMode::WaitAnyOnly,
                              [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
-    const auto* bytes = static_cast<const u8*>(readback.GetConstMappedRange(0, readback.GetSize()));
+    const auto* bytes = static_cast<const u8*>(readback.GetConstMappedRange(0, size));
     std::vector<u8> pixels(usize(s.width) * s.height * 4);
     const bool swap = s.outputFormat == Format::RGBA8Unorm;
     for (u32 y = 0; y < s.height; ++y) {
