@@ -177,7 +177,7 @@ The plan was, from the spike's indexed path:
 **P7, hardening.** Begun 2026-11-07 (`Docs/measurements/p7/p7-hardening.md`):
 - done: the 1M rack's frame (8.3 to 5.3 ms, below the spike's 5.6 ms), fuzzing the streamed cache reader, GPU timing that cannot break frames, progressive STEP imports and stepwise antialiasing in the page, the faults the phone showed, and the browser's STL import heap halved (2.6 to 1.3 GB for 10M triangles);
 - refinement in the browser, as on the Mac, from a STEP source the library keeps;
-- to do: a Windows and a Linux run of the census and spikes, and on the iPhone: an STL import near the phone's new limit, refinement's memory, and the rack's new cull under WebKit.
+- to do: a Windows and a Linux run of the census and spikes, and on the iPhone: an STL import near the phone's new limit, refinement's memory, and the new cull's frame times (Safari on the Mac runs it without errors).
 
 ## Learned along the way
 
