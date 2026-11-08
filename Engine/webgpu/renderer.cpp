@@ -1024,8 +1024,7 @@ struct Renderer::State {
         occlusionTexture = texture(halfWidth, halfHeight, kOcclusionFormat,
                                    Usage::StorageBinding | Usage::TextureBinding, "occlusion");
         accum = texture(width, height, kAccumFormat, attachment, "accumulated colour");
-        offscreen = texture(width, height, outputFormat,
-                            Usage::RenderAttachment | Usage::CopySrc, "offscreen");
+        offscreen = nullptr; // made by the first offscreen render at this size
         sheetGroup = makeGroup(device, sheetLayout, {textureEntry(0, shadowMask), [&] {
                                    wgpu::BindGroupEntry entry{};
                                    entry.binding = 1;
@@ -1773,6 +1772,10 @@ void Renderer::render(const wgpu::Texture& target, const render::ViewState& view
 std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
                                           const render::Overlay* overlay) {
     State& s = *state_;
+    if (!s.offscreen) {
+        s.offscreen = s.texture(s.width, s.height, s.outputFormat,
+                                Usage::RenderAttachment | Usage::CopySrc, "offscreen");
+    }
     s.encodeFrame(s.offscreen, view, 4, overlay);
     const u32 stride = (s.width * 4 + 255) & ~255u;
     wgpu::Buffer readback = s.buffer(u64(stride) * s.height, U::MapRead | U::CopyDst, "readback");
