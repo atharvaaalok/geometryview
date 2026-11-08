@@ -1,9 +1,11 @@
 // The viewer in the person's browser, as an engine for the AI app's tools: on machines without the
 // native engine, a model is opened, described and pictured by the page, which the person sees too.
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { startViewer } from "./web.mjs";
 
 let viewer = null;
@@ -15,8 +17,29 @@ export async function viewerServer() {
   return viewer;
 }
 
-/// Opens `url` in the person's default browser.
+// Chrome on Linux gives a page WebGPU only with Vulkan on, which is off by default on NVIDIA
+// GPUs at least, and flags cannot reach a Chrome already running. So on Linux the viewer opens in a
+// Chrome window of its own, with its own profile, and Vulkan on.
+const linuxChromes = ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium",
+                      "/usr/bin/chromium-browser", "/snap/bin/chromium"];
+
+/// The arguments that open `url` in the viewer's own Chrome window on Linux, or null without Chrome.
+export function linuxViewerWindow(url, home = homedir(), exists = existsSync) {
+  const chrome = process.env.GEOMETRY_CHROME ?? linuxChromes.find((path) => exists(path));
+  if (!chrome) return null;
+  const state = process.env.XDG_STATE_HOME ?? join(home, ".local/state");
+  return [chrome, [`--user-data-dir=${join(state, "geometry-viewer/chrome")}`, "--enable-features=Vulkan",
+                   "--no-first-run", "--no-default-browser-check", `--app=${url}`]];
+}
+
+/// Opens `url` in the person's default browser, or on Linux the viewer's own Chrome window.
 export function openBrowser(url) {
+  const window = process.platform === "linux" ? linuxViewerWindow(url) : null;
+  if (window) {
+    // It outlives the launcher's request: the person keeps the window.
+    spawn(window[0], window[1], { detached: true, stdio: "ignore" }).unref();
+    return Promise.resolve();
+  }
   const [command, args] =
     process.platform === "darwin" ? ["open", [url]]
     : process.platform === "win32" ? ["cmd", ["/c", "start", "", url.replace(/&/g, "^&")]]

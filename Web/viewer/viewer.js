@@ -51,8 +51,19 @@ try {
     cancelRefinement: () => cancelRefinement(),
   }, { phone });
 } catch (error) {
-  status.showFailure(`This browser cannot run the viewer: ${error.message}`);
+  status.showFailure(`This browser cannot run the viewer: ${error.message}${webgpuAdvice()}`);
   throw error;
+}
+
+// What to do where a browser offers no WebGPU and the way to it is known.
+function webgpuAdvice() {
+  const agent = navigator.userAgent;
+  // Chrome on Linux has no adapter without Vulkan, which is off by default on NVIDIA GPUs at least.
+  if (/Linux/.test(agent) && !/Android/.test(agent) && /Chrome\//.test(agent)) {
+    return " Chrome on Linux needs Vulkan for WebGPU: turn on chrome://flags/#enable-vulkan, then " +
+           "restart Chrome.";
+  }
+  return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
 window.geometry = engine; // for the console and the shell's checks
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
