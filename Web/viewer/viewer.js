@@ -51,6 +51,8 @@ try {
   throw error;
 }
 window.geometry = engine; // for the console and the shell's checks
+// From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
+const startupMs = Math.round(performance.now());
 
 let look = Look.saved();
 let perspective = false;
@@ -520,7 +522,7 @@ async function runTest() {
   const after = engine.stats();
   if (!params.has("nosnapshot")) await postSnapshot();
   await post({
-    width, height, loadMs: Math.round(loadMs),
+    width, height, startupMs, loadMs: Math.round(loadMs),
     idleFrames: idle.frames - settled.frames, idleSettledFrames: idle.settledFrames - settled.settledFrames,
     looping: idle.looping,
     dragFrames: dragged.frames - dragStart.frames, dragMs: Math.round(dragMs),
