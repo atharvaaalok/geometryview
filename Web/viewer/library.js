@@ -44,6 +44,19 @@ export async function keptFile(name) {
   return (await (await folder()).getFileHandle(`${name}.geoblob`)).getFile();
 }
 
+// A STEP file kept beside its cache, for importing its definitions again, finer, or null if none
+// was kept whole.
+export async function keptSource(name) {
+  try {
+    const dir = await folder();
+    const note = JSON.parse(await (await (await dir.getFileHandle(`${name}.json`)).getFile()).text());
+    const source = await (await dir.getFileHandle(`${name}.source`)).getFile();
+    return source.size === note.size ? source : null;
+  } catch {
+    return null;
+  }
+}
+
 export class LibraryCard {
   #list = el("div.entries");
   #onOpen;

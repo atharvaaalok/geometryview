@@ -7,7 +7,7 @@
 import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
 import { ViewportInput } from "./input.js";
 import { StructureCard } from "./structure.js";
-import { LibraryCard, cachedImport, keptFile } from "./library.js";
+import { LibraryCard, cachedImport, keptFile, keptSource } from "./library.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
          ShortcutsSheet, StatusCard, Styles, Toolbar } from "./chrome.js";
 import { el } from "./ui.js";
@@ -45,7 +45,11 @@ let chromeReady = false;
 
 let engine;
 try {
-  engine = await Engine.start(canvas, { event: handle }, { phone });
+  engine = await Engine.start(canvas, {
+    event: handle,
+    refine: (token, name, level, definitions) => refineDocument(token, name, level, definitions),
+    cancelRefinement: () => cancelRefinement(),
+  }, { phone });
 } catch (error) {
   status.showFailure(`This browser cannot run the viewer: ${error.message}`);
   throw error;
@@ -366,6 +370,7 @@ async function openFiles(files, adding) {
 // get two OCCT workers, as P2 measured best; desktops one per core, less two for the page.
 let importer = null;
 let importing = Promise.resolve();
+const stepSources = new Map(); // STEP files imported this visit, by name, for refinement
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
 
 // What importing an STL file takes at its peak. A binary file, read in pieces, is never held
@@ -382,6 +387,7 @@ function stlImportBytes(file) {
 const kPhoneImportBudget = 1.2 * 1024 ** 3;
 
 function importFile(file, add) {
+  if (!/\.stl$/i.test(file.name)) stepSources.set(file.name, file);
   importing = importing.then(async () => {
     const cached = await cachedImport(file);
     if (cached) {
@@ -442,6 +448,48 @@ function importFile(file, add) {
     return result;
   });
   return importing;
+}
+
+// ---- Refinement --------------------------------------------------------------------------------
+
+// The engine asks for finer geometry where the settled view is close, as on the Mac: the STEP
+// file's definitions it names are imported again at a finer level, and their segments join the
+// document. The file is the one imported this visit, or the one the library kept beside its cache.
+// Refinements wait their turn behind imports, in the same worker and its warm OCCT pool.
+let refinement = null;
+
+function refineDocument(token, name, level, definitions) {
+  const job = { cancelled: false };
+  refinement = job;
+  importing = importing.then(async () => {
+    let ok = false;
+    try {
+      const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
+      if (!file) return;
+      importer ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" });
+      const result = await new Promise((resolve) => {
+        importer.onmessage = ({ data }) => {
+          if (data.type === "segment") {
+            if (!job.cancelled) engine.refineSegment(token, data.bytes);
+          } else if (data.type !== "progress") {
+            resolve(data);
+          }
+        };
+        importer.onerror = (event) => resolve({ type: "failed", message: event.message });
+        importer.postMessage({ type: "refine", file, level, definitions, workers: importWorkers });
+      });
+      ok = result.type === "done";
+      // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
+      if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
+    } finally {
+      if (!job.cancelled) engine.finishRefinement(token, ok);
+      if (refinement === job) refinement = null;
+    }
+  });
+}
+
+function cancelRefinement() {
+  if (refinement) refinement.cancelled = true;
 }
 
 let lastImport = null;
