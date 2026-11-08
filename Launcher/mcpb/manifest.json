@@ -3,8 +3,8 @@
   "name": "geometry-viewer",
   "display_name": "Geometry",
   "version": "0.1.0",
-  "description": "View 3D CAD models: open, inspect and picture STEP and STL files on this Mac.",
-  "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and open them in the Geometry app.",
+  "description": "View 3D CAD models: open, inspect and picture STEP and STL files on this computer.",
+  "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and show them to you: in the Geometry app on a Mac that has it, or else in a viewer in your browser that runs on this computer only.",
   "author": { "name": "Atharva Aalok" },
   "server": {
     "type": "node",
@@ -19,10 +19,10 @@
     { "name": "open_model", "description": "Open a STEP or STL file and summarise it." },
     { "name": "get_structure", "description": "List the assemblies and parts." },
     { "name": "render_view", "description": "Render a picture: any view, style, parts alone, sections." },
-    { "name": "open_in_viewer", "description": "Show the model in the Geometry app." }
+    { "name": "open_in_viewer", "description": "Show the model to you, in the app or the browser." }
   ],
   "compatibility": {
-    "platforms": ["darwin"],
+    "platforms": ["darwin", "win32", "linux"],
     "runtimes": { "node": ">=20.0.0" }
   }
 }
