@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -22,7 +23,7 @@ function call(method, params) {
 }
 
 before(() => {
-  server = spawn(process.execPath, [new URL("../bin/geometry-viewer.mjs", import.meta.url).pathname,
+  server = spawn(process.execPath, [fileURLToPath(new URL("../bin/geometry-viewer.mjs", import.meta.url)),
                                     "--mcp"], { stdio: ["pipe", "pipe", "inherit"] });
   let buffered = "";
   server.stdout.on("data", (chunk) => {

@@ -1,6 +1,7 @@
 // How the launcher opens the viewer on Linux, where Chrome needs Vulkan on for WebGPU.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { linuxViewerWindow } from "../src/page.mjs";
 
 test("on Linux the viewer opens in a Chrome window of its own, with Vulkan on", () => {
@@ -14,7 +15,7 @@ test("on Linux the viewer opens in a Chrome window of its own, with Vulkan on", 
     assert.ok(args.includes("--enable-features=Vulkan"));
     assert.ok(args.includes(`--app=${url}`));
     // Its own profile, so the flags hold even with the person's Chrome already running.
-    assert.ok(args.includes("--user-data-dir=/home/a/.local/state/geometry-viewer/chrome"));
+    assert.ok(args.includes(`--user-data-dir=${join("/home/a", ".local/state/geometry-viewer/chrome")}`));
     // Without Chrome, the default browser opens it instead.
     assert.equal(linuxViewerWindow(url, "/home/a", () => false), null);
   } finally {
