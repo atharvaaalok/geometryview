@@ -16,7 +16,9 @@ if(GEO_TARGET STREQUAL "wasm")
     # The OCCT worker as WebAssembly, when ThirdParty/build_occt_wasm.sh has run. For now it runs
     # under Node, to replay slices saved from the native worker.
     set(GEO_OCCT_WASM_ROOT "${CMAKE_SOURCE_DIR}/ThirdParty/.occt-wasm/install")
-    if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a")
+    # OCCT is built without threads, as each worker runs one slice at a time, so it links only
+    # into a build without them.
+    if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a" AND NOT GEO_WASM_THREADS)
         add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
         set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
         target_include_directories(geometry-occt-worker PRIVATE .)
@@ -52,6 +54,18 @@ if(GEO_TARGET STREQUAL "wasm")
             -sEXPORTED_FUNCTIONS=_occt_init,_occt_mesh,_occt_stats,_occt_payload,_occt_trap,_occt_exhaust,_malloc,_free
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF64)
     endif()
+
+    # The STEP importer for the browser: the portable StepImport, driven by the page, whose Web
+    # Workers run the OCCT jobs.
+    add_executable(geometry-step-web web/step_supervisor.cpp)
+    target_include_directories(geometry-step-web PRIVATE .)
+    target_link_libraries(geometry-step-web PRIVATE import_core geo_warnings)
+    set_target_properties(geometry-step-web PROPERTIES SUFFIX ".mjs")
+    target_link_options(geometry-step-web PRIVATE
+        -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=2GB -sSTACK_SIZE=4MB
+        -sENVIRONMENT=web,worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createStepImporter
+        -sEXPORTED_FUNCTIONS=_step_open,_step_begin,_step_next,_step_text,_step_text_size,_step_request,_step_payload,_step_reply,_step_crash,_step_finish,_step_blob,_step_blob_size,_step_error,_step_stats
+        -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF64,UTF8ToString)
     return()
 endif()
 

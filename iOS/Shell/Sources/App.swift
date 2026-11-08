@@ -63,6 +63,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     //   transport:census:mode[:suffix]     for example loopback:census:wasm-memory:again
     //   transport:spike:query[:suffix]     for example loopback:spike:model=pack&w=804&h=1748
     //   transport:import:query[:suffix]    for example loopback:import:model=ple120&workers=2
+    //   transport:step:query[:suffix]      for example loopback:step:model=hard&workers=2
     // where a suffix keeps a repeat's report apart.
     private static func requestedRuns() -> [Run]? {
         let arguments = CommandLine.arguments
@@ -79,7 +80,8 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 return census(transport, mode: parts[2], suffix: suffix)
             }
             let label = label(transport, suffix)
-            let page = parts[1] == "import" ? "spike/import.html" : "spike"
+            let pages = ["import": "spike/import.html", "step": "spike/step.html"]
+            let page = pages[parts[1]] ?? "spike"
             return Run(transport: transport, page: page, label: label, query: parts[2],
                        name: "\(label)-\(parts[1])")
         }

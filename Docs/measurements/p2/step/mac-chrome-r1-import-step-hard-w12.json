@@ -1,0 +1,41 @@
+{
+  "label": "mac-chrome-r1-import-step-hard-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "model": "hard",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 57,
+  "poolMs": 104,
+  "importMs": 2902,
+  "beginMs": 289,
+  "meshMs": 2608,
+  "finishMs": 5,
+  "seconds": {
+    "tokenize": 0.089,
+    "structure": 0.01,
+    "definitions": 0.177,
+    "read": 2.672,
+    "transfer": 21.252,
+    "mesh": 2.586,
+    "pack": 0.339
+  },
+  "records": 706701,
+  "bodies": 1,
+  "definitions": 1,
+  "faces": 12188,
+  "triangles": 340646,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 3005,
+  "slices": 614,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 163,
+    "peakWorker": 23,
+    "peakPool": 250
+  },
+  "blobBytes": 9453568
+}

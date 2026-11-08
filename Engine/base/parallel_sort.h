@@ -44,7 +44,8 @@ void parallelSort(std::vector<T>& items, KeyOf&& keyOf, TieOf&& tieOf = {}) {
 
     std::vector<u64> sample(kBuckets * kOversample);
     for (usize i = 0; i < sample.size(); ++i) {
-        sample[i] = keyOf(items[i * count / sample.size()]);
+        // In 64 bits, since the product overflows a 32-bit usize, as in WebAssembly.
+        sample[i] = keyOf(items[usize(u64(i) * count / sample.size())]);
     }
     std::sort(sample.begin(), sample.end());
     std::array<u64, kBuckets - 1> splitters{};

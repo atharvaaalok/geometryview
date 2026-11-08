@@ -3,8 +3,8 @@
 //
 //   occt_init()
 //   occt_mesh(text, size, linear, angular, minSize) -> 1 if meshed, 0 if OCCT failed
-//   occt_stats()    ten doubles: status, faces, unmeshed faces, payload bytes, triangles, area,
-//                   signed volume, and seconds reading, transferring and meshing
+//   occt_stats()    eleven doubles: status, faces, unmeshed faces, payload bytes, triangles, area,
+//                   signed volume, seconds reading, transferring and meshing, and unmapped faces
 //   occt_payload()  the reply's payload, occt_stats()[3] bytes, as the native worker sends it
 //
 // For testing recovery, occt_trap() traps as a crash in OCCT would, and occt_exhaust() allocates
@@ -27,7 +27,7 @@ using namespace geo::import::worker;
 namespace {
 
 std::vector<u8> payload;
-double stats[10];
+double stats[11];
 
 // The area and signed volume of the payload's triangles, to compare with the native build.
 void measure(u32 faces, double& area, double& volume, double& triangles) {
@@ -85,10 +85,11 @@ EMSCRIPTEN_KEEPALIVE int occt_mesh(const char* text, u32 size, double linear, do
     meshSlice(std::string_view(text, size), request, reply, payload);
     double area = 0, volume = 0, triangles = 0;
     measure(reply.faceCount, area, volume, triangles);
-    const double values[10] = {double(reply.status), double(reply.faceCount),
+    const double values[11] = {double(reply.status), double(reply.faceCount),
                                double(reply.unmeshedFaces), double(payload.size()),
                                triangles, area, volume, reply.readSeconds,
-                               reply.transferSeconds, reply.meshSeconds};
+                               reply.transferSeconds, reply.meshSeconds,
+                               double(reply.unmappedFaces)};
     std::memcpy(stats, values, sizeof(stats));
     return reply.status == u32(ReplyStatus::Ok) ? 1 : 0;
 }

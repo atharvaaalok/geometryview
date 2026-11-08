@@ -1,0 +1,41 @@
+{
+  "label": "mac-safari-import-step-demo-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "model": "demo",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 72,
+  "poolMs": 26,
+  "importMs": 494,
+  "beginMs": 12,
+  "meshMs": 481,
+  "finishMs": 1,
+  "seconds": {
+    "tokenize": 0.005,
+    "structure": 0.001,
+    "definitions": 0.004,
+    "read": 1.578,
+    "transfer": 1.843,
+    "mesh": 1.403,
+    "pack": 0.059
+  },
+  "records": 18107,
+  "bodies": 29,
+  "definitions": 29,
+  "faces": 177,
+  "triangles": 12870,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 125,
+  "slices": 35,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 16,
+    "peakWorker": 16,
+    "peakPool": 192
+  },
+  "blobBytes": 344064
+}

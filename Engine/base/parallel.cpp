@@ -4,6 +4,7 @@
 #include <thread>
 
 #if !defined(__APPLE__) && GEO_HAS_THREADS
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <vector>
@@ -24,10 +25,11 @@ usize parallelWidth() {
 
 namespace {
 
-// Workers that sleep until a batch is posted, then claim indices until the batch is done. The
-// posting thread claims indices too, so a batch never waits on an idle core. A claim is a ticket
-// holding the batch's generation in its high half and the next index in its low half, so a worker
-// that wakes late can never claim an index of a later batch with an earlier batch's function.
+// Workers that sleep until a batch is posted, then claim its indices until none are left. The
+// posting thread claims indices too, so a batch never waits on an idle core. Several threads may
+// post at once, as the packer does while it finds edges alongside, and the workers share
+// themselves among every batch in hand, as Apple's pool does. A batch lives on its poster's stack
+// and is let go only once no worker holds it.
 class Pool {
 public:
     Pool() {
@@ -38,19 +40,17 @@ public:
     }
 
     void run(usize count, void* context, void (*function)(void*, usize)) {
-        std::lock_guard batchLock(batchMutex_); // one batch at a time
-        u32 generation;
+        Batch batch{count, context, function};
         {
             std::lock_guard lock(mutex_);
-            generation = ++generation_;
-            batch_ = {count, context, function, generation};
-            remaining_ = count;
-            ticket_.store(u64(generation) << 32);
+            active_.push_back(&batch);
         }
         wake_.notify_all();
-        work(batch_);
+        const usize ran = claim(batch);
         std::unique_lock lock(mutex_);
-        done_.wait(lock, [this] { return remaining_ == 0; });
+        batch.finished += ran;
+        done_.wait(lock, [&] { return batch.finished == count && batch.holders == 0; });
+        active_.erase(std::find(active_.begin(), active_.end(), &batch));
     }
 
 private:
@@ -58,55 +58,55 @@ private:
         usize count = 0;
         void* context = nullptr;
         void (*function)(void*, usize) = nullptr;
-        u32 generation = 0;
+        std::atomic<usize> next{0};
+        usize finished = 0; // indices run, under the mutex
+        usize holders = 0;  // workers that may still claim from it, under the mutex
     };
 
-    void serve() {
-        u32 seen = 0;
-        for (;;) {
-            Batch batch;
-            {
-                std::unique_lock lock(mutex_);
-                wake_.wait(lock, [&] { return generation_ != seen; });
-                seen = generation_;
-                batch = batch_;
+    // The batch with indices left to claim and the fewest workers on it, or null, so concurrent
+    // batches advance together rather than one after the other. Under the mutex.
+    Batch* open() const {
+        Batch* best = nullptr;
+        for (Batch* batch : active_) {
+            if (batch->next.load(std::memory_order_relaxed) < batch->count &&
+                (best == nullptr || batch->holders < best->holders)) {
+                best = batch;
             }
-            work(batch);
         }
+        return best;
     }
 
-    // Claims and runs indices of `batch` until none are left or a later batch has begun.
-    void work(const Batch& batch) {
-        usize finished = 0;
-        u64 ticket = ticket_.load();
+    void serve() {
+        std::unique_lock lock(mutex_);
         for (;;) {
-            if (u32(ticket >> 32) != batch.generation || usize(u32(ticket)) >= batch.count) {
-                break;
-            }
-            if (!ticket_.compare_exchange_weak(ticket, ticket + 1)) {
-                continue;
-            }
-            batch.function(batch.context, usize(u32(ticket)));
-            ++finished;
-            ticket = ticket_.load();
-        }
-        if (finished > 0) {
-            std::lock_guard lock(mutex_);
-            remaining_ -= finished;
-            if (remaining_ == 0) {
+            Batch* batch = nullptr;
+            wake_.wait(lock, [&] { return (batch = open()) != nullptr; });
+            ++batch->holders;
+            lock.unlock();
+            const usize ran = claim(*batch);
+            lock.lock();
+            batch->finished += ran;
+            --batch->holders;
+            if (batch->finished == batch->count && batch->holders == 0) {
                 done_.notify_all();
             }
         }
     }
 
+    // Runs indices of `batch` until none are left, and returns how many it ran.
+    static usize claim(Batch& batch) {
+        usize ran = 0;
+        for (usize index; (index = batch.next.fetch_add(1, std::memory_order_relaxed)) < batch.count;
+             ++ran) {
+            batch.function(batch.context, index);
+        }
+        return ran;
+    }
+
     std::vector<std::thread> threads_;
-    std::mutex batchMutex_;
     std::mutex mutex_;
     std::condition_variable wake_, done_;
-    Batch batch_;
-    std::atomic<u64> ticket_{0};
-    usize remaining_ = 0;
-    u32 generation_ = 0;
+    std::vector<Batch*> active_;
 };
 
 thread_local bool insidePool = false;

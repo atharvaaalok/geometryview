@@ -233,8 +233,6 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
     const IndexedMesh& mesh = context.mesh;
 
     // meshoptimizer's cost grows with the vertex range, so each unit gets its own compact ids.
-    std::vector<u32> globals;
-    globals.reserve(sortedTriangles.size() * 3);
     std::vector<u32> indices;
     indices.reserve(sortedTriangles.size() * 3);
     for (const SortedTriangle& sorted : sortedTriangles) {
@@ -242,11 +240,31 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
         indices.insert(indices.end(),
                        {mesh.indices[t * 3], mesh.indices[t * 3 + 1], mesh.indices[t * 3 + 2]});
     }
-    globals = indices;
-    std::sort(globals.begin(), globals.end());
-    globals.erase(std::unique(globals.begin(), globals.end()), globals.end());
+    // Compact ids in order of mesh id, from a bitset over the unit's span of mesh ids: a vertex's
+    // id is the number of set bits below it. Linear, and small, at a bit per id in the span.
+    const auto [lowest, highest] = std::minmax_element(indices.begin(), indices.end());
+    const u32 base = *lowest;
+    std::vector<u64> used((usize(*highest - base) >> 6) + 1, 0);
+    for (const u32 index : indices) {
+        used[(index - base) >> 6] |= u64(1) << ((index - base) & 63);
+    }
+    std::vector<u32> below(used.size());
+    u32 total = 0;
+    for (usize w = 0; w < used.size(); ++w) {
+        below[w] = total;
+        total += u32(std::popcount(used[w]));
+    }
+    std::vector<u32> globals(total);
+    for (usize w = 0; w < used.size(); ++w) {
+        u32 n = below[w];
+        for (u64 bits = used[w]; bits != 0; bits &= bits - 1) {
+            globals[n++] = base + u32(w << 6) + u32(std::countr_zero(bits));
+        }
+    }
     for (u32& index : indices) {
-        index = u32(std::lower_bound(globals.begin(), globals.end(), index) - globals.begin());
+        const u32 offset = index - base;
+        const u64 lower = used[offset >> 6] & ((u64(1) << (offset & 63)) - 1);
+        index = below[offset >> 6] + u32(std::popcount(lower));
     }
     std::vector<float> positions(globals.size() * 3);
     for (usize v = 0; v < globals.size(); ++v) {

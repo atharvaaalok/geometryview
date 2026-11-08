@@ -1,0 +1,41 @@
+{
+  "label": "mac-safari-import-step-ple120-w12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "model": "ple120",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 69,
+  "poolMs": 23,
+  "importMs": 2250,
+  "beginMs": 140,
+  "meshMs": 2106,
+  "finishMs": 4,
+  "seconds": {
+    "tokenize": 0.057,
+    "structure": 0.006,
+    "definitions": 0.071,
+    "read": 15.299,
+    "transfer": 5.181,
+    "mesh": 3.42,
+    "pack": 0.052
+  },
+  "records": 398234,
+  "bodies": 89,
+  "definitions": 63,
+  "faces": 2677,
+  "triangles": 79760,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 713,
+  "slices": 244,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 71,
+    "peakWorker": 33,
+    "peakPool": 259
+  },
+  "blobBytes": 1851392
+}

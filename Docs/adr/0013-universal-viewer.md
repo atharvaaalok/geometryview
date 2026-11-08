@@ -42,7 +42,7 @@ Phase 0 measured the risky parts against go/no-go gates before any of that is bu
 | **W1** simd shim against Apple's | within 1e-12 on a million cases | pass |
 | **W1** cache blobs byte-identical | STEP structure identical; STL blobs differ in about 0.06% of normals by one unit | **fail, accepted**: caches are keyed per engine |
 | **W1** hard file tokenizes in ≤40 ms | 37 ms threaded, 85 ms on one thread | pass |
-| **W1** threaded STL packer within 2× of native | 2.7× (WebAssembly atomics in union-find and sort) | **fail**: fixed in P2 |
+| **W1** threaded STL packer within 2× of native | 2.7× (WebAssembly atomics in union-find and sort) | **fail**. After P2: 2.1× of today's native, 1.8× of the native time then; whole STL imports 1.9× (`p2/p2-import.md`) |
 | **S3** WebGPU in WKWebView | works from geo:// and from loopback HTTP | pass |
 | **S3** memory ceiling ≥1.1 GB | iOS stops the page at 1.7–2.0 GB of WebAssembly or 1.8 GB of GPU buffers | pass |
 | **S3** file streaming ≥300 MB/s | 1.5–3.4 GB/s | pass |
@@ -132,7 +132,7 @@ So the Metal app stays. The question returns when P3's renderer has those featur
 - a buffer-backed `scene::Segment` beside the mapped one;
 - a `parseHeader` variant for partial files.
 
-**P2, event-driven import, and Tier 0.**
+**P2, event-driven import, and Tier 0.** Done 2026-11-07, except Tier 0; results in `Docs/measurements/p2/p2-import.md`.
 - Split `SliceImporter` into an event-driven core (`nextJob`, `onReply`, `onCrash`) with two drivers: native processes and Web Workers.
 - The failure ladder stays.
 - Fix the threaded packer's atomics, to meet W1's 2× gate.

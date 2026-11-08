@@ -1,0 +1,57 @@
+{
+  "label": "mac-safari-import-step-ple120-w12-p3",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "model": "ple120",
+  "workers": 12,
+  "recycleMB": 256,
+  "crossOriginIsolated": true,
+  "loadMs": 75,
+  "poolMs": 28,
+  "importMs": 2185,
+  "beginMs": 141,
+  "meshMs": 2040,
+  "finishMs": 4,
+  "seconds": {
+    "tokenize": 0.058,
+    "structure": 0.006,
+    "definitions": 0.07,
+    "read": 15.018,
+    "transfer": 4.476,
+    "mesh": 4.129,
+    "pack": 0.051
+  },
+  "records": 398234,
+  "bodies": 89,
+  "definitions": 63,
+  "faces": 2677,
+  "triangles": 79760,
+  "failedFaces": 0,
+  "unmappedFaces": 0,
+  "crashedWorkers": 0,
+  "meshlets": 713,
+  "slices": 244,
+  "recoveries": [],
+  "recycled": [],
+  "memoryMB": {
+    "supervisor": 71,
+    "peakWorker": 33,
+    "peakPool": 259
+  },
+  "blobBytes": 1867776,
+  "later": [
+    {
+      "importMs": 385,
+      "beginMs": 72,
+      "meshMs": 311,
+      "finishMs": 1,
+      "recoveries": 0
+    },
+    {
+      "importMs": 333,
+      "beginMs": 72,
+      "meshMs": 260,
+      "finishMs": 1,
+      "recoveries": 0
+    }
+  ]
+}
