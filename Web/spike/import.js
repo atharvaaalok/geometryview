@@ -7,7 +7,11 @@
 const params = new URLSearchParams(location.search);
 const model = params.get("model") ?? "ple120";
 const workerCount = Math.max(1, Number(params.get("workers") ?? 1));
-const label = `${params.get("label") ?? "unlabelled"}-import-${model}-w${workerCount}`;
+// Passes over the slices. The engine compiles hot code better as it runs, so a second pass
+// measures warmed-up workers, as a long import or the next file would have them.
+const passes = Math.max(1, Number(params.get("passes") ?? 1));
+const label = `${params.get("label") ?? "unlabelled"}-import-${model}-w${workerCount}` +
+              `${passes > 1 ? `-p${passes}` : ""}`;
 const status = document.getElementById("status");
 
 async function post(report) {
@@ -43,10 +47,13 @@ try {
     })));
   const startupMs = performance.now() - started;
 
-  status.textContent = `Meshing ${slices.length} slices in ${workerCount} worker(s)…`;
   const results = new Array(slices.length);
-  let next = 0;
+  const passWallMs = [];
   let peakHeapMB = 0;
+  let wallMs = 0;
+  for (let pass = 0; pass < passes; ++pass) {
+  status.textContent = `Meshing ${slices.length} slices in ${workerCount} worker(s), pass ${pass + 1}…`;
+  let next = 0;
   started = performance.now();
   await Promise.all(workers.map(({ worker }) => new Promise((resolve) => {
     const send = () => {
@@ -68,7 +75,9 @@ try {
     };
     send();
   })));
-  const wallMs = performance.now() - started;
+  wallMs = performance.now() - started;
+  passWallMs.push(Math.round(wallMs));
+  }
   workers.forEach(({ worker }) => worker.terminate());
 
   const sum = (key) => results.reduce((total, r) => total + r[key], 0);
@@ -76,7 +85,7 @@ try {
     userAgent: navigator.userAgent, model, workers: workerCount, slices: slices.length,
     compileMs: Math.round(compileMs), startupMs: Math.round(startupMs),
     instantiateMs: workers.map((w) => Math.round(w.instantiateMs)),
-    wallMs: Math.round(wallMs), peakHeapMB: Math.round(peakHeapMB),
+    wallMs: Math.round(wallMs), passWallMs, peakHeapMB: Math.round(peakHeapMB),
     seconds: { read: +sum("read").toFixed(3), transfer: +sum("transfer").toFixed(3),
                mesh: +sum("mesh").toFixed(3), calls: +(sum("wallMs") / 1000).toFixed(3) },
     failed: results.filter((r) => r.status !== 0).length,
