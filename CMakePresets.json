@@ -134,7 +134,8 @@
       "configurePreset": "wasm-webgpu",
       "targets": [
         "spike_webgpu",
-        "engine_webgpu"
+        "engine_webgpu",
+        "geometry-webgpu-bench"
       ]
     }
   ],
