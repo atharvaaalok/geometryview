@@ -72,9 +72,11 @@ struct Region {
 struct Lists {
     Region regions[8];
     Region edgeRegions[2];
-    u32 instanceCount, edgeInstanceCount, groupCount, pad0;
+    u32 chunks[8][4]; // per list: its first chunk draw, and how many it has
+    u32 instanceCount, edgeInstanceCount, groupCount, shadowOn;
+    u32 groupsBase, chunkDraws, pad0, pad1;
 };
-static_assert(sizeof(Lists) == 176);
+static_assert(sizeof(Lists) == 320);
 
 struct DrawIndexed {
     u32 indexCount, instanceCount, firstIndex;
@@ -86,15 +88,19 @@ struct Draw {
     u32 vertexCount, instanceCount, firstVertex, firstInstance;
 };
 
+// The shaders' Counters, before its words: every chunk's draw, then what each workgroup adds to
+// each list.
 struct Counters {
-    DrawIndexed surfaces[8];
     Draw edges[2];
-    u32 slots[8];
     u32 edgeSlots[2];
+    u32 slots[8];
+    u32 indices[8];
 };
-static_assert(sizeof(Counters) == 232);
-// After the draws' arguments: slots and indices per workgroup and ordered list.
-constexpr u32 kOrderedLists = 6;
+static_assert(sizeof(Counters) == 104);
+static_assert(sizeof(DrawIndexed) == 20);
+constexpr u32 kLists = 7;
+// A list is drawn in chunks of this many slots, so its indices fit 16 bits. See cull.wgsl.
+constexpr u32 kChunkSlots = 512;
 constexpr u64 kEdgeDrawOffset = offsetof(Counters, edges);
 
 // What each surface list draws with: which kind of pass, and closed or open.
@@ -224,7 +230,7 @@ struct Renderer::State {
     wgpu::Buffer overlayUniforms, overlayQuads;
     wgpu::BindGroup overlayGroup;
     float glyphAdvance = 0.0f;
-    wgpu::ComputePipeline countSurfaces, scanSurfaces, writeSurfaces, cullShadow, cullEdges;
+    wgpu::ComputePipeline countSurfaces, scanSurfaces, writeSurfaces, chunkDraws, cullEdges;
     wgpu::ComputePipeline occlusion;
     wgpu::RenderPipeline sheet, resolve, composite;
     std::unordered_map<u32, wgpu::RenderPipeline> pipelines;
@@ -432,8 +438,7 @@ struct Renderer::State {
         countSurfaces = computePipeline(cullModule, "countSurfaces", cullPipelineLayout);
         scanSurfaces = computePipeline(cullModule, "scanSurfaces", cullPipelineLayout);
         writeSurfaces = computePipeline(cullModule, "writeSurfaces", cullPipelineLayout);
-        cullShadow = computePipeline(cullModule, "cullUnordered", cullPipelineLayout,
-                                     {constant("kShadowCull", 1)});
+        chunkDraws = computePipeline(cullModule, "chunkDraws", cullPipelineLayout);
         cullEdges = computePipeline(cullModule, "cullEdges", cullPipelineLayout);
         occlusion = computePipeline(postModule, "ambientOcclusion", occlusionPipelineLayout);
 
@@ -863,9 +868,10 @@ struct Renderer::State {
             const bool ghostWhole = (flags & kStateGhost) != 0;
             const bool ghost = (flags & (kStateGhost | kStateFaceGhost)) != 0;
             const bool shell = o < looks.size() && (looks[o] & kLookShell) != 0;
+            // Each meshlet may add an empty triangle, to an even number of indices.
             const auto need = [&](u32 list) {
                 slotNeed[list] += info.meshlets;
-                indexNeed[list] += u64(info.triangles) * 3;
+                indexNeed[list] += (u64(info.triangles) + info.meshlets) * 3;
             };
             if (!ghostWhole) {
                 need(open);
@@ -886,12 +892,21 @@ struct Renderer::State {
         }
         Lists table{};
         u64 slotTotal = 0, indexTotal = 0, edgeTotal = 0;
+        u32 chunkTotal = 0;
         for (u32 list = 0; list < 8; ++list) {
+            indexNeed[list] = (indexNeed[list] + 1) & ~u64(1); // regions start on whole words
             table.regions[list] = {u32(slotTotal), u32(slotNeed[list]), u32(indexTotal),
                                    u32(indexNeed[list])};
+            const u32 chunks = list < kLists ? u32((slotNeed[list] + kChunkSlots - 1) / kChunkSlots)
+                                             : 0;
+            table.chunks[list][0] = chunkTotal;
+            table.chunks[list][1] = chunks;
+            chunkTotal += chunks;
             slotTotal += slotNeed[list];
             indexTotal += indexNeed[list];
         }
+        table.chunkDraws = chunkTotal;
+        table.groupsBase = chunkTotal * 5;
         for (u32 list = 0; list < 2; ++list) {
             table.edgeRegions[list] = {u32(slotTotal + edgeTotal), u32(edgeNeed[list]), 0, 0};
             edgeTotal += edgeNeed[list];
@@ -900,6 +915,7 @@ struct Renderer::State {
         table.edgeInstanceCount = edgeInstances;
         const auto [groupsX, groupsY] = dispatchSize(surfaceInstances);
         table.groupCount = groupsX * groupsY;
+        table.shadowOn = listTable.shadowOn;
         listTable = table;
         if (!lists) {
             lists = buffer(sizeof(Lists), U::Uniform | U::CopyDst, "lists");
@@ -915,10 +931,11 @@ struct Renderer::State {
             }
         };
         grow(slots, (slotTotal + edgeTotal) * 8, U::Storage, "slots");
-        grow(counters, sizeof(Counters) + u64(table.groupCount) * kOrderedLists * 8,
+        grow(counters,
+             sizeof(Counters) + (u64(table.groupsBase) + u64(table.groupCount) * kLists * 2) * 4,
              U::Storage | U::Indirect | U::CopyDst, "counters");
-        grow(indices, indexTotal * 4, U::Storage | U::Index, "indices");
-        if (indexTotal * 4 > limits.maxStorageBufferBindingSize) {
+        grow(indices, indexTotal * 2, U::Storage | U::Index, "indices");
+        if (indexTotal * 2 > limits.maxStorageBufferBindingSize) {
             std::fprintf(stderr, "The scene's draw lists are larger than the GPU can bind.\n");
         }
     }
@@ -1039,18 +1056,33 @@ struct Renderer::State {
         queue.WriteBuffer(frames, slot * kUniformStride, &uniforms, sizeof(uniforms));
     }
 
-    void resetCounters() {
+    // Zero counts, and each chunk's draw with its base vertex: its first slot << 7, so the
+    // vertex stage sees the slot whole. The cull fills in where indices start and how many.
+    void resetCounters(bool shadow) {
         Counters reset{};
-        for (u32 list = 0; list < 8; ++list) {
-            reset.surfaces[list] = {0, 1, listTable.regions[list].indexBase, 0, 0};
-        }
         for (u32 list = 0; list < 2; ++list) {
             reset.edges[list] = {0, 1, listTable.edgeRegions[list].slotBase * kEdgeVertices, 0};
         }
+        resetDraws.resize(listTable.chunkDraws);
+        for (u32 list = 0; list < kLists; ++list) {
+            const Region& region = listTable.regions[list];
+            for (u32 k = 0; k < listTable.chunks[list][1]; ++k) {
+                resetDraws[listTable.chunks[list][0] + k] = {
+                    0, 1, region.indexBase, i32((region.slotBase + k * kChunkSlots) << 7), 0};
+            }
+        }
         queue.WriteBuffer(counters, 0, &reset, sizeof(reset));
+        queue.WriteBuffer(counters, sizeof(Counters), resetDraws.data(),
+                          resetDraws.size() * sizeof(DrawIndexed));
+        if (listTable.shadowOn != u32(shadow)) {
+            listTable.shadowOn = shadow;
+            queue.WriteBuffer(lists, offsetof(Lists, shadowOn), &listTable.shadowOn, 4);
+        }
     }
+    std::vector<DrawIndexed> resetDraws;
 
-    void encodeCull(const wgpu::CommandEncoder& encoder, bool shadow, bool edges) {
+    // The shadow's list fills in the same passes, when resetCounters said it is on.
+    void encodeCull(const wgpu::CommandEncoder& encoder, bool edges) {
         const u32 offset = u32(kViewSlot * kUniformStride);
         wgpu::PassTimestampWrites begin{};
         wgpu::ComputePassDescriptor descriptor{};
@@ -1073,10 +1105,8 @@ struct Renderer::State {
             pass.DispatchWorkgroups(1);
             pass.SetPipeline(writeSurfaces);
             pass.DispatchWorkgroups(x, y);
-            if (shadow) {
-                pass.SetPipeline(cullShadow);
-                pass.DispatchWorkgroups(x, y);
-            }
+            pass.SetPipeline(chunkDraws);
+            pass.DispatchWorkgroups((listTable.chunkDraws + 63) / 64);
         }
         if (edges && edgeInstances != 0) {
             const auto [x, y] = dispatchSize(edgeInstances);
@@ -1086,8 +1116,12 @@ struct Renderer::State {
         pass.End();
     }
 
+    // A list's chunks, each its own indexed draw; a chunk the cull left empty draws nothing.
     void drawList(const wgpu::RenderPassEncoder& pass, u32 list) {
-        pass.DrawIndexedIndirect(counters, list * sizeof(DrawIndexed));
+        const u32 first = listTable.chunks[list][0], count = listTable.chunks[list][1];
+        for (u32 k = 0; k < count; ++k) {
+            pass.DrawIndexedIndirect(counters, sizeof(Counters) + (first + k) * sizeof(DrawIndexed));
+        }
     }
 
     // Closed surfaces, then open ones, of a pair of lists, with the pipelines for each.
@@ -1113,7 +1147,7 @@ struct Renderer::State {
         const u32 offset = u32(kViewSlot * kUniformStride);
         pass.SetBindGroup(0, sceneGroup, 1, &offset);
         pass.SetBindGroup(1, surfaceGroup);
-        pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint32);
+        pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
         PipelineKey key{.kind = Kind::Shadow, .section = section};
         pass.SetPipeline(pipeline(key));
         drawList(pass, kListShadow);
@@ -1149,7 +1183,7 @@ struct Renderer::State {
         const bool hasScene = surfaceInstances != 0;
         if (hasScene) {
             pass.SetBindGroup(1, surfaceGroup);
-            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint32);
+            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
             drawPair(pass, {.kind = Kind::Solid, .physical = physical, .section = section}, 0);
         }
         const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
@@ -1243,11 +1277,11 @@ struct Renderer::State {
             queue.WriteBuffer(overlayQuads, 0, overlay->quads.data(),
                               uniforms.quadCount * sizeof(OverlayQuad));
         }
-        resetCounters();
         const bool section = view.uniforms.sectionPlaneCount > 0;
         const bool shadow = castsShadow(view);
+        resetCounters(shadow);
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        encodeCull(encoder, shadow, true);
+        encodeCull(encoder, true);
         if (shadow) {
             encodeShadow(encoder, section);
         }
