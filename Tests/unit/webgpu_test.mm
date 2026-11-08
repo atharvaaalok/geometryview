@@ -8,6 +8,7 @@
 #include "drive_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
+#include "gpu/overlay_atlas.h"
 #include "gpu/renderer.h"
 #include "scene/segment.h"
 #include "webgpu/renderer.h"
@@ -489,6 +490,58 @@ TEST_CASE("the WebGPU renderer picks as Metal does") {
             }
         }
         CHECK(hits > checked / 4);
+        unlink(blob.c_str());
+    }
+}
+
+// The view cube, hovered on one face, and the scale bar with its text, drawn by both renderers;
+// WebGPU is given the atlas Metal draws for itself.
+TEST_CASE("the WebGPU renderer draws the overlay as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::vector<u8> atlas;
+        float advance = 0.0f;
+        REQUIRE(gpu::drawOverlayAtlas(atlas, advance));
+        web->setOverlayAtlas(atlas, advance);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
+        for (const GeoStyle style : {GeoStyleIllustration, GeoStyleBlueprint}) {
+            const std::string name = style == GeoStyleIllustration ? "overlay" : "overlay-blueprint";
+            CAPTURE(name);
+            GeoRenderOptions options = geo_default_render_options();
+            options.width = kWidth;
+            options.height = kHeight;
+            options.overlay = true;
+            options.look.style = style;
+            options.look.cast_shadow = geo_style_casts_shadow(style);
+            std::vector<u8> images[2];
+            render::Backend* backends[2] = {metal.get(), web.get()};
+            for (int r = 0; r < 2; ++r) {
+                engine::OffscreenView frame;
+                REQUIRE(engine::prepareOffscreen(*backends[r], openBlob(blob), options, frame,
+                                                 error));
+                frame.overlay.uniforms.cubeHover = 5; // the top face
+                images[r] = backends[r]->renderOffscreen(frame.view, &frame.overlay);
+            }
+            if (keep != nullptr) {
+                engine::writePng(std::format("{}/{}-metal.png", keep, name).c_str(), images[0],
+                                 kWidth, kHeight);
+                engine::writePng(std::format("{}/{}-webgpu.png", keep, name).c_str(), images[1],
+                                 kWidth, kHeight);
+            }
+            const Difference d = compare(images[1], images[0]);
+            CAPTURE(d.mean);
+            CAPTURE(d.changed);
+            CHECK(d.mean < 1.0);
+            CHECK(d.changed < 0.005);
+        }
         unlink(blob.c_str());
     }
 }

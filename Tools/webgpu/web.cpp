@@ -377,6 +377,9 @@ EMSCRIPTEN_KEEPALIVE void bench_capture() {
 EMSCRIPTEN_KEEPALIVE const u8* bench_capture_bytes() { return app.capture.data(); }
 EMSCRIPTEN_KEEPALIVE u32 bench_format() { return u32(app.format); }
 
+// Edges and the cast shadow left out, as the engine draws heavy scenes in motion.
+EMSCRIPTEN_KEEPALIVE void bench_reduced(int reduced) { app.renderer->setReducedDetail(reduced != 0); }
+
 EMSCRIPTEN_KEEPALIVE void bench_start(u32 burst, double phaseSeconds) {
     app.burst = std::max(burst, 1u);
     app.phaseMs = phaseSeconds * 1000.0;

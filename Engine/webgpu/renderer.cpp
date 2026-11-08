@@ -210,11 +210,20 @@ struct Renderer::State {
     wgpu::Limits limits{};
 
     wgpu::ShaderModule cullModule, surfaceModule, edgeModule, sheetModule, postModule;
+    wgpu::ShaderModule overlayModule;
     wgpu::BindGroupLayout sceneLayout, cullLayout, surfaceLayout, peelLayout, edgeLayout;
     wgpu::BindGroupLayout sheetLayout, resolveLayout, occlusionLayout, compositeLayout;
     wgpu::PipelineLayout cullPipelineLayout, surfacePipelineLayout, peelPipelineLayout;
     wgpu::PipelineLayout edgePipelineLayout, sheetPipelineLayout, resolvePipelineLayout;
     wgpu::PipelineLayout occlusionPipelineLayout, compositePipelineLayout;
+    wgpu::BindGroupLayout overlayLayout;
+    wgpu::PipelineLayout overlayPipelineLayout;
+    wgpu::RenderPipeline cube, quad;
+    // The overlay: the atlas the host drew, and this frame's uniforms and quads.
+    wgpu::Texture atlas;
+    wgpu::Buffer overlayUniforms, overlayQuads;
+    wgpu::BindGroup overlayGroup;
+    float glyphAdvance = 0.0f;
     wgpu::ComputePipeline countSurfaces, scanSurfaces, writeSurfaces, cullShadow, cullEdges;
     wgpu::ComputePipeline occlusion;
     wgpu::RenderPipeline sheet, resolve, composite;
@@ -320,7 +329,9 @@ struct Renderer::State {
         edgeModule = makeModule(device, common + wgsl::kEdges, "edges");
         sheetModule = makeModule(device, common + wgsl::kSheet, "sheet");
         postModule = makeModule(device, common + wgsl::kPost, "post");
-        return cullModule && surfaceModule && edgeModule && sheetModule && postModule;
+        overlayModule = makeModule(device, common + wgsl::kOverlay, "overlay");
+        return cullModule && surfaceModule && edgeModule && sheetModule && postModule &&
+               overlayModule;
     }
 
     void createLayouts() {
@@ -386,6 +397,17 @@ struct Renderer::State {
         resolvePipelineLayout = makePipelineLayout(device, {sceneLayout, resolveLayout});
         occlusionPipelineLayout = makePipelineLayout(device, {sceneLayout, occlusionLayout});
         compositePipelineLayout = makePipelineLayout(device, {sceneLayout, compositeLayout});
+        wgpu::BindGroupLayoutEntry atlasSampler{};
+        atlasSampler.binding = 3;
+        atlasSampler.visibility = Stage::Fragment;
+        atlasSampler.sampler.type = wgpu::SamplerBindingType::Filtering;
+        overlayLayout = makeLayout(device, {
+            bufferLayout(0, Stage::Vertex | Stage::Fragment, B::Uniform),
+            bufferLayout(1, Stage::Vertex, B::ReadOnlyStorage),
+            textureLayout(2, Stage::Fragment, TS::Float),
+            atlasSampler,
+        });
+        overlayPipelineLayout = makePipelineLayout(device, {sceneLayout, overlayLayout});
 
         wgpu::SamplerDescriptor linear{};
         linear.magFilter = wgpu::FilterMode::Linear;
@@ -442,6 +464,53 @@ struct Renderer::State {
         output.format = outputFormat;
         composite = screenPipeline(postModule, "compositeFragment", compositePipelineLayout,
                                    &output, 1, nullptr, "composite");
+
+        // The overlay takes away the ink beneath it, by its alpha; the cube writes pick ids and
+        // clears the tags of what is behind it, and the scale bar's quads blend.
+        wgpu::BlendState clearsInk{};
+        clearsInk.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::Zero,
+                           wgpu::BlendFactor::OneMinusSrcAlpha};
+        clearsInk.alpha = clearsInk.color;
+        wgpu::BlendState alphaBlend{};
+        alphaBlend.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::SrcAlpha,
+                            wgpu::BlendFactor::OneMinusSrcAlpha};
+        alphaBlend.alpha = {wgpu::BlendOperation::Add, wgpu::BlendFactor::One,
+                            wgpu::BlendFactor::OneMinusSrcAlpha};
+        wgpu::DepthStencilState always{};
+        always.format = kDepthFormat;
+        always.depthWriteEnabled = wgpu::OptionalBool::False;
+        always.depthCompare = wgpu::CompareFunction::Always;
+        std::array<wgpu::ColorTargetState, 5> cubeTargets = mainTargets();
+        cubeTargets[3].writeMask = wgpu::ColorWriteMask::All;
+        cubeTargets[3].blend = &clearsInk;
+        cubeTargets[4].writeMask = wgpu::ColorWriteMask::Red | wgpu::ColorWriteMask::Green;
+        cube = overlayPipeline("cubeVertex", "cubeFragment", cubeTargets.data(), &always);
+        std::array<wgpu::ColorTargetState, 5> quadTargets = mainTargets();
+        quadTargets[0].blend = &alphaBlend;
+        quadTargets[1].writeMask = wgpu::ColorWriteMask::None;
+        quadTargets[2].writeMask = wgpu::ColorWriteMask::None;
+        quadTargets[3].writeMask = wgpu::ColorWriteMask::All;
+        quadTargets[3].blend = &clearsInk;
+        quad = overlayPipeline("quadVertex", "quadFragment", quadTargets.data(), &always);
+    }
+
+    wgpu::RenderPipeline overlayPipeline(const char* vertex, const char* fragment,
+                                         const wgpu::ColorTargetState* targets,
+                                         const wgpu::DepthStencilState* depthState) {
+        wgpu::FragmentState fragmentState{};
+        fragmentState.module = overlayModule;
+        fragmentState.entryPoint = fragment;
+        fragmentState.targetCount = 5;
+        fragmentState.targets = targets;
+        wgpu::RenderPipelineDescriptor descriptor{};
+        descriptor.label = vertex;
+        descriptor.layout = overlayPipelineLayout;
+        descriptor.vertex.module = overlayModule;
+        descriptor.vertex.entryPoint = vertex;
+        descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+        descriptor.depthStencil = depthState;
+        descriptor.fragment = &fragmentState;
+        return device.CreateRenderPipeline(&descriptor);
     }
 
     wgpu::RenderPipeline screenPipeline(const wgpu::ShaderModule& module, const char* entry,
@@ -1053,8 +1122,8 @@ struct Renderer::State {
 
     // The main pass for one sample: opaque surfaces, the sheet behind them, creases and
     // highlights, the see-through shell, ghosts over all of it with their dashed lines.
-    void encodeMain(const wgpu::CommandEncoder& encoder, u32 slot,
-                    const render::ViewState& view) {
+    void encodeMain(const wgpu::CommandEncoder& encoder, u32 slot, const render::ViewState& view,
+                    const render::Overlay* overlay) {
         const bool section = view.uniforms.sectionPlaneCount > 0;
         wgpu::RenderPassColorAttachment attachments[5] = {};
         const wgpu::Texture* textures[5] = {&color, &ids, &depthCopy, &ink, &tags};
@@ -1122,6 +1191,15 @@ struct Renderer::State {
                 pass.DrawIndirect(counters, kEdgeDrawOffset + sizeof(Draw));
             }
         }
+        if (overlay != nullptr && overlay->visible && overlayGroup) {
+            pass.SetBindGroup(1, overlayGroup);
+            pass.SetPipeline(cube);
+            pass.Draw(36);
+            if (overlay->uniforms.quadCount != 0) {
+                pass.SetPipeline(quad);
+                pass.Draw(6, overlay->uniforms.quadCount);
+            }
+        }
         pass.End();
     }
 
@@ -1147,7 +1225,8 @@ struct Renderer::State {
         pass.End();
     }
 
-    void encodeFrame(const wgpu::Texture& target, const render::ViewState& view, u32 count) {
+    void encodeFrame(const wgpu::Texture& target, const render::ViewState& view, u32 count,
+                     const render::Overlay* overlay) {
 #ifndef __EMSCRIPTEN__
         instance.ProcessEvents(); // earlier frames' readbacks
 #endif
@@ -1157,6 +1236,13 @@ struct Renderer::State {
             writeFrame(s, view.uniforms, count > 1 ? kSamplePositions[s] : nullptr);
         }
         writeFrame(kViewSlot, view.uniforms, nullptr);
+        if (overlay != nullptr && overlay->visible && overlayGroup) {
+            OverlayUniforms uniforms = overlay->uniforms;
+            uniforms.quadCount = std::min<u32>(uniforms.quadCount, kOverlayMaxQuads);
+            queue.WriteBuffer(overlayUniforms, 0, &uniforms, sizeof(uniforms));
+            queue.WriteBuffer(overlayQuads, 0, overlay->quads.data(),
+                              uniforms.quadCount * sizeof(OverlayQuad));
+        }
         resetCounters();
         const bool section = view.uniforms.sectionPlaneCount > 0;
         const bool shadow = castsShadow(view);
@@ -1168,7 +1254,7 @@ struct Renderer::State {
         // Sample 0 last, so its ids, tags and depth remain.
         for (u32 n = 0; n < count; ++n) {
             const u32 s = (n + 1) % count;
-            encodeMain(encoder, s, view);
+            encodeMain(encoder, s, view, overlay);
             encodeResolve(encoder, n == 0, count);
         }
         if (style.ao > 0.0f) {
@@ -1417,7 +1503,34 @@ void Renderer::setReducedDetail(bool reduced) { state_->reducedDetail = reduced;
 u64 Renderer::sceneTriangles() const { return state_->triangles; }
 u64 Renderer::sceneEdgeSegments() const { return state_->edgeSegments; }
 void Renderer::resize(u32 width, u32 height) { state_->resize(width, height); }
-float Renderer::glyphAdvance() const { return 0.0f; }
+float Renderer::glyphAdvance() const { return state_->glyphAdvance; }
+
+void Renderer::setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance) {
+    State& s = *state_;
+    if (pixels.size() < usize(kAtlasWidth) * kAtlasHeight) {
+        return;
+    }
+    s.glyphAdvance = glyphAdvance;
+    s.atlas = s.texture(kAtlasWidth, kAtlasHeight, Format::R8Unorm,
+                        Usage::TextureBinding | Usage::CopyDst, "overlay atlas");
+    wgpu::TexelCopyTextureInfo destination{};
+    destination.texture = s.atlas;
+    wgpu::TexelCopyBufferLayout layout{};
+    layout.bytesPerRow = kAtlasWidth;
+    layout.rowsPerImage = kAtlasHeight;
+    const wgpu::Extent3D extent = {kAtlasWidth, kAtlasHeight, 1};
+    s.queue.WriteTexture(&destination, pixels.data(), usize(kAtlasWidth) * kAtlasHeight, &layout,
+                         &extent);
+    s.overlayUniforms = s.buffer(sizeof(OverlayUniforms), U::Uniform | U::CopyDst, "overlay");
+    s.overlayQuads = s.buffer(sizeof(OverlayQuad) * kOverlayMaxQuads, U::Storage | U::CopyDst,
+                              "overlay quads");
+    wgpu::BindGroupEntry sampler{};
+    sampler.binding = 3;
+    sampler.sampler = s.linearClamp;
+    s.overlayGroup = makeGroup(s.device, s.overlayLayout,
+                               {bufferEntry(0, s.overlayUniforms), bufferEntry(1, s.overlayQuads),
+                                textureEntry(2, s.atlas), sampler});
+}
 void Renderer::setSamples(u32 samples) { state_->samples = std::clamp(samples, 1u, 4u); }
 
 // From the newest probe that has come back: what the frame before last or so drew. Asking also
@@ -1469,14 +1582,14 @@ u64 Renderer::timedFrames() const { return state_->timedFrames; }
 render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState&, u32) { return {}; }
 
 void Renderer::render(const wgpu::Texture& target, const render::ViewState& view,
-                      const render::Overlay*) {
-    state_->encodeFrame(target, view, state_->samples);
+                      const render::Overlay* overlay) {
+    state_->encodeFrame(target, view, state_->samples, overlay);
 }
 
 std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
-                                          const render::Overlay*) {
+                                          const render::Overlay* overlay) {
     State& s = *state_;
-    s.encodeFrame(s.offscreen, view, 4);
+    s.encodeFrame(s.offscreen, view, 4, overlay);
     const u32 stride = (s.width * 4 + 255) & ~255u;
     wgpu::Buffer readback = s.buffer(u64(stride) * s.height, U::MapRead | U::CopyDst, "readback");
     wgpu::TexelCopyTextureInfo source{};

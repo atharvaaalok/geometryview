@@ -4,6 +4,7 @@
 //
 // renderer.html?model=stl10m&w=2880&h=1800&style=0&samples=1&burst=1&phase=6&label=<where>
 //   capture   also reads one frame back and posts its pixels to the server
+//   reduced   leaves out edges and the shadow, as heavy scenes in motion are drawn
 
 import createBench from "./bench/geometry-webgpu-bench.mjs";
 
@@ -17,8 +18,11 @@ const samples = Number(params.get("samples") ?? 1);
 // GPU times measure capacity rather than how far the clocks were lowered to fit the display.
 const burst = Number(params.get("burst") ?? 1);
 const phase = Number(params.get("phase") ?? 6);
+// Edges and the shadow left out, as the engine draws heavy scenes in motion.
+const reduced = params.has("reduced");
 const label = `${params.get("label") ?? "unlabelled"}-p3-${model}-${width}x${height}-s${style}` +
-              `${samples > 1 ? `-x${samples}` : ""}${burst > 1 ? `-burst${burst}` : ""}` +
+              `${samples > 1 ? `-x${samples}` : ""}${reduced ? "-reduced" : ""}` +
+              `${burst > 1 ? `-burst${burst}` : ""}` +
               `${phase !== 6 ? `-soak${3 * phase}s` : ""}`;
 const status = document.getElementById("status");
 const canvas = document.getElementById("canvas");
@@ -69,6 +73,7 @@ try {
   const loadMs = performance.now() - started;
 
   status.textContent = `Orbiting ${model} at ${width}×${height}…`;
+  bench._bench_reduced(reduced ? 1 : 0);
   bench._bench_start(burst, phase);
   await until(bench, 3);
   const results = JSON.parse(bench.UTF8ToString(bench._bench_results()));

@@ -14,7 +14,7 @@ if(GEO_WEBGPU AND GEO_TARGET STREQUAL "wasm")
     set_target_properties(geometry-webgpu-bench PROPERTIES SUFFIX ".mjs")
     target_link_options(geometry-webgpu-bench PRIVATE
         -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
-        -sEXPORTED_FUNCTIONS=_malloc,_free,_bench_init,_bench_state,_bench_error,_bench_load,_bench_start,_bench_results,_bench_capture,_bench_capture_bytes,_bench_format
+        -sEXPORTED_FUNCTIONS=_malloc,_free,_bench_init,_bench_state,_bench_error,_bench_load,_bench_start,_bench_results,_bench_capture,_bench_capture_bytes,_bench_format,_bench_reduced
         -sEXPORTED_RUNTIME_METHODS=HEAPU8,UTF8ToString
         -sENVIRONMENT=web -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createBench)
 endif()
