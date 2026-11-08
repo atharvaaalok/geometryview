@@ -12,6 +12,10 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// Positions rebuilt from depth in perspective need exact arithmetic: fast math's left surfaces
+// seen at a grazing angle rough enough for the occlusion to darken them in speckles.
+#pragma METAL fp math_mode(safe)
+
 constant float2 kDirections[8] = {
     float2(1.0, 0.0),  float2(0.7071, 0.7071),   float2(0.0, 1.0),  float2(-0.7071, 0.7071),
     float2(-1.0, 0.0), float2(-0.7071, -0.7071), float2(0.0, -1.0), float2(0.7071, -0.7071)};
@@ -27,9 +31,7 @@ static inline float2 wobbleOffset(float2 pixel, constant StyleUniforms& style) {
 
 // Distance along the view, from stored depth, which is reversed.
 static inline float viewDepth(float depth, constant FrameUniforms& frame) {
-    // A precise division: fast math's approximate one leaves surfaces seen at a grazing angle
-    // rough enough, in perspective, for the occlusion to darken them in speckles.
-    return frame.perspective != 0 ? metal::precise::divide(frame.depthNear, max(depth, 1e-12))
+    return frame.perspective != 0 ? frame.depthNear / max(depth, 1e-12)
                                   : frame.depthFar - depth * (frame.depthFar - frame.depthNear);
 }
 
