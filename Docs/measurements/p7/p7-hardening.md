@@ -149,7 +149,14 @@ On the iPhone 16 Pro, a 5M-triangle STL (the 10M fixture's first half, 250 MB) i
 - Instruments recorded the page's process at 893 MB at its peak and the GPU process at 217 MB
   (`p4/runtime/iphone-p7-import-stl5m-memory.json`).
 
-The run near the new limit was left undone, because the phone was in use.
+**Near the limit**, an 8.4M-triangle STL (the 10M fixture's first 8.4M, 420 MB) imported on the
+iPhone in 4.9 s, with no error:
+- the importer's heap reached 741–845 MB;
+- the page's process peaked at 1,271 MB and the GPU process at 232 MB
+  (`p4/runtime/iphone-p7-import-stl8m-memory.json`). The limit's estimate for this file,
+  300 MB + 115 B a triangle, is 1,266 MB: it predicts the page's peak.
+- iOS stopped pages at 1.7–2.0 GB in Phase 0, so this leaves 400–700 MB to spare, for the GPU
+  process and whatever else the phone is running.
 
 **Still to do:**
 - The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
@@ -184,8 +191,17 @@ The run near the new limit was left undone, because the phone was in use.
     the import's note. A file reopened from the library refines too, as does one the iOS shell
     reopens after its page was stopped.
   - **Phones** refine to level 2, a quarter of the coarsest chord error, rather than 4, since
-    refined geometry stays on the GPU beside the coarser. This is still to be measured on the
-    phone.
+    refined geometry stays on the GPU beside the coarser.
+  - **On the iPhone**, PLE120 refined from 116,024 to 219,720 triangles, complete 2.7 s after the
+    view settled, with two workers. The page's process peaked at 515 MB and the GPU process at
+    105 MB, well inside the phone's budget.
+  - **The hard file on the iPhone** is still to be measured. The first runs showed no refinement,
+    and the reason was the check, not the viewer: it waited only 6 s for the triangle count to
+    change. The hard file is one part, whose segment comes at the end of its job, and two workers
+    take longer than that. In Chrome with the phone's settings (two workers, level 2) the job
+    takes 12.9 s, from 340,646 to 589,673 triangles. The check now waits while a job runs, and
+    lists each job's level, time and outcome. Its run on the phone was interrupted: the phone was
+    in use.
   - **Measured** in Chrome with the scripted check, `test=refine` (six wheel steps in on the
     middle):
 
@@ -235,3 +251,37 @@ The shell now:
 - **"1 parts · 1 bodies"** in the masthead, in the Mac app too. It now reads "1 part · 1 body".
 - **The import check's report was named after `step/pack.step`.** The slash made the shell write
   the report into a folder that does not exist. Report names now use a dash.
+
+## Linux and Windows
+
+No physical Linux or Windows machine is at hand. Linux runs first in Docker on this Mac, without a
+GPU; drawing on either system needs a machine with one.
+
+**Tools** (`Tools/platforms/`):
+- `headless.mjs` opens a check page in Chrome or Chromium on any system, waits for the report it
+  posts, and prints it. It needs no packages.
+- `linux.Dockerfile` is Debian 12 with Node 22, Debian's Chromium 156 (arm64), Mesa's lavapipe
+  and Chromium's SwiftShader. `linux-run.sh` starts the census and viewer servers inside it and
+  runs one check.
+- The launcher's end-to-end test takes `GEOMETRY_CHROME` and `GEOMETRY_CHROME_FLAGS`, with
+  Chrome's usual place on each system as the default.
+
+**Linux in Docker, Chromium 156 with SwiftShader:**
+- **The census:** cross-origin isolation, SharedArrayBuffer, threads (a hand-over in 11 µs), a
+  module posted to a worker, OPFS with sync access handles (1.4 GB/s write), and every WebAssembly
+  feature the viewer uses, memory64 and JSPI included. The rAF rate is 60 Hz
+  (`phase0/census/linux-docker-chromium-swiftshader.json`).
+- **The launcher's tests:** 8 of 9 pass on Linux, the MCP server and the web server's guards
+  included; one needs the native engine and is skipped. In the end-to-end test the page opened
+  PLE120 from the launcher, imported it with OCCT in workers to exactly the Mac's 37 parts, 89
+  bodies and 116,024 triangles, and listed its structure. It then failed at the picture.
+- **The viewer** opens the pack (331,520 triangles), its interface complete, with 0 frames drawn
+  while still. The 3D view stays blank.
+- **Why nothing draws:** Chromium without a GPU, in a container, cannot present WebGPU to a
+  canvas. Its GPU process reports no shared-image backing for the WebGPU swap chain, after which
+  the page's WebGPU instance is lost, and reading a picture back fails too ("A valid external
+  Instance reference no longer exists"). This held headless and under Xvfb, with SwiftShader or
+  lavapipe, and with ANGLE on SwiftShader or Vulkan, Graphite, in-process GPU, and GPU
+  compositing off. It is a property of that setup, not of the viewer.
+- **A fix it led to:** a picture that fails now tells the AI app why, rather than only that it
+  failed.
