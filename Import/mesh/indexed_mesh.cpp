@@ -69,53 +69,71 @@ Welded weldCorners(const std::vector<float>& corners) {
     return welded;
 }
 
-// Lock-free union-find. Each root is the lowest index in its set, so the sets do not depend on the
-// order of operations or the number of threads.
+// Union-find whose roots are the lowest index in their set, so the sets do not depend on the order
+// of operations or the number of threads. `find` and `unite` are for one thread at a time;
+// `findShared` and `uniteShared` may run on many at once, lock-free. Atomics cost a full barrier
+// each in WebAssembly, so only the shared pair uses them.
 class DisjointSets {
 public:
     explicit DisjointSets(usize count) : parent_(count) {
         parallelRanges(count, kGrain, [&](usize first, usize last, usize) {
             for (usize i = first; i < last; ++i) {
-                parent_[i].store(u32(i), std::memory_order_relaxed);
+                parent_[i] = u32(i);
             }
         });
     }
 
     u32 find(u32 item) {
-        u32 parent = parent_[item].load(std::memory_order_relaxed);
-        while (parent != item) {
-            const u32 grandparent = parent_[parent].load(std::memory_order_relaxed);
-            if (grandparent == parent) {
-                return parent; // the parent is the root, so there is nothing to shorten
-            }
-            // Path halving. Losing this race only means a later find does the work. The write is
-            // skipped when there is nothing to shorten, which matters where every atomic write is
-            // a full barrier, as in WebAssembly.
-            parent_[item].compare_exchange_weak(parent, grandparent, std::memory_order_relaxed);
-            item = grandparent;
-            parent = parent_[item].load(std::memory_order_relaxed);
+        while (parent_[item] != item) {
+            parent_[item] = parent_[parent_[item]]; // path halving
+            item = parent_[item];
         }
         return item;
     }
 
     void unite(u32 a, u32 b) {
+        a = find(a);
+        b = find(b);
+        if (a != b) {
+            parent_[std::max(a, b)] = std::min(a, b);
+        }
+    }
+
+    u32 findShared(u32 item) {
+        u32 parent = shared(item).load(std::memory_order_relaxed);
+        while (parent != item) {
+            const u32 grandparent = shared(parent).load(std::memory_order_relaxed);
+            if (grandparent == parent) {
+                return parent; // the parent is the root, so there is nothing to shorten
+            }
+            // Path halving. Losing this race only means a later find does the work.
+            shared(item).compare_exchange_weak(parent, grandparent, std::memory_order_relaxed);
+            item = grandparent;
+            parent = shared(item).load(std::memory_order_relaxed);
+        }
+        return item;
+    }
+
+    void uniteShared(u32 a, u32 b) {
         while (true) {
-            a = find(a);
-            b = find(b);
+            a = findShared(a);
+            b = findShared(b);
             if (a == b) {
                 return;
             }
             u32 high = std::max(a, b);
             const u32 low = std::min(a, b);
             // Links only a current root, so a concurrent link can never be lost.
-            if (parent_[high].compare_exchange_weak(high, low, std::memory_order_relaxed)) {
+            if (shared(high).compare_exchange_weak(high, low, std::memory_order_relaxed)) {
                 return;
             }
         }
     }
 
 private:
-    std::vector<std::atomic<u32>> parent_;
+    std::atomic_ref<u32> shared(u32 item) { return std::atomic_ref<u32>(parent_[item]); }
+
+    std::vector<u32> parent_;
 };
 
 // Replaces each element's root with a dense id in order of first appearance.
@@ -276,9 +294,14 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
 
     const float cosCrease = std::cos(options.creaseDegrees * std::numbers::pi_v<float> / 180.0f);
     StageTrace trace("grow");
+    // In two passes, so threads seldom share a root. Each range of triangles first unites the
+    // edges inside it, single-threaded, since no other range touches its triangles; the edges
+    // between ranges, few where neighbours are near in the file as they usually are, then unite
+    // through the shared, atomic path.
     DisjointSets groups(triangleCount);
-    parallelRanges(mesh.indices.size(), kGrain, [&](usize first, usize last, usize) {
-        for (usize corner = first; corner < last; ++corner) {
+    std::vector<std::vector<std::pair<u32, u32>>> between(parallelRangeCount(triangleCount, kGrain));
+    parallelRanges(triangleCount, kGrain, [&](usize first, usize last, usize range) {
+        for (usize corner = first * 3; corner < last * 3; ++corner) {
             const u32 firstCorner = edges.firstCorner[edges.edgeOfCorner[corner]];
             if (firstCorner == corner) {
                 continue;
@@ -288,8 +311,17 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
             const bool degenerate =
                 simd_length_squared(normals[a]) == 0.0f || simd_length_squared(normals[b]) == 0.0f;
             if (degenerate || simd_dot(normals[a], normals[b]) >= cosCrease) {
-                groups.unite(a, b);
+                if (b >= first && b < last) {
+                    groups.unite(a, b);
+                } else {
+                    between[range].push_back({a, b});
+                }
             }
+        }
+    });
+    parallelFor(between.size(), [&](usize range) {
+        for (const auto [a, b] : between[range]) {
+            groups.uniteShared(a, b);
         }
     });
     trace.lap("union by crease");
