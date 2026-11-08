@@ -58,6 +58,8 @@ public:
     void setMouse(const GeoMouseSettings& settings);
     /// Scenes larger than this draw without edges and the cast shadow while the view moves.
     void setDetailBudget(u64 triangles, u64 edgeSegments);
+    /// The finest refinement level asked for, where memory is short; files say their own finest.
+    void setRefinementLimit(u32 maxLevel) { refinementLimit_ = maxLevel; }
     /// Looks at what is shown from a direction, in degrees around Z and above the XY plane, framed.
     void setViewDirection(double azimuthDegrees, double elevationDegrees, bool perspective);
     /// The scene's bounds and how many faces it has, for describing it.
@@ -163,6 +165,8 @@ private:
     // with them. Hosts on smaller GPUs lower it.
     u64 detailTriangles_ = 20'000'000;
     u64 detailEdgeSegments_ = 2'000'000;
+    // Refinement goes no finer than this, nor than the file allows.
+    u32 refinementLimit_ = ~0u;
     bool refining_ = false;
 
     nav::Camera camera_;

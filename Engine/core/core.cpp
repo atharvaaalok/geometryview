@@ -758,7 +758,8 @@ bool Core::refineDocument(u32 index) {
     }
     const format::SegmentView& model = document.model();
     const format::ModelInfo& info = model.modelInfo[0];
-    const render::RefinementPolicy policy{info.linearDeflection, info.maxLevel, 0.5};
+    const render::RefinementPolicy policy{info.linearDeflection,
+                                          std::min(info.maxLevel, refinementLimit_), 0.5};
     if (policy.linearDeflection <= 0.0) {
         return false;
     }
