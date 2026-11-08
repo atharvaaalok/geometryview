@@ -369,13 +369,14 @@ let importing = Promise.resolve();
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
 
 // What importing an STL file takes at its peak. A binary file, read in pieces, is never held
-// whole, and the importer's heap peaks near 175 bytes a triangle (1.7 GB for 10 million). Any
-// other is read whole, and is reckoned as it was measured before: 250 bytes a triangle, with the
-// file. A phone stops a page well before 2 GB, so there a file that would pass about 1.2 GB is
-// refused, with a way forward, rather than lost midway.
+// whole, and the importer's heap stays under 300 MB and 115 bytes a triangle: 0.46 GB for 2
+// million, 0.87 GB for 5 and 1.27-1.37 GB for 10. Any other is read whole, and is reckoned as it
+// was measured before: 250 bytes a triangle, with the file. A phone stops a page well before 2 GB,
+// so there a file that would pass about 1.2 GB is refused, with a way forward, rather than lost
+// midway.
 function stlImportBytes(file) {
   const triangles = (file.size - 84) / 50;
-  if (Number.isInteger(triangles) && triangles > 0) return triangles * 175;
+  if (Number.isInteger(triangles) && triangles > 0) return 300 * 1024 ** 2 + triangles * 115;
   return file.size + Math.max(0, triangles) * 250;
 }
 const kPhoneImportBudget = 1.2 * 1024 ** 3;
