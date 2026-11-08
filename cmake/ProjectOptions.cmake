@@ -32,8 +32,11 @@ if(GEO_TARGET STREQUAL "wasm")
     option(GEO_WASM_THREADS "Build WebAssembly with threads (needs cross-origin isolation)" OFF)
     if(GEO_WASM_THREADS)
         target_compile_options(geo_options INTERFACE -pthread)
-        # The default allocator takes one global lock, which serialises the parallel stages.
-        target_link_options(geo_options INTERFACE -pthread -sMALLOC=mimalloc)
+        # dlmalloc, Emscripten's default, takes one lock, but the parallel stages now allocate
+        # little, and it imports as fast as mimalloc did (10M triangle STL: 2.38 s against
+        # 2.40 s). It reuses freed memory far better, which matters since WebAssembly memory never
+        # shrinks: that import peaks at 1.23-1.37 GB of heap against mimalloc's 1.69-1.71 GB.
+        target_link_options(geo_options INTERFACE -pthread -sMALLOC=dlmalloc)
     endif()
 else()
     target_compile_options(geo_options INTERFACE
