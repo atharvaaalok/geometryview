@@ -40,39 +40,56 @@ std::array<u32, 3> gridOf(const IndexedMesh& mesh, const EdgeLayout& layout, u32
 }
 
 // Triangle sides with no partner by vertex index, gathered in parallel.
+//
+// Another triangle shares side a-b when it holds both a and b. Any two corners of a triangle are
+// next to each other, so that is when, at a or at b, one of its corners is followed by the other
+// end. Each vertex therefore lists the vertex that follows it in each of its corners, and a side
+// is looked up in its two ends' lists, read in order, without visiting the triangles themselves.
 std::vector<OpenSide> findOpenSides(const IndexedMesh& mesh) {
     const usize vertexCount = mesh.vertexCount();
     const usize triangleCount = mesh.triangleCount();
     const std::vector<u32>& indices = mesh.indices;
 
-    // Triangles around each vertex.
+    // The vertex after each corner, listed by the corner's vertex.
     std::vector<u32> start(vertexCount + 1, 0);
     for (const u32 index : indices) {
         ++start[index + 1];
     }
     std::partial_sum(start.begin(), start.end(), start.begin());
-    std::vector<u32> around(indices.size());
+    std::vector<u32> following(indices.size());
     std::vector<u32> fill(start.begin(), start.end() - 1);
     for (usize t = 0; t < triangleCount; ++t) {
         for (usize k = 0; k < 3; ++k) {
-            around[fill[indices[t * 3 + k]]++] = u32(t);
+            following[fill[indices[t * 3 + k]]++] = indices[t * 3 + (k + 1) % 3];
         }
     }
 
-    const auto hasSide = [&](u32 triangle, u32 a, u32 b) {
-        const u32* v = indices.data() + usize(triangle) * 3;
-        return (v[0] == a || v[1] == a || v[2] == a) && (v[0] == b || v[1] == b || v[2] == b);
+    // Corners at `from` followed by `to`, across the mesh.
+    const auto count = [&](u32 from, u32 to) {
+        u32 found = 0;
+        for (u32 i = start[from]; i < start[from + 1]; ++i) {
+            found += following[i] == to ? 1 : 0;
+        }
+        return found;
     };
     std::vector<std::vector<OpenSide>> perRange(parallelRangeCount(triangleCount, 1 << 14));
     parallelRanges(triangleCount, 1 << 14, [&](usize first, usize last, usize range) {
         std::vector<OpenSide>& out = perRange[range];
         for (usize t = first; t < last; ++t) {
+            const u32* v = indices.data() + t * 3;
             for (usize k = 0; k < 3; ++k) {
-                const u32 a = indices[t * 3 + k], b = indices[t * 3 + (k + 1) % 3];
-                bool shared = false;
-                for (u32 i = start[b]; i < start[b + 1] && !shared; ++i) {
-                    shared = around[i] != t && hasSide(around[i], a, b);
+                const u32 a = v[k], b = v[(k + 1) % 3];
+                // What this triangle itself adds to the counts, to leave only the others.
+                u32 own = 0, mine = 0;
+                for (usize j = 0; j < 3; ++j) {
+                    const u32 p = v[j], q = v[(j + 1) % 3];
+                    own += (p == a && q == b) + (p == b && q == a);
+                    mine += p == a;
                 }
+                // A side from a vertex to itself, in a collapsed triangle, is shared by any
+                // other triangle at that vertex.
+                const bool shared = a == b ? start[a + 1] - start[a] > mine
+                                           : count(b, a) + count(a, b) > own;
                 if (!shared) {
                     out.push_back({a, b});
                 }
