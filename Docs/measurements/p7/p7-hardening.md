@@ -171,6 +171,28 @@ The run near the new limit was left undone, because the phone was in use.
   - The fourth step leaves exactly what four at once draw: a Dawn test compares them, with no
     difference.
   - Phones, which skipped the four-sample frame when it took over 64 ms, now get it too.
+- **A STEP file refines as the view comes close, as on the Mac** (branch `p7-web-refinement`).
+  - **Before:** the browser refused every refinement, so a close view kept the coarsest
+    tessellation.
+  - **The request:** when the settled view is close, the engine asks for some definitions at a
+    finer level.
+  - **The work:** the page imports them again from the STEP file, in the importer worker, on its
+    warm OCCT pool and behind any import. It hands each segment to the engine as it is written,
+    and the segment joins the open document.
+  - **The source:** it is the file imported this visit, or the one the library keeps beside its
+    cache. The library writes it after the import is done, and uses it only if its size matches
+    the import's note. A file reopened from the library refines too, as does one the iOS shell
+    reopens after its page was stopped.
+  - **Phones** refine to level 2, a quarter of the coarsest chord error, rather than 4, since
+    refined geometry stays on the GPU beside the coarser. This is still to be measured on the
+    phone.
+  - **Measured** in Chrome with the scripted check, `test=refine` (six wheel steps in on the
+    middle):
+
+    | File | Triangles | Complete after the view settled |
+    |---|---|---|
+    | PLE120 | 116,024 to 375,198 | 0.7 s |
+    | The hard file | 340,646 to 967,300 | 3.9 s |
 
 ## P6, the iOS shell, run on the phone
 
