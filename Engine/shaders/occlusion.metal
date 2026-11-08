@@ -9,6 +9,10 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// Positions rebuilt from depth in perspective need exact arithmetic: fast math's left surfaces
+// seen at a grazing angle rough enough for the occlusion to darken them in speckles.
+#pragma METAL fp math_mode(safe)
+
 static inline float viewDepth(float depth, constant FrameUniforms& frame) {
     return frame.perspective != 0 ? frame.depthNear / max(depth, 1e-12)
                                   : frame.depthFar - depth * (frame.depthFar - frame.depthNear);

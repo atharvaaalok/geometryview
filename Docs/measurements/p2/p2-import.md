@@ -46,7 +46,7 @@ first. 12 workers on the Mac, 2 on the iPhone.
 | demo_drive | 25 ms | 216–233 ms | 32–86 ms | 494–520 ms | 103–375 ms | 971 ms | |
 | 13S4P pack | 80 ms | 456–478 ms | 169–173 ms | 1.73–1.81 s | 211–215 ms | 1.40–1.70 s | 729 ms |
 | PLE120 | 179 ms | 582–605 ms | 286–295 ms | 2.19–2.25 s | 333–385 ms | 2.44–2.94 s | 1.59 s |
-| hard 52.7 MB | 1.73 s | 2.82–2.99 s | 2.25–2.27 s | 4.64–4.76 s | 2.48–2.49 s | 16.5–18.2 s | |
+| hard 52.7 MB | 1.73 s | 2.82–2.99 s | 2.25–2.27 s | 4.64–4.76 s | 2.48–2.49 s | 16.5–18.2 s | 16.0–16.2 s |
 
 - **The hard file is 1.3× native in Chrome and 1.4× in Safari once the pool is warm**, and 1.7× and
   2.7× cold. Decision 6's gate (3×) passes for every warm import of the three larger files, so no
@@ -57,8 +57,10 @@ first. 12 workers on the Mac, 2 on the iPhone.
 - **Small files are dominated by per-slice overhead** (posting text and payloads, waking workers),
   which matters little in absolute terms.
 - **On the iPhone, the hard file finishes in 16.5–18.2 s** with 2 workers (gate: 30 s). A third
-  worker does not help (18.4 s): the phone has two performance cores. The warm hard-file run was
-  cut short when the phone locked.
+  worker does not help (18.4 s): the phone has two performance cores. A warm pool saves only about
+  a second there, since the file's 614 slices warm the workers up during the first pass anyway. A
+  first run straight after unlocking the phone took 32.3 s, as the phone caught up on its own work,
+  and is left out.
 - One Chrome run spent 999 ms in the supervisor's first step against the usual 280–290 ms, and is
   left out of the ranges above.
 

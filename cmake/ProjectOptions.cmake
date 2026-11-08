@@ -22,6 +22,9 @@ target_link_options(geo_options INTERFACE
 # The WebGPU renderer spike of Phase 0, natively on Dawn or as WebAssembly. Off by default, so
 # the app never depends on Dawn.
 option(GEO_WEBGPU_SPIKE "Build the WebGPU renderer spike" OFF)
+# The WebGPU renderer of the universal viewer, natively on Dawn (to test it against Metal) or as
+# WebAssembly. Off by default, so the Mac app never depends on Dawn.
+option(GEO_WEBGPU "Build the WebGPU renderer" OFF)
 
 if(GEO_TARGET STREQUAL "wasm")
     # SIMD128 everywhere; relaxed SIMD and 64-bit memory are left out because Safari lacks them.

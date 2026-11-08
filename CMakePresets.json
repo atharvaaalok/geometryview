@@ -81,7 +81,8 @@
       "displayName": "Renderer spike on native Dawn, release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "GEO_WEBGPU_SPIKE": "ON"
+        "GEO_WEBGPU_SPIKE": "ON",
+        "GEO_WEBGPU": "ON"
       }
     },
     {
@@ -90,7 +91,8 @@
       "displayName": "Renderer spike as WebAssembly, release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "GEO_WEBGPU_SPIKE": "ON"
+        "GEO_WEBGPU_SPIKE": "ON",
+        "GEO_WEBGPU": "ON"
       }
     }
   ],
@@ -125,16 +127,15 @@
     },
     {
       "name": "dawn",
-      "configurePreset": "dawn",
-      "targets": [
-        "spike_webgpu"
-      ]
+      "configurePreset": "dawn"
     },
     {
       "name": "wasm-webgpu",
       "configurePreset": "wasm-webgpu",
       "targets": [
-        "spike_webgpu"
+        "spike_webgpu",
+        "engine_webgpu",
+        "geometry-webgpu-bench"
       ]
     }
   ],

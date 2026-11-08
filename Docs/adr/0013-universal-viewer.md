@@ -48,10 +48,10 @@ Phase 0 measured the risky parts against go/no-go gates before any of that is bu
 | **S3** file streaming ≥300 MB/s | 1.5–3.4 GB/s | pass |
 | **R** Mac Chrome, 10M STL with edges and shadow at 2880×1800, GPU p50 ≤10.1 ms, p99 ≤16.7 ms | 5.05 ms unpaced; at 120 Hz, 5.26 ms p50 and 8.1 ms p99; Chrome's GPU time equals Dawn's | pass |
 | **R** iPhone, pack, p99 ≤16.7 ms | about 15 ms paced at 60 Hz; 6.3 ms capacity even at DPR 3 | pass |
-| **R** iPhone, STL, ≤900 MB and no termination over 10 minutes | never stopped and never grew; 868 MB page + 226 MB GPU process | **fail on memory**: fixes known, see P4 |
+| **R** iPhone, STL, ≤900 MB and no termination over 10 minutes | never stopped and never grew; 868 MB page + 226 MB GPU process | **fail on memory**: fixes known, see P4. P3's full renderer: 938 + 264 MB |
 | **R** pick readback p99 ≤2 vsyncs | under one frame: 5–11 ms on the Mac, 18–48 ms frames on the iPhone | pass |
 | **R** zero submits when idle | not measured: a property of P4's frame loop, as in the Mac app | open |
-| **R** image ≤0.5% off the Metal goldens | not measured: the spike's styles approximate the Metal ones | open, for P3 |
+| **R** image ≤0.5% off the Metal goldens | not measured: the spike's styles approximate the Metal ones | P3: **pass**. Real models at most 0.27% of pixels more than 8 levels off; every golden scene and state tested (`p3/p3-renderer.md`) |
 | **R** native Dawn against Metal | geometry pass 1.36 ms against 1.38 ms (Metal mesh shaders); whole Illustration frame faster than the Metal app's | recorded, see decision 8 |
 | **W2** OCCT wasm ≤12 MB, ≤4 MB brotli | 9.7 MB, 2.4 MB | pass |
 | **W2** matches native: faces, failures, area within 1e-4 | all equal; area within 3.5e-5 on the hard file | pass |
@@ -115,6 +115,8 @@ The front end (tokenizer, structure, packer) uses threads where the page is cros
 
 So the Metal app stays. The question returns when P3's renderer has those features and its own goldens.
 
+**Answered by P3 (ADR 0014): the Mac keeps the Metal app.** With every feature and Metal's own images, WebGPU's one sample a frame is faster than Metal, at 0.43–0.90× of its time. At equal antialiasing it costs 1.19–2.4× on three of four scenes.
+
 ## Architecture
 
 | Platform | Viewer | Import | AI integration |
@@ -138,7 +140,11 @@ So the Metal app stays. The question returns when P3's renderer has those featur
 - Fix the threaded packer's atomics, to meet W1's 2× gate.
 - Warm worker pools and per-worker caps, from W2.
 
-**P3, the WebGPU renderer.** From the spike's indexed path:
+**P3, the WebGPU renderer.** Done 2026-11-07; see ADR 0014 and `Docs/measurements/p3/p3-renderer.md`. Moved on:
+- the coarser shadow, which reduced detail makes unnecessary for now;
+- progressive settled accumulation, to P4's frame loop.
+
+The plan was, from the spike's indexed path:
 - 16-bit indices;
 - a shadow from a coarser level;
 - reduced detail in motion for heavy scenes;
@@ -150,8 +156,13 @@ So the Metal app stays. The question returns when P3's renderer has those featur
 **P4, the web runtime and interface.**
 - One page that never navigates.
 - Cache files streamed from fetch or OPFS straight into GPU buffers, with no WebAssembly or JavaScript copy. That is the largest saving on the iPhone, about 300 MB on the STL.
-- A frame loop that submits nothing when idle.
+- A frame loop that submits nothing when idle, and adds one jittered sample per frame while the view is still.
 - The framework-free interface.
+- From P3:
+  - shell classification through an asynchronous readback;
+  - the overlay's text drawn with Canvas2D;
+  - DPR 2 on phones.
+- From P2: the import supervisor in a worker, and the warm pool started on a small slice.
 
 **P5, launcher, MCP and packaging.** Extend S1's launcher:
 - serve the web viewer;
@@ -167,6 +178,7 @@ So the Metal app stays. The question returns when P3's renderer has those featur
 - A Windows and a Linux run of the census and spikes.
 - Fuzzing of the web paths.
 - Memory gates on the iPhone for the largest fixtures.
+- Profiling the 1M-part rack's frame in WebGPU (8.3 ms, against the spike's 5.6 ms).
 
 ## Learned along the way
 

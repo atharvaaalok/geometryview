@@ -5,6 +5,7 @@
 // Open http://127.0.0.1:<port>/?model=stl10m&label=<where it runs>[&w=2880&h=1800&copies=1]
 // or http://127.0.0.1:<port>/import.html?model=ple120&workers=4&label=<where it runs>
 // or http://127.0.0.1:<port>/step.html?model=hard&workers=12&label=<where it runs>
+// or http://127.0.0.1:<port>/renderer.html?model=stl10m&label=<where it runs>
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -14,10 +15,13 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../..");
-// Reports go beside the spike they came from; whole STEP imports are P2's.
-const reportsFor = (label) => label.includes("-import-step-")
-  ? join(root, "Docs/measurements/p2/step")
-  : join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
+// Reports go beside the spike they came from; whole STEP imports are P2's, the viewer's own
+// renderer P3's.
+const reportsFor = (label) => {
+  if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
+  if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
+  return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
+};
 const port = Number(process.argv[2] ?? 7342);
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
                 ".wasm": "application/wasm", ".json": "application/json" };
@@ -25,6 +29,7 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
 const mounts = [
   ["/build/", join(root, "build/wasm-webgpu/Tools/spikes/webgpu")],
   ["/occt/", join(root, "build/wasm-release/Import")],
+  ["/bench/", join(root, "build/wasm-webgpu/Tools")],
   ["/fixtures/", join(root, "build/fixtures")],
   ["/", here],
 ];

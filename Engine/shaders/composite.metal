@@ -12,6 +12,10 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// Positions rebuilt from depth in perspective need exact arithmetic: fast math's left surfaces
+// seen at a grazing angle rough enough for the occlusion to darken them in speckles.
+#pragma METAL fp math_mode(safe)
+
 constant float2 kDirections[8] = {
     float2(1.0, 0.0),  float2(0.7071, 0.7071),   float2(0.0, 1.0),  float2(-0.7071, 0.7071),
     float2(-1.0, 0.0), float2(-0.7071, -0.7071), float2(0.0, -1.0), float2(0.7071, -0.7071)};

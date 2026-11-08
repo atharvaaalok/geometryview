@@ -3,6 +3,7 @@
 // the new images by eye. Needs the OCCT worker, since the assembly is STEP.
 #include "engine.h"
 #include "step/step_import.h"
+#include "drive_fixture.h"
 #include "step_fixture.h"
 
 #import <CoreGraphics/CoreGraphics.h>
@@ -24,40 +25,6 @@ namespace {
 
 constexpr u32 kWidth = 480;
 constexpr u32 kHeight = 300;
-
-// A drive's worth of named boxes: names that suggest materials, and two that tell nothing.
-std::string driveStep() {
-    test::StepWriter writer;
-    const int root = writer.assembly("drive");
-    const auto add = [&](const std::string& name, std::array<double, 3> size,
-                         std::array<double, 3> at) {
-        const int shape = writer.box({0, 0, 0}, size);
-        writer.place(root, writer.part(name, shape), shape, at);
-    };
-    add("housing", {40, 30, 6}, {0, 0, 0});
-    add("Stator_Core", {10, 10, 14}, {3, 3, 6});
-    add("winding", {6, 6, 20}, {16, 4, 6});
-    add("Magnet 1", {8, 8, 8}, {26, 18, 6});
-    add("widget", {12, 6, 10}, {4, 20, 6});
-    add("gizmo", {6, 12, 4}, {30, 2, 6});
-    return writer.text();
-}
-
-std::string importDrive() {
-    const std::string text = driveStep();
-    char path[] = "/tmp/geogoldenXXXXXX";
-    const int fd = mkstemp(path);
-    REQUIRE(fd >= 0);
-    import::StepOptions options;
-    options.workerPath = GEO_TEST_WORKER_PATH;
-    import::StepStats stats;
-    std::string error;
-    const bool ok = import::importStep({reinterpret_cast<const u8*>(text.data()), text.size()}, fd,
-                                       nullptr, options, stats, error);
-    close(fd);
-    REQUIRE_MESSAGE(ok, error);
-    return path;
-}
 
 // BGRA pixels of a PNG, or nothing if it cannot be read.
 std::vector<u8> readPng(const std::string& path, u32& width, u32& height) {
@@ -112,7 +79,7 @@ Difference compare(const std::vector<u8>& a, const std::vector<u8>& b) {
 
 TEST_CASE("every style and colour mode matches its golden image") {
     @autoreleasepool {
-        const std::string blob = importDrive();
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
         const bool update = std::getenv("GEOMETRY_UPDATE_GOLDENS") != nullptr;
         const fs::path goldens = GEO_TEST_GOLDEN_DIR;
         const char* styles[] = {"illustration", "metal", "clay", "blueprint", "technical"};

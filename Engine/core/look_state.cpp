@@ -70,3 +70,13 @@ std::vector<u32> LookState::takeSwatches() {
 }
 
 } // namespace geo::engine
+
+// The public defaults, here so every platform shares them.
+GeoLook geo_default_look(void) {
+    return {GeoStyleIllustration, GeoColorMaterial, GeoGhostShell, true, 1.0f, 0.0f};
+}
+
+bool geo_style_casts_shadow(GeoStyle style) {
+    return geo::render::styleNamed(geo::render::StyleName(std::min<geo::u32>(geo::u32(style), 4)))
+        .shadow.on;
+}

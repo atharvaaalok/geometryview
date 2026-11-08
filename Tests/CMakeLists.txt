@@ -45,6 +45,12 @@ if(TARGET geometry-occt-worker)
     target_compile_definitions(geo_tests PRIVATE
         GEO_TEST_WORKER_PATH="$<TARGET_FILE:geometry-occt-worker>")
 endif()
+if(GEO_WEBGPU)
+    target_link_libraries(geo_tests PRIVATE engine_webgpu)
+    target_compile_definitions(geo_tests PRIVATE GEO_HAS_WEBGPU=1)
+    set_target_properties(geo_tests PROPERTIES
+        BUILD_RPATH "${CMAKE_SOURCE_DIR}/ThirdParty/.dawn/install/lib")
+endif()
 add_test(NAME unit COMMAND geo_tests)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
