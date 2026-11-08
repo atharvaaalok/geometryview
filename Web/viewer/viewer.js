@@ -394,23 +394,46 @@ function importFile(file, add) {
     const stl = /\.stl$/i.test(file.name);
     const worker = stl ? new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" })
                        : (importer ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" }));
+    // A STEP file's document opens at once and fills as its segments are written, as on the Mac;
+    // an STL file's single segment comes at the end, so it opens from the library when done.
+    let token = null, document = -1, shown = false;
+    if (!stl) {
+      if (!add) forget();
+      token = await engine.openImport(file.name, { add });
+      document = names.length - 1;
+    }
     status.showImporting(file.name, 0, 0);
     const result = await new Promise((resolve) => {
       worker.onmessage = ({ data }) => {
-        if (data.type === "progress") status.showImporting(file.name, data.done, data.total);
-        else resolve(data);
+        if (data.type === "segment") {
+          if (token !== null && engine.importSegment(token, data.bytes) && !shown) {
+            shown = true; // something to look at: the progress moves to the masthead
+            status.hide();
+          }
+        } else if (data.type === "progress") {
+          if (shown) {
+            progress.set(document, data.total > 0 ? data.done / data.total : 0);
+            refreshMasthead();
+          } else {
+            status.showImporting(file.name, data.done, data.total);
+          }
+        } else {
+          resolve(data);
+        }
       };
       worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
       worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name,
-                           workers: importWorkers, threads: stl });
+                           workers: importWorkers, threads: stl, progressive: !stl });
     });
     if (stl) worker.terminate();
     lastImport = result;
     if (result.type !== "done") {
-      status.showFailure(result.message);
+      if (token !== null) engine.finishImport(token, result.message);
+      else status.showFailure(result.message);
       return result;
     }
-    openCache(await keptFile(file.name), file.name, add);
+    if (token !== null) engine.finishImport(token);
+    else openCache(await keptFile(file.name), file.name, add);
     return result;
   });
   return importing;

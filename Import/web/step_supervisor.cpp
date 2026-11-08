@@ -14,6 +14,9 @@
 //   step_finish()                completes the cache file: step_blob() for step_blob_size() bytes
 //   step_stats()                 timings and counts, as doubles (see below)
 //   step_jobs()                  how many slices step_begin queued, for showing progress
+//   step_take_segment(out)       a segment written since the last call, as its offset and size
+//                                in the cache file, or 0 if none; step_read(offset, size) reads it,
+//                                so the page can show the model while it imports
 //
 // An STL file needs no OCCT: after step_open, mesh_import() makes its cache file whole, to read at
 // step_blob() as a STEP import's is.
@@ -40,8 +43,17 @@ namespace {
 
 constexpr const char* kOutputPath = "/import.geoblob";
 
+// Notes each segment as the importer writes it, for the page to take.
+struct Written final : SegmentListener {
+    std::vector<std::pair<u64, u64>> segments;
+    usize taken = 0;
+    void segmentWritten(u64 offset, u64 size) override { segments.emplace_back(offset, size); }
+};
+
 struct Session {
     std::vector<u8> file;
+    Written written;
+    std::vector<u8> read;
     int output = -1;
     StepOptions options;
     StepStats stats;
@@ -95,7 +107,7 @@ EMSCRIPTEN_KEEPALIVE int step_begin() {
         s.error = "The cache file could not be created.";
         return -1;
     }
-    if (!s.import.begin(s.file, s.output, nullptr, s.options, s.stats, s.error)) {
+    if (!s.import.begin(s.file, s.output, &s.written, s.options, s.stats, s.error)) {
         return -1;
     }
     if (s.import.needsWholeFile()) {
@@ -122,10 +134,16 @@ EMSCRIPTEN_KEEPALIVE int step_next() {
     return int(id);
 }
 
-EMSCRIPTEN_KEEPALIVE const char* step_text() { return session->text.data(); }
-EMSCRIPTEN_KEEPALIVE u32 step_text_size() { return u32(session->text.size()); }
+EMSCRIPTEN_KEEPALIVE const char* step_text() {
+    return session->text.data();
+}
+EMSCRIPTEN_KEEPALIVE u32 step_text_size() {
+    return u32(session->text.size());
+}
 /// The job's linear deflection, angular deflection and minimum size.
-EMSCRIPTEN_KEEPALIVE const double* step_request() { return session->tolerances; }
+EMSCRIPTEN_KEEPALIVE const double* step_request() {
+    return session->tolerances;
+}
 
 EMSCRIPTEN_KEEPALIVE u8* step_payload(u32 size) {
     session->payload.resize(size);
@@ -175,7 +193,29 @@ EMSCRIPTEN_KEEPALIVE int step_finish() {
     return readBack(s) ? 0 : -1;
 }
 
-EMSCRIPTEN_KEEPALIVE u32 step_jobs() { return session->jobs; }
+EMSCRIPTEN_KEEPALIVE u32 step_jobs() {
+    return session->jobs;
+}
+
+EMSCRIPTEN_KEEPALIVE int step_take_segment(double* out) {
+    Written& w = session->written;
+    if (w.taken >= w.segments.size()) {
+        return 0;
+    }
+    out[0] = double(w.segments[w.taken].first);
+    out[1] = double(w.segments[w.taken].second);
+    ++w.taken;
+    return 1;
+}
+
+/// `size` bytes of the cache file being written, from `offset`, or null if they cannot be read.
+EMSCRIPTEN_KEEPALIVE const u8* step_read(double offset, u32 size) {
+    Session& s = *session;
+    s.read.resize(size);
+    return s.output >= 0 && pread(s.output, s.read.data(), size, off_t(offset)) == ssize_t(size)
+               ? s.read.data()
+               : nullptr;
+}
 
 EMSCRIPTEN_KEEPALIVE int mesh_import() {
     Session& s = *session;
@@ -197,9 +237,15 @@ EMSCRIPTEN_KEEPALIVE int mesh_import() {
     return readBack(s) ? 0 : -1;
 }
 
-EMSCRIPTEN_KEEPALIVE const u8* step_blob() { return session->blob.data(); }
-EMSCRIPTEN_KEEPALIVE u32 step_blob_size() { return u32(session->blob.size()); }
-EMSCRIPTEN_KEEPALIVE const char* step_error() { return session ? session->error.c_str() : ""; }
+EMSCRIPTEN_KEEPALIVE const u8* step_blob() {
+    return session->blob.data();
+}
+EMSCRIPTEN_KEEPALIVE u32 step_blob_size() {
+    return u32(session->blob.size());
+}
+EMSCRIPTEN_KEEPALIVE const char* step_error() {
+    return session ? session->error.c_str() : "";
+}
 
 /// tokenize, structure and definition seconds; OCCT's read, transfer and mesh seconds summed over
 /// jobs; pack seconds; then records, bodies, definitions, faces, triangles, failed faces, unmapped
@@ -207,12 +253,13 @@ EMSCRIPTEN_KEEPALIVE const char* step_error() { return session ? session->error.
 EMSCRIPTEN_KEEPALIVE const double* step_stats() {
     Session& s = *session;
     const StepStats& t = s.stats;
-    const double values[16] = {t.tokenizeSeconds, t.structureSeconds, t.definitionSeconds,
-                               t.readSeconds, t.transferSeconds, t.meshSeconds, t.packSeconds,
-                               double(t.records), double(t.bodies), double(t.definitions),
-                               double(t.faces), double(t.triangles), double(t.failedFaces),
-                               double(t.unmappedFaces), double(t.crashedWorkers),
-                               double(t.meshlets)};
+    const double values[16] = {
+        t.tokenizeSeconds,     t.structureSeconds,      t.definitionSeconds,
+        t.readSeconds,         t.transferSeconds,       t.meshSeconds,
+        t.packSeconds,         double(t.records),       double(t.bodies),
+        double(t.definitions), double(t.faces),         double(t.triangles),
+        double(t.failedFaces), double(t.unmappedFaces), double(t.crashedWorkers),
+        double(t.meshlets)};
     std::copy(std::begin(values), std::end(values), s.values);
     return s.values;
 }

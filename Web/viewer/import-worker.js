@@ -10,8 +10,9 @@
 // in a worker of its own that the page ends afterwards, since a threaded module's memory is kept
 // by its threads until they end.
 //
-// Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads }
-// Messages out: { type: "progress", done, total } then { type: "done", ... } or { type: "failed", message }
+// Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads, progressive }
+// Messages out: { type: "progress", done, total } and, if progressive, { type: "segment", bytes }
+//               as each is written; then { type: "done", ... } or { type: "failed", message }
 
 import createStepImporter from "./occt/geometry-step-web.mjs";
 
@@ -41,8 +42,22 @@ async function warm(size) {
   while (pool.length < size) pool.push(await spawn());
 }
 
+// Posts each segment the importer has written since the last call, so the page shows the model
+// while it imports.
+function postSegments(step) {
+  const place = step._malloc(16);
+  while (step._step_take_segment(place)) {
+    const [offset, size] = new Float64Array(step.HEAPF64.buffer, place, 2);
+    const pointer = step._step_read(offset, size);
+    if (pointer === 0) break;
+    const bytes = step.HEAPU8.slice(pointer, pointer + size);
+    self.postMessage({ type: "segment", bytes }, [bytes.buffer]);
+  }
+  step._free(place);
+}
+
 // Hands the supervisor's slices to the pool until every one is answered.
-function mesh(step, slots) {
+function mesh(step, slots, progressive) {
   const total = step._step_jobs();
   let replies = 0;
   const replacing = new Set();
@@ -103,6 +118,7 @@ function mesh(step, slots) {
           step.HEAPU8.set(payload, pointer);
           step._step_reply(id, answer.status, answer.faces, answer.unmapped, answer.unmeshed,
                            answer.read, answer.transfer, answer.mesh);
+          if (progressive) postSegments(step);
           replies += 1;
           slot.heapMB = answer.heapMB;
           if (slot.heapMB > kRecycleMB) await replace(slot);
@@ -150,9 +166,11 @@ self.onmessage = async ({ data }) => {
     } else {
       if (step._step_begin() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
       self.postMessage({ type: "progress", done: 0, total: step._step_jobs() });
+      if (data.progressive) postSegments(step); // the model, written by step_begin
       await warm(data.workers);
-      slices = await mesh(step, pool);
+      slices = await mesh(step, pool, data.progressive);
       if (step._step_finish() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
+      if (data.progressive) postSegments(step);
     }
     const blob = step.HEAPU8.subarray(step._step_blob(), step._step_blob() + step._step_blob_size());
     const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);

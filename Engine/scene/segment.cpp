@@ -353,6 +353,31 @@ bool CacheStream::append(std::span<const u8> bytes, std::string& error) {
     return true;
 }
 
+bool CacheStream::takeSegment(std::span<const u8> bytes, std::string& error) {
+    if (failed_) {
+        error = "The cache file was already found invalid.";
+        return false;
+    }
+    if (bytes.size() < sizeof(format::SegmentHeader)) {
+        error = "A cache segment is too short.";
+        return false;
+    }
+    current_ = std::make_unique<Current>();
+    current_->entry = {0, bytes.size()};
+    std::memcpy(current_->headerBytes.data(), bytes.data(), sizeof(format::SegmentHeader));
+    if (!beginSegment(error)) {
+        current_.reset();
+        return false;
+    }
+    current_->route(sink_, sizeof(format::SegmentHeader),
+                    bytes.subspan(sizeof(format::SegmentHeader)));
+    if (!endSegment(error)) {
+        current_.reset();
+        return false;
+    }
+    return true;
+}
+
 bool CacheStream::finish(std::string& error) {
     if (failed_) {
         error = "The cache file was already found invalid.";

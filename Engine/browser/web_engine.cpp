@@ -425,6 +425,34 @@ EMSCRIPTEN_KEEPALIVE int geo_web_stream_chunk(double token, const u8* bytes, u32
     return 1;
 }
 
+/// One whole segment of a file being imported for `token`, as the importer wrote it, so the model
+/// shows while it imports. Returns 1 to go on, 0 if the import was cancelled, -1 if the segment
+/// proved invalid, which ends the import.
+EMSCRIPTEN_KEEPALIVE int geo_web_import_segment(double token, const u8* bytes, u32 size) {
+    const auto found = web.streams.find(u64(token));
+    if (found == web.streams.end()) {
+        return 0;
+    }
+    std::string error;
+    if (!found->second.reader->takeSegment({bytes, size}, error)) {
+        web.streams.erase(found);
+        web.core->importFinished(u64(token), {false, false, error, ""});
+        return -1;
+    }
+    return 1;
+}
+
+/// The import of `token` has finished, every segment taken, or failed, as `message` says.
+EMSCRIPTEN_KEEPALIVE void geo_web_import_end(double token, const char* message) {
+    const auto found = web.streams.find(u64(token));
+    if (found == web.streams.end()) {
+        return;
+    }
+    const std::string error = message != nullptr ? message : "";
+    web.streams.erase(found);
+    web.core->importFinished(u64(token), {error.empty(), false, error, ""});
+}
+
 /// The file has ended, or could not be read, as `message` says.
 EMSCRIPTEN_KEEPALIVE void geo_web_stream_end(double token, const char* message) {
     const auto found = web.streams.find(u64(token));

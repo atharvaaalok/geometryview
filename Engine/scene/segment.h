@@ -103,6 +103,10 @@ public:
     /// After the last bytes: whether the whole file arrived.
     bool finish(std::string& error);
 
+    /// Takes one whole segment, outside any file, as an importer writes them one by one; it is
+    /// placed and handed over as a file's segments are. Not to be mixed with `append`.
+    bool takeSegment(std::span<const u8> bytes, std::string& error);
+
     u64 received() const { return received_; }
     /// The file's size, from its header, or 0 until the header is in.
     u64 size() const { return fileSize_; }
