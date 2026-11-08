@@ -1,0 +1,85 @@
+{
+  "label": "p7rackold-p3-rack1m-2880x1800-s0-burst3",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "model": "rack1m",
+  "style": 0,
+  "samples": 1,
+  "burst": 3,
+  "phaseSeconds": 6,
+  "fileMB": 99.3,
+  "fetchMs": 75,
+  "loadMs": 241,
+  "heapMB": 413,
+  "adapter": "apple metal-3",
+  "width": 2880,
+  "height": 1800,
+  "triangles": 12000000,
+  "edgeSegments": 12000000,
+  "probes": 588,
+  "probesFailed": 0,
+  "probeIds": 0,
+  "probeDepths": 0,
+  "bufferMB": 512.1,
+  "targetMB": 154.5,
+  "zooms": [
+    {
+      "zoom": 1,
+      "frames": 216,
+      "timedFrames": 55,
+      "gpuMs": {
+        "p50": 8.783,
+        "p99": 9.385
+      },
+      "frameIntervalMs": {
+        "p50": 33.33,
+        "p99": 50
+      },
+      "cpuSubmitMs": {
+        "p50": 0.145,
+        "p99": 0.25
+      },
+      "picks": 217,
+      "pickHits": 1
+    },
+    {
+      "zoom": 2,
+      "frames": 234,
+      "timedFrames": 59,
+      "gpuMs": {
+        "p50": 8.102,
+        "p99": 9.935
+      },
+      "frameIntervalMs": {
+        "p50": 33.33,
+        "p99": 33.335
+      },
+      "cpuSubmitMs": {
+        "p50": 0.145,
+        "p99": 0.255
+      },
+      "picks": 235,
+      "pickHits": 1
+    },
+    {
+      "zoom": 4,
+      "frames": 255,
+      "timedFrames": 63,
+      "gpuMs": {
+        "p50": 7.347,
+        "p99": 8.665
+      },
+      "frameIntervalMs": {
+        "p50": 16.67,
+        "p99": 33.34
+      },
+      "cpuSubmitMs": {
+        "p50": 0.145,
+        "p99": 0.255
+      },
+      "picks": 256,
+      "pickHits": 1
+    }
+  ],
+  "diagnostics": ""
+}
