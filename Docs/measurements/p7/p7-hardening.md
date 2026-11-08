@@ -54,24 +54,69 @@ So a crafted file could ask for gigabytes. Two changes close it:
 
 ## Import memory
 
-`GEOMETRY_TRACE` now shows the process's memory footprint and peak at each stage, on Apple systems.
-The 10M STL, natively:
+The 10M STL took about 250 bytes a triangle to import, natively and in the browser. A second round
+on branch `p7-import-memory` (2026-11-08, about 3 AM Pacific Time) halved the browser's peak, with
+the cache file byte for byte the same and no import slower.
 
-| Stage | Footprint | Peak so far |
+| 10M STL | Before | After |
 |---|---|---|
-| weld | 873 MB | 873 MB |
-| match edges | 1,308 MB | 1,308 MB |
-| grow regions | 1,433 MB | 1,433 MB |
-| split vertices | 1,622 MB | 1,622 MB |
-| normals | 1,927 MB | 1,927 MB |
-| open sides (packer) | 2,419 MB | 2,419 MB |
-| build meshlets | 1,463 MB | 2,430 MB |
+| Browser importer's heap, Chrome | 2,595 MB | 1,269–1,366 MB |
+| Import in Chrome | 2.47 s | 2.39–2.45 s |
+| Native heap in use, at stage ends | up to 1,276 MB | up to 878 MB |
+| Native footprint, peak | 2,426 MB | 2,001 MB |
+| Native import, 8 runs alternating with `main` | 1.300 s median | 1.285 s median |
 
-That is about 250 bytes a triangle, and the browser's import peaks the same way.
-- Freeing the soup and the indexed mesh as soon as the next stage has them did not lower the peak:
-  the allocator reuses those pages for packing.
-- Cutting it means reworking the regions and the packer's open sides. Until then, phones refuse
-  very large STL files (above).
+The machine's load average was 6–45 throughout, so times were taken in alternating runs.
+
+**What changed:**
+- **The browser reads a binary STL file in pieces.** The importer had copied the whole file into
+  its heap, where it lay under every later stage: 500 MB here.
+  - `StlPieces` takes a binary file's records as 16 MB pieces arrive, and `ContentHash` hashes them
+    as they pass.
+  - ASCII and malformed files are still read whole.
+  - Tests check that pieces of any size make `readStl`'s soup and the whole-file hash.
+- **Each stage frees its input once the next has it:**
+  - the soup once welded;
+  - the edge table once regions are grown;
+  - the welded mesh once vertices are split;
+  - the sorted triangles once meshlets are built;
+  - each packing unit's output as it is gathered;
+  - the open-side lists as they are used.
+- **Normals are summed a million triangles at a time**, in the same order, so they are unchanged.
+  The scratch was 320 MB.
+- **Dedupe keeps 32 bits of each item's hash**, not 64. Ids depend only on partition and order,
+  so they are the same, and the array is half the size: 120 MB for 30M corners, in each of three
+  passes.
+- **Packing units size their outputs exactly once**, rather than growing a push at a time.
+- **Threaded WebAssembly builds use dlmalloc rather than mimalloc.** WebAssembly memory never
+  shrinks, so memory an allocator leaves unused raises the peak for good.
+  - mimalloc had been chosen when the parallel stages allocated far more.
+  - Six alternating runs each found no difference in time: 2.38 s against 2.40 s for 10M
+    triangles, 1.40 s against 1.39 s for 5M.
+
+**Two faults turned up on the way:**
+- Assigning `{}` to a `std::vector` keeps its memory. The browser importer's "free the file" did
+  not free it.
+- On Apple systems, the footprint counts memory malloc has freed but kept. The trace now shows the
+  heap's bytes in use beside it, and in WebAssembly the heap's size.
+
+**The browser importer's heap by size**, under Node, reading in pieces:
+
+| Triangles | mimalloc, before the last two changes | Now |
+|---|---|---|
+| 2M | 634 MB | 459 MB |
+| 5M | 1,170–1,298 MB | 866–871 MB |
+| 10M | 1,690–1,710 MB | 1,230–1,370 MB |
+
+**Phones:** 300 MB and 115 bytes a triangle bound every import measured. A phone now takes binary
+STL files up to about 9 million triangles, where it took 4 million. This is not yet tried on the
+phone.
+
+**Still to do:**
+- The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
+  not fit the holes the earlier stages leave in a heap that cannot shrink.
+- The native footprint is still two-thirds memory malloc has freed and kept. Native imports run in
+  their own helper process, which ends, so this matters less there.
 
 ## The viewer, finished further
 
