@@ -461,8 +461,11 @@ let refinement = null;
 function refineDocument(token, name, level, definitions) {
   const job = { cancelled: false };
   refinement = job;
+  const asked = performance.now();
   importing = importing.then(async () => {
     let ok = false;
+    const started = performance.now();
+    let note = "";
     try {
       const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
       if (!file) return;
@@ -479,14 +482,20 @@ function refineDocument(token, name, level, definitions) {
         importer.postMessage({ type: "refine", file, level, definitions, workers: importWorkers });
       });
       ok = result.type === "done";
+      note = result.message ?? "";
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
       if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
     } finally {
+      refinements.push({ name, level, definitions: definitions.length, waitedMs: Math.round(started - asked),
+                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note });
       if (!job.cancelled) engine.finishRefinement(token, ok);
       if (refinement === job) refinement = null;
     }
   });
 }
+
+// Each refinement job, as the scripted check reports them.
+const refinements = [];
 
 function cancelRefinement() {
   if (refinement) refinement.cancelled = true;
@@ -757,18 +766,22 @@ async function runRefineTest() {
     engine.pointer(Pointer.Scroll, Buttons.None, canvas.width / 2, canvas.height / 2, 120);
     await new Promise(requestAnimationFrame);
   }
+  // Refinement starts once the view has been still a moment, and may run several jobs, finest
+  // first; a job's segments can all come at its end. Done when none runs and the count is steady.
   const zoomed = performance.now();
   let triangles = before, changed = zoomed;
-  while (performance.now() - Math.max(changed, zoomed + 3000) < 3000 && performance.now() - zoomed < 30000) {
+  const patience = Number(params.get("wait") ?? 120000);
+  while (performance.now() - zoomed < patience) {
     await sleep(100);
     const now = engine.stats().triangles;
     if (now !== triangles) {
       triangles = now;
       changed = performance.now();
     }
+    if (!refinement && performance.now() - Math.max(changed, zoomed + 3000) >= 3000) break;
   }
   await post({ before, after: triangles, refinedMs: triangles === before ? null : Math.round(changed - zoomed),
-               workers: importWorkers });
+               workers: importWorkers, refinements });
 }
 
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the
