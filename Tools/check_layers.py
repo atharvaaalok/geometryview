@@ -16,7 +16,8 @@ from pathlib import Path
 
 # Each module may depend on itself and on modules listed earlier.
 ENGINE_LAYERS = [
-    "base", "math", "format", "shaders", "scene", "model", "nav", "pick", "render", "ipc", "gpu",
+    "base", "math", "format", "shaders", "scene", "model", "nav", "pick", "render", "core", "ipc",
+    "gpu",
 ]
 IMPORT_ALLOWED = {"base", "format", "step", "stl", "mesh", "cache", "helper", "occt"}
 INCLUDE = re.compile(r'^\s*#\s*(?:include|import)\s+"([a-z_0-9]+)/', re.MULTILINE)
@@ -24,7 +25,7 @@ SOURCE_SUFFIXES = {".h", ".hpp", ".cpp", ".mm", ".metal", ".inl"}
 
 # Code that also builds as WebAssembly, and the files in it allowed to pick per platform.
 PORTABLE = ["Engine/base", "Engine/math", "Engine/scene", "Engine/model", "Engine/nav",
-            "Engine/render", "Import/step", "Import/stl", "Import/mesh", "Import/cache",
+            "Engine/render", "Engine/core", "Import/step", "Import/stl", "Import/mesh", "Import/cache",
             "Import/format"]
 PLATFORM_CHOOSERS = {"Engine/base/simd.h", "Engine/base/parallel.h", "Engine/base/parallel.cpp",
                      "Engine/base/time.cpp", "Engine/base/xxhash.h", "Import/step/part21.cpp",

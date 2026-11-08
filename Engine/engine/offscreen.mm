@@ -2,7 +2,7 @@
 #include "engine.h"
 
 #include "base/types.h"
-#include "engine/look_state.h"
+#include "core/look_state.h"
 #include "engine/png.h"
 #include "gpu/renderer.h"
 #include "model/face_state.h"

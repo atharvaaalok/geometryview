@@ -8,25 +8,27 @@ add_library(geo_format STATIC "${CMAKE_SOURCE_DIR}/Import/format/blob.cpp")
 target_include_directories(geo_format PUBLIC "${CMAKE_SOURCE_DIR}/Import")
 target_link_libraries(geo_format PUBLIC geo_base PRIVATE geo_warnings)
 
+# The engine's logic and the layers under it, the same on every platform: no Metal, no threads of
+# its own, no processes. The Mac engine and the universal viewer each add a platform around it.
+file(GLOB_RECURSE engine_core_sources CONFIGURE_DEPENDS
+    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp core/*.cpp)
+add_library(engine_core STATIC ${engine_core_sources})
+target_include_directories(engine_core PUBLIC include PUBLIC .)
+target_include_directories(engine_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
+target_link_libraries(engine_core PUBLIC geo_base geo_format PRIVATE geo_warnings)
+
 if(GEO_TARGET STREQUAL "wasm")
-    # The portable layers only: no Metal, no engine thread, no import processes.
-    file(GLOB_RECURSE engine_core_sources CONFIGURE_DEPENDS
-        math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp)
-    add_library(engine_core STATIC ${engine_core_sources})
-    target_include_directories(engine_core PUBLIC include PUBLIC .)
-    target_include_directories(engine_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
-    target_link_libraries(engine_core PUBLIC geo_base geo_format PRIVATE geo_warnings)
     return()
 endif()
 
+# The Mac platform: Metal, the engine thread and display link, and the import helper processes.
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
-    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp ipc/*.cpp gpu/*.mm gpu/*.cpp
-    engine/*.cpp engine/*.mm)
+    ipc/*.cpp gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
 add_library(engine STATIC ${engine_sources})
 target_include_directories(engine PUBLIC include PRIVATE .)
 target_include_directories(engine SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
 target_link_libraries(engine
-    PUBLIC geo_base geo_format
+    PUBLIC engine_core geo_base geo_format
     PRIVATE geo_warnings
 )
 target_link_libraries(engine INTERFACE
