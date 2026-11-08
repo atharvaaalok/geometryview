@@ -251,7 +251,7 @@ async function threads() {
 
 async function streaming() {
   const started = performance.now();
-  const response = await fetch("files/stream.bin");
+  const response = await fetch("/files/stream.bin");
   if (!response.ok) {
     return { error: `HTTP ${response.status}` };
   }
