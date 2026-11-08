@@ -10,7 +10,9 @@
 using namespace metal;
 
 static inline float viewDepth(float depth, constant FrameUniforms& frame) {
-    return frame.perspective != 0 ? frame.depthNear / max(depth, 1e-12)
+    // A precise division: fast math's approximate one leaves surfaces seen at a grazing angle
+    // rough enough, in perspective, for the occlusion to darken them in speckles.
+    return frame.perspective != 0 ? metal::precise::divide(frame.depthNear, max(depth, 1e-12))
                                   : frame.depthFar - depth * (frame.depthFar - frame.depthNear);
 }
 
