@@ -198,17 +198,22 @@ void parseAscii(std::span<const u8> file, std::vector<float>& corners) {
     }
 }
 
-void parseBinary(std::span<const u8> file, usize triangles, std::vector<float>& corners) {
-    corners.resize(triangles * kFloatsPerTriangle);
-    parallelRanges(triangles, 1 << 16, [&](usize first, usize last, usize) {
-        const u8* record = file.data() + kBinaryHeaderSize + first * kBinaryRecordSize;
-        float* out = corners.data() + first * kFloatsPerTriangle;
+// Copies `count` whole records' corners into `out`, skipping each record's normal and attribute.
+void copyRecords(const u8* records, usize count, float* out) {
+    parallelRanges(count, 1 << 16, [&](usize first, usize last, usize) {
+        const u8* record = records + first * kBinaryRecordSize;
+        float* corners = out + first * kFloatsPerTriangle;
         for (usize t = first; t < last; ++t) {
-            std::memcpy(out, record + kNormalSize, kCornersSize);
+            std::memcpy(corners, record + kNormalSize, kCornersSize);
             record += kBinaryRecordSize;
-            out += kFloatsPerTriangle;
+            corners += kFloatsPerTriangle;
         }
     });
+}
+
+void parseBinary(std::span<const u8> file, usize triangles, std::vector<float>& corners) {
+    corners.resize(triangles * kFloatsPerTriangle);
+    copyRecords(file.data() + kBinaryHeaderSize, triangles, corners.data());
 }
 
 u32 readCount(std::span<const u8> file) {
@@ -249,6 +254,19 @@ usize dropNonFinite(std::vector<float>& corners) {
     return triangles - kept;
 }
 
+// Drops what cannot be drawn, and fails if nothing is left.
+bool finishSoup(TriangleSoup& soup, std::string& error) {
+    if (const usize dropped = dropNonFinite(soup.corners); dropped != 0) {
+        soup.warnings.push_back(
+            std::format("Dropped {} triangles with invalid coordinates.", dropped));
+    }
+    if (soup.corners.empty()) {
+        error = "This STL file has no triangles.";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool readStl(std::span<const u8> file, TriangleSoup& soup, std::string& error) {
@@ -282,15 +300,64 @@ bool readStl(std::span<const u8> file, TriangleSoup& soup, std::string& error) {
         return false;
     }
 
-    if (const usize dropped = dropNonFinite(soup.corners); dropped != 0) {
-        soup.warnings.push_back(
-            std::format("Dropped {} triangles with invalid coordinates.", dropped));
-    }
-    if (soup.corners.empty()) {
-        error = "This STL file has no triangles.";
+    return finishSoup(soup, error);
+}
+
+bool StlPieces::begin(std::span<const u8> head, u64 fileSize) {
+    if (fileSize < kBinaryHeaderSize || head.size() < kBinaryHeaderSize) {
         return false;
     }
+    const u64 declared = readCount(head);
+    if ((fileSize - kBinaryHeaderSize) % kBinaryRecordSize != 0 ||
+        (fileSize - kBinaryHeaderSize) / kBinaryRecordSize != declared) {
+        return false;
+    }
+    fileSize_ = fileSize;
+    corners_.resize(usize(declared) * kFloatsPerTriangle);
     return true;
+}
+
+void StlPieces::append(std::span<const u8> bytes) {
+    // The header.
+    if (received_ < kBinaryHeaderSize) {
+        const usize skip = usize(std::min<u64>(kBinaryHeaderSize - received_, bytes.size()));
+        received_ += skip;
+        bytes = bytes.subspan(skip);
+    }
+    received_ += bytes.size();
+    // A record begun in the last piece.
+    if (partialSize_ != 0) {
+        const usize take = std::min(kBinaryRecordSize - partialSize_, bytes.size());
+        std::memcpy(partial_.data() + partialSize_, bytes.data(), take);
+        partialSize_ += take;
+        bytes = bytes.subspan(take);
+        if (partialSize_ < kBinaryRecordSize) {
+            return;
+        }
+        if (next_ < corners_.size() / kFloatsPerTriangle) {
+            copyRecords(partial_.data(), 1, corners_.data() + next_ * kFloatsPerTriangle);
+            ++next_;
+        }
+        partialSize_ = 0;
+    }
+    const usize whole =
+        std::min(bytes.size() / kBinaryRecordSize, corners_.size() / kFloatsPerTriangle - next_);
+    copyRecords(bytes.data(), whole, corners_.data() + next_ * kFloatsPerTriangle);
+    next_ += whole;
+    bytes = bytes.subspan(whole * kBinaryRecordSize);
+    // The start of a record the next piece completes; anything past the last record is ignored,
+    // and finish finds the size wrong.
+    partialSize_ = std::min(bytes.size(), kBinaryRecordSize - 1);
+    std::memcpy(partial_.data(), bytes.data(), partialSize_);
+}
+
+bool StlPieces::finish(TriangleSoup& soup, std::string& error) {
+    if (fileSize_ == 0 || received_ != fileSize_ || next_ * kFloatsPerTriangle != corners_.size()) {
+        error = "The STL file ended early.";
+        return false;
+    }
+    soup.corners = std::move(corners_);
+    return finishSoup(soup, error);
 }
 
 } // namespace geo::import
