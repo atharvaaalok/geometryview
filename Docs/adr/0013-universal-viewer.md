@@ -48,7 +48,7 @@ Phase 0 measured the risky parts against go/no-go gates before any of that is bu
 | **S3** file streaming ≥300 MB/s | 1.5–3.4 GB/s | pass |
 | **R** Mac Chrome, 10M STL with edges and shadow at 2880×1800, GPU p50 ≤10.1 ms, p99 ≤16.7 ms | 5.05 ms unpaced; at 120 Hz, 5.26 ms p50 and 8.1 ms p99; Chrome's GPU time equals Dawn's | pass |
 | **R** iPhone, pack, p99 ≤16.7 ms | about 15 ms paced at 60 Hz; 6.3 ms capacity even at DPR 3 | pass |
-| **R** iPhone, STL, ≤900 MB and no termination over 10 minutes | never stopped and never grew; 868 MB page + 226 MB GPU process | **fail on memory**: fixes known, see P4. P3's full renderer: 938 + 264 MB |
+| **R** iPhone, STL, ≤900 MB and no termination over 10 minutes | never stopped and never grew; 868 MB page + 226 MB GPU process | **fail on memory**: fixes known, see P4. P3's full renderer: 938 + 264 MB. P4's viewer, streaming into GPU buffers: **pass**, at most 630 MB (390–470 MB page + 160–225 MB GPU process) |
 | **R** pick readback p99 ≤2 vsyncs | under one frame: 5–11 ms on the Mac, 18–48 ms frames on the iPhone | pass |
 | **R** zero submits when idle | not measured: a property of P4's frame loop, as in the Mac app | P4: **pass**. 0 frames in 3 s still, in Chrome and Safari, after one four-sample frame |
 | **R** image ≤0.5% off the Metal goldens | not measured: the spike's styles approximate the Metal ones | P3: **pass**. Real models at most 0.27% of pixels more than 8 levels off; every golden scene and state tested (`p3/p3-renderer.md`) |
@@ -153,7 +153,7 @@ The plan was, from the spike's indexed path:
 - golden images against Metal's;
 - a measured choice between edge setup in compute and per vertex.
 
-**P4, the web runtime and interface.** Done 2026-11-07 on desktop browsers; see ADR 0015 and `Docs/measurements/p4/p4-runtime.md`. The iPhone runs, and with them the memory gate, wait for the phone. Moved on: import memory, progressive import display and refinement in the browser (P7).
+**P4, the web runtime and interface.** Done 2026-11-07 on desktop browsers, and on the iPhone on 2026-11-08, where the memory gate passes; see ADR 0015 and `Docs/measurements/p4/p4-runtime.md`. Moved on: import memory and refinement in the browser (P7).
 - One page that never navigates.
 - Cache files streamed from fetch or OPFS straight into GPU buffers, with no WebAssembly or JavaScript copy. That is the largest saving on the iPhone, about 300 MB on the STL.
 - A frame loop that submits nothing when idle, and adds one jittered sample per frame while the view is still.
@@ -169,16 +169,14 @@ The plan was, from the spike's indexed path:
 - bridge the page and the AI app over a token-guarded WebSocket;
 - package as `.mcpb`, and for `npx` and `~/.codex/config.toml`.
 
-**P6, the iOS shell.** Built 2026-11-07, not yet run on the phone; see `Docs/measurements/p7/p7-hardening.md`.
+**P6, the iOS shell.** Built 2026-11-07, and run on the phone on 2026-11-08: the viewer, documents opened from outside, recovery and imports all work there; see `Docs/measurements/p7/p7-hardening.md`.
 - Files and share-sheet input, served with Range.
 - Recovery when the page's process is stopped.
 - The loopback server's first-byte delay on large files (100–140 ms).
 
-**P7, hardening.** Begun 2026-11-07: the 1M rack's draws, fuzzing the streamed cache reader, GPU timing that cannot break frames, and import memory measured (`Docs/measurements/p7/p7-hardening.md`).
-- A Windows and a Linux run of the census and spikes.
-- Fuzzing of the web paths.
-- Memory gates on the iPhone for the largest fixtures.
-- Profiling the 1M-part rack's frame in WebGPU (8.3 ms, against the spike's 5.6 ms).
+**P7, hardening.** Begun 2026-11-07 (`Docs/measurements/p7/p7-hardening.md`):
+- done: the 1M rack's draws (8.3 to 7.1 ms), fuzzing the streamed cache reader, GPU timing that cannot break frames, import memory measured, progressive STEP imports and stepwise antialiasing in the page, and the faults the phone showed;
+- to do: a Windows and a Linux run of the census and spikes, the rack's remaining 1.5 ms, import memory (regions and the packer's open sides), and refinement in the browser.
 
 ## Learned along the way
 

@@ -1,0 +1,23 @@
+{
+    "triangles": 331520,
+    "heapMB": 16,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "workers": 2,
+    "totalMs": 2344,
+    "import": {
+        "slices": 102,
+        "supervisorMB": 67,
+        "triangles": 54482,
+        "faces": 1381,
+        "importMs": 2302,
+        "type": "done",
+        "failedFaces": 0,
+        "cacheBytes": 1654784
+    },
+    "bufferMB": 6.0213165283203125,
+    "devicePixelRatio": 3,
+    "cached": false,
+    "errors": [],
+    "thermalState": "nominal",
+    "label": "iphone-loopback-imp2-pack-p4-import-step-pack.step"
+}

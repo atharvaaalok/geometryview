@@ -1,7 +1,7 @@
 # P7: hardening, first round
 
-Done on 2026-11-07 (late evening, Pacific Time) on the M4 Max, while the iPhone was unreachable.
-The iPhone runs, and P6's checks on the device, are still to come.
+Done on 2026-11-07 (late evening, Pacific Time) on the M4 Max, while the iPhone was unreachable,
+and on the iPhone 16 Pro early on 2026-11-08, once it could be reached again.
 
 ## The 1M-part rack's frame
 
@@ -88,7 +88,7 @@ That is about 250 bytes a triangle, and the browser's import peaks the same way.
     difference.
   - Phones, which skipped the four-sample frame when it took over 64 ms, now get it too.
 
-## P6, the iOS shell, not yet run on the phone
+## P6, the iOS shell, run on the phone
 
 The shell now:
 - opens into the viewer by default; `--runs` still makes the measurements;
@@ -98,4 +98,31 @@ The shell now:
   the page under random paths, with byte ranges;
 - loads the page again and reopens the last document if iOS stops the page's process.
 
-It builds for iOS; none of it has run on the phone yet.
+**On the iPhone 16 Pro, every check passed:**
+- **The viewer loads**, in 50–62 ms from navigation to an engine ready to draw. The 10M STL fits
+  in at most 630 MB, against the 900 MB gate (`p4/p4-runtime.md`, "The iPhone").
+- **A document handed to the shell opens.** `devicectl` passed the app a STEP file's URL, as Files
+  does, and the page imported PLE120 and showed all 37 parts.
+- **Recovery:** with the pack open, its WebContent process was stopped (SIGKILL). The shell
+  loaded the page again in a new process, which reopened the pack from the library within 6 s,
+  without importing it again.
+- **Imports on the phone:** the pack in 2.0–2.3 s, PLE120 in 3.4 s, the hard file in 19.9 s, each
+  shown as it imported, with every triangle.
+
+**The phone showed four faults, now fixed:**
+- **A STEP file shown while it imports lost its colours**, in every browser, not only on the
+  phone. The pack drew all yellow until reopened from the library.
+  - The WebGPU renderer reset every body's look whenever the scene synced. The core sends looks
+    again only when the model changes, and a progressive import syncs the scene as each segment
+    arrives. Every part fell back to the first look.
+  - The renderer now keeps its looks across syncs, as the Metal renderer does. A Dawn test syncs
+    the scene again and checks that the picture holds; it failed before the fix, with 13% of
+    pixels changed.
+- **The toolbar squeezed its buttons on the phone.** Pills set a `min-width`, which let them
+  shrink in the scrolling toolbar, so Isolate became a circle with its title spilling out.
+  - Tools now keep their size, and the row scrolls.
+  - A phone's toolbar drops Hide, Ghost and Isolate, which the selection card has, and the
+    shortcuts button.
+- **"1 parts · 1 bodies"** in the masthead, in the Mac app too. It now reads "1 part · 1 body".
+- **The import check's report was named after `step/pack.step`.** The slash made the shell write
+  the report into a folder that does not exist. Report names now use a dash.
