@@ -1,0 +1,23 @@
+{
+  "label": "linux-docker-swiftshader-p4-idle-pack",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "width": 3200,
+  "height": 2000,
+  "startupMs": 44,
+  "loadMs": 22,
+  "idleFrames": 1,
+  "idleSettledFrames": 1,
+  "looping": false,
+  "dragFrames": 118,
+  "dragMs": 1979,
+  "gpuMs": 0,
+  "hovered": 0,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 5.6326446533203125,
+  "targetMB": 190.73486328125,
+  "heapMB": 16,
+  "triangles": 331520
+}

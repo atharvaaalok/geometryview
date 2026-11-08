@@ -1,0 +1,22 @@
+{
+  "label": "linux-t4-chrome157-p4-refine-step-ple120.step",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "before": 116024,
+  "after": 388092,
+  "refinedMs": 5114,
+  "workers": 2,
+  "refinements": [
+    {
+      "name": "ple120.step",
+      "level": 2,
+      "definitions": 49,
+      "waitedMs": 0,
+      "ms": 4772,
+      "ok": true,
+      "cancelled": false,
+      "note": ""
+    }
+  ]
+}

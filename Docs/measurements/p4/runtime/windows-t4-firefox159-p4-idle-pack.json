@@ -1,0 +1,23 @@
+{
+  "label": "windows-t4-firefox159-p4-idle-pack",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "width": 1600,
+  "height": 915,
+  "startupMs": 2063,
+  "loadMs": 1499,
+  "idleFrames": 0,
+  "idleSettledFrames": 0,
+  "looping": false,
+  "dragFrames": 119,
+  "dragMs": 1982,
+  "gpuMs": 1.614368,
+  "hovered": 4,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 5.6326446533203125,
+  "targetMB": 43.63250732421875,
+  "heapMB": 16,
+  "triangles": 331520
+}

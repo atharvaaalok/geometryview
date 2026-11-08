@@ -1,0 +1,22 @@
+{
+  "label": "windows-t4-firefox159-p4-import-step-hard.step",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "totalMs": 50360,
+  "import": {
+    "type": "done",
+    "triangles": 340646,
+    "faces": 12188,
+    "failedFaces": 0,
+    "slices": 614,
+    "importMs": 50120,
+    "cacheBytes": 9453568,
+    "supervisorMB": 163
+  },
+  "cached": false,
+  "workers": 2,
+  "triangles": 340646,
+  "bufferMB": 13.098953247070312,
+  "heapMB": 16
+}

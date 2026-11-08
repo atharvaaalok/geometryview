@@ -1,0 +1,22 @@
+{
+  "label": "linux-t4-chrome157-p4-import-step-hard.step",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 37192,
+  "import": {
+    "type": "done",
+    "triangles": 340646,
+    "faces": 12188,
+    "failedFaces": 0,
+    "slices": 614,
+    "importMs": 37138,
+    "cacheBytes": 9453568,
+    "supervisorMB": 163
+  },
+  "cached": false,
+  "workers": 2,
+  "triangles": 340646,
+  "bufferMB": 13.098953247070312,
+  "heapMB": 16
+}

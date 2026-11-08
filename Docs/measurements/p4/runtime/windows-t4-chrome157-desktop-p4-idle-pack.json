@@ -1,0 +1,23 @@
+{
+  "label": "windows-t4-chrome157-desktop-p4-idle-pack",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "width": 3200,
+  "height": 2000,
+  "startupMs": 1928,
+  "loadMs": 229,
+  "idleFrames": 0,
+  "idleSettledFrames": 1,
+  "looping": false,
+  "dragFrames": 118,
+  "dragMs": 2077,
+  "gpuMs": 3.16416,
+  "hovered": 2,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 5.6326446533203125,
+  "targetMB": 190.73486328125,
+  "heapMB": 16,
+  "triangles": 331520
+}

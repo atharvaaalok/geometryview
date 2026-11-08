@@ -149,7 +149,14 @@ On the iPhone 16 Pro, a 5M-triangle STL (the 10M fixture's first half, 250 MB) i
 - Instruments recorded the page's process at 893 MB at its peak and the GPU process at 217 MB
   (`p4/runtime/iphone-p7-import-stl5m-memory.json`).
 
-The run near the new limit was left undone, because the phone was in use.
+**Near the limit**, an 8.4M-triangle STL (the 10M fixture's first 8.4M, 420 MB) imported on the
+iPhone in 4.9 s, with no error:
+- the importer's heap reached 741–845 MB;
+- the page's process peaked at 1,271 MB and the GPU process at 232 MB
+  (`p4/runtime/iphone-p7-import-stl8m-memory.json`). The limit's estimate for this file,
+  300 MB + 115 B a triangle, is 1,266 MB: it predicts the page's peak.
+- iOS stopped pages at 1.7–2.0 GB in Phase 0, so this leaves 400–700 MB to spare, for the GPU
+  process and whatever else the phone is running.
 
 **Still to do:**
 - The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
@@ -184,8 +191,17 @@ The run near the new limit was left undone, because the phone was in use.
     the import's note. A file reopened from the library refines too, as does one the iOS shell
     reopens after its page was stopped.
   - **Phones** refine to level 2, a quarter of the coarsest chord error, rather than 4, since
-    refined geometry stays on the GPU beside the coarser. This is still to be measured on the
-    phone.
+    refined geometry stays on the GPU beside the coarser.
+  - **On the iPhone**, PLE120 refined from 116,024 to 219,720 triangles, complete 2.7 s after the
+    view settled, with two workers. The page's process peaked at 515 MB and the GPU process at
+    105 MB, well inside the phone's budget.
+  - **The hard file on the iPhone** is still to be measured. The first runs showed no refinement,
+    and the reason was the check, not the viewer: it waited only 6 s for the triangle count to
+    change. The hard file is one part, whose segment comes at the end of its job, and two workers
+    take longer than that. In Chrome with the phone's settings (two workers, level 2) the job
+    takes 12.9 s, from 340,646 to 589,673 triangles. The check now waits while a job runs, and
+    lists each job's level, time and outcome. Its run on the phone was interrupted: the phone was
+    in use.
   - **Measured** in Chrome with the scripted check, `test=refine` (six wheel steps in on the
     middle):
 
@@ -235,3 +251,128 @@ The shell now:
 - **"1 parts · 1 bodies"** in the masthead, in the Mac app too. It now reads "1 part · 1 body".
 - **The import check's report was named after `step/pack.step`.** The slash made the shell write
   the report into a folder that does not exist. Report names now use a dash.
+
+## Linux and Windows
+
+No physical Linux or Windows machine is at hand. Linux runs first in Docker on this Mac, without a
+GPU; drawing on either system needs a machine with one.
+
+**Tools** (`Tools/platforms/`):
+- `headless.mjs` opens a check page in Chrome or Chromium on any system, waits for the report it
+  posts, and prints it. It needs no packages.
+- `linux.Dockerfile` is Debian 12 with Node 22, Debian's Chromium 156 (arm64), Mesa's lavapipe
+  and Chromium's SwiftShader. `linux-run.sh` starts the census and viewer servers inside it and
+  runs one check.
+- The launcher's end-to-end test takes `GEOMETRY_CHROME` and `GEOMETRY_CHROME_FLAGS`, with
+  Chrome's usual place on each system as the default.
+- `browser-run.ps1` opens a check page in any browser on Windows, Firefox included, and waits for
+  the report the page posts. It is the AWS runs' script, with their fixed paths taken out.
+
+**Linux in Docker, Chromium 156 with SwiftShader:**
+- **The census:** cross-origin isolation, SharedArrayBuffer, threads (a hand-over in 11 µs), a
+  module posted to a worker, OPFS with sync access handles (1.4 GB/s write), and every WebAssembly
+  feature the viewer uses, memory64 and JSPI included. The rAF rate is 60 Hz
+  (`phase0/census/linux-docker-chromium-swiftshader.json`).
+- **The launcher's tests:** 8 of 9 pass on Linux, the MCP server and the web server's guards
+  included; one needs the native engine and is skipped. In the end-to-end test the page opened
+  PLE120 from the launcher, imported it with OCCT in workers to exactly the Mac's 37 parts, 89
+  bodies and 116,024 triangles, and listed its structure. It then failed at the picture.
+- **The viewer** opens the pack (331,520 triangles), its interface complete, with 0 frames drawn
+  while still. The 3D view stays blank.
+- **Why nothing draws:** Chromium without a GPU, in a container, cannot present WebGPU to a
+  canvas. Its GPU process reports no shared-image backing for the WebGPU swap chain, after which
+  the page's WebGPU instance is lost, and reading a picture back fails too ("A valid external
+  Instance reference no longer exists"). This held headless and under Xvfb, with SwiftShader or
+  lavapipe, and with ANGLE on SwiftShader or Vulkan, Graphite, in-process GPU, and GPU
+  compositing off. It is a property of that setup, not of the viewer.
+- **A fix it led to:** a picture that fails now tells the AI app why, rather than only that it
+  failed.
+
+**On AWS, with a GPU.** Two g4dn.xlarge instances in us-east-2: an NVIDIA Tesla T4 and 4 vCPUs of
+a 2.5 GHz Xeon each.
+- **Windows:** Server 2025 with NVIDIA's GRID driver 596.86.
+- **Linux:** Ubuntu 22.04 with NVIDIA's 595.112.
+- **Software on both:** Chrome 157, Firefox 159 and Node 22.23; Edge is the Windows default.
+- **Cleanup:** the instances, their security group and key were removed afterwards.
+
+**How they were set up.** A browser on a server's desktop must match a PC's for the result to
+mean anything:
+- **Headless Chrome, with no desktop:** in Windows' service session, or on Linux without X, the
+  engine ran but nothing was presented.
+  - On Windows the GPU process crashed once at start.
+  - On Linux there was no shared-image path for the WebGPU swap chain.
+- **Windows:** checks run on the signed-in desktop, through a scheduled task.
+  - The instance's display was a basic display adapter, with the T4 render-only. There Chrome
+    found no adapter.
+  - Disabling the basic adapter, as is usual on a GRID instance, made the T4 drive the desktop,
+    as a PC's GPU does.
+- **Linux:** an X server runs on the T4 (Xorg with NVIDIA's driver, a virtual 1920×1200 screen).
+
+**The renderer** at 2880×1800, three frames a refresh, GPU ms p50 at the three zooms (`p3/renderer/`):
+
+| Scene | Windows, Chrome (D3D12) | Windows, Firefox 159 | Linux, Chrome (Vulkan) | Mac M4 Max, Chrome (Metal) |
+|---|---|---|---|---|
+| 13S4P pack | 2.25 / 2.67 / 2.47 | 3.56 / 3.80 / 3.51 | 2.82 / 3.18 / 3.20 | 2.00 / 3.99 / 3.35 |
+| 10M STL | 7.39 / 6.32 / 5.30 | 10.17 / 8.88 / 6.96 | 7.32 / 6.46 / 5.34 | 6.18 / 4.70 / 3.48 |
+| 1M-part rack | 8.66 / 7.85 / 7.63 | 11.05 / 10.72 / 10.39 | 8.78 / 8.27 / 7.44 | 6.02 / 6.40 / 6.27 |
+
+- **Load:** the Mac ran with a load average of 7–14 from other work. Even so, a T4, a 2018 data-centre
+  GPU, draws every scene well inside a 60 Hz frame.
+- **Firefox:** its WebGPU (wgpu, not Chrome's Dawn) takes about 1.4× Chrome's time on the same GPU.
+  It slows a covered window's frames to a crawl: with the launcher's Edge window in front, its
+  first runs drew one frame in six seconds.
+- **The picture:** one fixed frame of each scene was read back on each system and compared with the
+  Mac's. In Chrome on Windows and Linux, and in Firefox, at most 0.002% of pixels are more than 8
+  levels off (0% for the pack and the rack), against the plan's gate of 0.5%. The STL's few are
+  scattered single pixels.
+
+**The viewer**, in a window on each desktop:
+- **The pack:** 0 frames while still, 118 of 120 while dragged, and hover picks answered. The
+  pictures match the Mac's.
+- **Imports, with two workers** (four vCPUs): Windows first, then Linux.
+
+  | File | Windows | Linux |
+  |---|---|---|
+  | The pack | 4.9 s | 4.6 s |
+  | PLE120 | 7.8 s | 7.0 s |
+  | The hard file | 38.4 s | 37.1 s |
+
+  - No face failed, and every triangle count is the Mac's.
+  - These cores take about twice as long as the iPhone 16 Pro's: the hard file takes 19.9 s
+    there, also with two workers.
+- **Refinement:**
+  - PLE120 went from 116,024 to 388,092 triangles, in 6.3 s on Windows and 5.1 s on Linux.
+  - The hard file went to 967,300, in 67–68 s on each: level 1, then level 2.
+- **Firefox 159 on Windows:**
+  - The pack: 0 frames while still, 119 of 120 while dragged, hover picks answered.
+  - It loads the cache in 1.5 s, where Chrome takes 0.2 s.
+  - Imports: PLE120 in 6.4 s; the hard file in 50.1 s, run with its window covered.
+  - Refinement: PLE120 refined to 213,900 triangles in 5.3 s. Firefox draws at one pixel per
+    point there, so it needs a coarser level than Chrome at two.
+
+**The launcher and its packages:**
+- **Its tests:** on Windows, 10 pass and the one needing the Mac's native engine is skipped;
+  likewise on Linux. This includes the end-to-end test: open PLE120, list it, picture it.
+- **As an AI app uses it, over MCP:** `open_model`, then `render_view`, on PLE120.
+  - On Windows the launcher opened the viewer in Edge, the default browser, and answered in 13.6 s
+    with Edge's start.
+  - On Linux it opened its own Chrome window, as below, in 8.2 s.
+- **The `.mcpb`:** unpacked and run with Node, as Claude Desktop runs it, on both. It listed its
+  four tools, opened the pack in 4.3–4.9 s and pictured it.
+- **The npm package:** a global install and `npx` both answered. A local tarball needs
+  `npx --package=<tarball> geometry-viewer`.
+
+**What the runs found, and the fixes:**
+- **Chrome on Linux has no adapter in roughly the first 200 ms after the browser starts.** A page
+  that asks then gets none, and a moment later gets the GPU's. The launcher opens the viewer in a
+  browser it has just started, so the engine now asks again for up to two seconds.
+- **Stock Chrome 157 on Linux gives a page no WebGPU on the NVIDIA GPU.** With Vulkan on
+  (`chrome://flags/#enable-vulkan`) it gets the T4, and no unsafe flag is needed.
+  - On Linux the launcher now opens the viewer in a Chrome app window of its own, with its own
+    profile and Vulkan on, since flags cannot reach a Chrome already running. Without Chrome or
+    Chromium it opens the default browser.
+  - Where WebGPU is missing, the viewer says how to turn Vulkan on.
+- **Firefox 159 on Linux has no WebGPU at all.** The viewer says to open it in Chrome, Edge or
+  Safari.
+- **Two of the launcher's tests failed on Windows only:** a file URL's pathname used as a path, and
+  a path written with `/`. Both are fixed; the shipped code was already right.

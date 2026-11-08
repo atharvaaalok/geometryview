@@ -1,0 +1,86 @@
+{
+  "label": "windows-t4-chrome157-p3-pack-2880x1800-s0-burst3",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "model": "pack",
+  "style": 0,
+  "samples": 1,
+  "burst": 3,
+  "phaseSeconds": 6,
+  "fileMB": 1.6,
+  "fetchMs": 20,
+  "loadMs": 15,
+  "heapMB": 16,
+  "adapter": "nvidia turing",
+  "width": 2880,
+  "height": 1800,
+  "triangles": 331520,
+  "edgeSegments": 167486,
+  "probes": 3226,
+  "probesFailed": 0,
+  "probeIds": 4096,
+  "probeDepths": 4096,
+  "bufferMB": 5.6,
+  "targetMB": 154.5,
+  "zooms": [
+    {
+      "zoom": 1,
+      "frames": 360,
+      "timedFrames": 356,
+      "gpuMs": {
+        "p50": 2.247,
+        "p99": 6.634
+      },
+      "frameIntervalMs": {
+        "p50": 16.995,
+        "p99": 17.025
+      },
+      "cpuSubmitMs": {
+        "p50": 1.005,
+        "p99": 2.48
+      },
+      "picks": 361,
+      "pickHits": 243
+    },
+    {
+      "zoom": 2,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 2.674,
+        "p99": 2.786
+      },
+      "frameIntervalMs": {
+        "p50": 16.995,
+        "p99": 17.03
+      },
+      "cpuSubmitMs": {
+        "p50": 1.08,
+        "p99": 1.45
+      },
+      "picks": 361,
+      "pickHits": 361
+    },
+    {
+      "zoom": 4,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 2.466,
+        "p99": 2.899
+      },
+      "frameIntervalMs": {
+        "p50": 16.995,
+        "p99": 17.02
+      },
+      "cpuSubmitMs": {
+        "p50": 0.88,
+        "p99": 1.35
+      },
+      "picks": 361,
+      "pickHits": 361
+    }
+  ],
+  "diagnostics": "",
+  "captureFormat": 27
+}

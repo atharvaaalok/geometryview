@@ -51,8 +51,19 @@ try {
     cancelRefinement: () => cancelRefinement(),
   }, { phone });
 } catch (error) {
-  status.showFailure(`This browser cannot run the viewer: ${error.message}`);
+  status.showFailure(`This browser cannot run the viewer: ${error.message}${webgpuAdvice()}`);
   throw error;
+}
+
+// What to do where a browser offers no WebGPU and the way to it is known.
+function webgpuAdvice() {
+  const agent = navigator.userAgent;
+  // Chrome on Linux has no adapter without Vulkan, which is off by default on NVIDIA GPUs at least.
+  if (/Linux/.test(agent) && !/Android/.test(agent) && /Chrome\//.test(agent)) {
+    return " Chrome on Linux needs Vulkan for WebGPU: turn on chrome://flags/#enable-vulkan, then " +
+           "restart Chrome.";
+  }
+  return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
 window.geometry = engine; // for the console and the shell's checks
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
@@ -461,8 +472,11 @@ let refinement = null;
 function refineDocument(token, name, level, definitions) {
   const job = { cancelled: false };
   refinement = job;
+  const asked = performance.now();
   importing = importing.then(async () => {
     let ok = false;
+    const started = performance.now();
+    let note = "";
     try {
       const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
       if (!file) return;
@@ -479,14 +493,20 @@ function refineDocument(token, name, level, definitions) {
         importer.postMessage({ type: "refine", file, level, definitions, workers: importWorkers });
       });
       ok = result.type === "done";
+      note = result.message ?? "";
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
       if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
     } finally {
+      refinements.push({ name, level, definitions: definitions.length, waitedMs: Math.round(started - asked),
+                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note });
       if (!job.cancelled) engine.finishRefinement(token, ok);
       if (refinement === job) refinement = null;
     }
   });
 }
+
+// Each refinement job, as the scripted check reports them.
+const refinements = [];
 
 function cancelRefinement() {
   if (refinement) refinement.cancelled = true;
@@ -673,7 +693,10 @@ function bridgeHandlers() {
       toolbar.projection.selected = persp ? 1 : 0;
       engine.setView(azimuth, elevation, persp);
       const image = await engine.snapshot();
-      if (!image) throw new Error("The viewer could not draw a picture.");
+      if (!image) {
+        const reason = engine.lastError();
+        throw new Error(`The viewer could not draw a picture.${reason ? ` ${reason}` : ""}`);
+      }
 
       // The part of the view the cards leave clear, fitted into the size asked for.
       const scale = engine.scale;
@@ -757,18 +780,22 @@ async function runRefineTest() {
     engine.pointer(Pointer.Scroll, Buttons.None, canvas.width / 2, canvas.height / 2, 120);
     await new Promise(requestAnimationFrame);
   }
+  // Refinement starts once the view has been still a moment, and may run several jobs, finest
+  // first; a job's segments can all come at its end. Done when none runs and the count is steady.
   const zoomed = performance.now();
   let triangles = before, changed = zoomed;
-  while (performance.now() - Math.max(changed, zoomed + 3000) < 3000 && performance.now() - zoomed < 30000) {
+  const patience = Number(params.get("wait") ?? 120000);
+  while (performance.now() - zoomed < patience) {
     await sleep(100);
     const now = engine.stats().triangles;
     if (now !== triangles) {
       triangles = now;
       changed = performance.now();
     }
+    if (!refinement && performance.now() - Math.max(changed, zoomed + 3000) >= 3000) break;
   }
   await post({ before, after: triangles, refinedMs: triangles === before ? null : Math.round(changed - zoomed),
-               workers: importWorkers });
+               workers: importWorkers, refinements });
 }
 
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the

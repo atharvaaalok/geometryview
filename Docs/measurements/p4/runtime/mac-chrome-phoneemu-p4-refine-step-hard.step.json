@@ -1,0 +1,22 @@
+{
+  "label": "mac-chrome-phoneemu-p4-refine-step-hard.step",
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+  "devicePixelRatio": 3,
+  "errors": [],
+  "before": 340646,
+  "after": 589673,
+  "refinedMs": 13266,
+  "workers": 2,
+  "refinements": [
+    {
+      "name": "hard.step",
+      "level": 1,
+      "definitions": 1,
+      "waitedMs": 0,
+      "ms": 12909,
+      "ok": true,
+      "cancelled": false,
+      "note": ""
+    }
+  ]
+}

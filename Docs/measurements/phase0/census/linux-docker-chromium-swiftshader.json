@@ -1,0 +1,72 @@
+{
+  "label": "linux-docker-chromium-swiftshader",
+  "mode": "core",
+  "startedAt": "2026-11-08T18:27:59.693Z",
+  "environment": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "platform": "Linux",
+    "hardwareConcurrency": 14,
+    "deviceMemory": 16,
+    "devicePixelRatio": 2,
+    "screen": [
+      800,
+      600
+    ],
+    "secureContext": true,
+    "crossOriginIsolated": true,
+    "sharedArrayBuffer": true,
+    "offscreenCanvas": true,
+    "storageFoundation": true
+  },
+  "wasm": {
+    "simd": true,
+    "relaxedSimd": true,
+    "legacyExceptions": true,
+    "exnrefExceptions": true,
+    "tailCalls": true,
+    "memory64": true,
+    "sharedMemory": true,
+    "jspi": true,
+    "streamingCompile": true
+  },
+  "webgpu": {
+    "error": "OperationError: A valid external Instance reference no longer exists."
+  },
+  "framePacing": {
+    "medianIntervalMs": 16.665,
+    "hz": 60,
+    "p95IntervalMs": 16.67
+  },
+  "storage": {
+    "estimate": {
+      "quota": 10737418240,
+      "usage": 0,
+      "usageDetails": {}
+    },
+    "persisted": false,
+    "opfs": {
+      "syncAccessHandle": true,
+      "bytesMB": 256,
+      "writeMBps": 1430,
+      "readMBps": 11621
+    }
+  },
+  "workerGpu": {
+    "error": "OperationError: A valid external Instance reference no longer exists."
+  },
+  "threads": {
+    "postedModule": {
+      "works": true,
+      "instantiateMs": 0.14
+    },
+    "workerCompileStreaming": {
+      "works": true
+    },
+    "atomics": {
+      "rounds": 20000,
+      "handOverMicroseconds": 11.37
+    }
+  },
+  "finishedAt": "2026-11-08T18:28:02.438Z",
+  "partial": false
+}
