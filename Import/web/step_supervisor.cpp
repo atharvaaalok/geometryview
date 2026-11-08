@@ -79,7 +79,7 @@ bool readBack(Session& s) {
     close(s.output);
     unlink(kOutputPath);
     s.output = -1;
-    s.file = {}; // no longer needed
+    std::vector<u8>().swap(s.file); // no longer needed; assigning {} would keep its memory
     if (!read) {
         s.error = "The cache file could not be read back.";
     }
