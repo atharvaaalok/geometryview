@@ -567,8 +567,11 @@ EMSCRIPTEN_KEEPALIVE void geo_web_snapshot() {
     const u32 width = web.width, height = web.height;
     readback.MapAsync(
         wgpu::MapMode::Read, 0, usize(bufferDescriptor.size), wgpu::CallbackMode::AllowSpontaneous,
-        [readback, stride, width, height](wgpu::MapAsyncStatus status, wgpu::StringView) {
+        [readback, stride, width, height](wgpu::MapAsyncStatus status, wgpu::StringView message) {
             if (status != wgpu::MapAsyncStatus::Success) {
+                // Said to the AI app that asked, since a picture failing has no other sign.
+                web.lastError = "reading the picture back failed: " +
+                                std::string(message.data, message.length);
                 jsSnapshot(nullptr, 0, 0, 0);
                 return;
             }

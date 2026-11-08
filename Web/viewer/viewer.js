@@ -682,7 +682,10 @@ function bridgeHandlers() {
       toolbar.projection.selected = persp ? 1 : 0;
       engine.setView(azimuth, elevation, persp);
       const image = await engine.snapshot();
-      if (!image) throw new Error("The viewer could not draw a picture.");
+      if (!image) {
+        const reason = engine.lastError();
+        throw new Error(`The viewer could not draw a picture.${reason ? ` ${reason}` : ""}`);
+      }
 
       // The part of the view the cards leave clear, fitted into the size asked for.
       const scale = engine.scale;
