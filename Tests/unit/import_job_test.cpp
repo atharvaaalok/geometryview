@@ -21,10 +21,10 @@ constexpr const char* kTriangle = "solid s\nvertex 0 0 0\nvertex 1 0 0\nvertex 0
 
 // Keeps what the import reported.
 struct Collector final : ImportListener {
-    std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+    std::vector<std::shared_ptr<scene::Segment>> segments;
     usize progressCalls = 0;
 
-    void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
+    void segmentReady(std::shared_ptr<scene::Segment> segment) override {
         segments.push_back(std::move(segment));
     }
     void progress(u32, u32) override { ++progressCalls; }

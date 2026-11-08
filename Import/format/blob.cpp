@@ -110,14 +110,14 @@ bool validateDefinition(const SegmentView& view, const DefinitionRecord& d, std:
 
 } // namespace
 
-bool parseHeader(std::span<const u8> file, std::span<const SegmentEntry>& segments,
-                 std::string& error) {
-    if (file.size() < kAlignment) {
+bool parseHeaderPrefix(std::span<const u8> prefix, std::span<const SegmentEntry>& segments,
+                       u64& fileSize, std::string& error) {
+    if (prefix.size() < kAlignment) {
         error = "The cache file is too short.";
         return false;
     }
     Header header;
-    std::memcpy(&header, file.data(), sizeof(header));
+    std::memcpy(&header, prefix.data(), sizeof(header));
     if (header.magic != kMagic) {
         error = "This is not a Geometry cache file.";
         return false;
@@ -126,18 +126,32 @@ bool parseHeader(std::span<const u8> file, std::span<const SegmentEntry>& segmen
         error = std::format("Unsupported cache version {}.", header.version);
         return false;
     }
-    if (header.fileSize != file.size() || header.segmentCount > kMaxSegments) {
-        error = "The cache file is incomplete.";
+    if (header.segmentCount > kMaxSegments || header.fileSize < kAlignment) {
+        error = "The cache file is not valid.";
         return false;
     }
-    const auto* base = reinterpret_cast<const Header*>(file.data());
+    const auto* base = reinterpret_cast<const Header*>(prefix.data());
     segments = {base->segments.data(), header.segmentCount};
     for (const SegmentEntry& entry : segments) {
         if (entry.offset % kAlignment != 0 || entry.size % kAlignment != 0 || entry.size == 0 ||
-            entry.offset > file.size() || entry.size > file.size() - entry.offset) {
+            entry.offset > header.fileSize || entry.size > header.fileSize - entry.offset) {
             error = "A segment lies outside the cache file.";
             return false;
         }
+    }
+    fileSize = header.fileSize;
+    return true;
+}
+
+bool parseHeader(std::span<const u8> file, std::span<const SegmentEntry>& segments,
+                 std::string& error) {
+    u64 fileSize = 0;
+    if (!parseHeaderPrefix(file, segments, fileSize, error)) {
+        return false;
+    }
+    if (fileSize != file.size()) {
+        error = "The cache file is incomplete.";
+        return false;
     }
     return true;
 }

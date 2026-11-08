@@ -577,7 +577,7 @@ void Core::openFile(const std::string& path, bool add) {
     host_.startImport(document.token, path);
 }
 
-void Core::addSegment(u64 token, const std::shared_ptr<scene::MappedSegment>& segment) {
+void Core::addSegment(u64 token, const std::shared_ptr<scene::Segment>& segment) {
     const std::optional<u32> index = documentOf(token);
     if (!index) {
         return;
@@ -604,7 +604,7 @@ void Core::addSegment(u64 token, const std::shared_ptr<scene::MappedSegment>& se
 }
 
 void Core::publishModel(u32 index) {
-    for (const std::shared_ptr<scene::MappedSegment>& segment : scene_.document(index).segments()) {
+    for (const std::shared_ptr<scene::Segment>& segment : scene_.document(index).segments()) {
         if (segment->view().hasModel()) {
             host_.publishModel(index, segment);
         }

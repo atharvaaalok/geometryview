@@ -8,7 +8,7 @@ namespace geo::scene {
 
 using format::DefinitionRecord;
 
-bool Document::attachModel(const std::shared_ptr<MappedSegment>& segment, std::string& error) {
+bool Document::attachModel(const std::shared_ptr<Segment>& segment, std::string& error) {
     if (model_ != nullptr) {
         error = "A cache file has two models.";
         return false;
@@ -30,7 +30,7 @@ bool Document::attachModel(const std::shared_ptr<MappedSegment>& segment, std::s
     return true;
 }
 
-bool Document::attachGeometry(const MappedSegment& segment, std::string& error) {
+bool Document::attachGeometry(const Segment& segment, std::string& error) {
     for (const DefinitionRecord& record : segment.view().definitions) {
         if (record.definition >= definitions_.size()) {
             error = "Geometry arrived for a definition that does not exist.";
@@ -52,7 +52,7 @@ bool Document::attachGeometry(const MappedSegment& segment, std::string& error) 
     return true;
 }
 
-bool Document::add(std::shared_ptr<MappedSegment> segment, std::string& error) {
+bool Document::add(std::shared_ptr<Segment> segment, std::string& error) {
     if (segment->view().hasModel() && !attachModel(segment, error)) {
         return false;
     }
@@ -63,7 +63,7 @@ bool Document::add(std::shared_ptr<MappedSegment> segment, std::string& error) {
     if (segments_.back() != model_) {
         return attachGeometry(*segments_.back(), error);
     }
-    for (const std::shared_ptr<MappedSegment>& earlier : segments_) {
+    for (const std::shared_ptr<Segment>& earlier : segments_) {
         if (!attachGeometry(*earlier, error)) {
             return false;
         }

@@ -112,7 +112,7 @@ struct Command {
 
 /// A document's tree, shared with the app's thread. It holds the model's mapping.
 struct GeoModel {
-    std::shared_ptr<scene::MappedSegment> segment;
+    std::shared_ptr<scene::Segment> segment;
     std::unique_ptr<model::NameIndex> names; // built on the first search
 };
 
@@ -153,7 +153,7 @@ struct GeoEngine final : engine::Host {
     std::mutex summaryMutex;
     GeoSelectionSummary summary{0, 0, 0, GEO_NO_NODE, GeoSelectFaces};
     std::mutex modelsMutex;
-    std::vector<std::shared_ptr<scene::MappedSegment>> publishedModels;
+    std::vector<std::shared_ptr<scene::Segment>> publishedModels;
     // Swatch colours: one per occurrence in global order, and each document's first occurrence.
     std::mutex swatchMutex;
     std::vector<u32> publishedSwatches;
@@ -199,7 +199,7 @@ struct GeoEngine final : engine::Host {
     public:
         ImportBridge(GeoEngine* engine, u64 token) : engine_(engine), token_(token) {}
 
-        void segmentReady(std::shared_ptr<scene::MappedSegment> segment) override {
+        void segmentReady(std::shared_ptr<scene::Segment> segment) override {
             GeoEngine* engine = engine_;
             const u64 token = token_;
             engine->onEngineThread([=] { engine->core->addSegment(token, segment); });
@@ -283,7 +283,7 @@ struct GeoEngine final : engine::Host {
         }
     }
 
-    void publishModel(u32 document, std::shared_ptr<scene::MappedSegment> model) override {
+    void publishModel(u32 document, std::shared_ptr<scene::Segment> model) override {
         std::lock_guard lock(modelsMutex);
         publishedModels.resize(std::max<usize>(publishedModels.size(), document + 1));
         publishedModels[document] = std::move(model);

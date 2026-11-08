@@ -6,7 +6,7 @@
 #include "base/types.h"
 #include "engine.h"
 #include "model/visibility.h"
-#include "scene/mapped_segment.h"
+#include "scene/segment.h"
 
 #include <memory>
 #include <string>
@@ -59,7 +59,7 @@ public:
     /// Tells the app something happened.
     virtual void emit(const GeoEvent& event) = 0;
     /// Hands the app a document's tree, or takes them all back when everything closes.
-    virtual void publishModel(u32 document, std::shared_ptr<scene::MappedSegment> model) = 0;
+    virtual void publishModel(u32 document, std::shared_ptr<scene::Segment> model) = 0;
     virtual void clearModels() = 0;
     /// Each occurrence's swatch colour in global order, and each document's first occurrence.
     virtual void publishSwatches(std::vector<u32> swatches, std::vector<u32> bases) = 0;

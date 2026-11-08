@@ -2,7 +2,7 @@
 // record what they are asked. Runs natively and as WebAssembly, since the core is portable.
 #include "cache/blob_writer.h"
 #include "core/core.h"
-#include "scene/mapped_segment.h"
+#include "scene/segment.h"
 
 #include <doctest/doctest.h>
 #include <unistd.h>
@@ -64,7 +64,7 @@ public:
         events.push_back(event.kind);
         messages.push_back(event.message);
     }
-    void publishModel(u32 document, std::shared_ptr<scene::MappedSegment> model) override {
+    void publishModel(u32 document, std::shared_ptr<scene::Segment> model) override {
         models.resize(std::max<usize>(models.size(), document + 1));
         models[document] = std::move(model);
     }
@@ -90,7 +90,7 @@ public:
     std::vector<std::vector<std::string>> evictions;
     std::vector<GeoEventKind> events;
     std::vector<std::string> messages;
-    std::vector<std::shared_ptr<scene::MappedSegment>> models;
+    std::vector<std::shared_ptr<scene::Segment>> models;
     std::vector<std::vector<model::NodeVisibility>> nodeStates;
     engine::Summary summary;
     u32 swatchCount = 0;
@@ -102,7 +102,7 @@ format::NodeRecord node(u32 parent, u32 end, u32 first, u32 last, NodeKind kind)
 
 // A cache file's segments for the interaction test's rig: part A with two bodies, part B with one,
 // each a unit box. Nodes: 0 the root, 1 part A, 2 and 3 its bodies, 4 part B.
-std::vector<std::shared_ptr<scene::MappedSegment>> rigSegments() {
+std::vector<std::shared_ptr<scene::Segment>> rigSegments() {
     import::ModelData model;
     model.definitions = {{{0, 0, 0}, {1, 1, 1}, 3, 0}, {{0, 0, 0}, {1, 1, 1}, 5, 0}};
     model.occurrences = {{{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, 0, 2, 0, 0},
@@ -117,7 +117,7 @@ std::vector<std::shared_ptr<scene::MappedSegment>> rigSegments() {
     import::BlobStream stream(fd, nullptr);
     REQUIRE(stream.writeModel(model));
     REQUIRE(stream.finish({}));
-    std::vector<std::shared_ptr<scene::MappedSegment>> segments;
+    std::vector<std::shared_ptr<scene::Segment>> segments;
     std::string error;
     REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
     close(fd);

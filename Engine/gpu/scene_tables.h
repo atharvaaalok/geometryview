@@ -48,7 +48,7 @@ private:
         id<MTLBuffer> buffer;
         id<MTLResidencySet> set;
     };
-    std::unordered_map<const scene::MappedSegment*, SegmentResidency> segments_;
+    std::unordered_map<const scene::Segment*, SegmentResidency> segments_;
     id<MTLBuffer> definitions_, occurrences_, batches_, drawBases_, meshletRefs_;
     id<MTLBuffer> edgeBatches_, edgeRefs_;
     usize edgeBatchCount_ = 0;

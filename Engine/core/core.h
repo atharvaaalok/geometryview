@@ -60,7 +60,7 @@ public:
 
     // ---- From the platform -----------------------------------------------------------------------
 
-    void addSegment(u64 token, const std::shared_ptr<scene::MappedSegment>& segment);
+    void addSegment(u64 token, const std::shared_ptr<scene::Segment>& segment);
     void importProgress(u64 token, u32 done, u32 total);
     void importFinished(u64 token, const ImportResult& result);
     void refinementFinished(u64 token, bool ok, u32 definitions, u32 level, double started);
