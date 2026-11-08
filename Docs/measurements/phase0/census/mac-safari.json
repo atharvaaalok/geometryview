@@ -1,0 +1,132 @@
+{
+  "label": "mac-safari",
+  "mode": "core",
+  "startedAt": "2026-11-07T19:18:06.107Z",
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+    "platform": "MacIntel",
+    "hardwareConcurrency": 8,
+    "deviceMemory": null,
+    "devicePixelRatio": 2,
+    "screen": [
+      1728,
+      1117
+    ],
+    "secureContext": true,
+    "crossOriginIsolated": true,
+    "sharedArrayBuffer": true,
+    "offscreenCanvas": true,
+    "storageFoundation": true
+  },
+  "wasm": {
+    "simd": true,
+    "relaxedSimd": false,
+    "legacyExceptions": true,
+    "exnrefExceptions": true,
+    "tailCalls": true,
+    "memory64": false,
+    "sharedMemory": true,
+    "jspi": false,
+    "streamingCompile": true
+  },
+  "webgpu": {
+    "available": true,
+    "adapter": true,
+    "info": {
+      "vendor": "apple",
+      "architecture": "apple",
+      "device": "apple",
+      "description": "apple"
+    },
+    "isFallbackAdapter": false,
+    "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "depth-clip-control",
+      "depth32float-stencil8",
+      "float16-renderable",
+      "float32-blendable",
+      "float32-filterable",
+      "float32-renderable",
+      "indirect-first-instance",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "texture-compression-astc",
+      "texture-compression-astc-sliced-3d",
+      "texture-compression-bc",
+      "texture-compression-bc-sliced-3d",
+      "texture-compression-etc2",
+      "texture-formats-tier1",
+      "timestamp-query"
+    ],
+    "limits": {
+      "maxTextureDimension2D": 16384,
+      "maxBindGroups": 11,
+      "maxBindingsPerBindGroup": 65535,
+      "maxDynamicStorageBuffersPerPipelineLayout": 65535,
+      "maxStorageBuffersPerShaderStage": 44,
+      "maxStorageTexturesPerShaderStage": 44,
+      "maxUniformBuffersPerShaderStage": 44,
+      "maxUniformBufferBindingSize": 2147483644,
+      "maxStorageBufferBindingSize": 2147483644,
+      "maxBufferSize": 2147483644,
+      "minStorageBufferOffsetAlignment": 32,
+      "maxVertexBuffers": 12,
+      "maxVertexAttributes": 30,
+      "maxInterStageShaderVariables": 124,
+      "maxColorAttachments": 8,
+      "maxColorAttachmentBytesPerSample": 64,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroupsPlusVertexBuffers": 30,
+      "maxDynamicUniformBuffersPerPipelineLayout": 65535,
+      "maxSampledTexturesPerShaderStage": 44,
+      "maxSamplersPerShaderStage": 22,
+      "minUniformBufferOffsetAlignment": 32,
+      "maxVertexBufferArrayStride": 65532,
+      "maxInterStageShaderComponents": 124,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 1024
+    },
+    "preferredCanvasFormat": "bgra8unorm",
+    "transientAttachmentUsage": false,
+    "wgslLanguageFeatures": [
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "unrestricted_pointer_parameters"
+    ]
+  },
+  "framePacing": {
+    "medianIntervalMs": 17,
+    "hz": 58.8,
+    "p95IntervalMs": 17
+  },
+  "storage": {
+    "estimate": {
+      "quota": 82463372084,
+      "usage": 0
+    },
+    "persisted": false,
+    "opfs": {
+      "syncAccessHandle": true,
+      "bytesMB": 256,
+      "writeMBps": 6991,
+      "readMBps": 17902
+    }
+  },
+  "workerGpu": {
+    "available": true,
+    "presented": true,
+    "workerAnimationFrame": {
+      "hz": 57.1
+    }
+  },
+  "finishedAt": "2026-11-07T19:18:09.471Z",
+  "partial": false
+}

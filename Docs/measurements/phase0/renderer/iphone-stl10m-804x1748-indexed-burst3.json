@@ -1,0 +1,97 @@
+{
+    "triangles": 10000006,
+    "fileMB": 150.8,
+    "targetMB": 25.8,
+    "pixelsPerPoint": 2,
+    "width": 804,
+    "thermalState": "nominal",
+    "fetchMs": 130,
+    "mode": "indexed",
+    "bufferMB": 398.3,
+    "devicePixelRatio": 3,
+    "features": 7,
+    "timestamps": true,
+    "uploadMs": 52,
+    "burst": 3,
+    "copies": 1,
+    "label": "iphone-loopback-stl10m-804x1748-indexed-burst3",
+    "instances": 86595,
+    "height": 1748,
+    "zooms": [
+        {
+            "frames": 57,
+            "gpuMs": {
+                "p50": 33.642,
+                "p99": 35.147
+            },
+            "frameIntervalMs": {
+                "p50": 105,
+                "p99": 107
+            },
+            "cpuSubmitMs": {
+                "p50": 0.46,
+                "p99": 0.62
+            },
+            "passMsP50": {
+                "occlusion": 3.7,
+                "shadow": 9.275,
+                "composite": 4.543,
+                "vis": 15.353
+            },
+            "zoom": 1,
+            "clustersP50": 77326,
+            "timedFrames": 174
+        },
+        {
+            "frames": 53,
+            "gpuMs": {
+                "p50": 35.809,
+                "p99": 38.838
+            },
+            "frameIntervalMs": {
+                "p50": 111,
+                "p99": 119
+            },
+            "cpuSubmitMs": {
+                "p50": 0.44,
+                "p99": 0.64
+            },
+            "passMsP50": {
+                "occlusion": 5.25,
+                "shadow": 8.573,
+                "composite": 5.987,
+                "vis": 18.652
+            },
+            "zoom": 2,
+            "clustersP50": 75688,
+            "timedFrames": 162
+        },
+        {
+            "frames": 101,
+            "gpuMs": {
+                "p50": 17.526,
+                "p99": 24.659
+            },
+            "frameIntervalMs": {
+                "p50": 56,
+                "p99": 77
+            },
+            "cpuSubmitMs": {
+                "p50": 0.42,
+                "p99": 0.62
+            },
+            "passMsP50": {
+                "occlusion": 3.936,
+                "shadow": 2.374,
+                "composite": 5.229,
+                "vis": 10.875
+            },
+            "zoom": 4,
+            "clustersP50": 39147,
+            "timedFrames": 306
+        }
+    ],
+    "model": "stl10m",
+    "adapter": "apple apple",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+}

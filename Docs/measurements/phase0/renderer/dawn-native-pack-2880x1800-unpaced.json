@@ -1,0 +1,6 @@
+{"adapter": "Apple M4 Max", "backend": "Dawn native", "width": 2880, "height": 1800, "intervalMs": 0,
+ "triangles": 331520, "instances": 3289, "timestamps": true, "zooms": [
+  {"zoom": 1, "frames": 720, "gpuMs": {"p50": 0.979, "p99": 1.113}, "cullMs": 0.019, "visMs": 0.625, "compositeMs": 0.516, "clustersP50": 21518},
+  {"zoom": 2, "frames": 720, "gpuMs": {"p50": 0.634, "p99": 1.662}, "cullMs": 0.008, "visMs": 0.318, "compositeMs": 0.402, "clustersP50": 21518},
+  {"zoom": 4, "frames": 720, "gpuMs": {"p50": 1.001, "p99": 2.741}, "cullMs": 0.009, "visMs": 0.478, "compositeMs": 0.659, "clustersP50": 15563}
+]}

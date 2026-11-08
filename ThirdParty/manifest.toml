@@ -24,6 +24,15 @@ commit = "b8f597c677811d1f9f4d8a97f5ae2825c0353a42"
 license = "LGPL-2.1-only WITH OCCT-exception-1.0"
 vendored = false
 
+# Dawn is built from source by ThirdParty/build_dawn.sh for Phase 0's native WebGPU control, and is
+# not vendored. The release matches Emscripten 7.0's emdawnwebgpu port.
+[dawn]
+url = "https://github.com/google/dawn.git"
+tag = "v20260423.175430"
+commit = "b975919dfb45406ca17162e4d44c74a650caa679"
+license = "BSD-3-Clause"
+vendored = false
+
 [ibm-plex-mono]
 url = "https://github.com/IBM/plex.git"
 tag = "@ibm/plex-mono@2.5.0"

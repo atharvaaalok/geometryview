@@ -359,6 +359,9 @@ typedef struct GeoRenderOptions {
     bool overlay; // the view cube and scale bar
     GeoLook look;
     GeoSection section;
+    // Comma-separated part names: only parts whose names contain one of them, ignoring ASCII case,
+    // are drawn, and the view frames them. Null draws everything.
+    const char* isolate;
 } GeoRenderOptions;
 
 /// The options gcli render starts from: 1600 by 1000, from the front right and above, with the
@@ -366,7 +369,7 @@ typedef struct GeoRenderOptions {
 GeoRenderOptions geo_default_render_options(void);
 
 /// Renders a cache file to a PNG, framed to fit, for tests and `gcli render`. Returns false and
-/// prints why on failure.
+/// prints why on failure, including when nothing matches `isolate`.
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, const GeoRenderOptions* options);
 

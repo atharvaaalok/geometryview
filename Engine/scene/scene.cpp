@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <format>
-#include <simd/simd.h>
+#include "base/simd.h"
 
 namespace geo::scene {
 

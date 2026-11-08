@@ -7,11 +7,11 @@
 #include <cmath>
 #include <cstdlib>
 #include <format>
-#include <simd/simd.h>
+#include "base/simd.h"
 #include <unordered_map>
 
 #define XXH_INLINE_ALL
-#include <xxhash.h>
+#include "base/xxhash.h"
 
 namespace geo::import::step {
 namespace {

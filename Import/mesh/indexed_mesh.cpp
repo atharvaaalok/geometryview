@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
-#include <simd/simd.h>
+#include "base/simd.h"
 
 namespace geo::import {
 namespace {
@@ -85,7 +85,12 @@ public:
         u32 parent = parent_[item].load(std::memory_order_relaxed);
         while (parent != item) {
             const u32 grandparent = parent_[parent].load(std::memory_order_relaxed);
-            // Path halving. Losing this race only means a later find does the work.
+            if (grandparent == parent) {
+                return parent; // the parent is the root, so there is nothing to shorten
+            }
+            // Path halving. Losing this race only means a later find does the work. The write is
+            // skipped when there is nothing to shorten, which matters where every atomic write is
+            // a full barrier, as in WebAssembly.
             parent_[item].compare_exchange_weak(parent, grandparent, std::memory_order_relaxed);
             item = grandparent;
             parent = parent_[item].load(std::memory_order_relaxed);

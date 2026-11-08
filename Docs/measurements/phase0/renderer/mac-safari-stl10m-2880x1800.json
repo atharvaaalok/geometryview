@@ -1,0 +1,72 @@
+{
+  "label": "mac-safari-stl10m-2880x1800",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "devicePixelRatio": 2,
+  "model": "stl10m",
+  "copies": 1,
+  "fileMB": 150.8,
+  "fetchMs": 129,
+  "uploadMs": 46,
+  "adapter": "apple apple",
+  "width": 2880,
+  "height": 1800,
+  "triangles": 10000006,
+  "instances": 86595,
+  "timestamps": true,
+  "zooms": [
+    {
+      "zoom": 1,
+      "frames": 359,
+      "timedFrames": 360,
+      "gpuMs": {
+        "p50": 3.357,
+        "p99": 12.937
+      },
+      "frameIntervalMs": {
+        "p50": 17,
+        "p99": 19
+      },
+      "cpuSubmitMs": {
+        "p50": 0.16,
+        "p99": 0.36
+      },
+      "clustersP50": 574897
+    },
+    {
+      "zoom": 2,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 11.304,
+        "p99": 14.172
+      },
+      "frameIntervalMs": {
+        "p50": 17,
+        "p99": 20
+      },
+      "cpuSubmitMs": {
+        "p50": 0.14,
+        "p99": 0.38
+      },
+      "clustersP50": 535818
+    },
+    {
+      "zoom": 4,
+      "frames": 360,
+      "timedFrames": 361,
+      "gpuMs": {
+        "p50": 8.181,
+        "p99": 10.903
+      },
+      "frameIntervalMs": {
+        "p50": 17,
+        "p99": 18
+      },
+      "cpuSubmitMs": {
+        "p50": 0.14,
+        "p99": 0.34
+      },
+      "clustersP50": 279338
+    }
+  ]
+}

@@ -16,15 +16,21 @@ std::shared_ptr<MappedSegment> MappedSegment::open(int fd, u64 offset, u64 size,
         error = "A cache segment is misaligned.";
         return nullptr;
     }
-    void* mapping = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, off_t(offset));
+    // In a 32-bit address space, as in WebAssembly, a segment this large cannot be mapped at all.
+    if (size > u64(SIZE_MAX)) {
+        error = "A cache segment is too large for this device.";
+        return nullptr;
+    }
+    void* mapping = mmap(nullptr, usize(size), PROT_READ, MAP_SHARED, fd, off_t(offset));
     if (mapping == MAP_FAILED) {
         error = std::format("A cache segment could not be mapped: {}.", std::strerror(errno));
         return nullptr;
     }
     std::shared_ptr<MappedSegment> segment(new MappedSegment);
     segment->data_ = mapping;
-    segment->size_ = size;
-    if (!format::parseSegment({static_cast<const u8*>(mapping), size}, segment->view_, error)) {
+    segment->size_ = usize(size);
+    if (!format::parseSegment({static_cast<const u8*>(mapping), usize(size)}, segment->view_,
+                              error)) {
         return nullptr;
     }
     return segment;

@@ -4,12 +4,17 @@
 #include "base/parallel_sort.h"
 
 #include <algorithm>
-#include <arm_neon.h>
 #include <array>
 #include <atomic>
 #include <bit>
 #include <charconv>
 #include <format>
+
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#elif defined(__wasm_simd128__)
+#include <wasm_simd128.h>
+#endif
 
 namespace geo::import::step {
 namespace {
@@ -102,6 +107,11 @@ int complexPriority(Kind kind) {
     }
 }
 
+// The tokenizer's byte scans come in three forms: NEON on ARM, SIMD128 in WebAssembly, and plain
+// loops elsewhere. All three give the same results; NEON is what the Mac runs.
+
+#if defined(__ARM_NEON)
+
 // Sets one bit per byte of the four registers, in memory order.
 u64 toBitMask(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d) {
     const uint8x16_t bits = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
@@ -112,11 +122,52 @@ u64 toBitMask(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d) {
     return vgetq_lane_u64(vreinterpretq_u64_u8(sum), 0);
 }
 
+// One bit per byte of a 64-byte block that equals `c`, in memory order.
+u64 blockMask(const u8* block, u8 c) {
+    const uint8x16_t value = vdupq_n_u8(c);
+    return toBitMask(vceqq_u8(vld1q_u8(block), value), vceqq_u8(vld1q_u8(block + 16), value),
+                     vceqq_u8(vld1q_u8(block + 32), value), vceqq_u8(vld1q_u8(block + 48), value));
+}
+
 // Every bit is the parity of the bits at or below it, so a quote bit opens a run that the next
 // closes. A doubled quote inside a string toggles twice, which needs no special case.
 u64 prefixXor(u64 mask) {
     return vgetq_lane_u64(vreinterpretq_u64_p128(vmull_p64(poly64_t(mask), poly64_t(~u64(0)))), 0);
 }
+
+#else
+
+u64 blockMask(const u8* block, u8 c) {
+#if defined(__wasm_simd128__)
+    const v128_t value = wasm_i8x16_splat(i8(c));
+    u64 mask = 0;
+    for (int part = 0; part < 4; ++part) {
+        const v128_t v = wasm_v128_load(block + part * 16);
+        mask |= u64(wasm_i8x16_bitmask(wasm_i8x16_eq(v, value))) << (part * 16);
+    }
+    return mask;
+#else
+    u64 mask = 0;
+    for (usize i = 0; i < 64; ++i) {
+        mask |= u64(block[i] == c) << i;
+    }
+    return mask;
+#endif
+}
+
+// Every bit is the parity of the bits at or below it: the carry-less product with all ones, done
+// as six shifts where there is no carry-less multiply.
+u64 prefixXor(u64 mask) {
+    mask ^= mask << 1;
+    mask ^= mask << 2;
+    mask ^= mask << 4;
+    mask ^= mask << 8;
+    mask ^= mask << 16;
+    mask ^= mask << 32;
+    return mask;
+}
+
+#endif
 
 struct ByteCounts {
     u64 quotes = 0;
@@ -127,12 +178,14 @@ struct ByteCounts {
 // which is safe: it triggers the slower path that handles comments properly.
 ByteCounts countBytes(const u8* data, usize size, u8 previous) {
     ByteCounts result;
+    usize offset = 0;
+    u8 prior = previous;
+#if defined(__ARM_NEON)
     const uint8x16_t quote = vdupq_n_u8('\'');
     const uint8x16_t slash = vdupq_n_u8('/');
     const uint8x16_t star = vdupq_n_u8('*');
     uint8x16_t last = vdupq_n_u8(previous);
     uint8x16_t comments = vdupq_n_u8(0);
-    usize offset = 0;
     while (size - offset >= 16) {
         uint8x16_t counts = vdupq_n_u8(0);
         const usize steps = std::min<usize>((size - offset) / 16, 255);
@@ -146,7 +199,28 @@ ByteCounts countBytes(const u8* data, usize size, u8 previous) {
         result.quotes += vaddlvq_u8(counts);
     }
     result.hasComment = vmaxvq_u8(comments) != 0;
-    u8 prior = vgetq_lane_u8(last, 15);
+    prior = vgetq_lane_u8(last, 15);
+#elif defined(__wasm_simd128__)
+    const v128_t quote = wasm_i8x16_splat('\'');
+    const v128_t slash = wasm_i8x16_splat('/');
+    const v128_t star = wasm_i8x16_splat('*');
+    v128_t last = wasm_i8x16_splat(i8(previous));
+    v128_t comments = wasm_i8x16_splat(0);
+    for (; size - offset >= 16; offset += 16) {
+        const v128_t v = wasm_v128_load(data + offset);
+        result.quotes += u64(std::popcount(u32(wasm_i8x16_bitmask(wasm_i8x16_eq(v, quote)))));
+        // Each byte with the one before it, the first borrowing the previous block's last.
+        const v128_t before = wasm_i8x16_shuffle(last, v, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                                                 25, 26, 27, 28, 29, 30);
+        comments = wasm_v128_or(
+            comments, wasm_v128_and(wasm_i8x16_eq(before, slash), wasm_i8x16_eq(v, star)));
+        last = v;
+    }
+    result.hasComment = wasm_v128_any_true(comments);
+    if (offset > 0) {
+        prior = data[offset - 1];
+    }
+#endif
     for (; offset < size; ++offset) {
         const u8 c = data[offset];
         result.quotes += c == '\'';
@@ -225,22 +299,39 @@ const u8* parseId(const u8* p, const u8* end, u32& id, bool& overflow) {
     return p;
 }
 
+// How far into the next 16 bytes the first '#' or quote is, or 16 if there is none.
+usize nextReferenceOrString(const u8* p) {
+#if defined(__ARM_NEON)
+    const uint8x16_t v = vld1q_u8(p);
+    const uint8x16_t hit = vorrq_u8(vceqq_u8(v, vdupq_n_u8('#')), vceqq_u8(v, vdupq_n_u8('\'')));
+    // Narrowing gives four bits per byte in 64 bits, the usual NEON movemask.
+    const u64 nibbles =
+        vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(hit), 4)), 0);
+    return nibbles == 0 ? 16 : usize(std::countr_zero(nibbles)) / 4;
+#elif defined(__wasm_simd128__)
+    const v128_t v = wasm_v128_load(p);
+    const u32 hits = wasm_i8x16_bitmask(wasm_v128_or(wasm_i8x16_eq(v, wasm_i8x16_splat('#')),
+                                                     wasm_i8x16_eq(v, wasm_i8x16_splat('\''))));
+    return hits == 0 ? 16 : usize(std::countr_zero(hits));
+#else
+    for (usize i = 0; i < 16; ++i) {
+        if (p[i] == '#' || p[i] == '\'') {
+            return i;
+        }
+    }
+    return 16;
+#endif
+}
+
 // Records every reference in [p, end), skipping strings.
 void scanReferences(const u8* p, const u8* end, ChunkOutput& out, u32& count) {
-    const uint8x16_t hash = vdupq_n_u8('#');
-    const uint8x16_t quote = vdupq_n_u8('\'');
     while (p < end) {
         if (end - p >= 16) {
-            const uint8x16_t v = vld1q_u8(p);
-            const uint8x16_t hit = vorrq_u8(vceqq_u8(v, hash), vceqq_u8(v, quote));
-            // Narrowing gives four bits per byte in 64 bits, the usual NEON movemask.
-            const u64 nibbles =
-                vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(hit), 4)), 0);
-            if (nibbles == 0) {
-                p += 16;
+            const usize skip = nextReferenceOrString(p);
+            p += skip;
+            if (skip == 16) {
                 continue;
             }
-            p += std::countr_zero(nibbles) / 4;
         }
         const u8 c = *p;
         if (c == '\'') {
@@ -363,8 +454,6 @@ void parseStatement(const u8* base, const u8* p, const u8* end, ChunkOutput& out
 void scanChunk(std::span<const u8> file, usize first, usize last, usize dataStart,
                bool startsInString, ChunkOutput& out) {
     const u8* base = file.data();
-    const uint8x16_t quote = vdupq_n_u8('\'');
-    const uint8x16_t semicolon = vdupq_n_u8(';');
 
     bool inString = startsInString;
     // A statement that starts exactly here belongs to this chunk. Any other starts in the previous
@@ -381,12 +470,8 @@ void scanChunk(std::span<const u8> file, usize first, usize last, usize dataStar
             std::memcpy(tail.data(), block, available);
             block = tail.data();
         }
-        const uint8x16_t a = vld1q_u8(block), b = vld1q_u8(block + 16), c = vld1q_u8(block + 32),
-                         d = vld1q_u8(block + 48);
-        const u64 quotes = toBitMask(vceqq_u8(a, quote), vceqq_u8(b, quote), vceqq_u8(c, quote),
-                                     vceqq_u8(d, quote));
-        u64 ends = toBitMask(vceqq_u8(a, semicolon), vceqq_u8(b, semicolon), vceqq_u8(c, semicolon),
-                             vceqq_u8(d, semicolon));
+        const u64 quotes = blockMask(block, '\'');
+        u64 ends = blockMask(block, ';');
         const u64 strings = prefixXor(quotes) ^ (inString ? ~u64(0) : 0);
         inString = (strings >> 63) != 0;
         ends &= ~strings;

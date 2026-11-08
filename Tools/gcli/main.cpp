@@ -289,6 +289,57 @@ int statsCommand(const char* path) {
     return 0;
 }
 
+// Prints a string as a JSON string literal.
+void printJsonString(std::string_view text) {
+    std::print("\"");
+    for (const char c : text) {
+        if (c == '"' || c == '\\') {
+            std::print("\\{}", c);
+        } else if (u8(c) < 0x20) {
+            std::print("\\u{:04x}", unsigned(u8(c)));
+        } else {
+            std::print("{}", c);
+        }
+    }
+    std::print("\"");
+}
+
+// The assembly tree as JSON: one object per node in depth-first order, with its parent's index,
+// its kind, its name and the range of bodies (occurrences) under it.
+int treeCommand(const char* path) {
+    MappedFile file;
+    std::span<const format::SegmentEntry> segments;
+    std::string error;
+    if (!file.open(path) || !format::parseHeader({file.data, file.size}, segments, error)) {
+        std::println(stderr, "could not read {}: {}", path, error);
+        return 1;
+    }
+    for (const format::SegmentEntry& entry : segments) {
+        format::SegmentView view;
+        if (!format::parseSegment({file.data + entry.offset, entry.size}, view, error)) {
+            std::println(stderr, "invalid: {}", error);
+            return 1;
+        }
+        if (!view.hasModel()) {
+            continue;
+        }
+        static constexpr std::array<std::string_view, 3> kinds = {"assembly", "part", "body"};
+        std::print("[");
+        for (usize n = 0; n < view.nodes.size(); ++n) {
+            const format::NodeRecord& node = view.nodes[n];
+            std::print("{}{{\"parent\": {}, \"kind\": \"{}\", \"name\": ", n == 0 ? "" : ",\n",
+                       node.parent == format::kNoParent ? -1 : i64(node.parent),
+                       kinds[std::min<u32>(node.kind, 2)]);
+            printJsonString({view.strings.data() + node.nameOffset, node.nameLength});
+            std::print(", \"bodies\": [{}, {}]}}", node.firstOccurrence, node.occurrenceEnd);
+        }
+        std::println("]");
+        return 0;
+    }
+    std::println(stderr, "no model");
+    return 1;
+}
+
 int renderCommand(int argc, const char** argv) {
     // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour
     //                                      section plain]
@@ -333,6 +384,10 @@ int renderCommand(int argc, const char** argv) {
         }
     }
     options.overlay = !(argc > 13 && std::string_view(argv[13]) == "plain");
+    // Comma-separated part names to draw alone.
+    if (argc > 14) {
+        options.isolate = argv[14];
+    }
     return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
 }
 
@@ -353,11 +408,16 @@ int main(int argc, const char** argv) {
     if (command == "render" && argc >= 5) {
         return renderCommand(argc, argv);
     }
+    if (command == "tree" && argc == 3) {
+        return treeCommand(argv[2]);
+    }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
     std::println(stderr, "       gcli stats <blob>");
-    std::println(stderr, "       gcli render <metallib> <blob> <png> "
-                         "[width height azimuth elevation ortho|perspective style colour]");
+    std::println(stderr, "       gcli tree <blob>");
+    std::println(stderr, "       gcli render <metallib> <blob> <png> [width height azimuth "
+                         "elevation ortho|perspective style colour section plain|overlay "
+                         "isolate]");
     return 2;
 }

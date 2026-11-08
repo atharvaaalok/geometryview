@@ -1,0 +1,95 @@
+{
+    "label": "iphone-loopback-stl10m-804x1748-indexed-f1",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "devicePixelRatio": 3,
+    "model": "stl10m",
+    "copies": 1,
+    "mode": "indexed",
+    "features": 1,
+    "pixelsPerPoint": 2,
+    "fileMB": 150.8,
+    "fetchMs": 180,
+    "uploadMs": 72,
+    "adapter": "apple apple",
+    "width": 804,
+    "height": 1748,
+    "triangles": 10000006,
+    "instances": 86595,
+    "timestamps": true,
+    "bufferMB": 275.1,
+    "targetMB": 23.5,
+    "zooms": [
+        {
+            "zoom": 1,
+            "frames": 260,
+            "timedFrames": 261,
+            "gpuMs": {
+                "p50": 20.87,
+                "p99": 22.205
+            },
+            "frameIntervalMs": {
+                "p50": 23,
+                "p99": 25
+            },
+            "cpuSubmitMs": {
+                "p50": 0.18,
+                "p99": 0.36
+            },
+            "clustersP50": 77313,
+            "passMsP50": {
+                "shadow": 0,
+                "vis": 15.282,
+                "occlusion": 0,
+                "composite": 5.422
+            }
+        },
+        {
+            "zoom": 2,
+            "frames": 229,
+            "timedFrames": 230,
+            "gpuMs": {
+                "p50": 24.152,
+                "p99": 25.687
+            },
+            "frameIntervalMs": {
+                "p50": 26,
+                "p99": 28
+            },
+            "cpuSubmitMs": {
+                "p50": 0.16,
+                "p99": 0.28
+            },
+            "clustersP50": 75573,
+            "passMsP50": {
+                "shadow": 0,
+                "vis": 18.503,
+                "occlusion": 0,
+                "composite": 6.924
+            }
+        },
+        {
+            "zoom": 4,
+            "frames": 330,
+            "timedFrames": 331,
+            "gpuMs": {
+                "p50": 14.919,
+                "p99": 20.387
+            },
+            "frameIntervalMs": {
+                "p50": 17,
+                "p99": 23
+            },
+            "cpuSubmitMs": {
+                "p50": 0.16,
+                "p99": 0.28
+            },
+            "clustersP50": 39701,
+            "passMsP50": {
+                "shadow": 0,
+                "vis": 10.979,
+                "occlusion": 0,
+                "composite": 5.348
+            }
+        }
+    ]
+}

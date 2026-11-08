@@ -1,0 +1,97 @@
+{
+    "targetMB": 58.1,
+    "pixelsPerPoint": 3,
+    "timestamps": true,
+    "copies": 1,
+    "devicePixelRatio": 3,
+    "triangles": 331520,
+    "thermalState": "nominal",
+    "uploadMs": 3,
+    "label": "iphone-loopback-pack-1206x2622-indexed-burst3",
+    "burst": 3,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "zooms": [
+        {
+            "frames": 271,
+            "gpuMs": {
+                "p50": 6.097,
+                "p99": 6.763
+            },
+            "frameIntervalMs": {
+                "p50": 22,
+                "p99": 23
+            },
+            "cpuSubmitMs": {
+                "p50": 0.4,
+                "p99": 0.62
+            },
+            "passMsP50": {
+                "occlusion": 0.942,
+                "shadow": 0.521,
+                "composite": 4.203,
+                "vis": 1.993
+            },
+            "zoom": 1,
+            "clustersP50": 3071,
+            "timedFrames": 816
+        },
+        {
+            "frames": 268,
+            "gpuMs": {
+                "p50": 6.417,
+                "p99": 7.193
+            },
+            "frameIntervalMs": {
+                "p50": 23,
+                "p99": 25
+            },
+            "cpuSubmitMs": {
+                "p50": 0.38,
+                "p99": 0.72
+            },
+            "passMsP50": {
+                "occlusion": 1.153,
+                "shadow": 0.529,
+                "composite": 4.569,
+                "vis": 1.96
+            },
+            "zoom": 2,
+            "clustersP50": 2815,
+            "timedFrames": 807
+        },
+        {
+            "frames": 259,
+            "gpuMs": {
+                "p50": 6.338,
+                "p99": 8.241
+            },
+            "frameIntervalMs": {
+                "p50": 23,
+                "p99": 28
+            },
+            "cpuSubmitMs": {
+                "p50": 0.38,
+                "p99": 1.34
+            },
+            "passMsP50": {
+                "occlusion": 1.368,
+                "shadow": 0.394,
+                "composite": 5.114,
+                "vis": 1.398
+            },
+            "zoom": 4,
+            "clustersP50": 1695,
+            "timedFrames": 780
+        }
+    ],
+    "height": 2622,
+    "fetchMs": 4,
+    "adapter": "apple apple",
+    "mode": "indexed",
+    "instances": 3289,
+    "bufferMB": 10.9,
+    "fileMB": 1.6,
+    "model": "pack",
+    "features": 7,
+    "width": 1206
+}

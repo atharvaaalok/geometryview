@@ -7,7 +7,7 @@
 #include "stl/stl_reader.h"
 
 #define XXH_INLINE_ALL
-#include <xxhash.h>
+#include "base/xxhash.h"
 
 #include <algorithm>
 #include <cstring>

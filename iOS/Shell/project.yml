@@ -1,0 +1,63 @@
+# The iPhone and iPad shell: the universal viewer's files in WKWebView, fully offline.
+# Generate the Xcode project with `xcodegen` in this folder; the project itself is not committed.
+name: GeometryShell
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  GeometryShell:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # The web files, copied as folders so their paths stay as the pages expect.
+      - path: ../../Web/census
+        type: folder
+        buildPhase: resources
+      - path: ../../Web/spike
+        type: folder
+        buildPhase: resources
+    # The spikes' WebAssembly builds and fixtures, which are build outputs rather than sources:
+    # `cmake --build --preset wasm-webgpu` and `--preset wasm-release`, blobs imported into
+    # build/fixtures, and slices saved there by the native OCCT worker.
+    postBuildScripts:
+      - name: Copy the renderer spike's build
+        basedOnDependencyAnalysis: false
+        script: |
+          spike="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/spike"
+          mkdir -p "$spike/build" "$spike/fixtures"
+          cp "${SRCROOT}/../../build/wasm-webgpu/Tools/spikes/webgpu/spike_webgpu."{mjs,wasm} "$spike/build/"
+          cp "${SRCROOT}/../../build/fixtures/"*.geoblob "$spike/fixtures/"
+          # The import spike: OCCT for Web Workers, and STEP slices saved from the native importer.
+          mkdir -p "$spike/occt"
+          cp "${SRCROOT}/../../build/wasm-release/Import/geometry-occt-web."{mjs,wasm} "$spike/occt/"
+          rm -rf "$spike/fixtures/slices"
+          cp -R "${SRCROOT}/../../build/fixtures/slices" "$spike/fixtures/slices"
+    # Generated from here at `xcodegen` time and merged with the keys below. The page's loopback
+    # server is plain HTTP on 127.0.0.1, which App Transport Security allows only when asked.
+    info:
+      path: Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aalok.geometry.shell
+        PRODUCT_NAME: Geometry
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Geometry
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UIFileSharingEnabled: YES
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        # The spike's copy script reads build outputs outside the project.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

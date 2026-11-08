@@ -25,7 +25,7 @@ struct Sample {
     }
     std::span<const u8> segment(usize index) const {
         const SegmentEntry e = entry(index);
-        return std::span<const u8>(file).subspan(e.offset, e.size);
+        return std::span<const u8>(file).subspan(usize(e.offset), usize(e.size));
     }
     u8* mutableSegment(usize index) { return file.data() + entry(index).offset; }
 

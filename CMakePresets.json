@@ -11,48 +11,175 @@
       "name": "debug",
       "inherits": "base",
       "displayName": "Debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "release",
       "inherits": "base",
       "displayName": "Release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "asan",
       "inherits": "base",
       "displayName": "Address and undefined-behaviour sanitizers",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "GEO_SANITIZE": "address,undefined" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "GEO_SANITIZE": "address,undefined"
+      }
     },
     {
       "name": "tsan",
       "inherits": "base",
       "displayName": "Thread sanitizer",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "GEO_SANITIZE": "thread" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "GEO_SANITIZE": "thread"
+      }
+    },
+    {
+      "name": "wasm",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/WasmToolchain.cmake",
+      "cacheVariables": {
+        "GEO_TARGET": "wasm"
+      }
+    },
+    {
+      "name": "wasm-debug",
+      "inherits": "wasm",
+      "displayName": "WebAssembly, debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "wasm-release",
+      "inherits": "wasm",
+      "displayName": "WebAssembly, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "wasm-threads",
+      "inherits": "wasm",
+      "displayName": "WebAssembly with threads, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GEO_WASM_THREADS": "ON"
+      }
+    },
+    {
+      "name": "dawn",
+      "inherits": "base",
+      "displayName": "Renderer spike on native Dawn, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GEO_WEBGPU_SPIKE": "ON"
+      }
+    },
+    {
+      "name": "wasm-webgpu",
+      "inherits": "wasm",
+      "displayName": "Renderer spike as WebAssembly, release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GEO_WEBGPU_SPIKE": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" },
-    { "name": "tsan", "configurePreset": "tsan" }
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "wasm-debug",
+      "configurePreset": "wasm-debug"
+    },
+    {
+      "name": "wasm-release",
+      "configurePreset": "wasm-release"
+    },
+    {
+      "name": "wasm-threads",
+      "configurePreset": "wasm-threads"
+    },
+    {
+      "name": "dawn",
+      "configurePreset": "dawn",
+      "targets": [
+        "spike_webgpu"
+      ]
+    },
+    {
+      "name": "wasm-webgpu",
+      "configurePreset": "wasm-webgpu",
+      "targets": [
+        "spike_webgpu"
+      ]
+    }
   ],
   "testPresets": [
     {
       "name": "debug",
       "configurePreset": "debug",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "asan",
       "configurePreset": "asan",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "tsan",
       "configurePreset": "tsan",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "wasm-debug",
+      "configurePreset": "wasm-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "wasm-release",
+      "configurePreset": "wasm-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "wasm-threads",
+      "configurePreset": "wasm-threads",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

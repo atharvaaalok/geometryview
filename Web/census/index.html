@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geometry census</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 16px; background: #f2efe7; color: #231e16; font: 12px/1.45 ui-monospace, Menlo, monospace; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    #status { margin: 0 0 12px; color: #6f685c; }
+    canvas { width: 64px; height: 64px; border: 1.5px solid #231e16; border-radius: 6px; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h1>Geometry capability census</h1>
+  <p id="status">Measuring…</p>
+  <canvas id="canvas" width="64" height="64"></canvas>
+  <pre id="report"></pre>
+  <script type="module" src="census.js"></script>
+</body>
+</html>

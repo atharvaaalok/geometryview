@@ -10,19 +10,32 @@
 
 namespace geo {
 
-/// Sorts `items` by the u64 returned by `keyOf`. The result does not depend on the thread count.
+/// Leaves items with equal keys in whatever order the standard library's sort gives them.
+struct NoTieBreak {
+    template <typename T>
+    u32 operator()(const T&) const {
+        return 0;
+    }
+};
+
+/// Sorts `items` by the u64 returned by `keyOf`, and items with equal keys by the u32 returned by
+/// `tieOf`. The result does not depend on the thread count, and, when `tieOf` tells every item
+/// apart, not on the standard library either, so every platform builds identical cache files.
 ///
 /// Splitters drawn from a sample divide items into buckets that can be sorted independently, which
 /// stays balanced however keys are distributed. Splitting on top bits would not, because a mesh
 /// with one face has identical high key bits.
-template <typename T, typename KeyOf>
-void parallelSort(std::vector<T>& items, KeyOf&& keyOf) {
+template <typename T, typename KeyOf, typename TieOf = NoTieBreak>
+void parallelSort(std::vector<T>& items, KeyOf&& keyOf, TieOf&& tieOf = {}) {
     constexpr usize kSerialLimit = 1 << 15;
     constexpr usize kBuckets = 256;
     constexpr usize kOversample = 32;
     constexpr usize kGrain = 1 << 15;
 
-    const auto less = [&](const T& a, const T& b) { return keyOf(a) < keyOf(b); };
+    const auto less = [&](const T& a, const T& b) {
+        const u64 keyA = keyOf(a), keyB = keyOf(b);
+        return keyA < keyB || (keyA == keyB && tieOf(a) < tieOf(b));
+    };
     const usize count = items.size();
     if (count < kSerialLimit) {
         std::sort(items.begin(), items.end(), less);

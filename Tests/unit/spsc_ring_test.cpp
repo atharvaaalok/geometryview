@@ -1,3 +1,4 @@
+#include "base/parallel.h"
 #include "base/spsc_ring.h"
 
 #include <doctest/doctest.h>
@@ -27,7 +28,8 @@ TEST_CASE("a full ring rejects new elements until one is consumed") {
     CHECK(ring.tryPop() == 3);
 }
 
-TEST_CASE("the ring keeps order across threads and wrap-around") {
+TEST_CASE("the ring keeps order across threads and wrap-around" *
+          doctest::skip(!GEO_HAS_THREADS)) {
     SpscRing<u64, 64> ring;
     constexpr u64 count = 2'000'000;
 

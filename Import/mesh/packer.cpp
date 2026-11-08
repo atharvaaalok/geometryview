@@ -9,12 +9,11 @@
 
 #include <meshoptimizer.h>
 
+#include "base/simd.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <dispatch/dispatch.h>
 #include <numeric>
-#include <simd/simd.h>
 #include <span>
 
 namespace geo::import {
@@ -344,7 +343,10 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
             sortedTriangles[t] = {u64(face) << 32 | position, u32(t)};
         }
     });
-    parallelSort(sortedTriangles, [](const SortedTriangle& t) { return t.key; });
+    // Triangles in one cell of a face tie on their key, so their index orders them.
+    parallelSort(
+        sortedTriangles, [](const SortedTriangle& t) { return t.key; },
+        [](const SortedTriangle& t) { return t.triangle; });
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
     const PackContext context{mesh,
@@ -364,10 +366,9 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
         w->edges = findFeatureEdges(*w->mesh, w->layout);
     };
     const bool concurrent = mesh.triangleCount() >= kConcurrentEdgeTriangles;
-    dispatch_group_t edgeGroup = dispatch_group_create();
+    Concurrent edgeTask;
     if (concurrent) {
-        dispatch_group_async_f(edgeGroup, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                               &edgeWork, findEdges);
+        edgeTask.start(&edgeWork, findEdges);
     }
 
     std::vector<UnitOutput> outputs(units.size());
@@ -420,7 +421,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     trace.lap("concatenate");
 
     if (concurrent) {
-        dispatch_group_wait(edgeGroup, DISPATCH_TIME_FOREVER);
+        edgeTask.wait();
     } else {
         findEdges(&edgeWork);
     }

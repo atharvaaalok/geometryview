@@ -1,3 +1,21 @@
+# probe runs the portable import stages on real files, natively and as WebAssembly, so the two
+# builds can be compared bit for bit and timed against each other.
+add_executable(probe probe/main.cpp)
+target_include_directories(probe SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
+target_link_libraries(probe PRIVATE import_core geo_warnings)
+if(GEO_WEBGPU_SPIKE)
+    add_subdirectory(spikes/webgpu)
+endif()
+if(GEO_TARGET STREQUAL "wasm")
+    # The real file system, through Node, and room for big files.
+    target_link_options(probe PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
+                        -sEXIT_RUNTIME=1 -sSTACK_SIZE=4MB)
+    if(GEO_WASM_THREADS)
+        target_link_options(probe PRIVATE -sPTHREAD_POOL_SIZE=16)
+    endif()
+    return()
+endif()
+
 add_executable(gcli gcli/main.cpp)
 target_include_directories(gcli PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
 target_link_libraries(gcli PRIVATE engine import_core geo_warnings)
