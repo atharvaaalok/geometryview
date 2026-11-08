@@ -9,8 +9,8 @@
 
 namespace geo::gpu {
 
-bool makeOverlayAtlas(id<MTLDevice> device, OverlayAtlas& atlas) {
-    std::vector<u8> pixels(usize(kAtlasWidth) * kAtlasHeight, 0);
+bool drawOverlayAtlas(std::vector<u8>& pixels, float& glyphAdvance) {
+    pixels.assign(usize(kAtlasWidth) * kAtlasHeight, 0);
     CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
     CGContextRef context = CGBitmapContextCreate(pixels.data(), kAtlasWidth, kAtlasHeight, 8,
                                                  kAtlasWidth, gray, u32(kCGImageAlphaNone));
@@ -65,7 +65,7 @@ bool makeOverlayAtlas(id<MTLDevice> device, OverlayAtlas& atlas) {
     CTFontGetGlyphsForCharacters(glyphFont, &zero, &glyph, 1);
     CGSize advance{};
     CTFontGetAdvancesForGlyphs(glyphFont, kCTFontOrientationHorizontal, &glyph, &advance, 1);
-    atlas.glyphAdvance = float(advance.width);
+    glyphAdvance = float(advance.width);
     for (usize cell = 0; cell < render::kAtlasGlyphs.size(); ++cell) {
         const char c = render::kAtlasGlyphs[cell];
         NSString* text = c == 'u' ? @"\u00B5" : [NSString stringWithFormat:@"%c", c];
@@ -74,7 +74,14 @@ bool makeOverlayAtlas(id<MTLDevice> device, OverlayAtlas& atlas) {
     }
     CFRelease(glyphFont);
     CGContextRelease(context);
+    return true;
+}
 
+bool makeOverlayAtlas(id<MTLDevice> device, OverlayAtlas& atlas) {
+    std::vector<u8> pixels;
+    if (!drawOverlayAtlas(pixels, atlas.glyphAdvance)) {
+        return false;
+    }
     MTLTextureDescriptor* d =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
                                                            width:kAtlasWidth
