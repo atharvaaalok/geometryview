@@ -1,0 +1,23 @@
+{
+    "devicePixelRatio": 3,
+    "triangles": 5000000,
+    "workers": 2,
+    "errors": [],
+    "thermalState": "nominal",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "totalMs": 3336,
+    "import": {
+        "slices": 0,
+        "supervisorMB": 573,
+        "triangles": 5000000,
+        "faces": 30379,
+        "importMs": 3140,
+        "type": "done",
+        "failedFaces": 0,
+        "cacheBytes": 87130112
+    },
+    "label": "iphone-loopback-stl5m-a-p4-import-stl5m.stl",
+    "cached": false,
+    "heapMB": 16,
+    "bufferMB": 142.29898071289062
+}

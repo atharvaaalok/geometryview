@@ -1,5 +1,8 @@
 #include "stl/stl_reader.h"
 
+#include "import.h"
+
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <doctest/doctest.h>
@@ -163,4 +166,92 @@ TEST_CASE("a binary count larger than the file is rejected") {
     TriangleSoup soup;
     std::string error;
     CHECK_FALSE(readStl(file, soup, error));
+}
+
+namespace {
+
+// Reads `file` in pieces of the sizes given, cycling through them.
+bool readInPieces(std::span<const u8> file, std::span<const usize> sizes, TriangleSoup& soup,
+                  std::string& error) {
+    StlPieces pieces;
+    if (!pieces.begin(file.first(std::min<usize>(file.size(), 4096)), file.size())) {
+        error = "not in pieces";
+        return false;
+    }
+    for (usize at = 0, i = 0; at < file.size(); ++i) {
+        const usize size = std::min(sizes[i % sizes.size()], file.size() - at);
+        pieces.append(file.subspan(at, size));
+        at += size;
+    }
+    return pieces.finish(soup, error);
+}
+
+std::vector<float> manyCorners(usize triangles) {
+    std::vector<float> corners(triangles * 9);
+    for (usize i = 0; i < corners.size(); ++i) {
+        corners[i] = float(i % 977) * 0.25f - float(i % 13);
+    }
+    return corners;
+}
+
+} // namespace
+
+TEST_CASE("a binary STL read in pieces makes the soup readStl makes") {
+    const std::vector<u8> file = binaryStl(manyCorners(70'000));
+    TriangleSoup whole;
+    std::string error;
+    REQUIRE(readStl(file, whole, error));
+    // Pieces that split the header, split records anywhere, and hold many records at once.
+    const std::vector<std::vector<usize>> patterns = {
+        {1}, {7, 49, 50, 51}, {83, 1, 50}, {84}, {85, 4096}, {1 << 20}, {file.size()}};
+    for (const std::vector<usize>& sizes : patterns) {
+        CAPTURE(sizes[0]);
+        TriangleSoup soup;
+        REQUIRE_MESSAGE(readInPieces(file, sizes, soup, error), error);
+        CHECK(soup.corners == whole.corners);
+        CHECK(soup.warnings == whole.warnings);
+    }
+}
+
+TEST_CASE("an STL read in pieces drops invalid triangles as readStl does") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const std::vector<u8> file =
+        binaryStl({0, 0, 0, 1, 0, 0, 0, 1, 0, nan, 0, 0, 1, 0, 0, 0, 1, 0});
+    TriangleSoup soup;
+    std::string error;
+    const std::vector<usize> sizes = {13};
+    REQUIRE(readInPieces(file, sizes, soup, error));
+    CHECK(soup.triangleCount() == 1);
+    CHECK(soup.warnings.size() == 1);
+}
+
+TEST_CASE("only an exact binary STL is read in pieces") {
+    StlPieces pieces;
+    CHECK_FALSE(pieces.begin(bytes(kAsciiTriangle), kAsciiTriangle.size()));
+    std::vector<u8> longer = binaryStl({0, 0, 0, 1, 0, 0, 0, 1, 0});
+    longer.push_back(0);
+    CHECK_FALSE(pieces.begin(longer, longer.size()));
+    const std::vector<u8> exact = binaryStl({0, 0, 0, 1, 0, 0, 0, 1, 0});
+    CHECK_FALSE(pieces.begin(std::span(exact).first(40), exact.size()));
+    CHECK(pieces.begin(exact, exact.size()));
+}
+
+TEST_CASE("an STL read in pieces that ends early fails") {
+    const std::vector<u8> file = binaryStl(manyCorners(10));
+    StlPieces pieces;
+    REQUIRE(pieces.begin(file, file.size()));
+    pieces.append(std::span(file).first(file.size() - 20));
+    TriangleSoup soup;
+    std::string error;
+    CHECK_FALSE(pieces.finish(soup, error));
+    CHECK(error == "The STL file ended early.");
+}
+
+TEST_CASE("a file hashed in pieces hashes as it does whole") {
+    const std::vector<u8> file = binaryStl(manyCorners(5'000));
+    ContentHash hash;
+    for (usize at = 0; at < file.size(); at += 777) {
+        hash.update(std::span(file).subspan(at, std::min<usize>(777, file.size() - at)));
+    }
+    CHECK(hash.digest() == hashContents(file));
 }

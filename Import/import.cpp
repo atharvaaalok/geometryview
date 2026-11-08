@@ -21,6 +21,27 @@ std::array<u8, 16> hashContents(std::span<const u8> file) {
     return bytes;
 }
 
+struct ContentHash::State {
+    XXH3_state_t xxh;
+};
+
+ContentHash::ContentHash() : state_(std::make_unique<State>()) {
+    XXH3_128bits_reset(&state_->xxh);
+}
+
+ContentHash::~ContentHash() = default;
+
+void ContentHash::update(std::span<const u8> bytes) {
+    XXH3_128bits_update(&state_->xxh, bytes.data(), bytes.size());
+}
+
+std::array<u8, 16> ContentHash::digest() const {
+    const XXH128_hash_t hash = XXH3_128bits_digest(&state_->xxh);
+    std::array<u8, 16> bytes{};
+    std::memcpy(bytes.data(), &hash, sizeof(hash));
+    return bytes;
+}
+
 namespace {
 
 // A mesh file holds one nameless part, with no structure.
@@ -50,6 +71,22 @@ ModelData singlePartModel(const PackedDefinition& packed) {
 
 bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listener,
                 ImportResult& result, std::string& error) {
+    const double start = nowSeconds();
+    TriangleSoup soup;
+    if (!readStl(file, soup, error)) {
+        return false;
+    }
+    const std::array<u8, 16> hash = hashContents(file);
+    const double parsed = nowSeconds() - start;
+    if (!importSoup(std::move(soup), hash, outputFd, listener, result, error)) {
+        return false;
+    }
+    result.times.parse = parsed;
+    return true;
+}
+
+bool importSoup(TriangleSoup soup, const std::array<u8, 16>& sourceHash, int outputFd,
+                SegmentListener* listener, ImportResult& result, std::string& error) {
     double start = nowSeconds();
     const auto lap = [&](double& stage) {
         const double now = nowSeconds();
@@ -61,16 +98,8 @@ bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listene
     // mesh are never held while packing's own arrays are at their largest.
     PackedDefinition packed;
     {
-        IndexedMesh mesh;
-        {
-            TriangleSoup soup;
-            if (!readStl(file, soup, error)) {
-                return false;
-            }
-            result.warnings = std::move(soup.warnings);
-            lap(result.times.parse);
-            mesh = buildIndexedMesh(soup);
-        }
+        result.warnings = std::move(soup.warnings);
+        IndexedMesh mesh = buildIndexedMesh(std::move(soup));
         lap(result.times.regions);
         packed = packMesh(mesh);
     }
@@ -88,7 +117,7 @@ bool importMesh(std::span<const u8> file, int outputFd, SegmentListener* listene
 
     BlobStream stream(outputFd, listener);
     if (!stream.addDefinition(0, 0, std::move(packed), std::move(faces)) ||
-        !stream.writeModel(model) || !stream.finish(hashContents(file))) {
+        !stream.writeModel(model) || !stream.finish(sourceHash)) {
         error = stream.error();
         return false;
     }

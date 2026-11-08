@@ -61,12 +61,12 @@ if(GEO_TARGET STREQUAL "wasm")
     target_include_directories(geometry-step-web PRIVATE .)
     target_link_libraries(geometry-step-web PRIVATE import_core geo_warnings)
     set_target_properties(geometry-step-web PROPERTIES SUFFIX ".mjs")
-    # A large STL holds its file, its mesh as it is packed and the cache file at once: the 10M
-    # triangle fixture peaks near 2 GB on one thread, and more on several.
+    # A large STL holds its mesh as it is packed, and then the cache file; a binary file is read
+    # in pieces, never whole. The 10M triangle fixture peaks near 1.3 GB on several threads.
     target_link_options(geometry-step-web PRIVATE
         -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=4MB
         -sENVIRONMENT=web,worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createStepImporter
-        -sEXPORTED_FUNCTIONS=_step_open,_step_begin,_step_next,_step_text,_step_text_size,_step_request,_step_payload,_step_reply,_step_crash,_step_finish,_step_blob,_step_blob_size,_step_error,_step_stats,_step_jobs,_mesh_import,_step_take_segment,_step_read,_malloc,_free
+        -sEXPORTED_FUNCTIONS=_step_open,_step_begin,_step_next,_step_text,_step_text_size,_step_request,_step_payload,_step_reply,_step_crash,_step_finish,_step_blob,_step_blob_size,_step_error,_step_stats,_step_jobs,_mesh_import,_step_take_segment,_step_read,_stl_open,_stl_piece_size,_stl_take,_mesh_import_pieces,_malloc,_free
         -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF64,UTF8ToString)
     if(GEO_WASM_THREADS)
         # Threads are started ahead, one per core, since one started on demand waits for the

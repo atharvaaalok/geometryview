@@ -7,6 +7,7 @@
 #include "base/simd.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <numeric>
 
 namespace geo::import {
@@ -88,17 +89,27 @@ std::vector<OpenSide> findOpenSides(const IndexedMesh& mesh) {
                 }
                 // A side from a vertex to itself, in a collapsed triangle, is shared by any
                 // other triangle at that vertex.
-                const bool shared = a == b ? start[a + 1] - start[a] > mine
-                                           : count(b, a) + count(a, b) > own;
+                const bool shared =
+                    a == b ? start[a + 1] - start[a] > mine : count(b, a) + count(a, b) > own;
                 if (!shared) {
                     out.push_back({a, b});
                 }
             }
         }
     });
-    std::vector<OpenSide> sides;
+    // The lists are freed before the sides are gathered, and each range's sides once copied.
+    std::vector<u32>().swap(following);
+    std::vector<u32>().swap(start);
+    std::vector<u32>().swap(fill);
+    usize total = 0;
     for (const std::vector<OpenSide>& part : perRange) {
+        total += part.size();
+    }
+    std::vector<OpenSide> sides;
+    sides.reserve(total);
+    for (std::vector<OpenSide>& part : perRange) {
         sides.insert(sides.end(), part.begin(), part.end());
+        std::vector<OpenSide>().swap(part);
     }
     return sides;
 }
@@ -146,6 +157,7 @@ std::vector<Segment> matchSides(const IndexedMesh& mesh, const EdgeLayout& layou
         }
         pointOf[ends[i].index] = points;
     }
+    std::vector<Keyed>().swap(ends); // the points are numbered now
 
     // Group sides by the unordered pair of points they join.
     std::vector<Keyed> pairs(sides.size());
@@ -298,6 +310,9 @@ FeatureEdges findFeatureEdges(const IndexedMesh& mesh, const EdgeLayout& layout)
     StageTrace trace("edges");
     const std::vector<OpenSide> sides = findOpenSides(mesh);
     trace.lap("open sides");
+    if (traceEnabled()) {
+        std::fprintf(stderr, "trace: edges      %zu open sides\n", sides.size());
+    }
     std::vector<Segment> segments = matchSides(mesh, layout, sides);
     u32 pointCount = 0;
     for (const Segment& s : segments) {

@@ -4,6 +4,7 @@
 #include "base/trace.h"
 #include "mesh/dedupe.h"
 
+#include "base/simd.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -11,7 +12,6 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
-#include "base/simd.h"
 
 namespace geo::import {
 namespace {
@@ -299,7 +299,8 @@ Regions growRegions(const Welded& mesh, const EdgeTable& edges, const RegionOpti
     // between ranges, few where neighbours are near in the file as they usually are, then unite
     // through the shared, atomic path.
     DisjointSets groups(triangleCount);
-    std::vector<std::vector<std::pair<u32, u32>>> between(parallelRangeCount(triangleCount, kGrain));
+    std::vector<std::vector<std::pair<u32, u32>>> between(
+        parallelRangeCount(triangleCount, kGrain));
     parallelRanges(triangleCount, kGrain, [&](usize first, usize last, usize range) {
         for (usize corner = first * 3; corner < last * 3; ++corner) {
             const u32 firstCorner = edges.firstCorner[edges.edgeOfCorner[corner]];
@@ -356,49 +357,68 @@ float cornerAngle(simd_float3 corner, simd_float3 toNext, simd_float3 toPrevious
 // angle makes the result independent of how a surface was split into triangles: two 45 degree
 // corners count the same as one 90 degree corner, whereas area weighting favours the side split in
 // two and shows up as faint bands on smooth surfaces. Normals here are left unnormalised.
+//
+// Contributions are worked out in parallel a block at a time and summed in triangle order, so the
+// sums are the same on any number of threads, and the scratch is a block's, not the mesh's.
 void accumulateAngleWeightedNormals(IndexedMesh& mesh) {
     struct Contribution {
         simd_float3 normal;
         std::array<float, 3> angles;
     };
+    constexpr usize kBlock = 1 << 20;
     const usize triangleCount = mesh.triangleCount();
-    std::vector<Contribution> contributions(triangleCount);
-    parallelRanges(triangleCount, kGrain, [&](usize first, usize last, usize) {
-        for (usize t = first; t < last; ++t) {
-            const simd_float3 a = readPosition(mesh.positions, mesh.indices[t * 3]);
-            const simd_float3 b = readPosition(mesh.positions, mesh.indices[t * 3 + 1]);
-            const simd_float3 c = readPosition(mesh.positions, mesh.indices[t * 3 + 2]);
-            const simd_float3 n = simd_cross(b - a, c - a);
-            const float length = simd_length(n);
-            if (length > 0.0f) {
-                contributions[t] = {
-                    n / length, {cornerAngle(a, b, c), cornerAngle(b, c, a), cornerAngle(c, a, b)}};
-            } else {
-                contributions[t] = {};
+    std::vector<Contribution> contributions(std::min(triangleCount, kBlock));
+    for (usize base = 0; base < triangleCount; base += kBlock) {
+        const usize count = std::min(kBlock, triangleCount - base);
+        parallelRanges(count, kGrain, [&](usize first, usize last, usize) {
+            for (usize i = first; i < last; ++i) {
+                const usize t = base + i;
+                const simd_float3 a = readPosition(mesh.positions, mesh.indices[t * 3]);
+                const simd_float3 b = readPosition(mesh.positions, mesh.indices[t * 3 + 1]);
+                const simd_float3 c = readPosition(mesh.positions, mesh.indices[t * 3 + 2]);
+                const simd_float3 n = simd_cross(b - a, c - a);
+                const float length = simd_length(n);
+                if (length > 0.0f) {
+                    contributions[i] = {
+                        n / length,
+                        {cornerAngle(a, b, c), cornerAngle(b, c, a), cornerAngle(c, a, b)}};
+                } else {
+                    contributions[i] = {};
+                }
             }
-        }
-    });
-    for (usize t = 0; t < triangleCount; ++t) {
-        const Contribution& contribution = contributions[t];
-        for (usize corner = 0; corner < 3; ++corner) {
-            float* out = mesh.normals.data() + usize(mesh.indices[t * 3 + corner]) * 3;
-            const simd_float3 weighted = contribution.normal * contribution.angles[corner];
-            out[0] += weighted.x;
-            out[1] += weighted.y;
-            out[2] += weighted.z;
+        });
+        for (usize i = 0; i < count; ++i) {
+            const Contribution& contribution = contributions[i];
+            const usize t = base + i;
+            for (usize corner = 0; corner < 3; ++corner) {
+                float* out = mesh.normals.data() + usize(mesh.indices[t * 3 + corner]) * 3;
+                const simd_float3 weighted = contribution.normal * contribution.angles[corner];
+                out[0] += weighted.x;
+                out[1] += weighted.y;
+                out[2] += weighted.z;
+            }
         }
     }
 }
 
 } // namespace
 
-IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& options) {
+// Each stage's input is freed as soon as the next has what it needs: the soup once welded, the edge
+// table once the regions are grown, the welded mesh once its vertices are split. Swapping with an
+// empty vector frees; assigning {} would keep the memory.
+IndexedMesh buildIndexedMesh(TriangleSoup soup, const RegionOptions& options) {
     StageTrace trace("regions");
-    const Welded welded = weldCorners(soup.corners);
+    Welded welded = weldCorners(soup.corners);
+    std::vector<float>().swap(soup.corners);
     trace.lap("weld");
-    const EdgeTable edges = matchEdges(welded.indices);
-    trace.lap("match edges");
-    const Regions regions = growRegions(welded, edges, options);
+    Regions regions;
+    bool closed = false;
+    {
+        const EdgeTable edges = matchEdges(welded.indices);
+        trace.lap("match edges");
+        regions = growRegions(welded, edges, options);
+        closed = isClosed(edges);
+    }
     trace.lap("grow regions");
 
     if (traceEnabled()) {
@@ -425,7 +445,7 @@ IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& opti
 
     IndexedMesh mesh;
     mesh.faceCount = regions.faceCount;
-    mesh.closed = isClosed(edges);
+    mesh.closed = closed;
     mesh.indices = std::move(finalIds);
     mesh.positions.resize(usize(vertexCount) * 3);
     mesh.normals.assign(usize(vertexCount) * 3, 0.0f);
@@ -438,6 +458,9 @@ IndexedMesh buildIndexedMesh(const TriangleSoup& soup, const RegionOptions& opti
             mesh.faceOfVertex[v] = regions.faceOfGroup[regions.groupOfTriangle[corner / 3]];
         }
     });
+    welded = {};
+    regions = {};
+    std::vector<u32>().swap(firstCorner);
 
     trace.lap("split vertices");
     accumulateAngleWeightedNormals(mesh);

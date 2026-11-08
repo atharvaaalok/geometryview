@@ -23,12 +23,16 @@ u32 dedupe(usize count, Hash&& hash, Equal&& equal, std::vector<u32>& ids,
     constexpr usize kPartitions = usize(1) << kPartitionBits;
     constexpr usize kGrain = 1 << 16;
     constexpr u32 kEmpty = 0xFFFFFFFF;
-    const auto partitionOf = [](u64 h) { return usize(h >> (64 - kPartitionBits)); };
+    const auto partitionOf = [](u32 h) { return usize(h >> (32 - kPartitionBits)); };
 
-    std::vector<u64> hashes(count);
+    // Each item keeps its hash's top 32 bits: the top few pick its partition and the rest its slot,
+    // and `equal` settles any two that agree. A whole 64-bit hash per item would double this array,
+    // the largest here, for a large mesh's corners. Which ids items get depends only on their
+    // partitions and their order, so it is the same either way.
+    std::vector<u32> hashes(count);
     parallelRanges(count, kGrain, [&](usize first, usize last, usize) {
         for (usize i = first; i < last; ++i) {
-            hashes[i] = hash(i);
+            hashes[i] = u32(u64(hash(i)) >> 32);
         }
     });
 
@@ -77,7 +81,7 @@ u32 dedupe(usize count, Hash&& hash, Equal&& equal, std::vector<u32>& ids,
         std::vector<u32>& unique = uniques[p];
         for (usize m = offsets[p]; m < offsets[p + 1]; ++m) {
             const u32 item = members[m];
-            const u64 h = hashes[item];
+            const u32 h = hashes[item];
             usize slot = usize(h) & (capacity - 1);
             while (true) {
                 const u32 existing = table[slot];

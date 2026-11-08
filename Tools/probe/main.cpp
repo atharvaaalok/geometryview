@@ -2,14 +2,19 @@
 // of exactly what it produced. Built natively and as WebAssembly, the hashes show the two builds
 // agree bit for bit, and the times show what WebAssembly costs.
 //
-//   probe stl <file.stl> <out.geoblob>    imports a mesh into a cache file and hashes the file
-//   probe step <file.step>                 tokenizes, reads the structure, finds definitions
+//   probe stl <file.stl> <out.geoblob>          imports a mesh into a cache file and hashes the file
+//   probe stl-pieces <file.stl> <out.geoblob>   the same, reading the file in 16 MB pieces as the
+//                                              browser does, so it is never held whole
+//   probe step <file.step>                       tokenizes, reads the structure, finds definitions
+//
+// GEOMETRY_TRACE=1 times each stage and shows the memory it holds.
 #include "base/parallel.h"
 #include "base/time.h"
 #include "import.h"
 #include "step/definitions.h"
 #include "step/part21.h"
 #include "step/structure.h"
+#include "stl/stl_reader.h"
 
 #define XXH_INLINE_ALL
 #include "base/xxhash.h"
@@ -80,9 +85,43 @@ private:
     std::string bytes_;
 };
 
-int stlCommand(const char* source, const char* output) {
+// Reads `source` in pieces into a soup and its hash, as the browser's importer does.
+bool readPieces(const char* source, import::TriangleSoup& soup, std::array<u8, 16>& hash,
+                std::string& error) {
+    const int fd = open(source, O_RDONLY);
+    struct stat info{};
+    if (fd < 0 || fstat(fd, &info) != 0) {
+        error = "could not read the file";
+        return false;
+    }
+    std::vector<u8> piece(16 << 20);
+    import::StlPieces pieces;
+    import::ContentHash content;
+    for (u64 at = 0; at < u64(info.st_size);) {
+        const ssize_t got = pread(fd, piece.data(), piece.size(), off_t(at));
+        if (got <= 0) {
+            close(fd);
+            error = "could not read the file";
+            return false;
+        }
+        const std::span<const u8> bytes(piece.data(), usize(got));
+        if (at == 0 && !pieces.begin(bytes, u64(info.st_size))) {
+            close(fd);
+            error = "not a binary STL file that can be read in pieces";
+            return false;
+        }
+        content.update(bytes);
+        pieces.append(bytes);
+        at += u64(got);
+    }
+    close(fd);
+    hash = content.digest();
+    return pieces.finish(soup, error);
+}
+
+int stlCommand(const char* source, const char* output, bool inPieces) {
     std::vector<u8> file;
-    if (!readFile(source, file)) {
+    if (!inPieces && !readFile(source, file)) {
         std::println(stderr, "could not read {}", source);
         return 1;
     }
@@ -94,7 +133,15 @@ int stlCommand(const char* source, const char* output) {
     import::ImportResult result;
     std::string error;
     const double start = nowSeconds();
-    const bool ok = import::importMesh(file, fd, nullptr, result, error);
+    bool ok = false;
+    if (inPieces) {
+        import::TriangleSoup soup;
+        std::array<u8, 16> hash{};
+        ok = readPieces(source, soup, hash, error) &&
+             import::importSoup(std::move(soup), hash, fd, nullptr, result, error);
+    } else {
+        ok = import::importMesh(file, fd, nullptr, result, error);
+    }
     const double seconds = nowSeconds() - start;
     close(fd);
     std::vector<u8> blob;
@@ -206,12 +253,13 @@ int stepCommand(const char* source) {
 
 int main(int argc, const char** argv) {
     const std::string_view command = argc > 1 ? argv[1] : "";
-    if (command == "stl" && argc == 4) {
-        return stlCommand(argv[2], argv[3]);
+    if ((command == "stl" || command == "stl-pieces") && argc == 4) {
+        return stlCommand(argv[2], argv[3], command == "stl-pieces");
     }
     if (command == "step" && argc == 3) {
         return stepCommand(argv[2]);
     }
-    std::println(stderr, "usage: probe stl <file.stl> <out.geoblob>\n       probe step <file.step>");
+    std::println(stderr, "usage: probe stl|stl-pieces <file.stl> <out.geoblob>\n"
+                         "       probe step <file.step>");
     return 2;
 }

@@ -281,7 +281,18 @@ void packUnit(const PackContext& context, std::span<const SortedTriangle> sorted
         positions.data(), globals.size(), sizeof(float) * 3, kMeshletMaxVertices,
         kMeshletMaxTriangles, kConeWeight);
 
+    // Each output is sized once, exactly: many units grow at once, and growing them a step at a
+    // time both copies and leaves room unused.
+    usize vertexTotal = 0, triangleTotal = 0;
+    for (usize i = 0; i < count; ++i) {
+        vertexTotal += built[i].vertex_count;
+        triangleTotal += built[i].triangle_count;
+    }
     out.meshlets.reserve(count);
+    out.vertices.reserve(vertexTotal);
+    out.sources.reserve(vertexTotal);
+    out.highBits.reserve(context.grid.wide ? vertexTotal : 0);
+    out.triangles.reserve(triangleTotal);
     for (usize i = 0; i < count; ++i) {
         const meshopt_Meshlet& m = built[i];
         unsigned* localVertices = &builtVertices[m.vertex_offset];
@@ -395,6 +406,8 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
                                                     units[u].last - units[u].first);
         packUnit(context, range, outputs[u]);
     });
+    // Freed before the outputs are gathered, which holds two copies of them for a moment.
+    std::vector<SortedTriangle>().swap(sortedTriangles);
 
     trace.lap("build meshlets");
     usize vertexCount = 0, triangleCount = 0, meshletCount = 0;
@@ -410,7 +423,8 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     // A packed vertex for each mesh vertex. Meshlets copy shared vertices, and any copy will do,
     // because all of them decode to the same point.
     std::vector<u32> packedVertex(mesh.vertexCount(), 0);
-    for (const UnitOutput& output : outputs) {
+    // Each unit's output is freed as soon as it is copied, so the two copies never both hold all.
+    for (UnitOutput& output : outputs) {
         const u32 vertexBase = u32(packed.vertices.size());
         for (usize v = 0; v < output.sources.size(); ++v) {
             packedVertex[output.sources[v]] = vertexBase + u32(v);
@@ -427,6 +441,7 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
             meshlet.triangleOffset += triangleBase;
             packed.meshlets.push_back(meshlet);
         }
+        output = {};
     }
 
     std::copy_n(reinterpret_cast<const float*>(&bounds.lo), 3, packed.boundsMin.begin());

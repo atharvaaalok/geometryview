@@ -150,19 +150,35 @@ async function keep(name, bytes, source) {
   await write(`${name}.json`, new TextEncoder().encode(JSON.stringify(source)));
 }
 
+// Hands an STL file to the importer a piece at a time. False if it must be read whole instead,
+// which the importer says on seeing the first piece.
+async function readPieces(step, file) {
+  const room = step._stl_open(file.size);
+  const piece = step._stl_piece_size();
+  for (let at = 0; at < file.size; at += piece) {
+    const bytes = new Uint8Array(await file.slice(at, Math.min(file.size, at + piece)).arrayBuffer());
+    step.HEAPU8.set(bytes, room);
+    if (step._stl_take(bytes.length) === 0) return false;
+  }
+  return file.size > 0;
+}
+
 self.onmessage = async ({ data }) => {
   if (data.type !== "import") return;
   const started = performance.now();
   try {
     const step = await supervisor(data.threads && self.crossOriginIsolated);
-    {
+    // A binary STL file is read in pieces, so it is never held whole; anything else, whole.
+    const inPieces = data.kind === "stl" && await readPieces(step, data.file);
+    if (!inPieces) {
       const bytes = new Uint8Array(await data.file.arrayBuffer());
       const pointer = step._step_open(bytes.length);
       step.HEAPU8.set(bytes, pointer);
     }
     let slices = 0;
     if (data.kind === "stl") {
-      if (step._mesh_import() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
+      const made = inPieces ? step._mesh_import_pieces() : step._mesh_import();
+      if (made !== 0) throw new Error(step.UTF8ToString(step._step_error()));
     } else {
       if (step._step_begin() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
       self.postMessage({ type: "progress", done: 0, total: step._step_jobs() });

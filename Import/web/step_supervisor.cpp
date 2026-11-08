@@ -19,10 +19,14 @@
 //                                so the page can show the model while it imports
 //
 // An STL file needs no OCCT: after step_open, mesh_import() makes its cache file whole, to read at
-// step_blob() as a STEP import's is.
+// step_blob() as a STEP import's is. A binary STL file can instead be read in pieces, so it is
+// never held whole: stl_open(size) gives room for a piece of stl_piece_size() bytes,
+// stl_take(bytes) takes each in turn (0 on the first if the file must be read whole after all), and
+// mesh_import_pieces() makes the cache file.
 #include "import.h"
 #include "occt/worker_protocol.h"
 #include "step/slicing.h"
+#include "stl/stl_reader.h"
 
 #include <emscripten/emscripten.h>
 #include <fcntl.h>
@@ -52,6 +56,12 @@ struct Written final : SegmentListener {
 
 struct Session {
     std::vector<u8> file;
+    // An STL file read in pieces.
+    std::vector<u8> piece;
+    u64 fileSize = 0;
+    u64 taken = 0;
+    std::optional<StlPieces> pieces;
+    std::optional<ContentHash> hash;
     Written written;
     std::vector<u8> read;
     int output = -1;
@@ -79,7 +89,7 @@ bool readBack(Session& s) {
     close(s.output);
     unlink(kOutputPath);
     s.output = -1;
-    s.file = {}; // no longer needed
+    std::vector<u8>().swap(s.file); // no longer needed; assigning {} would keep its memory
     if (!read) {
         s.error = "The cache file could not be read back.";
     }
@@ -230,6 +240,62 @@ EMSCRIPTEN_KEEPALIVE int mesh_import() {
     }
     ImportResult result;
     if (!importMesh(s.file, s.output, nullptr, result, s.error)) {
+        close(s.output);
+        unlink(kOutputPath);
+        s.output = -1;
+        return -1;
+    }
+    s.stats.triangles = result.triangles;
+    s.stats.faces = result.faces;
+    s.stats.meshlets = result.meshlets;
+    return readBack(s) ? 0 : -1;
+}
+
+constexpr u32 kStlPiece = 16 << 20;
+
+EMSCRIPTEN_KEEPALIVE u8* stl_open(double fileSize) {
+    session = std::make_unique<Session>();
+    Session& s = *session;
+    s.fileSize = u64(fileSize);
+    s.piece.resize(kStlPiece);
+    s.pieces.emplace();
+    s.hash.emplace();
+    return s.piece.data();
+}
+
+EMSCRIPTEN_KEEPALIVE u32 stl_piece_size() {
+    return kStlPiece;
+}
+
+/// Takes the next `size` bytes of the file, at stl_open's room. Returns 1 to go on, or 0 on the
+/// first piece if the file is not a binary STL that can be read in pieces.
+EMSCRIPTEN_KEEPALIVE int stl_take(u32 size) {
+    Session& s = *session;
+    const std::span<const u8> bytes(s.piece.data(), std::min<usize>(size, s.piece.size()));
+    if (s.taken == 0 && !s.pieces->begin(bytes, s.fileSize)) {
+        return 0;
+    }
+    s.taken += bytes.size();
+    s.hash->update(bytes);
+    s.pieces->append(bytes);
+    return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE int mesh_import_pieces() {
+    Session& s = *session;
+    std::vector<u8>().swap(s.piece);
+    TriangleSoup soup;
+    if (!s.pieces->finish(soup, s.error)) {
+        return -1;
+    }
+    s.pieces.reset();
+    s.output = open(kOutputPath, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (s.output < 0) {
+        s.error = "The cache file could not be created.";
+        return -1;
+    }
+    ImportResult result;
+    if (!importSoup(std::move(soup), s.hash->digest(), s.output, nullptr, result, s.error)) {
         close(s.output);
         unlink(kOutputPath);
         s.output = -1;
