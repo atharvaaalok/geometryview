@@ -127,16 +127,14 @@
     },
     {
       "name": "dawn",
-      "configurePreset": "dawn",
-      "targets": [
-        "spike_webgpu"
-      ]
+      "configurePreset": "dawn"
     },
     {
       "name": "wasm-webgpu",
       "configurePreset": "wasm-webgpu",
       "targets": [
-        "spike_webgpu"
+        "spike_webgpu",
+        "engine_webgpu"
       ]
     }
   ],
