@@ -1,16 +1,29 @@
-// The universal viewer's page: the engine on a full-window canvas, and the chrome around it.
+// The universal viewer's page: the engine on a full-window canvas, and the chrome around it, laid
+// out as the Mac app lays out its window.
 //
-// viewer/?model=<fixture>        opens build/fixtures/<fixture>.geoblob
-// viewer/?test=<name>&label=...  runs a scripted check and posts its report (see runTest)
+// viewer/?model=<fixture>        opens <fixtures>/<fixture>.geoblob (fixtures= moves the folder)
+// viewer/?test=idle&label=...    runs a scripted check and posts its report (see runTest)
 
-import { Engine, Events } from "./engine.js";
+import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
 import { ViewportInput } from "./input.js";
+import { StructureCard } from "./structure.js";
+import { LibraryCard } from "./library.js";
+import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
+         ShortcutsSheet, StatusCard, Styles, Toolbar } from "./chrome.js";
+import { el } from "./ui.js";
 
 const params = new URLSearchParams(location.search);
+// Errors, kept for the scripted checks' reports.
+const errors = [];
+addEventListener("error", (e) => errors.push(`${e.message} at ${e.filename}:${e.lineno}`));
+addEventListener("unhandledrejection", (e) => errors.push(String(e.reason?.stack ?? e.reason)));
 const canvas = document.getElementById("viewport");
-const status = document.getElementById("status");
 const phone = /iPhone|iPad|Android/.test(navigator.userAgent) ||
               (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+document.body.classList.toggle("phone", phone);
+
+// The Mac window's measurements, in CSS pixels.
+const kEdge = 18, kCardWidth = 300, kCardTop = 72, kCardBottom = 96;
 
 const listeners = new Set();
 const waitFor = (kind) => new Promise((resolve) => {
@@ -23,41 +36,353 @@ const waitFor = (kind) => new Promise((resolve) => {
   listeners.add(listener);
 });
 
-function showStatus(text) {
-  status.hidden = !text;
-  status.textContent = text ?? "";
-}
+// ---- The engine and the chrome ----------------------------------------------------------------
+
+const status = new StatusCard(() => chooseFile(false));
+document.body.append(status.element);
+// The engine may speak while it starts, before the chrome below exists to listen.
+let chromeReady = false;
 
 let engine;
 try {
-  engine = await Engine.start(canvas, {
-    event(kind, document, node, done, total, message) {
-      const event = { kind, document, node, done, total, message };
-      if (kind === Events.Failed) showStatus(message);
-      if (kind === Events.SceneReady) showStatus(null);
-      for (const listener of [...listeners]) listener(event);
-    },
-  }, { phone });
+  engine = await Engine.start(canvas, { event: handle }, { phone });
 } catch (error) {
-  showStatus(`This browser cannot run the viewer: ${error.message}`);
+  status.showFailure(`This browser cannot run the viewer: ${error.message}`);
   throw error;
 }
-new ResizeObserver(() => engine.resize()).observe(canvas);
-new ViewportInput(engine, canvas, {
-  onCommand: (name) => console.log("command", name),
-});
 window.geometry = engine; // for the console and the shell's checks
 
+let look = Look.saved();
+let perspective = false;
+let names = [];
+const progress = new Map();
+let hovered = null; // { document, node, face }
+let pointer = null; // { x, y } in CSS pixels, while over the view
+
+const masthead = new Masthead();
+const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show) });
+const library = new LibraryCard({
+  onOpen: (file, name, add) => openCache(file, name, add),
+  onChoose: () => chooseFile(false),
+  onSwitch: (show) => showLibrary(show),
+});
+const selection = new SelectionCard((action) => engine.perform(action));
+const lookCard = new LookCard(look, (next) => applyLook(next));
+const sectionCard = new SectionCard((cuts) => engine.setSection(cuts));
+const toolbar = new Toolbar({
+  onAction: (action) => engine.perform(action),
+  onMode: (mode) => { engine.setSelectionMode(mode); refreshSelection(); },
+  onProjection: (persp) => {
+    if (persp !== perspective) {
+      perspective = persp;
+      engine.perform(Actions.ToggleProjection);
+    }
+  },
+  onShortcuts: () => { shortcuts.element.hidden = false; },
+  onLook: () => toggleCard(lookCard),
+  onSection: () => toggleCard(sectionCard),
+  onOpen: () => chooseFile(false),
+});
+const holdHint = new HoldHint();
+const hoverChip = new HoverChip();
+const dropZone = new DropZone();
+const shortcuts = new ShortcutsSheet();
+const picker = el("input", { type: "file", accept: ".step,.stp,.stl,.geoblob", multiple: true, hidden: true });
+picker.addEventListener("change", () => {
+  openFiles([...picker.files], picker.dataset.adding === "1");
+  picker.value = "";
+});
+document.body.append(masthead.element, structure.element, library.element, selection.element,
+                     lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, holdHint.element,
+                     hoverChip.element, dropZone.element, shortcuts.element, picker);
+
+new ResizeObserver(() => engine.resize()).observe(canvas);
+new ViewportInput(engine, canvas, {
+  onCommand: run,
+  onTool: (tool) => {
+    holdHint.show(tool);
+    canvas.style.cursor = tool === Tools.Select ? "" : "crosshair";
+  },
+  onPointer: (x, y) => {
+    pointer = x === null ? null : { x, y };
+    showHover();
+  },
+});
+addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+    e.preventDefault();
+    chooseFile(e.shiftKey);
+  }
+});
+// A press in the view closes the look and section cards and the views menu, as clicking away
+// does on the Mac.
+canvas.addEventListener("pointerdown", () => {
+  closeCards();
+  toolbar.viewsMenu.hidden = true;
+});
+chromeReady = true;
+applyLook(look);
+showEmpty();
+
+// ---- Engine events ----------------------------------------------------------------------------
+
+function handle(kind, document, node, done, total, message) {
+  if (!chromeReady) return;
+  const event = { kind, document, node, done, total, message };
+  switch (kind) {
+    case Events.Loading:
+      names[document] = message;
+      progress.set(document, 0);
+      structure.addDocument(message);
+      showLibrary(false);
+      status.showLoading(message);
+      refreshMasthead();
+      updateInsets();
+      break;
+    case Events.Progress:
+      progress.set(document, total > 0 ? done / total : 0);
+      refreshMasthead();
+      break;
+    case Events.ModelReady:
+      structure.modelReady(document);
+      status.hide();
+      refreshMasthead();
+      toolbar.update({ hasSelection: false, hasModel: true });
+      break;
+    case Events.SceneReady:
+      progress.clear();
+      status.hide();
+      refreshMasthead();
+      break;
+    case Events.Failed:
+      progress.clear();
+      refreshMasthead();
+      status.showFailure(message);
+      break;
+    case Events.SelectionChanged:
+      structure.reveal(document, node);
+      refreshSelection();
+      break;
+    case Events.HoverChanged:
+      hovered = node === 0xFFFFFFFF ? null : { document, node, face: done };
+      showHover();
+      structure.highlight(document, node);
+      break;
+    case Events.LooksChanged:
+      structure.looksChanged();
+      break;
+    case Events.VisibilityChanged:
+      structure.visibilityChanged(done, total);
+      break;
+  }
+  for (const listener of [...listeners]) listener(event);
+}
+
+function refreshSelection() {
+  const summary = engine.summary();
+  selection.show(summary, structure.tree);
+  toolbar.update({ hasSelection: summary.occurrences > 0, hasModel: names.length > 0 });
+}
+
+function refreshMasthead() {
+  if (names.length === 0) {
+    masthead.hide();
+    return;
+  }
+  const title = names.length === 1 ? names[0] : `${names.length} files`;
+  let parts = 0, bodies = 0;
+  for (const d of structure.tree.documents) {
+    if (!d.model) continue;
+    for (const n of d.model) if (n.kind === NodeKinds.Part) parts += 1;
+    bodies += d.model.reduce((most, n) => Math.max(most, n.occurrenceEnd), 0);
+  }
+  let detail = names.length === 1 ? "" : names.join(", ");
+  if (bodies > 0) {
+    const counts = `${parts.toLocaleString("en-US")} parts · ${bodies.toLocaleString("en-US")} bodies`;
+    detail = detail ? `${counts} · ${detail}` : counts;
+  } else {
+    detail = "Reading…";
+  }
+  masthead.show(title, detail);
+  const fractions = [...progress.values()];
+  masthead.setProgress(fractions.length ? fractions.reduce((a, b) => a + b, 0) / fractions.length : null);
+}
+
+function showHover() {
+  const tool = canvas.style.cursor === "crosshair";
+  if (!hovered || !pointer) {
+    hoverChip.show(null);
+    if (!tool) canvas.style.cursor = "";
+    return;
+  }
+  hoverChip.show(structure.tree.name(hovered.document, hovered.node), hovered.face, pointer.x, pointer.y);
+  if (!tool) canvas.style.cursor = "pointer";
+}
+
+// ---- Commands ---------------------------------------------------------------------------------
+
+function run(name) {
+  switch (name) {
+    case "fit": return engine.perform(Actions.Fit);
+    case "projection":
+      perspective = !perspective;
+      toolbar.projection.selected = perspective ? 1 : 0;
+      return engine.perform(Actions.ToggleProjection);
+    case "clear":
+      if (!shortcuts.element.hidden) shortcuts.element.hidden = true;
+      else if (!lookCard.element.hidden || !sectionCard.element.hidden) closeCards();
+      else engine.perform(Actions.ClearSelection);
+      return undefined;
+    case "isolate": return engine.perform(Actions.Isolate);
+    case "showAll": return engine.perform(Actions.ShowAll);
+    case "unghostAll": return engine.perform(Actions.UnghostAll);
+    case "faces": case "bodies": case "parts": {
+      const mode = ["faces", "bodies", "parts"].indexOf(name);
+      toolbar.pick.selected = mode;
+      engine.setSelectionMode(mode);
+      return refreshSelection();
+    }
+    case "section": return toggleSection();
+    case "seeThrough": return engine.perform(Actions.ToggleSeeThrough);
+    case "shortcuts":
+      shortcuts.element.hidden = !shortcuts.element.hidden;
+      return undefined;
+    case "undo": return engine.perform(Actions.Undo);
+    case "redo": return engine.perform(Actions.Redo);
+    default: return undefined;
+  }
+}
+
+// S cuts across X at the middle, or, with a cut open, removes every cut.
+function toggleSection() {
+  if (sectionCard.isCutting) {
+    sectionCard.cuts.forEach((c) => { c.enabled = false; });
+    sectionCard.element.hidden = true;
+  } else {
+    sectionCard.cuts[0].enabled = true;
+    sectionCard.element.hidden = false;
+    lookCard.element.hidden = true;
+  }
+  sectionCard.show();
+  engine.setSection(sectionCard.cuts);
+}
+
+function toggleCard(card) {
+  const other = card === lookCard ? sectionCard : lookCard;
+  card.element.hidden = !card.element.hidden;
+  other.element.hidden = true;
+}
+
+function closeCards() {
+  lookCard.element.hidden = true;
+  sectionCard.element.hidden = true;
+}
+
+function applyLook(next) {
+  look = next;
+  look.save();
+  engine.setLook(look.engineLook);
+  const dark = Styles[look.style].title === "Blueprint";
+  masthead.setOnDark(dark);
+  document.body.classList.toggle("on-dark", dark);
+}
+
+// ---- Layout -----------------------------------------------------------------------------------
+
+// The tree card covers the left, the masthead the top and the toolbar the bottom: framing keeps
+// the model in the rest.
+function updateInsets() {
+  const covered = !phone && (!structure.element.hidden || !library.element.hidden);
+  engine.setInsets(covered ? kEdge + kCardWidth : 0, kCardTop - 16, 0, kCardBottom - 16);
+}
+
+function showEmpty() {
+  status.showInvitation();
+  structure.element.hidden = true;
+  library.element.hidden = true;
+  library.refresh().then(() => {
+    if (names.length === 0 && library.element.querySelector(".entry")) showLibrary(true);
+  });
+  updateInsets();
+  toolbar.update({ hasSelection: false, hasModel: false });
+}
+
+function showLibrary(show) {
+  if (show) library.refresh();
+  library.element.hidden = !show;
+  structure.element.hidden = show || names.length === 0;
+  library.switcher.selected = show ? 0 : 1;
+  structure.switcher.selected = show ? 0 : 1;
+  updateInsets();
+}
+
+// ---- Files ------------------------------------------------------------------------------------
+
+function chooseFile(adding) {
+  picker.dataset.adding = adding ? "1" : "0";
+  picker.click();
+}
+
+function forget() {
+  names = [];
+  progress.clear();
+  structure.reset();
+  selection.element.hidden = true;
+}
+
+function openCache(source, name, add) {
+  if (!add) forget();
+  engine.open(source, name, { add });
+}
+
+function openFiles(files, adding) {
+  files.forEach((file, index) => {
+    const add = adding || index > 0;
+    if (/\.geoblob$/i.test(file.name)) {
+      openCache(file, file.name, add);
+    } else {
+      status.showFailure(`${file.name} needs importing, which this page does not do yet. Open its cache file instead.`);
+    }
+  });
+}
+
+// Dropping files: holding ⌘ adds them to what is shown.
+let dragDepth = 0;
+addEventListener("dragenter", (e) => {
+  if (![...e.dataTransfer.types].includes("Files")) return;
+  e.preventDefault();
+  dragDepth += 1;
+  dropZone.element.hidden = false;
+});
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) dropZone.element.hidden = true;
+});
+addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropZone.element.hidden = true;
+  openFiles([...e.dataTransfer.files], e.metaKey || e.ctrlKey);
+});
+
+// The fixtures are beside the page when served from the build, and in the spike's folder in the
+// iOS shell, which passes fixtures=/spike/fixtures/.
 const model = params.get("model");
-if (model) engine.open(`fixtures/${model}.geoblob`, `${model}.geoblob`);
+const fixtures = params.get("fixtures") ?? "fixtures/";
+if (model) openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
 
-if (params.has("test")) runTest(params.get("test")).catch((error) => post({ error: error.message }));
+if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
-// ---- Scripted checks ----------------------------------------------------------------------
+// ---- Scripted checks --------------------------------------------------------------------------
+
+function testLabel() {
+  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${model}`;
+}
 
 async function post(report) {
-  const body = JSON.stringify({ label: `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${model}`,
-                                userAgent: navigator.userAgent, devicePixelRatio, ...report });
+  const body = JSON.stringify({ label: testLabel(), userAgent: navigator.userAgent, devicePixelRatio,
+                                errors, ...report });
   const shell = window.webkit?.messageHandlers?.census;
   if (shell) shell.postMessage(body);
   else await fetch("/report", { method: "POST", body }).catch(() => {});
@@ -68,13 +393,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // The view, as a PNG the server keeps beside the fixtures.
 async function postSnapshot() {
   const image = await engine.snapshot();
-  if (!image) return;
+  if (!image || window.webkit?.messageHandlers?.census) return;
   const picture = new OffscreenCanvas(image.width, image.height);
   picture.getContext("2d").putImageData(
       new ImageData(new Uint8ClampedArray(image.pixels.buffer), image.width, image.height), 0, 0);
   const png = await picture.convertToBlob({ type: "image/png" });
-  const label = `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${model}`;
-  await fetch(`/png?label=${encodeURIComponent(label)}`, { method: "POST", body: png }).catch(() => {});
+  await fetch(`/png?label=${encodeURIComponent(testLabel())}`, { method: "POST", body: png }).catch(() => {});
 }
 
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the
@@ -88,7 +412,7 @@ async function runTest() {
   const settled = engine.stats();
   await sleep(3000);
   const idle = engine.stats();
-  // A drag across the middle, at 60 events a second for 2 s.
+  // A drag across the middle, one move per frame for 2 s.
   const { width, height } = canvas;
   const { Pointer, Buttons } = await import("./engine.js");
   engine.pointer(Pointer.Down, Buttons.Left, width / 2, height / 2);
@@ -107,7 +431,7 @@ async function runTest() {
   const hover = engine.stats();
   await sleep(2000);
   const after = engine.stats();
-  await postSnapshot();
+  if (!params.has("nosnapshot")) await postSnapshot();
   await post({
     width, height, loadMs: Math.round(loadMs),
     idleFrames: idle.frames - settled.frames, idleSettledFrames: idle.settledFrames - settled.settledFrames,

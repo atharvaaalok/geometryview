@@ -63,7 +63,15 @@ export class Engine {
         ready: () => resolve(),
         failed: (message) => reject(new Error(message)),
         runFrames: (running) => this.#handlers.framesRunning?.(running),
-        event: (...args) => this.#handlers.event?.(...args),
+        // WebAssembly hands unsigned values over as signed ones.
+        // A throw here would unwind through the engine, so the page's errors stop at this edge.
+        event: (kind, document, node, done, total, message) => {
+          try {
+            this.#handlers.event?.(kind >>> 0, document >>> 0, node >>> 0, done >>> 0, total >>> 0, message);
+          } catch (error) {
+            reportError(error);
+          }
+        },
         startImport: (token, path) => this.#startImport(token, path),
         cancelImport: (token) => this.#imports.get(token)?.cancel(),
         snapshot: (pointer, width, height, bgra) => this.#snapshotArrived(pointer, width, height, bgra),

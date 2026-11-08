@@ -65,6 +65,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     //   transport:import:query[:suffix]    for example loopback:import:model=ple120&workers=2
     //   transport:step:query[:suffix]      for example loopback:step:model=hard&workers=2
     //   transport:renderer:query[:suffix]  for example loopback:renderer:model=pack&w=804&h=1748
+    //   transport:viewer:query[:suffix]    for example loopback:viewer:model=pack&test=idle
     // where a suffix keeps a repeat's report apart.
     private static func requestedRuns() -> [Run]? {
         let arguments = CommandLine.arguments
@@ -82,7 +83,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             }
             let label = label(transport, suffix)
             let pages = ["import": "spike/import.html", "step": "spike/step.html",
-                         "renderer": "spike/renderer.html"]
+                         "renderer": "spike/renderer.html", "viewer": "viewer/index.html"]
             let page = pages[parts[1]] ?? "spike"
             return Run(transport: transport, page: page, label: label, query: parts[2],
                        name: "\(label)-\(parts[1])")
