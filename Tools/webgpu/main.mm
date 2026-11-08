@@ -4,8 +4,9 @@
 //   geometry-webgpu compare <metallib> <blob> <out-prefix> [options]
 //       renders the file with both renderers, writes <out-prefix>-metal.png and -webgpu.png,
 //       and prints how far apart they are
-//   geometry-webgpu bench <blob> [options] [--frames N] [--samples S]
-//       times an orbit of frames drawn by the WebGPU renderer, each waited for
+//   geometry-webgpu bench <blob> [options] [--frames N] [--samples S] [--metal <metallib>]
+//       times an orbit of frames drawn by the WebGPU renderer, each waited for, or with --metal
+//       the same orbit drawn by the Metal renderer offscreen (its GPU time includes the readback)
 //
 // Options: --size W H, --style N, --perspective, --section x0.5[,z-0.3], --azimuth A,
 // --elevation E.
@@ -207,9 +208,55 @@ int compareCommand(int argc, const char** argv) {
     return 0;
 }
 
+// The Metal renderer's offscreen frames over the same orbit. Metal reports GPU times only while
+// tracing, for its latest 2048 frames, so after 10 frames to warm up, 2048 are drawn and timed.
+int benchMetal(const char* library, const char* blob, const GeoRenderOptions& options) {
+    setenv("GEOMETRY_TRACE", "1", 1);
+    std::string error;
+    std::unique_ptr<gpu::Renderer> metal =
+        gpu::Renderer::create(MTLCreateSystemDefaultDevice(), library);
+    engine::OffscreenView frame;
+    if (!metal || !engine::prepareOffscreen(*metal, openBlob(blob, error), options, frame, error)) {
+        std::println(stderr, "{}", error);
+        return 1;
+    }
+    const u32 frames = 2048;
+    const std::optional<Aabb> bounds = frame.scene.bounds();
+    const nav::Viewport viewport{double(options.width), double(options.height)};
+    for (u32 f = 0; f < frames + 10; ++f) {
+        const double azimuth = (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi /
+                               180.0;
+        const double elevation = options.elevation_degrees * std::numbers::pi / 180.0;
+        nav::Camera camera;
+        camera.perspective = options.perspective;
+        const Vec3 direction =
+            simd_make_double3(std::cos(elevation) * std::sin(azimuth),
+                              -std::cos(elevation) * std::cos(azimuth), std::sin(elevation));
+        camera.lookAt(bounds->center() + direction, bounds->center(),
+                      simd_make_double3(0.0, 0.0, 1.0));
+        nav::fit(camera, *bounds, viewport, 1.12);
+        render::ViewState view = render::makeView(camera, viewport, *bounds);
+        view.uniforms.lineOffset = frame.view.uniforms.lineOffset;
+        view.uniforms.aoRadius = frame.view.uniforms.aoRadius;
+        view.uniforms.aoSamples = frame.view.uniforms.aoSamples;
+        (void)metal->renderOffscreen(view);
+    }
+    std::println("{{\"renderer\": \"metal\", \"frames\": {}, \"width\": {}, \"height\": {}, "
+                 "\"triangles\": {}, \"gpu\": [{:.2f}, {:.2f}, {:.2f}]}}",
+                 frames, options.width, options.height, metal->sceneTriangles(),
+                 metal->gpuPercentileSeconds(0.5) * 1e3, metal->gpuPercentileSeconds(0.9) * 1e3,
+                 metal->gpuPercentileSeconds(0.99) * 1e3);
+    return 0;
+}
+
 int benchCommand(int argc, const char** argv) {
     u32 frames = 120, samples = 1;
     const GeoRenderOptions options = parseOptions(argc, argv, 3, frames, samples);
+    for (int i = 3; i + 1 < argc; ++i) {
+        if (std::string_view(argv[i]) == "--metal") {
+            return benchMetal(argv[i + 1], argv[2], options);
+        }
+    }
     std::string error;
     Dawn dawn;
     if (!makeDawn(dawn)) {
