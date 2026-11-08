@@ -108,9 +108,15 @@ The machine's load average was 6–45 throughout, so times were taken in alterna
 | 5M | 1,170–1,298 MB | 866–871 MB |
 | 10M | 1,690–1,710 MB | 1,230–1,370 MB |
 
-**Phones:** 300 MB and 115 bytes a triangle bound every import measured. A phone now takes binary
-STL files up to about 9 million triangles, where it took 4 million. This is not yet tried on the
-phone.
+**Phones:** 300 MB and 115 bytes a triangle bound every import measured, so a phone now takes
+binary STL files up to about 8.5 million triangles, where it took 4 million.
+
+On the iPhone 16 Pro, a 5M-triangle STL (the 10M fixture's first half, 250 MB) imported in 3.1 s:
+- the importer's heap reached 573 MB, less than under Node, with fewer threads;
+- Instruments recorded the page's process at 893 MB at its peak and the GPU process at 217 MB
+  (`p4/runtime/iphone-p7-import-stl5m-memory.json`).
+
+The run near the new limit was left undone, because the phone was in use.
 
 **Still to do:**
 - The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
