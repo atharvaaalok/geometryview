@@ -75,7 +75,9 @@ struct Lists {
     Region edgeRegions[2];
     u32 chunks[8][4]; // per list: its first chunk draw, and how many it has
     u32 instanceCount, edgeInstanceCount, groupCount, shadowOn;
-    u32 groupsBase, chunkDraws, pad0, pad1;
+    u32 groupsBase, chunkDraws;
+    u32 wide; // 32-bit indices, one draw per list, rather than 16-bit ones drawn in chunks
+    u32 pad1;
 };
 static_assert(sizeof(Lists) == 320);
 
@@ -102,6 +104,10 @@ static_assert(sizeof(DrawIndexed) == 20);
 constexpr u32 kLists = 7;
 // A list is drawn in chunks of this many slots, so its indices fit 16 bits. See cull.wgsl.
 constexpr u32 kChunkSlots = 512;
+// A list longer than this many chunks, as a million one-meshlet parts make, is drawn with 32-bit
+// indices instead, in one draw: each indirect draw costs the GPU about 0.7 µs, and thousands of
+// them cost more than the index memory saved.
+constexpr u32 kMaxChunks = 256;
 constexpr u64 kEdgeDrawOffset = offsetof(Counters, edges);
 
 // What each surface list draws with: which kind of pass, and closed or open.
@@ -860,6 +866,21 @@ struct Renderer::State {
     // ---- Tables -----------------------------------------------------------------------------
 
     void syncScene(const scene::Scene& scene) {
+        // Segments new to the renderer that are uploaded from memory get room made for them all at
+        // once, rather than the buffer growing, and being copied, one segment at a time.
+        u64 uploading = 0;
+        for (u32 d = 0; d < scene.documentCount(); ++d) {
+            for (const std::shared_ptr<scene::Segment>& segment : scene.document(d).segments()) {
+                const auto found = uploads.find(segment.get());
+                if (segment->placement() == nullptr && segment->data() != nullptr &&
+                    (found == uploads.end() || found->second.segment.lock() != segment)) {
+                    uploading += (segment->size() + 255) & ~u64(255);
+                }
+            }
+        }
+        if (uploading != 0) {
+            ensureCapacity(arena->end + uploading);
+        }
         // Each segment's bytes are placed once, so a definition is found by word offsets.
         std::unordered_map<const scene::Segment*, u64> wordBase;
         for (u32 d = 0; d < scene.documentCount(); ++d) {
@@ -1040,12 +1061,20 @@ struct Renderer::State {
         Lists table{};
         u64 slotTotal = 0, indexTotal = 0, edgeTotal = 0;
         u32 chunkTotal = 0;
+        u64 longest = 0;
+        for (u32 list = 0; list < kLists; ++list) {
+            longest = std::max(longest, slotNeed[list]);
+        }
+        table.wide = longest > u64(kMaxChunks) * kChunkSlots ? 1 : 0;
         for (u32 list = 0; list < 8; ++list) {
             indexNeed[list] = (indexNeed[list] + 1) & ~u64(1); // regions start on whole words
             table.regions[list] = {u32(slotTotal), u32(slotNeed[list]), u32(indexTotal),
                                    u32(indexNeed[list])};
-            const u32 chunks =
-                list < kLists ? u32((slotNeed[list] + kChunkSlots - 1) / kChunkSlots) : 0;
+            // Wide indices name their slot whole, so a list is one draw.
+            const u32 chunks = list >= kLists || slotNeed[list] == 0 ? 0
+                               : table.wide != 0
+                                   ? 1
+                                   : u32((slotNeed[list] + kChunkSlots - 1) / kChunkSlots);
             table.chunks[list][0] = chunkTotal;
             table.chunks[list][1] = chunks;
             chunkTotal += chunks;
@@ -1082,8 +1111,9 @@ struct Renderer::State {
         grow(counters,
              sizeof(Counters) + (u64(table.groupsBase) + u64(table.groupCount) * kLists * 2) * 4,
              U::Storage | U::Indirect | U::CopyDst, "counters");
-        grow(indices, indexTotal * 2, U::Storage | U::Index, "indices");
-        if (indexTotal * 2 > limits.maxStorageBufferBindingSize) {
+        const u64 indexBytes = indexTotal * (table.wide != 0 ? 4 : 2);
+        grow(indices, indexBytes, U::Storage | U::Index, "indices");
+        if (indexBytes > limits.maxStorageBufferBindingSize) {
             std::fprintf(stderr, "The scene's draw lists are larger than the GPU can bind.\n");
         }
     }
@@ -1215,8 +1245,10 @@ struct Renderer::State {
         for (u32 list = 0; list < kLists; ++list) {
             const Region& region = listTable.regions[list];
             for (u32 k = 0; k < listTable.chunks[list][1]; ++k) {
+                // A wide list's indices name their slots whole, from no base.
                 resetDraws[listTable.chunks[list][0] + k] = {
-                    0, 1, region.indexBase, i32((region.slotBase + k * kChunkSlots) << 7), 0};
+                    0, 1, region.indexBase,
+                    listTable.wide != 0 ? 0 : i32((region.slotBase + k * kChunkSlots) << 7), 0};
             }
         }
         queue.WriteBuffer(counters, 0, &reset, sizeof(reset));
@@ -1265,6 +1297,10 @@ struct Renderer::State {
     }
 
     // A list's chunks, each its own indexed draw; a chunk the cull left empty draws nothing.
+    wgpu::IndexFormat indexFormat() const {
+        return listTable.wide != 0 ? wgpu::IndexFormat::Uint32 : wgpu::IndexFormat::Uint16;
+    }
+
     void drawList(const wgpu::RenderPassEncoder& pass, u32 list) {
         const u32 first = listTable.chunks[list][0], count = listTable.chunks[list][1];
         for (u32 k = 0; k < count; ++k) {
@@ -1296,7 +1332,7 @@ struct Renderer::State {
         const u32 offset = u32(kViewSlot * kUniformStride);
         pass.SetBindGroup(0, sceneGroup, 1, &offset);
         pass.SetBindGroup(1, surfaceGroup);
-        pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
+        pass.SetIndexBuffer(indices, indexFormat());
         PipelineKey key{.kind = Kind::Shadow, .section = section};
         pass.SetPipeline(pipeline(key));
         drawList(pass, kListShadow);
@@ -1332,7 +1368,7 @@ struct Renderer::State {
         const bool hasScene = surfaceInstances != 0;
         if (hasScene) {
             pass.SetBindGroup(1, surfaceGroup);
-            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
+            pass.SetIndexBuffer(indices, indexFormat());
             drawPair(pass, {.kind = Kind::Solid, .physical = physical, .section = section}, 0);
         }
         const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
@@ -1671,7 +1707,7 @@ struct Renderer::State {
             const u32 offset = u32(kClassifySlot * kUniformStride);
             pass.SetBindGroup(0, sceneGroup, 1, &offset);
             pass.SetBindGroup(1, peel ? peelGroup : frontGroup);
-            pass.SetIndexBuffer(indices, wgpu::IndexFormat::Uint16);
+            pass.SetIndexBuffer(indices, indexFormat());
             drawPair(pass, {.kind = Kind::Classify, .peel = peel}, 0);
             pass.End();
         }
