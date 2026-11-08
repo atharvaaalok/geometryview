@@ -237,11 +237,57 @@ struct Renderer::State {
     std::unordered_map<u32, wgpu::RenderPipeline> pipelines;
     wgpu::Sampler linearClamp;
 
-    // The scene's tables. Geometry is every segment's bytes, one after another.
+    // The scene's tables. Geometry holds every segment's bytes, each placed once in the arena.
     wgpu::Buffer frames, styleBuffer, definitions, occurrences, geometry, instances;
     // Slots hold the surface lists' regions, then the edge lists'.
     wgpu::Buffer states, faceStates, palette, lists, counters, slots, indices;
-    std::vector<const scene::Segment*> segments;
+
+    // Free ranges of the geometry buffer, and the end of what has ever been used. Placements hold
+    // it weakly, so one outliving the renderer frees nothing.
+    struct Arena {
+        std::vector<std::pair<u64, u64>> free; // offset and size, in order, never touching
+        u64 end = 0;
+
+        void release(u64 offset, u64 size) {
+            auto at = std::lower_bound(free.begin(), free.end(), std::pair<u64, u64>{offset, 0});
+            at = free.insert(at, {offset, size});
+            if (std::next(at) != free.end() && at->first + at->second == std::next(at)->first) {
+                at->second += std::next(at)->second;
+                free.erase(std::next(at));
+            }
+            if (at != free.begin() && std::prev(at)->first + std::prev(at)->second == at->first) {
+                std::prev(at)->second += at->second;
+                at = std::prev(free.erase(at));
+            }
+            if (at->first + at->second == end) {
+                end = at->first;
+                free.erase(at);
+            }
+        }
+    };
+    std::shared_ptr<Arena> arena = std::make_shared<Arena>();
+    // A segment's range of the geometry buffer. Writes arrive in order; WebGPU writes whole words,
+    // so up to three bytes wait for the next.
+    struct GpuPlacement final : scene::Placement {
+        std::weak_ptr<Arena> arena;
+        u64 offset = 0, size = 0;
+        u64 written = 0;
+        std::array<u8, 4> tail{};
+        u32 tailSize = 0;
+        const Arena* placedBy = nullptr;
+        ~GpuPlacement() override {
+            if (const std::shared_ptr<Arena> a = arena.lock()) {
+                a->release(offset, size);
+            }
+        }
+        const void* owner() const override { return placedBy; }
+    };
+    // Segments held in memory, uploaded the first time a scene includes them.
+    struct Upload {
+        std::weak_ptr<const scene::Segment> segment;
+        std::shared_ptr<GpuPlacement> placement;
+    };
+    std::unordered_map<const scene::Segment*, Upload> uploads;
     struct OccurrenceInfo {
         u32 meshlets = 0, triangles = 0, edgeChunks = 0;
         bool open = false;
@@ -347,28 +393,27 @@ struct Renderer::State {
         const Stage geometryStages = Stage::Vertex | Stage::Compute;
         const Stage all = Stage::Vertex | Stage::Fragment | Stage::Compute;
         sceneLayout = makeLayout(device, {
-            bufferLayout(0, all, B::Uniform, true),
-            bufferLayout(1, all, B::Uniform),
-            bufferLayout(2, geometryStages, B::ReadOnlyStorage),
-            bufferLayout(3, geometryStages, B::ReadOnlyStorage),
-            bufferLayout(4, geometryStages, B::ReadOnlyStorage),
-            bufferLayout(5, geometryStages, B::ReadOnlyStorage),
-            bufferLayout(6, Stage::Vertex, B::ReadOnlyStorage),
-            bufferLayout(7, Stage::Fragment, B::ReadOnlyStorage),
-        });
+                                             bufferLayout(0, all, B::Uniform, true),
+                                             bufferLayout(1, all, B::Uniform),
+                                             bufferLayout(2, geometryStages, B::ReadOnlyStorage),
+                                             bufferLayout(3, geometryStages, B::ReadOnlyStorage),
+                                             bufferLayout(4, geometryStages, B::ReadOnlyStorage),
+                                             bufferLayout(5, geometryStages, B::ReadOnlyStorage),
+                                             bufferLayout(6, Stage::Vertex, B::ReadOnlyStorage),
+                                             bufferLayout(7, Stage::Fragment, B::ReadOnlyStorage),
+                                         });
         cullLayout = makeLayout(device, {
-            bufferLayout(0, Stage::Compute, B::Uniform),
-            bufferLayout(1, Stage::Compute, B::ReadOnlyStorage),
-            bufferLayout(2, Stage::Compute, B::Storage),
-            bufferLayout(3, Stage::Compute, B::Storage),
-            bufferLayout(4, Stage::Compute, B::Storage),
-        });
+                                            bufferLayout(0, Stage::Compute, B::Uniform),
+                                            bufferLayout(1, Stage::Compute, B::ReadOnlyStorage),
+                                            bufferLayout(2, Stage::Compute, B::Storage),
+                                            bufferLayout(3, Stage::Compute, B::Storage),
+                                            bufferLayout(4, Stage::Compute, B::Storage),
+                                        });
         surfaceLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
         wgpu::BindGroupLayoutEntry frontDepths =
             textureLayout(2, Stage::Fragment, TS::UnfilterableFloat);
         peelLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage),
-                                         textureLayout(1, Stage::Fragment, TS::Uint),
-                                         frontDepths});
+                                         textureLayout(1, Stage::Fragment, TS::Uint), frontDepths});
         edgeLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
         wgpu::BindGroupLayoutEntry sampler{};
         sampler.binding = 1;
@@ -384,17 +429,17 @@ struct Renderer::State {
         occlusionOut.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
         occlusionOut.storageTexture.format = kOcclusionFormat;
         occlusionOut.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
-        occlusionLayout = makeLayout(device, {textureLayout(2, Stage::Compute, TS::Uint),
-                                              textureLayout(3, Stage::Compute,
-                                                            TS::UnfilterableFloat),
-                                              occlusionOut});
+        occlusionLayout = makeLayout(
+            device, {textureLayout(2, Stage::Compute, TS::Uint),
+                     textureLayout(3, Stage::Compute, TS::UnfilterableFloat), occlusionOut});
         // The occlusion is read without filtering, so it can be a 32-bit float.
-        compositeLayout = makeLayout(device, {
-            textureLayout(0, Stage::Fragment, TS::Float),
-            textureLayout(2, Stage::Fragment, TS::Uint),
-            textureLayout(3, Stage::Fragment, TS::UnfilterableFloat),
-            textureLayout(4, Stage::Fragment, TS::UnfilterableFloat),
-        });
+        compositeLayout =
+            makeLayout(device, {
+                                   textureLayout(0, Stage::Fragment, TS::Float),
+                                   textureLayout(2, Stage::Fragment, TS::Uint),
+                                   textureLayout(3, Stage::Fragment, TS::UnfilterableFloat),
+                                   textureLayout(4, Stage::Fragment, TS::UnfilterableFloat),
+                               });
 
         cullPipelineLayout = makePipelineLayout(device, {sceneLayout, cullLayout});
         surfacePipelineLayout = makePipelineLayout(device, {sceneLayout, surfaceLayout});
@@ -408,12 +453,13 @@ struct Renderer::State {
         atlasSampler.binding = 3;
         atlasSampler.visibility = Stage::Fragment;
         atlasSampler.sampler.type = wgpu::SamplerBindingType::Filtering;
-        overlayLayout = makeLayout(device, {
-            bufferLayout(0, Stage::Vertex | Stage::Fragment, B::Uniform),
-            bufferLayout(1, Stage::Vertex, B::ReadOnlyStorage),
-            textureLayout(2, Stage::Fragment, TS::Float),
-            atlasSampler,
-        });
+        overlayLayout =
+            makeLayout(device, {
+                                   bufferLayout(0, Stage::Vertex | Stage::Fragment, B::Uniform),
+                                   bufferLayout(1, Stage::Vertex, B::ReadOnlyStorage),
+                                   textureLayout(2, Stage::Fragment, TS::Float),
+                                   atlasSampler,
+                               });
         overlayPipelineLayout = makePipelineLayout(device, {sceneLayout, overlayLayout});
 
         wgpu::SamplerDescriptor linear{};
@@ -452,8 +498,8 @@ struct Renderer::State {
         for (u32 t = 1; t < 5; ++t) {
             targets[t].writeMask = wgpu::ColorWriteMask::None;
         }
-        sheet = screenPipeline(sheetModule, "sheetFragment", sheetPipelineLayout, targets.data(),
-                               5, &farOnly, "sheet");
+        sheet = screenPipeline(sheetModule, "sheetFragment", sheetPipelineLayout, targets.data(), 5,
+                               &farOnly, "sheet");
 
         // Each sample adds its share into the accumulated colour.
         wgpu::BlendState share{};
@@ -463,8 +509,8 @@ struct Renderer::State {
         wgpu::ColorTargetState accumTarget{};
         accumTarget.format = kAccumFormat;
         accumTarget.blend = &share;
-        resolve = screenPipeline(postModule, "resolveFragment", resolvePipelineLayout,
-                                 &accumTarget, 1, nullptr, "resolve");
+        resolve = screenPipeline(postModule, "resolveFragment", resolvePipelineLayout, &accumTarget,
+                                 1, nullptr, "resolve");
 
         wgpu::ColorTargetState output{};
         output.format = outputFormat;
@@ -708,35 +754,125 @@ struct Renderer::State {
         return device.CreateRenderPipeline(&descriptor);
     }
 
+    // ---- Geometry arena ----------------------------------------------------------------------
+
+    // Room for `size` more bytes, growing the buffer on the GPU if needed. False if the GPU
+    // cannot bind that much.
+    bool ensureCapacity(u64 needed) {
+        const u64 capacity = geometry ? geometry.GetSize() : 0;
+        if (needed <= capacity) {
+            return true;
+        }
+        const u64 limit = limits.maxStorageBufferBindingSize;
+        if (needed > limit) {
+            std::fprintf(stderr, "The scene's geometry is larger than the GPU can bind.\n");
+            return false;
+        }
+        const u64 grown = std::min(limit, std::max(needed, capacity + capacity / 2));
+        wgpu::Buffer larger = buffer(grown, U::Storage | U::CopyDst | U::CopySrc, "geometry");
+        if (geometry && arena->end != 0) {
+            // Writes already queued land in the old buffer before this copy runs.
+            wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+            encoder.CopyBufferToBuffer(geometry, 0, larger, 0, (arena->end + 3) & ~u64(3));
+            const wgpu::CommandBuffer commands = encoder.Finish();
+            queue.Submit(1, &commands);
+        }
+        geometry = larger;
+        sceneGroup = nullptr;
+        return true;
+    }
+
+    std::shared_ptr<GpuPlacement> allocate(u64 size) {
+        size = (size + 255) & ~u64(255);
+        auto placement = std::make_shared<GpuPlacement>();
+        placement->arena = arena;
+        placement->placedBy = arena.get();
+        placement->size = size;
+        for (auto at = arena->free.begin(); at != arena->free.end(); ++at) {
+            if (at->second >= size) {
+                placement->offset = at->first;
+                at->first += size;
+                at->second -= size;
+                if (at->second == 0) {
+                    arena->free.erase(at);
+                }
+                return placement;
+            }
+        }
+        if (!ensureCapacity(arena->end + size)) {
+            placement->arena.reset();
+            return nullptr;
+        }
+        placement->offset = arena->end;
+        arena->end += size;
+        return placement;
+    }
+
+    void write(GpuPlacement& p, u64 offset, std::span<const u8> bytes) {
+        GEO_ASSERT(offset == p.written + p.tailSize);
+        if (offset + bytes.size() > p.size) {
+            return;
+        }
+        if (p.tailSize != 0) {
+            const usize take = std::min<usize>(4 - p.tailSize, bytes.size());
+            std::memcpy(p.tail.data() + p.tailSize, bytes.data(), take);
+            p.tailSize += u32(take);
+            bytes = bytes.subspan(take);
+            if (p.tailSize < 4) {
+                return;
+            }
+            queue.WriteBuffer(geometry, p.offset + p.written, p.tail.data(), 4);
+            p.written += 4;
+            p.tailSize = 0;
+        }
+        const usize whole = bytes.size() & ~usize(3);
+        if (whole != 0) {
+            queue.WriteBuffer(geometry, p.offset + p.written, bytes.data(), whole);
+            p.written += whole;
+        }
+        p.tailSize = u32(bytes.size() - whole);
+        std::memcpy(p.tail.data(), bytes.data() + whole, p.tailSize);
+    }
+
+    // Where a segment's bytes are in the geometry buffer: its own placement if it was streamed
+    // here, or an upload made the first time it is seen. Null if neither can be had.
+    const GpuPlacement* placementOf(const std::shared_ptr<scene::Segment>& segment) {
+        if (const scene::Placement* placed = segment->placement()) {
+            return placed->owner() == arena.get() ? static_cast<const GpuPlacement*>(placed)
+                                                  : nullptr;
+        }
+        const auto found = uploads.find(segment.get());
+        if (found != uploads.end() && found->second.segment.lock() == segment) {
+            return found->second.placement.get();
+        }
+        if (segment->data() == nullptr) {
+            return nullptr;
+        }
+        std::shared_ptr<GpuPlacement> placement = allocate(segment->size());
+        if (!placement) {
+            return nullptr;
+        }
+        queue.WriteBuffer(geometry, placement->offset, segment->data(), segment->size());
+        uploads[segment.get()] = {segment, placement};
+        return placement.get();
+    }
+
     // ---- Tables -----------------------------------------------------------------------------
 
     void syncScene(const scene::Scene& scene) {
-        std::vector<const scene::Segment*> present;
+        // Each segment's bytes are placed once, so a definition is found by word offsets.
+        std::unordered_map<const scene::Segment*, u64> wordBase;
         for (u32 d = 0; d < scene.documentCount(); ++d) {
             for (const std::shared_ptr<scene::Segment>& segment : scene.document(d).segments()) {
-                present.push_back(segment.get());
+                if (const GpuPlacement* placement = placementOf(segment)) {
+                    wordBase.emplace(segment.get(), placement->offset / 4);
+                }
             }
         }
-        // Each segment's bytes, one after another, so a definition is found by word offsets.
-        std::unordered_map<const scene::Segment*, u64> wordBase;
-        u64 bytes = 0;
-        for (const scene::Segment* segment : present) {
-            wordBase.emplace(segment, bytes / 4);
-            bytes += (segment->size() + 15) & ~usize(15);
-        }
-        if (present != segments) {
-            if (bytes > limits.maxStorageBufferBindingSize) {
-                std::fprintf(stderr, "The scene's geometry is larger than the GPU can bind.\n");
-                bytes = 0;
-                wordBase.clear();
-                present.clear();
-            }
-            geometry = buffer(bytes, U::Storage | U::CopyDst, "geometry");
-            for (const scene::Segment* segment : present) {
-                queue.WriteBuffer(geometry, wordBase.at(segment) * 4, segment->data(),
-                                  segment->size());
-            }
-            segments = present;
+        // Uploads of segments the scene no longer holds free their ranges.
+        std::erase_if(uploads, [&](const auto& entry) { return !wordBase.contains(entry.first); });
+        if (!geometry) {
+            ensureCapacity(16);
         }
 
         std::vector<GpuDefinitionW> gpuDefinitions;
@@ -758,22 +894,24 @@ struct Renderer::State {
                 const scene::Segment* segment = document.geometrySegment(i);
                 if (record != nullptr && wordBase.contains(segment)) {
                     const format::SegmentView& view = segment->view();
-                    const auto* base = static_cast<const u8*>(segment->data());
                     const u64 first = wordBase.at(segment);
-                    const auto wordOf = [&](const void* pointer) {
-                        const u64 offset = u64(static_cast<const u8*>(pointer) - base);
+                    // A record's word, from its section's place, whether or not it is in memory.
+                    const auto wordOf = [&](format::SectionKind kind, u64 index, u64 stride) {
+                        const u64 offset = view.offset(kind) + index * stride;
                         GEO_ASSERT(offset % 4 == 0);
                         return u32(first + offset / 4);
                     };
-                    out.meshlets = wordOf(view.meshlets.data() + record->firstMeshlet);
-                    out.vertices = wordOf(view.vertices.data() + record->firstVertex);
+                    using K = format::SectionKind;
+                    out.meshlets = wordOf(K::Meshlets, record->firstMeshlet, sizeof(Meshlet));
+                    out.vertices = wordOf(K::Vertices, record->firstVertex, sizeof(PackedVertex));
                     out.highBits = (record->flags & kDefinitionWide) != 0
-                                       ? wordOf(view.highBits.data() + record->firstHighBits)
+                                       ? wordOf(K::HighBits, record->firstHighBits, 4)
                                        : 0;
-                    out.triangles = wordOf(view.triangles.data() + record->firstTriangle);
+                    out.triangles = wordOf(K::Triangles, record->firstTriangle, 4);
                     out.edgeSegments =
-                        wordOf(view.edgeSegments.data() + record->firstEdgeSegment);
-                    out.edgeChunks = wordOf(view.edgeChunks.data() + record->firstEdgeChunk);
+                        wordOf(K::EdgeSegments, record->firstEdgeSegment, sizeof(EdgeSegment));
+                    out.edgeChunks =
+                        wordOf(K::EdgeChunks, record->firstEdgeChunk, sizeof(EdgeChunk));
                     out.vertexCount = record->vertexCount;
                     out.faceCount = record->faceCount;
                     out.meshletCount = record->meshletCount;
@@ -783,9 +921,8 @@ struct Renderer::State {
                         out.decodeScale[a] = record->decodeScale[a];
                         out.boundsScale[a] = record->boundsScale[a];
                     }
-                    out.boundsStep =
-                        std::max({record->boundsScale[0], record->boundsScale[1],
-                                  record->boundsScale[2]});
+                    out.boundsStep = std::max(
+                        {record->boundsScale[0], record->boundsScale[1], record->boundsScale[2]});
                 }
                 gpuDefinitions.push_back(out);
             }
@@ -827,8 +964,8 @@ struct Renderer::State {
                              U::Storage | U::CopyDst, "definitions");
         queue.WriteBuffer(definitions, 0, gpuDefinitions.data(),
                           gpuDefinitions.size() * sizeof(GpuDefinitionW));
-        occurrences = buffer(gpuOccurrences.size() * sizeof(GpuOccurrence),
-                             U::Storage | U::CopyDst, "occurrences");
+        occurrences = buffer(gpuOccurrences.size() * sizeof(GpuOccurrence), U::Storage | U::CopyDst,
+                             "occurrences");
         queue.WriteBuffer(occurrences, 0, gpuOccurrences.data(),
                           gpuOccurrences.size() * sizeof(GpuOccurrence));
         surfaceInstances = u32(surfaceList.size());
@@ -907,8 +1044,8 @@ struct Renderer::State {
             indexNeed[list] = (indexNeed[list] + 1) & ~u64(1); // regions start on whole words
             table.regions[list] = {u32(slotTotal), u32(slotNeed[list]), u32(indexTotal),
                                    u32(indexNeed[list])};
-            const u32 chunks = list < kLists ? u32((slotNeed[list] + kChunkSlots - 1) / kChunkSlots)
-                                             : 0;
+            const u32 chunks =
+                list < kLists ? u32((slotNeed[list] + kChunkSlots - 1) / kChunkSlots) : 0;
             table.chunks[list][0] = chunkTotal;
             table.chunks[list][1] = chunks;
             chunkTotal += chunks;
@@ -968,32 +1105,34 @@ struct Renderer::State {
         if (!definitions) {
             definitions = buffer(80, U::Storage | U::CopyDst, "definitions");
             occurrences = buffer(64, U::Storage | U::CopyDst, "occurrences");
-            geometry = buffer(16, U::Storage | U::CopyDst, "geometry");
+            ensureCapacity(16);
             instances = buffer(16, U::Storage | U::CopyDst, "instances");
             faceStates = buffer(16, U::Storage | U::CopyDst, "face states");
             uploadStates();
             planLists();
         }
         if (!sceneGroup) {
-            sceneGroup = makeGroup(device, sceneLayout, {
-                bufferEntry(0, frames, sizeof(FrameUniforms)),
-                bufferEntry(1, styleBuffer),
-                bufferEntry(2, definitions),
-                bufferEntry(3, occurrences),
-                bufferEntry(4, geometry),
-                bufferEntry(5, states),
-                bufferEntry(6, faceStates),
-                bufferEntry(7, palette),
-            });
+            sceneGroup = makeGroup(device, sceneLayout,
+                                   {
+                                       bufferEntry(0, frames, sizeof(FrameUniforms)),
+                                       bufferEntry(1, styleBuffer),
+                                       bufferEntry(2, definitions),
+                                       bufferEntry(3, occurrences),
+                                       bufferEntry(4, geometry),
+                                       bufferEntry(5, states),
+                                       bufferEntry(6, faceStates),
+                                       bufferEntry(7, palette),
+                                   });
         }
         if (!cullGroup) {
-            cullGroup = makeGroup(device, cullLayout, {
-                bufferEntry(0, lists),
-                bufferEntry(1, instances),
-                bufferEntry(2, slots),
-                bufferEntry(3, indices),
-                bufferEntry(4, counters),
-            });
+            cullGroup = makeGroup(device, cullLayout,
+                                  {
+                                      bufferEntry(0, lists),
+                                      bufferEntry(1, instances),
+                                      bufferEntry(2, slots),
+                                      bufferEntry(3, indices),
+                                      bufferEntry(4, counters),
+                                  });
         }
         if (!surfaceGroup) {
             surfaceGroup = makeGroup(device, surfaceLayout, {bufferEntry(0, slots)});
@@ -1014,8 +1153,8 @@ struct Renderer::State {
         const Usage attachment = Usage::RenderAttachment | Usage::TextureBinding;
         color = texture(width, height, kColorFormat, attachment, "colour");
         ids = texture(width, height, kIdFormat, attachment | Usage::CopySrc, "ids");
-        depthCopy = texture(width, height, kDepthCopyFormat, attachment | Usage::CopySrc,
-                            "depth copy");
+        depthCopy =
+            texture(width, height, kDepthCopyFormat, attachment | Usage::CopySrc, "depth copy");
         ink = texture(width, height, kInkFormat, attachment, "ink");
         tags = texture(width, height, kTagFormat, attachment, "tags");
         depth = texture(width, height, kDepthFormat, Usage::RenderAttachment, "depth");
@@ -1026,21 +1165,20 @@ struct Renderer::State {
         accum = texture(width, height, kAccumFormat, attachment, "accumulated colour");
         offscreen = nullptr; // made by the first offscreen render at this size
         sheetGroup = makeGroup(device, sheetLayout, {textureEntry(0, shadowMask), [&] {
-                                   wgpu::BindGroupEntry entry{};
-                                   entry.binding = 1;
-                                   entry.sampler = linearClamp;
-                                   return entry;
-                               }()});
-        resolveGroup = makeGroup(device, resolveLayout, {textureEntry(0, color),
-                                                         textureEntry(1, ink),
-                                                         textureEntry(2, tags)});
-        occlusionGroup = makeGroup(device, occlusionLayout, {textureEntry(2, tags),
-                                                             textureEntry(3, depthCopy),
-                                                             textureEntry(5, occlusionTexture)});
-        compositeGroup = makeGroup(device, compositeLayout, {textureEntry(0, accum),
-                                                             textureEntry(2, tags),
-                                                             textureEntry(3, depthCopy),
-                                                             textureEntry(4, occlusionTexture)});
+                                                         wgpu::BindGroupEntry entry{};
+                                                         entry.binding = 1;
+                                                         entry.sampler = linearClamp;
+                                                         return entry;
+                                                     }()});
+        resolveGroup =
+            makeGroup(device, resolveLayout,
+                      {textureEntry(0, color), textureEntry(1, ink), textureEntry(2, tags)});
+        occlusionGroup = makeGroup(
+            device, occlusionLayout,
+            {textureEntry(2, tags), textureEntry(3, depthCopy), textureEntry(5, occlusionTexture)});
+        compositeGroup = makeGroup(device, compositeLayout,
+                                   {textureEntry(0, accum), textureEntry(2, tags),
+                                    textureEntry(3, depthCopy), textureEntry(4, occlusionTexture)});
     }
 
     // ---- Frames ----------------------------------------------------------------------------
@@ -1130,7 +1268,8 @@ struct Renderer::State {
     void drawList(const wgpu::RenderPassEncoder& pass, u32 list) {
         const u32 first = listTable.chunks[list][0], count = listTable.chunks[list][1];
         for (u32 k = 0; k < count; ++k) {
-            pass.DrawIndexedIndirect(counters, sizeof(Counters) + (first + k) * sizeof(DrawIndexed));
+            pass.DrawIndexedIndirect(counters,
+                                     sizeof(Counters) + (first + k) * sizeof(DrawIndexed));
         }
     }
 
@@ -1225,8 +1364,11 @@ struct Renderer::State {
         }
         // Ghosts last, blended over everything opaque and writing no depth.
         if (hasScene && hasGhosts) {
-            drawPair(pass, {.kind = Kind::Ghost, .physical = physical, .section = section,
-                            .pickable = view.uniforms.ghostPickable != 0},
+            drawPair(pass,
+                     {.kind = Kind::Ghost,
+                      .physical = physical,
+                      .section = section,
+                      .pickable = view.uniforms.ghostPickable != 0},
                      2);
             if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges && !reducedDetail) {
                 pass.SetBindGroup(1, edgeGroup);
@@ -1411,12 +1553,13 @@ struct Renderer::State {
         readback.buffer.MapAsync(
             wgpu::MapMode::Read, 0, usize(kProbeBytes), kCallbacks,
             [this, &readback, alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
-                                                                     wgpu::StringView) {
+                                                                    wgpu::StringView) {
                 if (alive.expired()) {
                     return;
                 }
-                const auto found = std::find_if(pendingProbes.begin(), pendingProbes.end(),
-                                                [&](const auto& p) { return p.first == &readback; });
+                const auto found =
+                    std::find_if(pendingProbes.begin(), pendingProbes.end(),
+                                 [&](const auto& p) { return p.first == &readback; });
                 if (status == wgpu::MapAsyncStatus::Success && found != pendingProbes.end()) {
                     Probe& next = found->second;
                     const auto* bytes = static_cast<const u8*>(
@@ -1447,7 +1590,7 @@ struct Renderer::State {
         readback.buffer.MapAsync(
             wgpu::MapMode::Read, 0, 32, kCallbacks,
             [this, &readback, alive = std::weak_ptr<int>(lifetime)](wgpu::MapAsyncStatus status,
-                                                                     wgpu::StringView) {
+                                                                    wgpu::StringView) {
                 if (alive.expired()) {
                     return;
                 }
@@ -1484,9 +1627,9 @@ struct Renderer::State {
             texture(size, size, kDepthCopyFormat, target | Usage::TextureBinding, "front depths");
         classifyScratch = texture(size, size, kDepthCopyFormat, target, "behind depths");
         classifyDepth = texture(size, size, kDepthFormat, target, "classify depth");
-        peelGroup = makeGroup(device, peelLayout, {bufferEntry(0, slots),
-                                                   textureEntry(1, classifyFrontIds),
-                                                   textureEntry(2, classifyFrontDepths)});
+        peelGroup = makeGroup(device, peelLayout,
+                              {bufferEntry(0, slots), textureEntry(1, classifyFrontIds),
+                               textureEntry(2, classifyFrontDepths)});
         frontGroup = makeGroup(
             device, peelLayout,
             {bufferEntry(0, slots),
@@ -1573,9 +1716,7 @@ struct Renderer::State {
     }
 
     // Blocks until `future` completes. Only native hosts may.
-    void wait(const wgpu::Future& future) {
-        instance.WaitAny(future, UINT64_MAX);
-    }
+    void wait(const wgpu::Future& future) { instance.WaitAny(future, UINT64_MAX); }
 };
 
 Renderer::Renderer() : state_(std::make_unique<State>()) {}
@@ -1608,7 +1749,22 @@ std::unique_ptr<Renderer> Renderer::create(wgpu::Instance instance, wgpu::Device
     return renderer;
 }
 
-void Renderer::syncScene(const scene::Scene& scene) { state_->syncScene(scene); }
+void Renderer::syncScene(const scene::Scene& scene) {
+    state_->syncScene(scene);
+}
+
+std::shared_ptr<scene::Placement> Renderer::place(u64 size) {
+    return state_->allocate(size);
+}
+
+void Renderer::write(scene::Placement& placement, u64 offset, std::span<const u8> bytes) {
+    state_->write(static_cast<State::GpuPlacement&>(placement), offset, bytes);
+}
+
+void Renderer::reserveGeometry(u64 bytes) {
+    State& s = *state_;
+    s.ensureCapacity(s.arena->end + ((bytes + 255) & ~u64(255)));
+}
 
 void Renderer::syncState(const model::FaceState& state) {
     State& s = *state_;
@@ -1644,18 +1800,28 @@ void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const 
     State& s = *state_;
     s.looks.assign(lookOfOccurrence.begin(), lookOfOccurrence.end());
     s.looks.resize(s.occurrenceInfo.size(), 0);
-    s.palette = s.buffer(std::max<usize>(palette.size_bytes(), 12), U::Storage | U::CopyDst,
-                         "palette");
+    s.palette =
+        s.buffer(std::max<usize>(palette.size_bytes(), 12), U::Storage | U::CopyDst, "palette");
     s.queue.WriteBuffer(s.palette, 0, palette.data(), palette.size_bytes());
     s.uploadStates();
     s.planLists();
 }
 
-void Renderer::setReducedDetail(bool reduced) { state_->reducedDetail = reduced; }
-u64 Renderer::sceneTriangles() const { return state_->triangles; }
-u64 Renderer::sceneEdgeSegments() const { return state_->edgeSegments; }
-void Renderer::resize(u32 width, u32 height) { state_->resize(width, height); }
-float Renderer::glyphAdvance() const { return state_->glyphAdvance; }
+void Renderer::setReducedDetail(bool reduced) {
+    state_->reducedDetail = reduced;
+}
+u64 Renderer::sceneTriangles() const {
+    return state_->triangles;
+}
+u64 Renderer::sceneEdgeSegments() const {
+    return state_->edgeSegments;
+}
+void Renderer::resize(u32 width, u32 height) {
+    state_->resize(width, height);
+}
+float Renderer::glyphAdvance() const {
+    return state_->glyphAdvance;
+}
 
 void Renderer::setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance) {
     State& s = *state_;
@@ -1674,8 +1840,8 @@ void Renderer::setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance) {
     s.queue.WriteTexture(&destination, pixels.data(), usize(kAtlasWidth) * kAtlasHeight, &layout,
                          &extent);
     s.overlayUniforms = s.buffer(sizeof(OverlayUniforms), U::Uniform | U::CopyDst, "overlay");
-    s.overlayQuads = s.buffer(sizeof(OverlayQuad) * kOverlayMaxQuads, U::Storage | U::CopyDst,
-                              "overlay quads");
+    s.overlayQuads =
+        s.buffer(sizeof(OverlayQuad) * kOverlayMaxQuads, U::Storage | U::CopyDst, "overlay quads");
     wgpu::BindGroupEntry sampler{};
     sampler.binding = 3;
     sampler.sampler = s.linearClamp;
@@ -1683,7 +1849,9 @@ void Renderer::setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance) {
                                {bufferEntry(0, s.overlayUniforms), bufferEntry(1, s.overlayQuads),
                                 textureEntry(2, s.atlas), sampler});
 }
-void Renderer::setSamples(u32 samples) { state_->samples = std::clamp(samples, 1u, 4u); }
+void Renderer::setSamples(u32 samples) {
+    state_->samples = std::clamp(samples, 1u, 4u);
+}
 
 // From the newest probe that has come back: what the frame before last or so drew. Asking also
 // moves the next frames' window here, so a pointer that stops is answered exactly.
@@ -1716,7 +1884,9 @@ std::optional<render::PixelHit> Renderer::readPixel(int x, int y,
     return render::PixelHit{id, depth.viewDepth(value)};
 }
 
-double Renderer::gpuMilliseconds() const { return state_->gpuMilliseconds; }
+double Renderer::gpuMilliseconds() const {
+    return state_->gpuMilliseconds;
+}
 
 std::array<u64, 2> Renderer::memoryBytes() const {
     const State& s = *state_;
@@ -1758,7 +1928,9 @@ std::array<u64, 2> Renderer::probeContents() const {
     }
     return {ids, depths};
 }
-u64 Renderer::timedFrames() const { return state_->timedFrames; }
+u64 Renderer::timedFrames() const {
+    return state_->timedFrames;
+}
 
 render::OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 size) {
     return state_->classify(view, size);
@@ -1790,8 +1962,7 @@ std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
     const wgpu::CommandBuffer commands = encoder.Finish();
     s.queue.Submit(1, &commands);
     const usize size = usize(readback.GetSize());
-    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, size,
-                             wgpu::CallbackMode::WaitAnyOnly,
+    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, size, wgpu::CallbackMode::WaitAnyOnly,
                              [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
     const auto* bytes = static_cast<const u8*>(readback.GetConstMappedRange(0, size));
     std::vector<u8> pixels(usize(s.width) * s.height * 4);

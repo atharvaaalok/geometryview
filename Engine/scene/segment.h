@@ -20,6 +20,8 @@ namespace geo::scene {
 class Placement {
 public:
     virtual ~Placement() = default;
+    /// Who placed it, so they can recognise their own.
+    virtual const void* owner() const { return nullptr; }
 };
 
 /// Where a streamed segment's bytes go.

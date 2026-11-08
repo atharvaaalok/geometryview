@@ -8,6 +8,7 @@
 #pragma once
 
 #include "render/backend.h"
+#include "scene/segment.h"
 
 #include <webgpu/webgpu_cpp.h>
 
@@ -17,7 +18,8 @@
 
 namespace geo::webgpu {
 
-class Renderer final : public render::Backend {
+/// Also a SegmentSink: a cache file streamed into it keeps its segments' bytes on the GPU only.
+class Renderer final : public render::Backend, public scene::SegmentSink {
 public:
     /// Frames are drawn into textures of `outputFormat`. `instance` is waited on by the calls that
     /// block (offscreen renders and classifying the shell), which only native hosts may make. The
@@ -42,6 +44,12 @@ public:
     render::OccurrenceIds renderOccurrenceIds(const render::ViewState& view, u32 size) override;
     std::vector<u8> renderOffscreen(const render::ViewState& view,
                                     const render::Overlay* overlay = nullptr) override;
+
+    std::shared_ptr<scene::Placement> place(u64 size) override;
+    void write(scene::Placement& placement, u64 offset, std::span<const u8> bytes) override;
+    /// Makes room for `bytes` more of geometry at once, as a stream's file size says, so the
+    /// buffer is not grown, and copied, segment by segment.
+    void reserveGeometry(u64 bytes);
 
     /// Draws a frame into `target`, which must be the size last given to `resize`.
     void render(const wgpu::Texture& target, const render::ViewState& view,
