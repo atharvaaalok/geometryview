@@ -254,7 +254,12 @@ var<workgroup> threadIndices: array<u32, 448>; // and how many indices it brings
 var<workgroup> wantSlot: array<u32, 192>;  // the list's local slot, or none
 var<workgroup> wantListBase: array<u32, 192>; // the list's first slot
 var<workgroup> wantIndex: array<u32, 192>; // where its indices start, counted in indices
-var<workgroup> wantInstance: array<u32, 192>;
+var<workgroup> wantThread: array<u32, 192>; // the thread whose meshlet it is
+// Each thread's meshlet, read once here rather than again by every thread writing its indices:
+// where its triangles start in the geometry, how many it has, and its last vertex.
+var<workgroup> threadTriangles: array<u32, 64>;
+var<workgroup> threadTriangleCount: array<u32, 64>;
+var<workgroup> threadLastVertex: array<u32, 64>;
 
 // Writes each workgroup's slots and indices where the scan said, its threads in order, and where
 // each chunk's indices start.
@@ -264,16 +269,22 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
     let index = instanceIndex(lid, group, groups);
     var bits = 0u;
     var triangles = 0u;
+    var instance = vec2u(0u);
     if (index < lists.instanceCount) {
-        let instance = instances[index];
+        instance = instances[index];
         let o = occurrences[instance.x];
         let d = definitions[o.definition];
         if (instance.y < d.meshletCount) {
             let m = meshletAt(d, instance.y);
             bits = membership(instance.x, m, d, o);
             triangles = m.triangleCount;
+            threadTriangles[lid] = d.triangles + m.triangleOffset;
+            // Clamped because a cache file is untrusted and per-index validation would read every
+            // page.
+            threadLastVertex[lid] = max(m.vertexCount, 1u) - 1u;
         }
     }
+    threadTriangleCount[lid] = triangles;
     let own = paddedIndices(triangles);
     for (var list = 0u; list < kLists; list++) {
         let joins = (bits & (1u << list)) != 0u;
@@ -310,7 +321,7 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
         // Past its capacity a list drops the rest rather than write beyond it.
         if (localSlot < region.slotCapacity && localIndex + own <= region.indexCapacity) {
             slot = localSlot;
-            slotsOut[region.slotBase + localSlot] = instances[index];
+            slotsOut[region.slotBase + localSlot] = instance;
             // The first slot of a chunk says where the chunk's indices start; a wide list is one
             // chunk, starting where its region does.
             if (lists.wide == 0u && localSlot % kChunkSlots == 0u) {
@@ -321,7 +332,7 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
         wantSlot[lid * 3u + joined] = slot;
         wantListBase[lid * 3u + joined] = region.slotBase;
         wantIndex[lid * 3u + joined] = region.indexBase + localIndex;
-        wantInstance[lid * 3u + joined] = index;
+        wantThread[lid * 3u + joined] = lid;
         joined++;
     }
     for (var k = joined; k < 3u; k++) {
@@ -336,27 +347,25 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
         if (localSlot == 0xFFFFFFFFu) {
             continue;
         }
-        let instance = instances[wantInstance[v]];
-        let d = definitions[occurrences[instance.x].definition];
-        let m = meshletAt(d, instance.y);
-        let count = m.triangleCount * 3u;
-        // Clamped because a cache file is untrusted and per-index validation would read every
-        // page.
-        let last = max(m.vertexCount, 1u) - 1u;
+        let owner = wantThread[v];
+        let triangleBase = threadTriangles[owner];
+        let triangleCount = threadTriangleCount[owner];
+        let count = triangleCount * 3u;
+        let last = threadLastVertex[owner];
         if (lists.wide != 0u) {
             let slotBits = (wantListBase[v] + localSlot) << kSlotShift;
-            let total = paddedIndices(m.triangleCount);
+            let total = paddedIndices(triangleCount);
             for (var j = lid; j < total; j += 64u) {
                 var vertex = 0u;
                 if (j < count) {
-                    let packed = geometry[d.triangles + m.triangleOffset + j / 3u];
+                    let packed = geometry[triangleBase + j / 3u];
                     vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
                 }
                 indicesOut[wantIndex[v] + j] = slotBits | vertex;
             }
             continue;
         }
-        let words = paddedIndices(m.triangleCount) / 2u;
+        let words = paddedIndices(triangleCount) / 2u;
         let slotBits = (localSlot % kChunkSlots) << kSlotShift;
         let firstWord = wantIndex[v] / 2u;
         for (var w = lid; w < words; w += 64u) {
@@ -365,7 +374,7 @@ fn writeSurfaces(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_i
                 let j = w * 2u + half;
                 var vertex = 0u; // the padding triangle sits on the meshlet's first vertex
                 if (j < count) {
-                    let packed = geometry[d.triangles + m.triangleOffset + j / 3u];
+                    let packed = geometry[triangleBase + j / 3u];
                     vertex = min(extractBits(packed, (j % 3u) * 8u, 8u), last);
                 }
                 pair |= (slotBits | vertex) << (half * 16u);
