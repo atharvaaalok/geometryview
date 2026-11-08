@@ -1,0 +1,23 @@
+{
+  "label": "mac-chrome-p4-idle-stl10m",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "width": 3456,
+  "height": 1992,
+  "startupMs": 108,
+  "loadMs": 325,
+  "idleFrames": 0,
+  "idleSettledFrames": 0,
+  "looping": false,
+  "dragFrames": 118,
+  "dragMs": 1979,
+  "gpuMs": 7.733248,
+  "hovered": 1,
+  "settledAfterDrag": 1,
+  "loopingAfter": false,
+  "bufferMB": 268.8437957763672,
+  "targetMB": 205.169677734375,
+  "heapMB": 16,
+  "triangles": 10000006
+}

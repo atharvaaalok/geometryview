@@ -1,0 +1,22 @@
+{
+  "label": "mac-chrome-p4-import-stl10m.stl",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 3053,
+  "import": {
+    "type": "done",
+    "triangles": 10000006,
+    "faces": 1,
+    "failedFaces": 0,
+    "slices": 0,
+    "importMs": 2820,
+    "cacheBytes": 158138368,
+    "supervisorMB": 2755
+  },
+  "cached": false,
+  "workers": 12,
+  "triangles": 10000006,
+  "bufferMB": 268.8437957763672,
+  "heapMB": 16
+}

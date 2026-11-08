@@ -13,6 +13,10 @@
 //   step_crash(id)               the job's worker trapped or ran out of memory
 //   step_finish()                completes the cache file: step_blob() for step_blob_size() bytes
 //   step_stats()                 timings and counts, as doubles (see below)
+//   step_jobs()                  how many slices step_begin queued, for showing progress
+//
+// An STL file needs no OCCT: after step_open, mesh_import() makes its cache file whole, to read at
+// step_blob() as a STEP import's is.
 #include "import.h"
 #include "occt/worker_protocol.h"
 #include "step/slicing.h"
@@ -52,7 +56,23 @@ struct Session {
     std::vector<u8> blob;
     std::string error;
     double values[16] = {};
+    u32 jobs = 0;
 };
+
+// Reads the finished cache file back from the in-memory file system, then removes it.
+bool readBack(Session& s) {
+    const off_t size = lseek(s.output, 0, SEEK_END);
+    s.blob.resize(usize(size));
+    const bool read = pread(s.output, s.blob.data(), s.blob.size(), 0) == ssize_t(size);
+    close(s.output);
+    unlink(kOutputPath);
+    s.output = -1;
+    s.file = {}; // no longer needed
+    if (!read) {
+        s.error = "The cache file could not be read back.";
+    }
+    return read;
+}
 
 std::unique_ptr<Session> session;
 
@@ -82,7 +102,7 @@ EMSCRIPTEN_KEEPALIVE int step_begin() {
         s.error = "This file needs OCCT's whole-file read, which the browser does not do yet.";
         return 1;
     }
-    s.import.scheduler().start();
+    s.jobs = u32(s.import.scheduler().start());
     s.writer.emplace(s.import.index());
     return 0;
 }
@@ -152,17 +172,29 @@ EMSCRIPTEN_KEEPALIVE int step_finish() {
     if (!s.import.finish(s.stats, s.error)) {
         return -1;
     }
-    const off_t size = lseek(s.output, 0, SEEK_END);
-    s.blob.resize(usize(size));
-    if (pread(s.output, s.blob.data(), s.blob.size(), 0) != ssize_t(size)) {
-        s.error = "The cache file could not be read back.";
+    return readBack(s) ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE u32 step_jobs() { return session->jobs; }
+
+EMSCRIPTEN_KEEPALIVE int mesh_import() {
+    Session& s = *session;
+    s.output = open(kOutputPath, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (s.output < 0) {
+        s.error = "The cache file could not be created.";
         return -1;
     }
-    close(s.output);
-    unlink(kOutputPath);
-    s.output = -1;
-    s.file = {}; // no longer needed
-    return 0;
+    ImportResult result;
+    if (!importMesh(s.file, s.output, nullptr, result, s.error)) {
+        close(s.output);
+        unlink(kOutputPath);
+        s.output = -1;
+        return -1;
+    }
+    s.stats.triangles = result.triangles;
+    s.stats.faces = result.faces;
+    s.stats.meshlets = result.meshlets;
+    return readBack(s) ? 0 : -1;
 }
 
 EMSCRIPTEN_KEEPALIVE const u8* step_blob() { return session->blob.data(); }

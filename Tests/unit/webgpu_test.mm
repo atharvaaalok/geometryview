@@ -4,14 +4,14 @@
 #if defined(GEO_HAS_WEBGPU)
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
-#include "model/face_state.h"
-#include "nav/camera.h"
-#include "render/shell.h"
 #include "drive_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
 #include "gpu/overlay_atlas.h"
 #include "gpu/renderer.h"
+#include "model/face_state.h"
+#include "nav/camera.h"
+#include "render/shell.h"
 #include "scene/segment.h"
 #include "webgpu/renderer.h"
 #include "webgpu/wgsl.h"
@@ -88,7 +88,7 @@ std::vector<std::shared_ptr<scene::Segment>> openBlob(const std::string& path) {
 }
 
 std::vector<u8> renderWith(render::Backend& backend, const std::string& blob,
-                       const GeoRenderOptions& options) {
+                           const GeoRenderOptions& options) {
     engine::OffscreenView frame;
     std::string error;
     REQUIRE_MESSAGE(engine::prepareOffscreen(backend, openBlob(blob), options, frame, error),
@@ -124,10 +124,11 @@ Difference compare(const std::vector<u8>& a, const std::vector<u8>& b) {
 TEST_CASE("every WGSL module compiles") {
     Dawn dawn = makeDawn();
     const std::string common = webgpu::wgsl::kCommon;
-    const std::pair<const char*, const char*> modules[] = {
-        {"cull", webgpu::wgsl::kCull},   {"surface", webgpu::wgsl::kSurface},
-        {"edges", webgpu::wgsl::kEdges}, {"sheet", webgpu::wgsl::kSheet},
-        {"post", webgpu::wgsl::kPost}};
+    const std::pair<const char*, const char*> modules[] = {{"cull", webgpu::wgsl::kCull},
+                                                           {"surface", webgpu::wgsl::kSurface},
+                                                           {"edges", webgpu::wgsl::kEdges},
+                                                           {"sheet", webgpu::wgsl::kSheet},
+                                                           {"post", webgpu::wgsl::kPost}};
     for (const auto& [name, source] : modules) {
         CAPTURE(name);
         const std::string code = common + source;
@@ -205,8 +206,8 @@ fn readFields() {
     style.capInk = 0.25f;
     style.fill = simd_make_float3(0.0f, 0.0f, 0.125f);
     style.shadowOn = 1;
-    const float expected[17] = {1.5f, 7, 20, 12, -0.9f, -3.25f, 0.75f, 4.5f, 1, 0.6f, 0.5f,
-                                9, 0.4f, 0.25f, 0.125f, 1, 0.375f};
+    const float expected[17] = {1.5f, 7,    20, 12,   -0.9f, -3.25f, 0.75f, 4.5f,  1,
+                                0.6f, 0.5f, 9,  0.4f, 0.25f, 0.125f, 1,     0.375f};
 
     const wgpu::Device& device = dawn.device;
     const auto makeBuffer = [&](u64 size, wgpu::BufferUsage usage) {
@@ -369,12 +370,14 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
         const std::vector<Case> cases = {
             {"section-x", GeoStyleIllustration, false, {true, false, false}},
             {"section-xz-metal", GeoStyleMetal, false, {true, false, true}},
-            {"ghosts", GeoStyleIllustration, false, {},
-             withState([&](model::FaceState& state) {
+            {"ghosts", GeoStyleIllustration, false, {}, withState([&](model::FaceState& state) {
                  state.set(whole(1), kStateGhost, true);
                  state.set({2, 0}, kStateGhost, true);
              })},
-            {"hidden-selected-hovered", GeoStyleIllustration, false, {},
+            {"hidden-selected-hovered",
+             GeoStyleIllustration,
+             false,
+             {},
              [&](engine::OffscreenView& frame, render::Backend& backend) {
                  withState([&](model::FaceState& state) {
                      state.set(whole(3), kStateHidden, true);
@@ -383,12 +386,18 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
                  })(frame, backend);
                  hover(frame, 5);
              }},
-            {"hide-tool", GeoStyleClay, false, {},
+            {"hide-tool",
+             GeoStyleClay,
+             false,
+             {},
              [&](engine::OffscreenView& frame, render::Backend&) {
                  hover(frame, 1);
                  frame.view.uniforms.hoverHides = 1;
              }},
-            {"see-through", GeoStyleIllustration, false, {},
+            {"see-through",
+             GeoStyleIllustration,
+             false,
+             {},
              [&](engine::OffscreenView& frame, render::Backend& backend) {
                  engine::LookState looks;
                  looks.set(engine::lookSettings(geo_default_look()));
@@ -472,11 +481,10 @@ TEST_CASE("the WebGPU renderer picks as Metal does") {
                 web->readPixel(x, y, decoder);
                 for (int frame = 0; frame < 4; ++frame) {
                     web->render(target, webFrame.view);
-                    dawn.instance.WaitAny(
-                        dawn.device.GetQueue().OnSubmittedWorkDone(
-                            wgpu::CallbackMode::WaitAnyOnly,
-                            [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
-                        UINT64_MAX);
+                    dawn.instance.WaitAny(dawn.device.GetQueue().OnSubmittedWorkDone(
+                                              wgpu::CallbackMode::WaitAnyOnly,
+                                              [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
+                                          UINT64_MAX);
                 }
                 web->render(target, webFrame.view); // processes the last readback's arrival
                 const std::optional<render::PixelHit> expected =
@@ -515,7 +523,8 @@ TEST_CASE("the WebGPU renderer draws the overlay as Metal does") {
         REQUIRE(metal != nullptr);
         const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
         for (const GeoStyle style : {GeoStyleIllustration, GeoStyleBlueprint}) {
-            const std::string name = style == GeoStyleIllustration ? "overlay" : "overlay-blueprint";
+            const std::string name =
+                style == GeoStyleIllustration ? "overlay" : "overlay-blueprint";
             CAPTURE(name);
             GeoRenderOptions options = geo_default_render_options();
             options.width = kWidth;
@@ -527,8 +536,8 @@ TEST_CASE("the WebGPU renderer draws the overlay as Metal does") {
             render::Backend* backends[2] = {metal.get(), web.get()};
             for (int r = 0; r < 2; ++r) {
                 engine::OffscreenView frame;
-                REQUIRE(engine::prepareOffscreen(*backends[r], openBlob(blob), options, frame,
-                                                 error));
+                REQUIRE(
+                    engine::prepareOffscreen(*backends[r], openBlob(blob), options, frame, error));
                 frame.overlay.uniforms.cubeHover = 5; // the top face
                 images[r] = backends[r]->renderOffscreen(frame.view, &frame.overlay);
             }
@@ -597,6 +606,56 @@ TEST_CASE("the WebGPU renderer classifies the shell as Metal does") {
         CHECK(covered > pixels / 10);
         CHECK(double(frontSame) / double(pixels) > 0.995);
         CHECK(double(behindSame) / double(pixels) > 0.99);
+        unlink(blob.c_str());
+    }
+}
+
+// A cache file streamed into the renderer keeps its geometry on the GPU only, and draws exactly
+// what the file read whole draws.
+TEST_CASE("the WebGPU renderer draws a streamed file as it draws one read whole") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        const std::vector<u8> expected = renderWith(*web, blob, options);
+
+        const int fd = open(blob.c_str(), O_RDONLY);
+        REQUIRE(fd >= 0);
+        std::vector<u8> file(usize(lseek(fd, 0, SEEK_END)));
+        REQUIRE(pread(fd, file.data(), file.size(), 0) == ssize_t(file.size()));
+        close(fd);
+        std::vector<std::shared_ptr<scene::Segment>> segments;
+        scene::CacheStream stream(web.get(), [&](std::shared_ptr<scene::Segment> segment) {
+            segments.push_back(std::move(segment));
+        });
+        // Pieces of odd sizes, as a network delivers them.
+        REQUIRE(stream.append(std::span(file).first(10), error));
+        for (usize at = 10; at < file.size(); at += 65537) {
+            const usize piece = std::min<usize>(65537, file.size() - at);
+            REQUIRE_MESSAGE(stream.append(std::span(file).subspan(at, piece), error), error);
+        }
+        REQUIRE_MESSAGE(stream.finish(error), error);
+        REQUIRE(!segments.empty());
+        usize held = 0;
+        for (const std::shared_ptr<scene::Segment>& segment : segments) {
+            CHECK(segment->data() == nullptr);
+            CHECK(segment->view().vertices.empty());
+            held += segment->view().meshlets.size_bytes();
+        }
+        CHECK(held < file.size() / 4);
+
+        engine::OffscreenView frame;
+        REQUIRE_MESSAGE(engine::prepareOffscreen(*web, segments, options, frame, error), error);
+        const std::vector<u8> image = web->renderOffscreen(frame.view, nullptr);
+        REQUIRE(image.size() == expected.size());
+        const Difference d = compare(image, expected);
+        CHECK(d.mean == 0.0);
         unlink(blob.c_str());
     }
 }

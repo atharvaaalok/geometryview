@@ -183,7 +183,11 @@ P3 changed three Metal shaders and moved headless setup into `engine::prepareOff
 - **`--exercise` on the pack** holds 59.7–60.0 fps on the 60 Hz built-in display, and chrome-only
   changes draw no 3D frame.
 - **Allocations:** it reports 52 allocations in its last frame, exactly as `main` does in
-  alternating runs. ADR 0013 recorded 0 at Phase 0, so P1 or P2 introduced them, not P3.
+  alternating runs. The count covers only the Metal renderer's `render` call.
+  - Builds of the Phase 0 merge (`135c46c`) and of refinement round 2 (`38326e9`) report 54. So this
+    predates the universal viewer.
+  - ADR 0013's "0 allocations per frame" was wrong.
+  - Where they come from is not yet traced. PLAN.md asks for zero.
 - **`Tools/perf_gate.py`** passed four fixtures. It reported the STL 6–7% over its baseline, at a
   load average of 7–10.
   - P3 changes no import code, and its release flags are unchanged.

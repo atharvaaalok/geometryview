@@ -1,6 +1,6 @@
 // The engine's logic, the same on every platform: what is open, the camera, input, selection and
-// visibility, the look, refinement, and what each frame draws. It runs on one thread, which owns all
-// its state, and reaches the platform only through its Host and render Backend.
+// visibility, the look, refinement, and what each frame draws. It runs on one thread, which owns
+// all its state, and reaches the platform only through its Host and render Backend.
 #pragma once
 
 #include "base/types.h"
@@ -15,6 +15,7 @@
 #include "nav/pointer_controller.h"
 #include "render/backend.h"
 #include "render/overlay.h"
+#include "render/shell.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -38,7 +39,8 @@ class Core {
 public:
     Core(render::Backend& renderer, Host& host);
 
-    // ---- From the app ----------------------------------------------------------------------------
+    // ---- From the app
+    // ----------------------------------------------------------------------------
 
     void resize(u32 width, u32 height, float pixelsPerPoint);
     void setInsets(const nav::Insets& points);
@@ -54,11 +56,14 @@ public:
     void setLook(const GeoLook& look);
     void setSection(const GeoSection& section);
     void setMouse(const GeoMouseSettings& settings);
+    /// Scenes larger than this draw without edges and the cast shadow while the view moves.
+    void setDetailBudget(u64 triangles, u64 edgeSegments);
     /// Opens a file, replacing what is open, or adding to it.
     void openFile(const std::string& path, bool add);
     void requestFrame();
 
-    // ---- From the platform -----------------------------------------------------------------------
+    // ---- From the platform
+    // -----------------------------------------------------------------------
 
     void addSegment(u64 token, const std::shared_ptr<scene::Segment>& segment);
     void importProgress(u64 token, u32 done, u32 total);
@@ -90,8 +95,8 @@ private:
         std::string blobPath;             // its cache file, once known
     };
 
-    void emit(GeoEventKind kind, const char* message = "", u32 document = 0,
-              u32 node = GEO_NO_NODE, u32 done = 0, u32 total = 0);
+    void emit(GeoEventKind kind, const char* message = "", u32 document = 0, u32 node = GEO_NO_NODE,
+              u32 done = 0, u32 total = 0);
     u32 cubeFaceAt(double x, double y) const;
     std::optional<nav::SurfaceHit> pickAt(double x, double y);
     void refreshHover();
@@ -117,6 +122,8 @@ private:
     bool refineDocument(u32 index);
     void publishState();
     void classifyShells();
+    void requestShellViews(bool excludeShells);
+    void shellViewArrived(u64 generation, const render::OccurrenceIds& ids);
     render::OverlayLayout overlayLayout() const;
     render::ViewState frameView() const;
     bool validNode(u32 document, u32 node) const;
@@ -145,6 +152,11 @@ private:
     // Finer geometry for what the view shows closely. One job runs at a time.
     double lastNavigation_ = -1e9;
     bool detailReduced_ = false; // the last frame left out edges and the shadow
+    // A scene this heavy leaves out edges and the shadow while the view moves, and draws them
+    // once it settles: on the Mac, spike 5 found 30M triangles held 120 Hz without them and 48 fps
+    // with them. Hosts on smaller GPUs lower it.
+    u64 detailTriangles_ = 20'000'000;
+    u64 detailEdgeSegments_ = 2'000'000;
     bool refining_ = false;
 
     nav::Camera camera_;
@@ -174,6 +186,22 @@ private:
     std::optional<std::pair<model::NodeRef, u32>> hoveredPart_;
     GeoTool tool_ = GeoToolSelect;
     u64 publishedStateVersion_ = ~u64(0);
+
+    // Classifying the shell: two rounds of views, whose ids may arrive frames later. A newer
+    // classification, or closing everything, makes the one in flight stale.
+    struct ShellClassification {
+        u64 generation = 0;
+        bool secondRound = false;
+        u32 arrived = 0;
+        std::vector<render::ShellPart> parts;
+        render::ShellCounts counts{0};
+        std::vector<u8> first;
+        double started = 0.0;
+    };
+    std::optional<ShellClassification> classifying_;
+    u64 classifyGeneration_ = 0;
+    // Held weakly by callbacks the renderer makes later, so none reaches a core that is gone.
+    std::shared_ptr<int> alive_ = std::make_shared<int>(0);
 
     bool needsFrame_ = false;
     double lastActivity_ = 0.0;

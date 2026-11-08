@@ -1,6 +1,7 @@
 #include "format/blob.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <format>
 
@@ -8,8 +9,8 @@ namespace geo::format {
 namespace {
 
 template <typename T>
-bool readSection(std::span<const u8> segment, const SegmentHeader& header, SectionKind kind,
-                 std::span<const T>& out, std::string& error) {
+bool readSection(const SegmentHeader& header, u64 segmentSize, const SectionBytes& bytes,
+                 SectionKind kind, std::span<const T>& out, SegmentView& view, std::string& error) {
     out = {};
     for (u32 i = 0; i < header.sectionCount; ++i) {
         const SectionEntry& section = header.sections[i];
@@ -18,14 +19,27 @@ bool readSection(std::span<const u8> segment, const SegmentHeader& header, Secti
         }
         // Written so that no sum can overflow, because these values are untrusted.
         if (section.stride != sizeof(T) || section.offset % alignof(T) != 0 ||
-            section.offset > segment.size() || section.size > segment.size() - section.offset ||
+            section.offset > segmentSize || section.size > segmentSize - section.offset ||
             section.size % sizeof(T) != 0) {
             error = std::format("Section {} has an invalid layout.", u32(kind));
             return false;
         }
-        // Both fit in usize, having been checked against the segment's size above.
-        out = {reinterpret_cast<const T*>(segment.data() + usize(section.offset)),
-               usize(section.size / sizeof(T))};
+        const u64 count = section.size / sizeof(T);
+        view.places[usize(kind)] = {section.offset, count};
+        const u8* memory = bytes[usize(kind)];
+        if (memory == nullptr) {
+            if (readOnCpu(kind) && count != 0) {
+                error = std::format("Section {} is not in memory.", u32(kind));
+                return false;
+            }
+            return true;
+        }
+        if (reinterpret_cast<uintptr_t>(memory) % alignof(T) != 0) {
+            error = std::format("Section {} is misaligned in memory.", u32(kind));
+            return false;
+        }
+        // The count fits in usize, the section having been checked against the segment's size.
+        out = {reinterpret_cast<const T*>(memory), usize(count)};
         return true;
     }
     return true; // a missing section is simply empty
@@ -57,30 +71,33 @@ bool validateModel(const SegmentView& view, std::string& error) {
     return true;
 }
 
+// Sections held only on the GPU are checked by their counts.
 bool validateDefinition(const SegmentView& view, const DefinitionRecord& d, std::string& error) {
+    const u64 vertices = view.count(SectionKind::Vertices);
+    const u64 triangles = view.count(SectionKind::Triangles);
+    const u64 faces = view.count(SectionKind::Faces);
+    const u64 edgeSegments = view.count(SectionKind::EdgeSegments);
+    const u64 highBits = view.count(SectionKind::HighBits);
     if (d.firstMeshlet > view.meshlets.size() ||
-        d.meshletCount > view.meshlets.size() - d.firstMeshlet ||
-        d.firstVertex > view.vertices.size() ||
-        d.vertexCount > view.vertices.size() - d.firstVertex ||
-        d.firstTriangle > view.triangles.size() ||
-        d.triangleCount > view.triangles.size() - d.firstTriangle) {
+        d.meshletCount > view.meshlets.size() - d.firstMeshlet || d.firstVertex > vertices ||
+        d.vertexCount > vertices - d.firstVertex || d.firstTriangle > triangles ||
+        d.triangleCount > triangles - d.firstTriangle) {
         error = "A definition points outside its geometry.";
         return false;
     }
-    if (d.firstFace > view.faces.size() || d.faceCount > view.faces.size() - d.firstFace) {
+    if (d.firstFace > faces || d.faceCount > faces - d.firstFace) {
         error = "A definition points outside its face table.";
         return false;
     }
     if (d.firstEdgeChunk > view.edgeChunks.size() ||
         d.edgeChunkCount > view.edgeChunks.size() - d.firstEdgeChunk ||
-        d.firstEdgeSegment > view.edgeSegments.size() ||
-        d.edgeSegmentCount > view.edgeSegments.size() - d.firstEdgeSegment) {
+        d.firstEdgeSegment > edgeSegments ||
+        d.edgeSegmentCount > edgeSegments - d.firstEdgeSegment) {
         error = "A definition points outside its edges.";
         return false;
     }
     if ((d.flags & kDefinitionWide) != 0 &&
-        (d.firstHighBits > view.highBits.size() ||
-         d.vertexCount > view.highBits.size() - d.firstHighBits)) {
+        (d.firstHighBits > highBits || d.vertexCount > highBits - d.firstHighBits)) {
         error = "A wide definition has no high bits.";
         return false;
     }
@@ -156,39 +173,71 @@ bool parseHeader(std::span<const u8> file, std::span<const SegmentEntry>& segmen
     return true;
 }
 
-bool parseSegment(std::span<const u8> bytes, SegmentView& view, std::string& error) {
-    if (bytes.size() < sizeof(SegmentHeader)) {
-        error = "A cache segment is too short.";
+bool readOnCpu(SectionKind kind) {
+    switch (kind) {
+    case SectionKind::Vertices:
+    case SectionKind::HighBits:
+    case SectionKind::Triangles:
+    case SectionKind::Faces:
+    case SectionKind::EdgeSegments:
         return false;
+    default:
+        return true;
     }
-    const auto* header = reinterpret_cast<const SegmentHeader*>(bytes.data());
-    if (header->magic != kSegmentMagic || header->version != kVersion ||
-        header->size != bytes.size() || header->sectionCount > kMaxSections) {
+}
+
+bool parseSegmentParts(const SegmentHeader& header, u64 size, const SectionBytes& bytes,
+                       SegmentView& view, std::string& error) {
+    if (header.magic != kSegmentMagic || header.version != kVersion || header.size != size ||
+        header.sectionCount > kMaxSections) {
         error = "A cache segment is damaged.";
         return false;
     }
-
     view = {};
+    const auto read = [&](SectionKind kind, auto& span) {
+        return readSection(header, size, bytes, kind, span, view, error);
+    };
     const bool sections =
-        readSection(bytes, *header, SectionKind::ModelInfo, view.modelInfo, error) &&
-        readSection(bytes, *header, SectionKind::DefinitionInfos, view.definitionInfos, error) &&
-        readSection(bytes, *header, SectionKind::Occurrences, view.occurrences, error) &&
-        readSection(bytes, *header, SectionKind::Nodes, view.nodes, error) &&
-        readSection(bytes, *header, SectionKind::Strings, view.strings, error) &&
-        readSection(bytes, *header, SectionKind::Definitions, view.definitions, error) &&
-        readSection(bytes, *header, SectionKind::Meshlets, view.meshlets, error) &&
-        readSection(bytes, *header, SectionKind::Vertices, view.vertices, error) &&
-        readSection(bytes, *header, SectionKind::HighBits, view.highBits, error) &&
-        readSection(bytes, *header, SectionKind::Triangles, view.triangles, error) &&
-        readSection(bytes, *header, SectionKind::Faces, view.faces, error) &&
-        readSection(bytes, *header, SectionKind::EdgeSegments, view.edgeSegments, error) &&
-        readSection(bytes, *header, SectionKind::EdgeChunks, view.edgeChunks, error);
+        read(SectionKind::ModelInfo, view.modelInfo) &&
+        read(SectionKind::DefinitionInfos, view.definitionInfos) &&
+        read(SectionKind::Occurrences, view.occurrences) && read(SectionKind::Nodes, view.nodes) &&
+        read(SectionKind::Strings, view.strings) &&
+        read(SectionKind::Definitions, view.definitions) &&
+        read(SectionKind::Meshlets, view.meshlets) && read(SectionKind::Vertices, view.vertices) &&
+        read(SectionKind::HighBits, view.highBits) &&
+        read(SectionKind::Triangles, view.triangles) && read(SectionKind::Faces, view.faces) &&
+        read(SectionKind::EdgeSegments, view.edgeSegments) &&
+        read(SectionKind::EdgeChunks, view.edgeChunks);
     if (!sections || !validateModel(view, error)) {
         return false;
     }
     return std::all_of(
         view.definitions.begin(), view.definitions.end(),
         [&](const DefinitionRecord& d) { return validateDefinition(view, d, error); });
+}
+
+bool parseSegment(std::span<const u8> bytes, SegmentView& view, std::string& error) {
+    if (bytes.size() < sizeof(SegmentHeader)) {
+        error = "A cache segment is too short.";
+        return false;
+    }
+    SegmentHeader header;
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.size != bytes.size() || header.sectionCount > kMaxSections) {
+        error = "A cache segment is damaged.";
+        return false;
+    }
+    // Every section is in the segment itself, at its own offset.
+    SectionBytes memory{};
+    for (u32 i = 0; i < header.sectionCount; ++i) {
+        const SectionEntry& section = header.sections[i];
+        // The first section of a kind is the one read, as readSection reads it.
+        if (section.kind < kSectionKinds && section.offset <= bytes.size() &&
+            memory[section.kind] == nullptr) {
+            memory[section.kind] = bytes.data() + usize(section.offset);
+        }
+    }
+    return parseSegmentParts(header, bytes.size(), memory, view, error);
 }
 
 } // namespace geo::format

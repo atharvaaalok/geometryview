@@ -24,6 +24,9 @@ targets:
       - path: ../../Web/spike
         type: folder
         buildPhase: resources
+      - path: ../../Web/viewer
+        type: folder
+        buildPhase: resources
     # The spikes' WebAssembly builds and fixtures, which are build outputs rather than sources:
     # `cmake --build --preset wasm-webgpu` and `--preset wasm-release`, blobs imported into
     # build/fixtures, and slices saved there by the native OCCT worker.
@@ -47,6 +50,15 @@ targets:
           cp "${SRCROOT}/../../build/wasm-release/Import/geometry-step-web."{mjs,wasm} "$spike/occt/"
           rm -rf "$spike/fixtures/step"
           cp -R "${SRCROOT}/../../build/fixtures/step" "$spike/fixtures/step"
+          # The viewer: its engine and fonts. It opens fixtures from the spike's folder.
+          viewer="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/viewer"
+          mkdir -p "$viewer/build" "$viewer/fonts"
+          cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometry-web."{mjs,wasm} "$viewer/build/"
+          cp "${SRCROOT}/../../ThirdParty/ibm-plex-mono/"*.ttf "$viewer/fonts/"
+          # Its importers: the supervisor, single- and multi-threaded, and OCCT for its workers.
+          mkdir -p "$viewer/occt" "$viewer/occt-threads"
+          cp "${SRCROOT}/../../build/wasm-release/Import/geometry-"{step,occt}"-web."{mjs,wasm} "$viewer/occt/"
+          cp "${SRCROOT}/../../build/wasm-threads/Import/geometry-step-web."{mjs,wasm} "$viewer/occt-threads/"
     # Generated from here at `xcodegen` time and merged with the keys below. The page's loopback
     # server is plain HTTP on 127.0.0.1, which App Transport Security allows only when asked.
     info:

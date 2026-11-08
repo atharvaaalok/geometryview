@@ -226,3 +226,56 @@ TEST_CASE("a tree node that leaves the tree is rejected") {
     sample.first<NodeRecord>(0, SectionKind::Nodes).nameLength = 99;
     CHECK_FALSE(sample.parses(0));
 }
+
+// A segment streamed to the GPU keeps only what the CPU reads, each section copied apart.
+TEST_CASE("a segment validates with only the CPU's sections in memory") {
+    Sample sample = writeSample();
+    const std::span<const u8> bytes = sample.segment(sample.geometryIndex());
+    SegmentHeader header;
+    std::memcpy(&header, bytes.data(), sizeof(header));
+
+    // Each section the CPU reads, copied to its own aligned place.
+    std::vector<std::vector<u64>> copies;
+    const auto apart = [&](bool all) {
+        SectionBytes memory{};
+        copies.clear();
+        copies.reserve(header.sectionCount);
+        for (u32 i = 0; i < header.sectionCount; ++i) {
+            const SectionEntry& entry = header.sections[i];
+            if (!all && !readOnCpu(SectionKind(entry.kind))) {
+                continue;
+            }
+            std::vector<u64>& copy = copies.emplace_back(usize(entry.size + 7) / 8 + 1);
+            std::memcpy(copy.data(), bytes.data() + entry.offset, usize(entry.size));
+            memory[entry.kind] = reinterpret_cast<const u8*>(copy.data());
+        }
+        return memory;
+    };
+
+    SegmentView full, parts;
+    std::string error;
+    REQUIRE(parseSegment(bytes, full, error));
+    REQUIRE_MESSAGE(parseSegmentParts(header, bytes.size(), apart(false), parts, error), error);
+    CHECK(parts.definitions.size() == full.definitions.size());
+    CHECK(parts.meshlets.size() == full.meshlets.size());
+    CHECK(parts.edgeChunks.size() == full.edgeChunks.size());
+    // What only the GPU reads is not in memory, but its place is known.
+    CHECK(parts.vertices.empty());
+    CHECK(parts.triangles.empty());
+    CHECK(parts.count(SectionKind::Triangles) == full.triangles.size());
+    CHECK(parts.count(SectionKind::Vertices) == full.vertices.size());
+    CHECK(parts.places == full.places);
+    CHECK(parts.offset(SectionKind::Vertices) ==
+          u64(reinterpret_cast<const u8*>(full.vertices.data()) - bytes.data()));
+
+    // A section the CPU reads must be in memory.
+    SectionBytes missing = apart(false);
+    missing[usize(SectionKind::Meshlets)] = nullptr;
+    CHECK_FALSE(parseSegmentParts(header, bytes.size(), missing, parts, error));
+
+    // Definitions are still checked against the counts of what is held elsewhere.
+    sample.first<DefinitionRecord>(sample.geometryIndex(), SectionKind::Definitions)
+        .triangleCount += 1;
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    CHECK_FALSE(parseSegmentParts(header, bytes.size(), apart(false), parts, error));
+}

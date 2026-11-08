@@ -1,0 +1,22 @@
+{
+  "label": "mac-safari-p4-import-step/hard.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 4874,
+  "import": {
+    "type": "done",
+    "triangles": 340646,
+    "faces": 12188,
+    "failedFaces": 0,
+    "slices": 614,
+    "importMs": 4825,
+    "cacheBytes": 9453568,
+    "supervisorMB": 163
+  },
+  "cached": false,
+  "workers": 6,
+  "triangles": 340646,
+  "bufferMB": 13.114578247070312,
+  "heapMB": 16
+}

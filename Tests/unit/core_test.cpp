@@ -2,12 +2,14 @@
 // record what they are asked. Runs natively and as WebAssembly, since the core is portable.
 #include "cache/blob_writer.h"
 #include "core/core.h"
+#include "import.h"
 #include "scene/segment.h"
 
 #include <doctest/doctest.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,12 +32,36 @@ public:
         height = h;
     }
     float glyphAdvance() const override { return 16.0f; }
-    std::optional<render::PixelHit> readPixel(int, int, const render::DepthDecoder&) const override {
+    std::optional<render::PixelHit> readPixel(int, int,
+                                              const render::DepthDecoder&) const override {
         return std::nullopt;
     }
     render::OccurrenceIds renderOccurrenceIds(const render::ViewState&, u32 size) override {
         return {std::vector<u32>(usize(size) * size), std::vector<u32>(usize(size) * size)};
     }
+    // As the browser's renderer does when `deferIds` is set: ids arrive when the test delivers
+    // them, frames later.
+    void requestOccurrenceIds(const render::ViewState& view, u32 size,
+                              std::function<void(render::OccurrenceIds)> done) override {
+        if (!deferIds) {
+            done(renderOccurrenceIds(view, size));
+            return;
+        }
+        pendingIds.push_back(
+            [this, view, size, done = std::move(done)] { done(renderOccurrenceIds(view, size)); });
+    }
+    // Delivers the oldest `count` requests, or all of them.
+    void deliverIds(usize count = ~usize(0)) {
+        count = std::min(count, pendingIds.size());
+        std::vector<std::function<void()>> arriving(pendingIds.begin(),
+                                                    pendingIds.begin() + std::ptrdiff_t(count));
+        pendingIds.erase(pendingIds.begin(), pendingIds.begin() + std::ptrdiff_t(count));
+        for (const std::function<void()>& deliver : arriving) {
+            deliver();
+        }
+    }
+    bool deferIds = false;
+    std::vector<std::function<void()>> pendingIds;
     std::vector<u8> renderOffscreen(const render::ViewState&, const render::Overlay*) override {
         ++offscreenRenders;
         return std::vector<u8>(usize(width) * height * 4);
@@ -50,7 +76,9 @@ public:
     double now() const override { return time; }
     bool reduceMotion() const override { return true; } // flights land at once
     void runFrames(bool running) override { framesRunning = running; }
-    void scheduleRefinement(double delaySeconds) override { refinementDelays.push_back(delaySeconds); }
+    void scheduleRefinement(double delaySeconds) override {
+        refinementDelays.push_back(delaySeconds);
+    }
     void startImport(u64 token, const std::string& path) override {
         imports.push_back({token, path});
     }
@@ -125,6 +153,24 @@ std::vector<std::shared_ptr<scene::Segment>> rigSegments() {
     return segments;
 }
 
+// A cache file with geometry: two triangles, as the STL importer writes them.
+std::vector<std::shared_ptr<scene::Segment>> meshSegments() {
+    constexpr std::string_view stl = "solid s\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n"
+                                     "vertex 1 0 0\nvertex 1 1 0\nvertex 0 1 0\nendsolid s\n";
+    char path[] = "/tmp/geocoremeshXXXXXX";
+    const int fd = mkstemp(path);
+    REQUIRE(fd >= 0);
+    import::ImportResult result;
+    std::string error;
+    REQUIRE(import::importMesh({reinterpret_cast<const u8*>(stl.data()), stl.size()}, fd, nullptr,
+                               result, error));
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+    close(fd);
+    unlink(path);
+    return segments;
+}
+
 struct Rig {
     FakeRenderer renderer;
     FakeHost host;
@@ -138,6 +184,16 @@ struct Rig {
             core.addSegment(token, segment);
         }
         core.importFinished(token, {true, false, "", "/cache/rig.geoblob"});
+        return token;
+    }
+
+    u64 openMesh() {
+        core.openFile("/models/mesh.stl", false);
+        const u64 token = host.imports.back().first;
+        for (const auto& segment : meshSegments()) {
+            core.addSegment(token, segment);
+        }
+        core.importFinished(token, {true, false, "", "/cache/mesh.geoblob"});
         return token;
     }
 };
@@ -242,4 +298,41 @@ TEST_CASE("the view moving reschedules refinement, which then draws in full") {
     // A model without tolerances, as this rig is, has nothing to refine.
     rig.core.refinementDue();
     CHECK(rig.host.refinements.empty());
+}
+
+TEST_CASE("the shell is classified from views read back later, and stale ones are dropped") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.renderer.deferIds = true;
+    rig.openMesh();
+    rig.core.perform(GeoActionToggleSeeThrough);
+    // Fourteen views are asked for at once, and nothing is decided until they are all back.
+    CHECK(rig.renderer.pendingIds.size() == 14);
+    rig.host.framesRunning = false;
+    rig.renderer.deliverIds();
+    // No part hides another, so no second round is needed, and the view is drawn again.
+    CHECK(rig.renderer.pendingIds.empty());
+    CHECK(rig.host.framesRunning);
+
+    // With see-through on, a new file is classified when it finishes importing. Views of the
+    // file it replaced, still in flight, change nothing when they arrive.
+    rig.openMesh();
+    REQUIRE(rig.renderer.pendingIds.size() == 14);
+    rig.openMesh();
+    REQUIRE(rig.renderer.pendingIds.size() == 28);
+    rig.host.framesRunning = false;
+    rig.renderer.deliverIds(14);
+    CHECK(!rig.host.framesRunning);
+    rig.renderer.deliverIds();
+    CHECK(rig.host.framesRunning);
+}
+
+TEST_CASE("the shell is classified at once by a renderer that can wait for the GPU") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.openMesh();
+    rig.host.framesRunning = false;
+    rig.core.perform(GeoActionToggleSeeThrough);
+    CHECK(rig.renderer.pendingIds.empty());
+    CHECK(rig.host.framesRunning);
 }

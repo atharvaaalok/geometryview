@@ -17,7 +17,7 @@ from pathlib import Path
 # Each module may depend on itself and on modules listed earlier.
 ENGINE_LAYERS = [
     "base", "math", "format", "shaders", "scene", "model", "nav", "pick", "render", "core", "ipc",
-    "gpu", "webgpu",
+    "gpu", "webgpu", "browser",
 ]
 IMPORT_ALLOWED = {"base", "format", "step", "stl", "mesh", "cache", "helper", "occt"}
 INCLUDE = re.compile(r'^\s*#\s*(?:include|import)\s+"([a-z_0-9]+)/', re.MULTILINE)

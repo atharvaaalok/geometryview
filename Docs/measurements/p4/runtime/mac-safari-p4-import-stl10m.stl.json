@@ -1,0 +1,22 @@
+{
+  "label": "mac-safari-p4-import-stl10m.stl",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 4386,
+  "import": {
+    "type": "done",
+    "triangles": 10000006,
+    "faces": 1,
+    "failedFaces": 0,
+    "slices": 0,
+    "importMs": 3108,
+    "cacheBytes": 158138368,
+    "supervisorMB": 2642
+  },
+  "cached": false,
+  "workers": 6,
+  "triangles": 10000006,
+  "bufferMB": 268.8437957763672,
+  "heapMB": 16
+}

@@ -1,0 +1,13 @@
+{
+  "label": "mac-chrome-cached-p4-import-step/hard.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 2,
+  "errors": [],
+  "totalMs": 19,
+  "import": null,
+  "cached": true,
+  "workers": 12,
+  "triangles": 340646,
+  "bufferMB": 13.114578247070312,
+  "heapMB": 16
+}
