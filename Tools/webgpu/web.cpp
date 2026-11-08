@@ -76,11 +76,12 @@ void finish() {
     std::string out = std::format(
         "{{\"adapter\": \"{}\", \"width\": {}, \"height\": {}, \"triangles\": {}, "
         "\"edgeSegments\": {}, \"probes\": {}, \"probesFailed\": {}, \"probeIds\": {}, "
-        "\"probeDepths\": {}, \"zooms\": [",
+        "\"probeDepths\": {}, \"bufferMB\": {:.1f}, \"targetMB\": {:.1f}, \"zooms\": [",
         app.adapterName, app.width, app.height, app.renderer->sceneTriangles(),
         app.renderer->sceneEdgeSegments(), app.renderer->probeCounts()[0],
         app.renderer->probeCounts()[1], app.renderer->probeContents()[0],
-        app.renderer->probeContents()[1]);
+        app.renderer->probeContents()[1], double(app.renderer->memoryBytes()[0]) / 1048576.0,
+        double(app.renderer->memoryBytes()[1]) / 1048576.0);
     for (u32 z = 0; z < 3; ++z) {
         out += std::format(
             "{}{{\"zoom\": {}, \"frames\": {}, \"timedFrames\": {}, "

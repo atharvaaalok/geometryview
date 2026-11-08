@@ -279,10 +279,12 @@ int benchCommand(int argc, const char** argv) {
     };
     std::println("{{\"frames\": {}, \"samples\": {}, \"width\": {}, \"height\": {}, "
                  "\"triangles\": {}, \"wall\": [{:.2f}, {:.2f}, {:.2f}], "
-                 "\"gpu\": [{:.2f}, {:.2f}, {:.2f}], \"timed\": {}}}",
+                 "\"gpu\": [{:.2f}, {:.2f}, {:.2f}], \"timed\": {}, \"bufferMB\": {:.1f}, "
+                 "\"targetMB\": {:.1f}}}",
                  times.size(), samples, options.width, options.height, web->sceneTriangles(),
                  at(times, 0.5), at(times, 0.9), at(times, 0.99), at(gpuTimes, 0.5),
-                 at(gpuTimes, 0.9), at(gpuTimes, 0.99), gpuTimes.size());
+                 at(gpuTimes, 0.9), at(gpuTimes, 0.99), gpuTimes.size(),
+                 double(web->memoryBytes()[0]) / 1048576.0, double(web->memoryBytes()[1]) / 1048576.0);
     return 0;
 }
 

@@ -1718,6 +1718,35 @@ std::optional<render::PixelHit> Renderer::readPixel(int x, int y,
 }
 
 double Renderer::gpuMilliseconds() const { return state_->gpuMilliseconds; }
+
+std::array<u64, 2> Renderer::memoryBytes() const {
+    const State& s = *state_;
+    u64 buffers = 0, targets = 0;
+    for (const wgpu::Buffer* b :
+         {&s.frames, &s.styleBuffer, &s.definitions, &s.occurrences, &s.geometry, &s.instances,
+          &s.states, &s.faceStates, &s.palette, &s.lists, &s.counters, &s.slots, &s.indices}) {
+        buffers += *b ? b->GetSize() : 0;
+    }
+    const auto texel = [](wgpu::TextureFormat format) -> u64 {
+        switch (format) {
+        case Format::R8Unorm:
+            return 1;
+        case Format::RG8Uint:
+            return 2;
+        case Format::RGBA16Float:
+            return 8;
+        default:
+            return 4;
+        }
+    };
+    for (const wgpu::Texture* t : {&s.color, &s.ids, &s.depthCopy, &s.ink, &s.tags, &s.depth,
+                                   &s.shadowMask, &s.occlusionTexture, &s.accum, &s.offscreen}) {
+        if (*t) {
+            targets += u64(t->GetWidth()) * t->GetHeight() * texel(t->GetFormat());
+        }
+    }
+    return {buffers, targets};
+}
 std::array<u64, 2> Renderer::probeCounts() const {
     return {state_->probesArrived, state_->probesFailed};
 }

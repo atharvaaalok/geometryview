@@ -58,6 +58,8 @@ public:
     /// how many frames have been timed so far.
     double gpuMilliseconds() const;
     u64 timedFrames() const;
+    /// GPU memory the renderer holds, in bytes: buffers, then render targets.
+    std::array<u64, 2> memoryBytes() const;
     /// Hover probes that have come back, and those whose readback failed.
     std::array<u64, 2> probeCounts() const;
     /// Pixels of the newest probe window with an id, and with a depth, for diagnosing readbacks.
