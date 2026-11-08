@@ -32,6 +32,7 @@ final class ChromeCheck {
         guard let root = window.contentView else {
             return
         }
+        movePointerOutside()
         root.layoutSubtreeIfNeeded()
         for segment in Self.pills(in: root).flatMap(\.subviews)
         where segment is ChromeControl && !segment.isHidden {
@@ -107,6 +108,24 @@ final class ChromeCheck {
             }
         }
         probe(0)
+    }
+
+    // The real pointer resting over the window would move the tree's hover off the row being
+    // checked, so the window moves aside, within its screen, if it is under the pointer.
+    private func movePointerOutside() {
+        let pointer = NSEvent.mouseLocation
+        guard window.frame.contains(pointer), let screen = window.screen else {
+            return
+        }
+        let visible = screen.visibleFrame
+        var frame = window.frame
+        let leftRoom = pointer.x - visible.minX, rightRoom = visible.maxX - pointer.x
+        frame.size.width = min(frame.width, max(leftRoom, rightRoom) - 2)
+        frame.origin.x = leftRoom > rightRoom ? pointer.x - 1 - frame.width : pointer.x + 1
+        window.setFrame(frame, display: true)
+        if window.frame.contains(pointer) {
+            leaks.append("the pointer rests over the window, where the check cannot avoid it")
+        }
     }
 
     // A press at the top of the window, or on the file's name, must reach what moves the window.
