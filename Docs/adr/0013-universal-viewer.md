@@ -169,12 +169,12 @@ The plan was, from the spike's indexed path:
 - bridge the page and the AI app over a token-guarded WebSocket;
 - package as `.mcpb`, and for `npx` and `~/.codex/config.toml`.
 
-**P6, the iOS shell.**
+**P6, the iOS shell.** Built 2026-11-07, not yet run on the phone; see `Docs/measurements/p7/p7-hardening.md`.
 - Files and share-sheet input, served with Range.
 - Recovery when the page's process is stopped.
 - The loopback server's first-byte delay on large files (100–140 ms).
 
-**P7, hardening.**
+**P7, hardening.** Begun 2026-11-07: the 1M rack's draws, fuzzing the streamed cache reader, GPU timing that cannot break frames, and import memory measured (`Docs/measurements/p7/p7-hardening.md`).
 - A Windows and a Linux run of the census and spikes.
 - Fuzzing of the web paths.
 - Memory gates on the iPhone for the largest fixtures.
