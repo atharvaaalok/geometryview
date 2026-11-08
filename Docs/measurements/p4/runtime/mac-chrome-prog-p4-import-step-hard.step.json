@@ -3,14 +3,14 @@
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
   "devicePixelRatio": 2,
   "errors": [],
-  "totalMs": 3042,
+  "totalMs": 3216,
   "import": {
     "type": "done",
     "triangles": 340646,
     "faces": 12188,
     "failedFaces": 0,
     "slices": 614,
-    "importMs": 3014,
+    "importMs": 3196,
     "cacheBytes": 9453568,
     "supervisorMB": 163
   },
