@@ -43,7 +43,12 @@ const headless = process.env.GEOMETRY_HEADFUL === "1" ? [] : ["--headless=new"];
 const chrome = spawn(browser, [...headless, "--enable-unsafe-webgpu", `--user-data-dir=${profile}`,
                                `--remote-debugging-port=${port}`, `--window-size=${width},${height}`,
                                "--hide-scrollbars", "--no-first-run", ...flags, "about:blank"],
-                     { stdio: "ignore" });
+                     { stdio: ["ignore", "ignore", process.env.GEOMETRY_CHROME_LOG ? "pipe" : "ignore"] });
+// GEOMETRY_CHROME_LOG names a file for the browser's own log, for a GPU that is not found.
+if (process.env.GEOMETRY_CHROME_LOG) {
+  const { createWriteStream } = await import("node:fs");
+  chrome.stderr.pipe(createWriteStream(process.env.GEOMETRY_CHROME_LOG));
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // The whole run is bounded, a browser that never answers included.
 setTimeout(() => {
