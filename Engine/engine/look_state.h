@@ -6,8 +6,8 @@
 #include "render/style.h"
 #include "scene/scene.h"
 
-namespace geo::gpu {
-class Renderer;
+namespace geo::render {
+class Backend;
 }
 
 namespace geo::engine {
@@ -34,7 +34,7 @@ public:
     bool hasShells() const { return !shells_.empty(); }
 
     /// Uploads whatever changed since the last call, which is nothing on most frames.
-    void apply(gpu::Renderer& renderer, const scene::Scene& scene);
+    void apply(render::Backend& renderer, const scene::Scene& scene);
 
     const render::LookSettings& settings() const { return settings_; }
 
