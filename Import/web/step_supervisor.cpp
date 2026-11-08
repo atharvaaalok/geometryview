@@ -2,6 +2,9 @@
 // pool of OCCT Web Workers. The page calls, in turn:
 //
 //   step_open(size)              room for the file, in the heap, for the page to fill
+//   step_refine(level, count)    optional, before step_begin: imports only `count` definitions,
+//                                whose numbers the page writes at the room it returns, at `level`
+//                                rather than the coarsest, and writes no model: a refinement
 //   step_begin()                 indexes the file and writes the model: 0 if it will be sliced,
 //                                1 if it needs a whole-file read, which the browser cannot do yet,
 //                                or -1 on error (step_error says why)
@@ -108,6 +111,13 @@ EMSCRIPTEN_KEEPALIVE u8* step_open(u32 size) {
     session = std::make_unique<Session>();
     session->file.resize(size);
     return session->file.data();
+}
+
+EMSCRIPTEN_KEEPALIVE u32* step_refine(u32 level, u32 count) {
+    Session& s = *session;
+    s.options.level = level;
+    s.options.definitions.assign(count, 0);
+    return s.options.definitions.data();
 }
 
 EMSCRIPTEN_KEEPALIVE int step_begin() {

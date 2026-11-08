@@ -10,9 +10,14 @@
 // in a worker of its own that the page ends afterwards, since a threaded module's memory is kept
 // by its threads until they end.
 //
+// A STEP file's source is kept beside its cache, so its definitions can be imported again, finer,
+// when the view comes close: a refinement, whose segments the page adds to the open document.
+//
 // Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads, progressive }
-// Messages out: { type: "progress", done, total } and, if progressive, { type: "segment", bytes }
-//               as each is written; then { type: "done", ... } or { type: "failed", message }
+//               { type: "refine", file, level, definitions, workers }
+// Messages out: { type: "progress", done, total } and, if progressive or refining,
+//               { type: "segment", bytes } as each is written; then { type: "done", ... } or
+//               { type: "failed", message }
 
 import createStepImporter from "./occt/geometry-step-web.mjs";
 
@@ -134,20 +139,64 @@ function mesh(step, slots, progressive) {
   });
 }
 
-// Writes the cache file to the library, with a note of the file it came from.
-async function keep(name, bytes, source) {
+async function library() {
   const root = await navigator.storage.getDirectory();
-  const folder = await root.getDirectoryHandle("library", { create: true });
+  return root.getDirectoryHandle("library", { create: true });
+}
+
+async function openForWriting(folder, fileName) {
+  const access = await (await folder.getFileHandle(fileName, { create: true })).createSyncAccessHandle();
+  access.truncate(0);
+  return access;
+}
+
+// Writes the cache file to the library, with a note of the file it came from.
+async function keep(name, bytes, note) {
+  const folder = await library();
   const write = async (fileName, data) => {
-    const handle = await folder.getFileHandle(fileName, { create: true });
-    const access = await handle.createSyncAccessHandle();
-    access.truncate(0);
+    const access = await openForWriting(folder, fileName);
     for (let at = 0; at < data.length;) at += access.write(data.subarray(at), { at });
     access.flush();
     access.close();
   };
   await write(`${name}.geoblob`, bytes);
-  await write(`${name}.json`, new TextEncoder().encode(JSON.stringify(source)));
+  await write(`${name}.json`, new TextEncoder().encode(JSON.stringify(note)));
+}
+
+// Keeps a STEP file beside its cache, read again in pieces rather than held through the import,
+// once the import is done, since nothing waits for it. The library uses it only when its size
+// matches the note's, so a copy cut short is never read.
+async function keepSource(name, file) {
+  const access = await openForWriting(await library(), `${name}.source`);
+  for (let at = 0; at < file.size; at += kSourcePiece) {
+    const piece = new Uint8Array(await file.slice(at, at + kSourcePiece).arrayBuffer());
+    for (let done = 0; done < piece.length;) done += access.write(piece.subarray(done), { at: at + done });
+  }
+  access.flush();
+  access.close();
+}
+const kSourcePiece = 8 << 20;
+
+// Imports some of a STEP file's definitions again at a finer level, posting each segment as it is
+// written; they hold geometry only, for the page to add to the document already open.
+async function refine(data) {
+  try {
+    const step = await supervisor(false);
+    const bytes = new Uint8Array(await data.file.arrayBuffer());
+    // Each call may grow the heap, which detaches views made before it: read them after.
+    const pointer = step._step_open(bytes.length);
+    step.HEAPU8.set(bytes, pointer);
+    const room = step._step_refine(data.level, data.definitions.length);
+    new Uint32Array(step.HEAPU8.buffer, room, data.definitions.length).set(data.definitions);
+    if (step._step_begin() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
+    await warm(data.workers);
+    await mesh(step, pool, true);
+    if (step._step_finish() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
+    postSegments(step);
+    self.postMessage({ type: "done" });
+  } catch (error) {
+    self.postMessage({ type: "failed", message: String(error.message ?? error) });
+  }
 }
 
 // Hands an STL file to the importer a piece at a time. False if it must be read whole instead,
@@ -164,6 +213,10 @@ async function readPieces(step, file) {
 }
 
 self.onmessage = async ({ data }) => {
+  if (data.type === "refine") {
+    await refine(data);
+    return;
+  }
   if (data.type !== "import") return;
   const started = performance.now();
   try {
@@ -196,6 +249,7 @@ self.onmessage = async ({ data }) => {
     await keep(data.name, blob, { name: data.name, size: data.file.size,
                                   lastModified: data.file.lastModified, importedAt: Date.now(), ...result });
     self.postMessage({ type: "done", ...result });
+    if (data.kind === "step") await keepSource(data.name, data.file).catch(() => {});
   } catch (error) {
     self.postMessage({ type: "failed", message: String(error.message ?? error) });
   }

@@ -6,6 +6,8 @@
 //   geoHost.runFrames(running)                         start or stop calling geo_web_frame
 //   geoHost.event(kind, document, node, done, total, message)   a GeoEvent
 //   geoHost.startImport(token, path) / cancelImport(token)      stream a file in, or stop
+//   geoHost.startRefinement(token, path, level, definitions) / cancelRefinement()
+//                                                      import definitions again, finer, or stop
 //
 // A file arrives as a cache file's bytes, streamed through geo_web_stream_*: its segments go
 // straight to GPU buffers as they arrive, and memory keeps only what the CPU reads.
@@ -43,6 +45,12 @@ EM_JS(void, jsEvent, (u32 kind, u32 document, u32 node, u32 done, u32 total, con
 EM_JS(void, jsStartImport, (double token, const char* path),
       { Module.geoHost.startImport(token, UTF8ToString(path)); });
 EM_JS(void, jsCancelImport, (double token), { Module.geoHost.cancelImport(token); });
+EM_JS(void, jsStartRefinement,
+      (double token, const char* path, u32 level, const u32* definitions, u32 count), {
+          Module.geoHost.startRefinement(token, UTF8ToString(path), level,
+                                         HEAPU32.slice(definitions >> 2, (definitions >> 2) + count));
+      });
+EM_JS(void, jsCancelRefinement, (), { Module.geoHost.cancelRefinement(); });
 EM_JS(void, jsSnapshot, (const u8* pixels, u32 width, u32 height, int bgra),
       { Module.geoHost.snapshot(pixels, width, height, bgra != 0); });
 // clang-format on
@@ -80,6 +88,15 @@ struct Web {
         std::unique_ptr<scene::CacheStream> reader;
     };
     std::unordered_map<u64, Stream> streams;
+    // The refinement under way, one at a time: its segments join the document's.
+    struct Refinement {
+        u64 token = 0;
+        u32 level = 0;
+        u32 definitions = 0;
+        double started = 0.0;
+        std::unique_ptr<scene::CacheStream> reader;
+    };
+    std::optional<Refinement> refinement;
 
     // What the page reads back after the events that announce it.
     std::vector<std::shared_ptr<scene::Segment>> models;
@@ -131,20 +148,22 @@ public:
         jsStartImport(double(token), path.c_str());
     }
 
-    // Finer geometry needs OCCT, which the page does not yet run for an open file.
-    void startRefinement(u64 token, const std::string&, u32 level, std::vector<u32>) override {
-        struct Refusal {
-            u64 token;
-            u32 level;
-            double started;
-        };
-        emscripten_set_timeout(
-            [](void* data) {
-                const std::unique_ptr<Refusal> refusal(static_cast<Refusal*>(data));
-                web.core->refinementFinished(refusal->token, false, 0, refusal->level,
-                                             refusal->started);
-            },
-            0.0, new Refusal{token, level, nowSeconds()});
+    // The page imports the definitions again, finer, with OCCT in its workers, and hands their
+    // segments over through geo_web_refine_segment, ending with geo_web_refine_end.
+    void startRefinement(u64 token, const std::string& path, u32 level,
+                         std::vector<u32> definitions) override {
+        web.refinement.emplace();
+        Web::Refinement& r = *web.refinement;
+        r.token = token;
+        r.level = level;
+        r.definitions = u32(definitions.size());
+        r.started = nowSeconds();
+        r.reader = std::make_unique<scene::CacheStream>(
+            web.renderer.get(), [token](std::shared_ptr<scene::Segment> segment) {
+                web.core->addSegment(token, segment);
+            });
+        jsStartRefinement(double(token), path.c_str(), level, definitions.data(),
+                          u32(definitions.size()));
     }
 
     void cancelImport(u64 token) override {
@@ -152,7 +171,12 @@ public:
             jsCancelImport(double(token));
         }
     }
-    void cancelRefinement() override {}
+    void cancelRefinement() override {
+        if (web.refinement) {
+            web.refinement.reset();
+            jsCancelRefinement();
+        }
+    }
     void evictCache(std::vector<std::string>) override {}
 
     void emit(const GeoEvent& event) override {
@@ -259,6 +283,9 @@ void deviceReady() {
     if (web.phone) {
         // A phone draws about 3 million triangles a frame at 60 Hz: more waits until still.
         web.core->setDetailBudget(3'000'000, 400'000);
+        // Refined geometry stays on the GPU beside the coarser: a phone, with far less memory,
+        // goes to a quarter of the coarsest chord error, rather than a sixteenth.
+        web.core->setRefinementLimit(2);
     }
     web.core->resize(web.width, web.height, web.scale);
     jsReady(u32(web.format));
@@ -453,6 +480,32 @@ EMSCRIPTEN_KEEPALIVE void geo_web_import_end(double token, const char* message) 
     const std::string error = message != nullptr ? message : "";
     web.streams.erase(found);
     web.core->importFinished(u64(token), {error.empty(), false, error, ""});
+}
+
+/// One whole segment of the refinement of `token`'s document. Returns 1 to go on, 0 if the
+/// refinement was cancelled, -1 if the segment proved invalid, which ends the refinement.
+EMSCRIPTEN_KEEPALIVE int geo_web_refine_segment(double token, const u8* bytes, u32 size) {
+    if (!web.refinement || web.refinement->token != u64(token)) {
+        return 0;
+    }
+    std::string error;
+    if (!web.refinement->reader->takeSegment({bytes, size}, error)) {
+        const Web::Refinement r = std::move(*web.refinement);
+        web.refinement.reset();
+        web.core->refinementFinished(r.token, false, r.definitions, r.level, r.started);
+        return -1;
+    }
+    return 1;
+}
+
+/// The refinement of `token`'s document has ended: every segment handed over if `ok`.
+EMSCRIPTEN_KEEPALIVE void geo_web_refine_end(double token, int ok) {
+    if (!web.refinement || web.refinement->token != u64(token)) {
+        return;
+    }
+    const Web::Refinement r = std::move(*web.refinement);
+    web.refinement.reset();
+    web.core->refinementFinished(r.token, ok != 0, r.definitions, r.level, r.started);
 }
 
 /// The file has ended, or could not be read, as `message` says.

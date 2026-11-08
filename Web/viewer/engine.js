@@ -74,6 +74,18 @@ export class Engine {
         },
         startImport: (token, path) => this.#startImport(token, path),
         cancelImport: (token) => this.#imports.get(token)?.cancel(),
+        // Finer geometry for some of a document's definitions, from the file it was imported
+        // from: the page answers through refineSegment and finishRefinement, later, never at once.
+        startRefinement: (token, path, level, definitions) => {
+          const name = path.slice(path.indexOf("/") + 1);
+          const refine = this.#handlers.refine;
+          if (refine) {
+            refine(token, name, level, Array.from(definitions));
+          } else {
+            setTimeout(() => this.finishRefinement(token, false));
+          }
+        },
+        cancelRefinement: () => this.#handlers.cancelRefinement?.(),
         snapshot: (pointer, width, height, bgra) => this.#snapshotArrived(pointer, width, height, bgra),
       };
     });
@@ -183,6 +195,22 @@ export class Engine {
     const taken = m._geo_web_import_segment(token, pointer, bytes.length);
     m._free(pointer);
     return taken > 0;
+  }
+
+  // One whole segment of the refinement of `token`'s document. False if the engine refused it or
+  // the refinement was cancelled.
+  refineSegment(token, bytes) {
+    const m = this.#module;
+    const pointer = m._malloc(bytes.length);
+    m.HEAPU8.set(bytes, pointer);
+    const taken = m._geo_web_refine_segment(token, pointer, bytes.length);
+    m._free(pointer);
+    return taken > 0;
+  }
+
+  // Ends the refinement of `token`'s document: every segment handed over if `ok`.
+  finishRefinement(token, ok) {
+    this.#module._geo_web_refine_end(token, ok ? 1 : 0);
   }
 
   // Ends the import of `token`: every segment handed over, or failed, as `message` says.

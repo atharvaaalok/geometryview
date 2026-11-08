@@ -88,8 +88,12 @@ the page, and DPR 2 on phones.
   - imports within about 1.1 times P2's cold times, including storing the result.
 - **The iPhone's memory gate is not yet measured.** The page process held 938 MB with the STL in
   P3, of which about 450 MB were the bench page's copies of the file. P4 removes them, so the gate
-  should pass, but that is not yet measured.
+  should pass, but that is not yet measured. *Measured on 2026-11-08: it passes, at most 630 MB
+  (`p4/p4-runtime.md`).*
 - **Imports of large STL files need far less memory before they can run on a phone.** The 10M
   STL's import peaks at 2.75 GB. Streaming the file through the importer and writing the cache in
   segments is P7's work, with progressive display of imports and refinement in the browser.
+  *Done in P7: a binary STL is read in pieces and the 10M import's heap is 1.27–1.37 GB; imports
+  show as they go; STEP files refine in the browser from a source kept in the library
+  (`p7/p7-hardening.md`).*
 - **The Mac app keeps its behaviour**, with its tests, `--exercise` and `--chrome-check` as before.
