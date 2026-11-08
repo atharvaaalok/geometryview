@@ -30,7 +30,7 @@ constexpr u64 kUniformStride = (sizeof(FrameUniforms) + 255) & ~u64(255);
 // after, and one for classifying the shell.
 constexpr u32 kFrameSlots = 6;
 constexpr u32 kViewSlot = 4;
-constexpr u32 kClassifySlot = 5;
+[[maybe_unused]] constexpr u32 kClassifySlot = 5; // native only: the browser cannot wait
 constexpr u32 kListShadow = 6;
 constexpr u32 kEdgeVertices = 192; // six per segment, for a chunk of 32
 
