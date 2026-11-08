@@ -63,14 +63,17 @@ private:
         usize holders = 0;  // workers that may still claim from it, under the mutex
     };
 
-    // A batch with indices left to claim, or null. Under the mutex.
+    // The batch with indices left to claim and the fewest workers on it, or null, so concurrent
+    // batches advance together rather than one after the other. Under the mutex.
     Batch* open() const {
+        Batch* best = nullptr;
         for (Batch* batch : active_) {
-            if (batch->next.load(std::memory_order_relaxed) < batch->count) {
-                return batch;
+            if (batch->next.load(std::memory_order_relaxed) < batch->count &&
+                (best == nullptr || batch->holders < best->holders)) {
+                best = batch;
             }
         }
-        return nullptr;
+        return best;
     }
 
     void serve() {
