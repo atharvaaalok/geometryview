@@ -3,6 +3,8 @@
 // meshes them. The cache file it makes is the one the Mac's importer makes.
 //
 // step.html?model=hard&workers=12&label=<where it runs>
+//   passes     imports the file this many times on the same pool (default 1); after the first,
+//              the workers' code is already compiled, as for every file after the first in a session
 //   recycleMB  a worker whose heap has grown past this is replaced after its reply (default 256),
 //              since WebAssembly memory never shrinks
 //   timeout    seconds a slice may take before its worker is replaced (default 120)
@@ -15,12 +17,13 @@ import createStepImporter from "./occt/geometry-step-web.mjs";
 const params = new URLSearchParams(location.search);
 const model = params.get("model") ?? "ple120";
 const workerCount = Math.max(1, Number(params.get("workers") ?? 4));
+const passes = Math.max(1, Number(params.get("passes") ?? 1));
 const recycleMB = Number(params.get("recycleMB") ?? 256);
 const timeoutMs = Number(params.get("timeout") ?? 120) * 1000;
 const faultKind = params.get("fault");
 const faultEvery = faultKind ? Math.max(1, Number(params.get("faultEvery") ?? 25)) : 0;
 const label = `${params.get("label") ?? "unlabelled"}-import-step-${model}-w${workerCount}` +
-              `${faultKind ? `-${faultKind}` : ""}`;
+              `${passes > 1 ? `-p${passes}` : ""}${faultKind ? `-${faultKind}` : ""}`;
 const status = document.getElementById("status");
 const inShell = Boolean(window.webkit?.messageHandlers?.census);
 
@@ -35,35 +38,13 @@ async function post(report) {
 
 const ms = (value) => Math.round(value);
 
-try {
-  let started = performance.now();
-  status.textContent = `Loading ${model}…`;
-  // The file, the supervisor and the OCCT module all load at once, as the app's start would.
-  let [file, step, occtModule] = await Promise.all([
-    fetch(`fixtures/step/${model}.step`).then((response) => response.arrayBuffer()),
-    createStepImporter(),
-    WebAssembly.compileStreaming(fetch("occt/geometry-occt-web.wasm")),
-  ]);
-  const loadMs = performance.now() - started;
-
-  // The warm pool: workers made once from the module compiled above, ready before a file opens.
-  const spawn = () => new Promise((resolve, reject) => {
-    const worker = new Worker("occt-worker.js", { type: "module" });
-    worker.onmessage = () => resolve({ worker, heapMB: 0, job: null, timer: 0 });
-    worker.onerror = (event) => reject(new Error(event.message ?? "worker failed"));
-    worker.postMessage({ module: occtModule });
-  });
-  started = performance.now();
-  const slots = await Promise.all(Array.from({ length: workerCount }, spawn));
-  const poolMs = performance.now() - started;
-
-  // The import as the person would wait for it: from the bytes in hand to the cache file.
+// One import of `file` on the pool in `slots`, from the bytes in hand to the cache file.
+async function importOnce(step, file, slots, spawn) {
   status.textContent = `Reading ${model}'s structure…`;
   const importStarted = performance.now();
   // Each call may grow the heap, which detaches the views made before it: read them after.
   const filePointer = step._step_open(file.byteLength);
   step.HEAPU8.set(new Uint8Array(file), filePointer);
-  file = null; // the supervisor holds the only copy now
   const begun = step._step_begin();
   if (begun !== 0) {
     throw new Error(step.UTF8ToString(step._step_error()));
@@ -167,20 +148,16 @@ try {
   const meshMs = performance.now() - meshStarted;
   await Promise.all(replacing); // workers still being replaced when the last slice came back
 
-  started = performance.now();
+  const finishStarted = performance.now();
   if (!done || step._step_finish() !== 0) {
     throw new Error(step.UTF8ToString(step._step_error()));
   }
-  const finishMs = performance.now() - started;
+  const finishMs = performance.now() - finishStarted;
   const importMs = performance.now() - importStarted;
-  slots.forEach(({ worker }) => worker.terminate());
 
   const blob = step.HEAPU8.slice(step._step_blob(), step._step_blob() + step._step_blob_size());
   const v = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);
   const report = {
-    userAgent: navigator.userAgent, model, workers: workerCount, recycleMB,
-    crossOriginIsolated: self.crossOriginIsolated,
-    loadMs: ms(loadMs), poolMs: ms(poolMs),
     importMs: ms(importMs), beginMs: ms(beginMs), meshMs: ms(meshMs), finishMs: ms(finishMs),
     seconds: {
       tokenize: +v[0].toFixed(3), structure: +v[1].toFixed(3), definitions: +v[2].toFixed(3),
@@ -194,7 +171,54 @@ try {
                 peakPool: ms(peakPoolMB) },
     blobBytes: blob.length,
   };
-  status.textContent = JSON.stringify({ ...report, recoveries: recoveries.length }, null, 1);
+  return { report, blob };
+}
+
+try {
+  let started = performance.now();
+  status.textContent = `Loading ${model}…`;
+  // The file, the supervisor and the OCCT module all load at once, as the app's start would.
+  let [file, step, occtModule] = await Promise.all([
+    fetch(`fixtures/step/${model}.step`).then((response) => response.arrayBuffer()),
+    createStepImporter(),
+    WebAssembly.compileStreaming(fetch("occt/geometry-occt-web.wasm")),
+  ]);
+  const loadMs = performance.now() - started;
+
+  // The warm pool: workers made once from the module compiled above, ready before a file opens.
+  const spawn = () => new Promise((resolve, reject) => {
+    const worker = new Worker("occt-worker.js", { type: "module" });
+    worker.onmessage = () => resolve({ worker, heapMB: 0, job: null, timer: 0 });
+    worker.onerror = (event) => reject(new Error(event.message ?? "worker failed"));
+    worker.postMessage({ module: occtModule });
+  });
+  started = performance.now();
+  const slots = await Promise.all(Array.from({ length: workerCount }, spawn));
+  const poolMs = performance.now() - started;
+
+  // The first pass is a session's first file; later ones find the pool's code compiled.
+  let first = null;
+  let blob = null;
+  const later = [];
+  for (let pass = 0; pass < passes; ++pass) {
+    const result = await importOnce(step, file, slots, spawn);
+    blob = result.blob;
+    if (first === null) {
+      first = result.report;
+    } else {
+      const { importMs, beginMs, meshMs, finishMs, recoveries } = result.report;
+      later.push({ importMs, beginMs, meshMs, finishMs, recoveries: recoveries.length });
+    }
+  }
+  file = null;
+  slots.forEach(({ worker }) => worker.terminate());
+
+  const report = {
+    userAgent: navigator.userAgent, model, workers: workerCount, recycleMB,
+    crossOriginIsolated: self.crossOriginIsolated, loadMs: ms(loadMs), poolMs: ms(poolMs),
+    ...first, later,
+  };
+  status.textContent = JSON.stringify({ ...report, recoveries: report.recoveries.length }, null, 1);
   if (!inShell) {
     await fetch(`/blob?label=${encodeURIComponent(label)}`, { method: "POST", body: blob })
       .catch(() => {});
