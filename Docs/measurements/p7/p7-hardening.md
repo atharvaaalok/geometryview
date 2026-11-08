@@ -265,6 +265,8 @@ GPU; drawing on either system needs a machine with one.
   runs one check.
 - The launcher's end-to-end test takes `GEOMETRY_CHROME` and `GEOMETRY_CHROME_FLAGS`, with
   Chrome's usual place on each system as the default.
+- `browser-run.ps1` opens a check page in any browser on Windows, Firefox included, and waits for
+  the report the page posts. It is the AWS runs' script, with their fixed paths taken out.
 
 **Linux in Docker, Chromium 156 with SwiftShader:**
 - **The census:** cross-origin isolation, SharedArrayBuffer, threads (a hand-over in 11 µs), a
