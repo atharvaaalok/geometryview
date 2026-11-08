@@ -6,6 +6,9 @@
 //   occt_stats()    ten doubles: status, faces, unmeshed faces, payload bytes, triangles, area,
 //                   signed volume, and seconds reading, transferring and meshing
 //   occt_payload()  the reply's payload, occt_stats()[3] bytes, as the native worker sends it
+//
+// For testing recovery, occt_trap() traps as a crash in OCCT would, and occt_exhaust() allocates
+// until the worker's memory runs out.
 #include "base/types.h"
 #include "occt/mesh_shape.h"
 #include "occt/worker_protocol.h"
@@ -14,6 +17,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <new>
 #include <string_view>
 #include <vector>
 
@@ -92,5 +96,23 @@ EMSCRIPTEN_KEEPALIVE int occt_mesh(const char* text, u32 size, double linear, do
 EMSCRIPTEN_KEEPALIVE const double* occt_stats() { return stats; }
 
 EMSCRIPTEN_KEEPALIVE const u8* occt_payload() { return payload.data(); }
+
+EMSCRIPTEN_KEEPALIVE void occt_trap() { __builtin_trap(); }
+
+// Returns how many megabytes it got before an allocation failed, keeping all of it.
+EMSCRIPTEN_KEEPALIVE u32 occt_exhaust() {
+    static std::vector<std::vector<u8>> held;
+    u32 megabytes = 0;
+    for (;;) {
+        std::vector<u8> block;
+        try {
+            block.resize(64u << 20, 1); // touched, so the memory is really committed
+        } catch (const std::bad_alloc&) {
+            return megabytes;
+        }
+        held.push_back(std::move(block));
+        megabytes += 64;
+    }
+}
 
 } // extern "C"

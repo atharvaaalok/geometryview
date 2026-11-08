@@ -89,7 +89,33 @@ During the hard file's import the page peaked at 337 MB and WebKit's GPU process
 - two workers on the iPhone and one per performance core on desktops;
 - a cap on each worker's memory.
 
+## Recovering from a worker that traps or runs out of memory
+
+**How it was tested.** The worker can be made to fail on purpose, with `fault=trap|exhaust&faultEvery=N` on the page:
+- `occt_trap` traps, as a crash in OCCT would;
+- `occt_exhaust` allocates until the worker's 512 MB cap refuses, then fails as an allocation in OCCT would.
+
+The worker catches the error and reports it, since its state can no longer be trusted. The page then:
+1. terminates the worker;
+2. makes a new one from the shared compiled module;
+3. retries the slice.
+
+Every run below ended with every face and the same triangles as a clean run (pack: 1,381 faces, 54,482 triangles).
+
+| | Trap, median / worst | Out of memory, median / worst |
+|---|---|---|
+| Chrome, 4 workers | 6.7 / 13.6 ms | 10.5 / 12.9 ms |
+| Safari, 4 workers | 13.9 / 16.4 ms | 18.0 / 25.1 ms |
+| iPhone, 2 workers | 17.6 / 62.3 ms | 30.0 / 37.1 ms |
+
+**The gate (≤100 ms) passes everywhere.** In every case, an out-of-memory worker got 448 MB before its cap refused.
+
+**On the iPhone,** five workers ran out of memory in turn without the page being stopped (`import/iphone-import-faults-memory.json`). The page briefly reached 728 MB, while one full worker overlapped its replacement, then fell to 228 MB within two seconds. Terminating a worker gives its memory back promptly.
+
+**Decision:** each worker's memory is capped (512 MB). Two workers plus the page then stay well inside what iOS allows, and a runaway slice costs one worker, not the page.
+
+A real crash that recurs on the same face still needs the native failure ladder: halve the slice until the face is alone, then retry it with the whole body. That ladder moves into the event-driven supervisor in P2.
+
 ## Not yet measured
 
-- **Recovery from a trap or an out-of-memory worker** (gate ≤100 ms, losing one face). The worker has test hooks for it (`occt_trap`, `occt_exhaust`) and a 512 MB cap per worker, but the page does not exercise them yet.
-- **The event-driven supervisor (P2).** The spike replays the native importer's slices, so the front end and packing in WebAssembly were timed in W1, not end to end here.
+**The event-driven supervisor (P2).** The spike replays the native importer's slices, so the front end and packing in WebAssembly were timed in W1, not end to end here.
