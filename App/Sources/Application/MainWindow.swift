@@ -605,7 +605,10 @@ final class MainWindow: NSWindow {
         }
         var detail = names.count == 1 ? "" : names.joined(separator: ", ")
         if bodies > 0 {
-            let counts = "\(parts.formatted()) parts · \(bodies.formatted()) bodies"
+            let count = { (n: Int, one: String, many: String) in
+                "\(n.formatted()) \(n == 1 ? one : many)"
+            }
+            let counts = "\(count(parts, "part", "parts")) · \(count(bodies, "body", "bodies"))"
             detail = detail.isEmpty ? counts : "\(counts) · \(detail)"
         } else {
             detail = "Reading…"

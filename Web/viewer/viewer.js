@@ -208,7 +208,8 @@ function refreshMasthead() {
   }
   let detail = names.length === 1 ? "" : names.join(", ");
   if (bodies > 0) {
-    const counts = `${parts.toLocaleString("en-US")} parts · ${bodies.toLocaleString("en-US")} bodies`;
+    const count = (n, one, many) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+    const counts = `${count(parts, "part", "parts")} · ${count(bodies, "body", "bodies")}`;
     detail = detail ? `${counts} · ${detail}` : counts;
   } else {
     detail = "Reading…";
