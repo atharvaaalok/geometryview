@@ -16,7 +16,9 @@ if(GEO_TARGET STREQUAL "wasm")
     # The OCCT worker as WebAssembly, when ThirdParty/build_occt_wasm.sh has run. For now it runs
     # under Node, to replay slices saved from the native worker.
     set(GEO_OCCT_WASM_ROOT "${CMAKE_SOURCE_DIR}/ThirdParty/.occt-wasm/install")
-    if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a")
+    # OCCT is built without threads, as each worker runs one slice at a time, so it links only
+    # into a build without them.
+    if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a" AND NOT GEO_WASM_THREADS)
         add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
         set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
         target_include_directories(geometry-occt-worker PRIVATE .)
