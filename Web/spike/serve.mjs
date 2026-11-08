@@ -4,6 +4,7 @@
 // Usage: node Web/spike/serve.mjs [port]
 // Open http://127.0.0.1:<port>/?model=stl10m&label=<where it runs>[&w=2880&h=1800&copies=1]
 // or http://127.0.0.1:<port>/import.html?model=ple120&workers=4&label=<where it runs>
+// or http://127.0.0.1:<port>/step.html?model=hard&workers=12&label=<where it runs>
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -13,9 +14,10 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../..");
-// Reports go beside the spike they came from.
-const reportsFor = (label) => join(root, "Docs/measurements/phase0",
-                                   label.includes("-import-") ? "import" : "renderer");
+// Reports go beside the spike they came from; whole STEP imports are P2's.
+const reportsFor = (label) => label.includes("-import-step-")
+  ? join(root, "Docs/measurements/p2/step")
+  : join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 const port = Number(process.argv[2] ?? 7342);
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
                 ".wasm": "application/wasm", ".json": "application/json" };
@@ -48,6 +50,19 @@ const server = createServer(async (request, response) => {
       await rm(join(reports, `${label}.partial.json`), { force: true });
     }
     console.log(`${report.partial ? "partial" : "report"}: ${file}`);
+    response.writeHead(204, headers).end();
+    return;
+  }
+  // A cache file an import made, kept so the native tools can check it.
+  if (request.method === "POST" && url.pathname === "/blob") {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const name = String(url.searchParams.get("label") ?? "unlabelled").replace(/[^\w.-]+/g, "-");
+    const folder = join(root, "build/fixtures/out");
+    await mkdir(folder, { recursive: true });
+    const file = join(folder, `${name}.geoblob`);
+    await writeFile(file, Buffer.concat(chunks));
+    console.log(`blob: ${file}`);
     response.writeHead(204, headers).end();
     return;
   }
