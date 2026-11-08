@@ -20,10 +20,6 @@
 
 using namespace geo;
 
-GeoRenderOptions geo_default_render_options(void) {
-    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look(), {}, nullptr};
-}
-
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, const GeoRenderOptions* options) {
     @autoreleasepool {
