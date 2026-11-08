@@ -174,6 +174,22 @@ of WebAssembly heap.
 Instruments now loses the phone about a second into each recording ("Device disconnected"), so the
 figures are each recording's opening snapshot, taken with the orbit running.
 
+## The Mac app
+
+P3 changed three Metal shaders and moved headless setup into `engine::prepareOffscreen`.
+
+- **Unit tests** pass in debug, ASan and TSan.
+- **`--chrome-check`** passes.
+- **`--exercise` on the pack** holds 59.7–60.0 fps on the 60 Hz built-in display, and chrome-only
+  changes draw no 3D frame.
+- **Allocations:** it reports 52 allocations in its last frame, exactly as `main` does in
+  alternating runs. ADR 0013 recorded 0 at Phase 0, so P1 or P2 introduced them, not P3.
+- **`Tools/perf_gate.py`** passed four fixtures. It reported the STL 6–7% over its baseline, at a
+  load average of 7–10.
+  - P3 changes no import code, and its release flags are unchanged.
+  - Six alternating imports each of `main` and P3 gave the same fastest time (1.307 s and 1.298 s)
+    and byte-identical cache files.
+
 ## Found along the way
 
 **The Mac app.** Comparing against Metal found two bugs in the Mac app and one waste, all fixed in
