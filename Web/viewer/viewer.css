@@ -1,0 +1,75 @@
+/* The viewer's chrome, after the Mac app's: paper, ink and sticker cards in IBM Plex Mono. */
+
+@font-face {
+  font-family: "Plex Mono";
+  src: url("fonts/IBMPlexMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "Plex Mono";
+  src: url("fonts/IBMPlexMono-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+@font-face {
+  font-family: "Plex Mono";
+  src: url("fonts/IBMPlexMono-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+:root {
+  --paper: #f2efe7;
+  --sheet: #f7f5ee;
+  --sheet-sunk: #ece8dd;
+  --ink: #231e16;
+  --ink-soft: #3a342a;
+  --muted: #6f685c;
+  --faint: #9a9284;
+  --rule: #ddd6c8;
+  --cream: #fff4d6;
+  --cream-wash: #fbf5e2;
+  --cobalt-wash: #dde6f4;
+  --cobalt-mid: #5a82c6;
+  --line: 1.5px;
+  --radius-card: 12px;
+  --shadow-card: 3px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 12.5px/1.3 "Plex Mono", Menlo, monospace;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+
+#viewport {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  outline: none;
+}
+
+.status {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 360px;
+  max-width: calc(100% - 32px);
+  padding: 16px 18px;
+  background: var(--sheet);
+  border: var(--line) solid var(--ink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card) var(--shadow-card) 0 var(--ink);
+}

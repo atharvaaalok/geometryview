@@ -56,6 +56,8 @@ public:
     void setLook(const GeoLook& look);
     void setSection(const GeoSection& section);
     void setMouse(const GeoMouseSettings& settings);
+    /// Scenes larger than this draw without edges and the cast shadow while the view moves.
+    void setDetailBudget(u64 triangles, u64 edgeSegments);
     /// Opens a file, replacing what is open, or adding to it.
     void openFile(const std::string& path, bool add);
     void requestFrame();
@@ -150,6 +152,11 @@ private:
     // Finer geometry for what the view shows closely. One job runs at a time.
     double lastNavigation_ = -1e9;
     bool detailReduced_ = false; // the last frame left out edges and the shadow
+    // A scene this heavy leaves out edges and the shadow while the view moves, and draws them
+    // once it settles: on the Mac, spike 5 found 30M triangles held 120 Hz without them and 48 fps
+    // with them. Hosts on smaller GPUs lower it.
+    u64 detailTriangles_ = 20'000'000;
+    u64 detailEdgeSegments_ = 2'000'000;
     bool refining_ = false;
 
     nav::Camera camera_;

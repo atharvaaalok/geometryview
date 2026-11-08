@@ -79,10 +79,10 @@ bool makeDawn(Dawn& dawn) {
     descriptor.requiredFeatureCount = features.size();
     descriptor.requiredFeatures = features.data();
     descriptor.requiredLimits = &limits;
-    descriptor.SetUncapturedErrorCallback(
-        [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView message) {
-            std::println(stderr, "webgpu error: {}", std::string_view(message.data, message.length));
-        });
+    descriptor.SetUncapturedErrorCallback([](const wgpu::Device&, wgpu::ErrorType,
+                                             wgpu::StringView message) {
+        std::println(stderr, "webgpu error: {}", std::string_view(message.data, message.length));
+    });
     dawn.instance.WaitAny(
         adapter.RequestDevice(&descriptor, wgpu::CallbackMode::WaitAnyOnly,
                               [&](wgpu::RequestDeviceStatus, wgpu::Device d, wgpu::StringView) {
@@ -195,8 +195,7 @@ int compareCommand(int argc, const char** argv) {
         images[r] = backends[r]->renderOffscreen(frame.view, nullptr);
         const double seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        const std::string path =
-            std::string(argv[4]) + (r == 0 ? "-metal.png" : "-webgpu.png");
+        const std::string path = std::string(argv[4]) + (r == 0 ? "-metal.png" : "-webgpu.png");
         engine::writePng(path.c_str(), images[r], options.width, options.height);
         std::println("{}: {:.0f} ms to load and draw", r == 0 ? "metal" : "webgpu", seconds * 1e3);
     }
@@ -224,8 +223,8 @@ int benchMetal(const char* library, const char* blob, const GeoRenderOptions& op
     const std::optional<Aabb> bounds = frame.scene.bounds();
     const nav::Viewport viewport{double(options.width), double(options.height)};
     for (u32 f = 0; f < frames + 10; ++f) {
-        const double azimuth = (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi /
-                               180.0;
+        const double azimuth =
+            (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi / 180.0;
         const double elevation = options.elevation_degrees * std::numbers::pi / 180.0;
         nav::Camera camera;
         camera.perspective = options.perspective;
@@ -265,9 +264,37 @@ int benchCommand(int argc, const char** argv) {
     }
     std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
         dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+    if (!web) {
+        std::println(stderr, "{}", error);
+        return 1;
+    }
+    // --stream reads the file as the browser does: streamed in pieces straight to the GPU.
+    bool stream = false;
+    for (int i = 3; i < argc; ++i) {
+        stream = stream || std::string_view(argv[i]) == "--stream";
+    }
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    if (stream) {
+        const int fd = open(argv[2], O_RDONLY);
+        std::vector<u8> piece(1 << 20);
+        scene::CacheStream reader(web.get(), [&](std::shared_ptr<scene::Segment> segment) {
+            segments.push_back(std::move(segment));
+        });
+        for (ssize_t got; (got = read(fd, piece.data(), piece.size())) > 0;) {
+            if (!reader.append({piece.data(), usize(got)}, error)) {
+                break;
+            }
+        }
+        close(fd);
+        if (!error.empty() || !reader.finish(error)) {
+            std::println(stderr, "{}", error);
+            return 1;
+        }
+    } else {
+        segments = openBlob(argv[2], error);
+    }
     engine::OffscreenView frame;
-    if (!web ||
-        !engine::prepareOffscreen(*web, openBlob(argv[2], error), options, frame, error)) {
+    if (!engine::prepareOffscreen(*web, std::move(segments), options, frame, error)) {
         std::println(stderr, "{}", error);
         return 1;
     }
@@ -285,8 +312,8 @@ int benchCommand(int argc, const char** argv) {
     std::vector<double> times, gpuTimes;
     u64 timed = web->timedFrames();
     for (u32 f = 0; f < frames + 10; ++f) {
-        const double azimuth = (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi /
-                               180.0;
+        const double azimuth =
+            (options.azimuth_degrees + 360.0 * f / frames) * std::numbers::pi / 180.0;
         const double elevation = options.elevation_degrees * std::numbers::pi / 180.0;
         nav::Camera camera;
         camera.perspective = options.perspective;
@@ -302,10 +329,10 @@ int benchCommand(int argc, const char** argv) {
         view.uniforms.aoSamples = frame.view.uniforms.aoSamples;
         const auto started = std::chrono::steady_clock::now();
         web->render(target, view);
-        dawn.instance.WaitAny(queue.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
-                                                        [](wgpu::QueueWorkDoneStatus,
-                                                           wgpu::StringView) {}),
-                              UINT64_MAX);
+        dawn.instance.WaitAny(
+            queue.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
+                                      [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
+            UINT64_MAX);
         if (f >= 10) { // the first frames build pipelines
             times.push_back(
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() *
@@ -331,7 +358,8 @@ int benchCommand(int argc, const char** argv) {
                  times.size(), samples, options.width, options.height, web->sceneTriangles(),
                  at(times, 0.5), at(times, 0.9), at(times, 0.99), at(gpuTimes, 0.5),
                  at(gpuTimes, 0.9), at(gpuTimes, 0.99), gpuTimes.size(),
-                 double(web->memoryBytes()[0]) / 1048576.0, double(web->memoryBytes()[1]) / 1048576.0);
+                 double(web->memoryBytes()[0]) / 1048576.0,
+                 double(web->memoryBytes()[1]) / 1048576.0);
     return 0;
 }
 

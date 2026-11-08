@@ -1799,7 +1799,7 @@ void Renderer::write(scene::Placement& placement, u64 offset, std::span<const u8
     state_->write(static_cast<State::GpuPlacement&>(placement), offset, bytes);
 }
 
-void Renderer::reserveGeometry(u64 bytes) {
+void Renderer::expect(u64 bytes) {
     State& s = *state_;
     s.ensureCapacity(s.arena->end + ((bytes + 255) & ~u64(255)));
 }

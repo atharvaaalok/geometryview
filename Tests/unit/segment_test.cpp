@@ -118,6 +118,12 @@ struct Placed : scene::Placement {
 };
 struct TestSink : scene::SegmentSink {
     std::vector<std::weak_ptr<Placed>> placed;
+    u64 expected = 0;
+    bool expectedFirst = false;
+    void expect(u64 size) override {
+        expected = size;
+        expectedFirst = placed.empty();
+    }
     std::shared_ptr<scene::Placement> place(u64 size) override {
         auto placement = std::make_shared<Placed>();
         placement->bytes.assign(usize(size), 0xEE);
@@ -163,6 +169,9 @@ TEST_CASE("a streamed cache file keeps only what the CPU reads, and places the r
         TestSink sink;
         const std::vector<std::shared_ptr<scene::Segment>> segments = stream(file, piece, &sink);
         REQUIRE(segments.size() == whole.size());
+        // The file's size is announced before anything is placed, so room is made once.
+        CHECK(sink.expected == file.size());
+        CHECK(sink.expectedFirst);
         for (usize i = 0; i < segments.size(); ++i) {
             const scene::Segment& got = *segments[i];
             const scene::Segment& want = *whole[i];

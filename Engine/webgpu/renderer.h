@@ -49,9 +49,9 @@ public:
 
     std::shared_ptr<scene::Placement> place(u64 size) override;
     void write(scene::Placement& placement, u64 offset, std::span<const u8> bytes) override;
-    /// Makes room for `bytes` more of geometry at once, as a stream's file size says, so the
-    /// buffer is not grown, and copied, segment by segment.
-    void reserveGeometry(u64 bytes);
+    /// Makes room for a streamed file's geometry at once, so the buffer is not grown, and
+    /// copied, segment by segment.
+    void expect(u64 size) override;
 
     /// Draws a frame into `target`, which must be the size last given to `resize`.
     void render(const wgpu::Texture& target, const render::ViewState& view,

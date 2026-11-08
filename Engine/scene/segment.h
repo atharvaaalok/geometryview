@@ -32,6 +32,9 @@ public:
     virtual std::shared_ptr<Placement> place(u64 size) = 0;
     /// Writes bytes at `offset` within a placement. The bytes need not outlive the call.
     virtual void write(Placement& placement, u64 offset, std::span<const u8> bytes) = 0;
+    /// A file of `size` bytes is about to be placed, segment by segment, so room for it can be
+    /// made once, before the first.
+    virtual void expect(u64 size) { (void)size; }
 };
 
 class Segment {

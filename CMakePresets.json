@@ -135,7 +135,8 @@
       "targets": [
         "spike_webgpu",
         "engine_webgpu",
-        "geometry-webgpu-bench"
+        "geometry-webgpu-bench",
+        "geometry-web"
       ]
     }
   ],

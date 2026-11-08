@@ -24,10 +24,6 @@ constexpr double kRefineDelaySeconds = 0.3;
 constexpr double kFlightSeconds = 0.55;
 // See-through fades in and out over this long, as in Colorfigures.
 constexpr double kSeeThroughSeconds = 0.7;
-// A scene this heavy leaves out edges and the shadow while the view moves, and draws them once it
-// settles: spike 5 found 30M triangles held 120 Hz without them and 48 fps with them.
-constexpr u64 kHeavyTriangles = 20'000'000;
-constexpr u64 kHeavyEdgeSegments = 2'000'000;
 // The square views that classify the shell, in pixels.
 constexpr u32 kShellViewSize = 160;
 
@@ -513,6 +509,11 @@ void Core::setMouse(const GeoMouseSettings& settings) {
                       std::clamp(double(settings.zoom_speed), 0.1, 10.0)});
 }
 
+void Core::setDetailBudget(u64 triangles, u64 edgeSegments) {
+    detailTriangles_ = triangles;
+    detailEdgeSegments_ = edgeSegments;
+}
+
 void Core::resize(u32 width, u32 height, float pixelsPerPoint) {
     viewport_ = {double(width), double(height)};
     pointer_.setPixelsPerPoint(pixelsPerPoint);
@@ -981,8 +982,8 @@ std::optional<Frame> Core::frame() {
     renderer_.syncState(interaction_.state());
     look_.apply(renderer_, scene_);
     publishSwatches();
-    const bool heavy = renderer_.sceneTriangles() > kHeavyTriangles ||
-                       renderer_.sceneEdgeSegments() > kHeavyEdgeSegments;
+    const bool heavy = renderer_.sceneTriangles() > detailTriangles_ ||
+                       renderer_.sceneEdgeSegments() > detailEdgeSegments_;
     detailReduced_ = heavy && (flight_.active() || now - lastNavigation_ < kRefineDelaySeconds);
     renderer_.setReducedDetail(detailReduced_);
     publishState();

@@ -207,6 +207,9 @@ bool CacheStream::takeHeader(std::span<const u8>& bytes, std::string& error) {
     }
     prefix_.clear();
     prefix_.shrink_to_fit();
+    if (sink_ != nullptr) {
+        sink_->expect(fileSize_);
+    }
     return true;
 }
 

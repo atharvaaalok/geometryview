@@ -20,13 +20,20 @@ const root = join(here, "../..");
 const reportsFor = (label) => {
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
+  if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 };
 const port = Number(process.argv[2] ?? 7342);
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
-                ".wasm": "application/wasm", ".json": "application/json" };
+                ".wasm": "application/wasm", ".json": "application/json", ".css": "text/css",
+                ".ttf": "font/ttf", ".svg": "image/svg+xml" };
 // What each URL prefix serves.
 const mounts = [
+  // The universal viewer's page, its engine and fonts, and the fixtures it opens.
+  ["/viewer/build/", join(root, "build/wasm-webgpu/Engine")],
+  ["/viewer/fonts/", join(root, "ThirdParty/ibm-plex-mono")],
+  ["/viewer/fixtures/", join(root, "build/fixtures")],
+  ["/viewer/", join(root, "Web/viewer")],
   ["/build/", join(root, "build/wasm-webgpu/Tools/spikes/webgpu")],
   ["/occt/", join(root, "build/wasm-release/Import")],
   ["/bench/", join(root, "build/wasm-webgpu/Tools")],
@@ -58,6 +65,19 @@ const server = createServer(async (request, response) => {
     response.writeHead(204, headers).end();
     return;
   }
+  // A picture of a page, as PNG bytes, kept to look at.
+  if (request.method === "POST" && url.pathname === "/png") {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const name = String(url.searchParams.get("label") ?? "unlabelled").replace(/[^\w.-]+/g, "-");
+    const folder = join(root, "build/fixtures/out");
+    await mkdir(folder, { recursive: true });
+    const file = join(folder, `${name}.png`);
+    await writeFile(file, Buffer.concat(chunks));
+    console.log(`png: ${file}`);
+    response.writeHead(204, headers).end();
+    return;
+  }
   // A cache file an import made, kept so the native tools can check it.
   if (request.method === "POST" && url.pathname === "/blob") {
     const chunks = [];
@@ -73,7 +93,7 @@ const server = createServer(async (request, response) => {
   }
   const path = url.pathname === "/" ? "/index.html" : url.pathname;
   const [prefix, directory] = mounts.find(([p]) => path.startsWith(p));
-  const name = path.slice(prefix.length);
+  const name = path.slice(prefix.length) || "index.html";
   if (name.includes("..")) {
     response.writeHead(400, headers).end();
     return;
