@@ -630,6 +630,11 @@ final class MainWindow: NSWindow {
             progress[document] = 0
             refreshMasthead()
         case .progress(let document, let done, let total):
+            // Progress comes from the import's thread and may arrive after the scene is ready,
+            // which would leave the bar full: it counts only while the document is loading.
+            guard progress[document] != nil else {
+                break
+            }
             progress[document] = total > 0 ? Double(done) / Double(total) : 0
             refreshMasthead()
         case .modelReady(let document):

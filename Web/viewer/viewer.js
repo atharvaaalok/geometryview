@@ -165,6 +165,9 @@ function handle(kind, document, node, done, total, message) {
       updateInsets();
       break;
     case Events.Progress:
+      // Only while the document is loading: progress arriving after the scene is ready would
+      // leave the bar full.
+      if (!progress.has(document)) break;
       progress.set(document, total > 0 ? done / total : 0);
       refreshMasthead();
       break;
@@ -436,7 +439,7 @@ function importFile(file, add) {
           }
         } else if (data.type === "progress") {
           if (shown) {
-            progress.set(document, data.total > 0 ? data.done / data.total : 0);
+            if (progress.has(document)) progress.set(document, data.total > 0 ? data.done / data.total : 0);
             refreshMasthead();
           } else {
             status.showImporting(file.name, data.done, data.total);
