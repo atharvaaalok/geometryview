@@ -56,6 +56,32 @@ Other work on the machine was using the GPU at the time, so runs varied by about
 The main pass's vertex stage, 2.23 ms for 12M triangles, is now the frame's largest part. The rack
 is far faster than Metal on the same frames (19.35 ms with four samples).
 
+**On the iPhone 16 Pro** (2026-11-08, 4:29–4:39 PM), the new cull runs without errors and changes
+nothing measurable, so the rack's time there is spent elsewhere. The old cull was put back for an
+A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` old). DPR 2
+(804×1748), one sample, GPU ms p50 at the three zooms:
+
+| Scene | New cull | Old cull |
+|---|---|---|
+| Rack of 100k parts, 60 Hz | 24.81 / 15.61 / 9.13 | 25.40 / 15.84 / 9.22 |
+| Rack of 100k parts, 3 frames a refresh | 25.04 / 15.19 / 8.76 | 24.82 / 15.31 / 8.84 |
+| 13S4P pack, 3 frames a refresh | 3.94 / 3.84 / 3.46 | 4.02 / 4.11 / 3.97 |
+| 13S4P pack, 60 Hz (P3: 8.56 / 8.46 / 8.62) | 8.66 / 8.69 / 8.77 | |
+| Rack of 100k parts, reduced detail, 60 Hz | 8.39 / 8.78 / 9.51 | |
+
+- **The rack is the phone's first.** In full, the rack takes 25 ms at the widest zoom: about 40 fps.
+  That is 6.6 times the M4 Max's 3.77 ms (native Dawn), which draws nearly four times the pixels.
+  It costs by parts, not triangles: its 1.2M triangles take nearly as long as the 10M STL's
+  (30.65 ms in P3).
+- **In motion the viewer draws it at reduced detail**, without edges or the shadow, since the phone's
+  budget is 400,000 edge segments and the rack has 1.2 million. Then it holds 60 Hz: frames 17 ms
+  apart at p50, 20–23 ms at p99. The full picture comes once the view settles.
+- **The pack is as in P3**, and its gate still passes (p99 at most 15.7 ms at 60 Hz).
+- **Hover probes:** all came back (923–3,576 a run, none failed). On the rack most find a gap
+  between boxes, as on the Mac.
+- The old cull's runs were the warmer ones (thermal state "fair" to "serious", against
+  "nominal"), which may account for its pack's extra 0.1–0.5 ms.
+
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.
 
@@ -195,13 +221,26 @@ iPhone in 4.9 s, with no error:
   - **On the iPhone**, PLE120 refined from 116,024 to 219,720 triangles, complete 2.7 s after the
     view settled, with two workers. The page's process peaked at 515 MB and the GPU process at
     105 MB, well inside the phone's budget.
-  - **The hard file on the iPhone** is still to be measured. The first runs showed no refinement,
-    and the reason was the check, not the viewer: it waited only 6 s for the triangle count to
-    change. The hard file is one part, whose segment comes at the end of its job, and two workers
-    take longer than that. In Chrome with the phone's settings (two workers, level 2) the job
-    takes 12.9 s, from 340,646 to 589,673 triangles. The check now waits while a job runs, and
-    lists each job's level, time and outcome. Its run on the phone was interrupted: the phone was
-    in use.
+  - **The hard file on the iPhone** refined from 340,646 to 589,673 triangles, drawn 21.4 s after
+    the zoom (2026-11-08, 4:23 PM). That was one job, its one definition to level 1, with two
+    workers, no crashed worker and no failed face.
+    - **Memory:** the page's process peaked at 835 MB as the job ended, and settled at 566 MB.
+      The GPU process peaked at 136 MB as the scene loaded, and was at 120 MB as the job ended
+      (`p4/runtime/iphone-p7-refine-hard-memory.json`).
+      - The import alone peaks at 570 MB (P4), so the job takes the page 265 MB higher, for a
+        moment.
+      - That peak is still well inside what the phone allowed the 8.4M-triangle STL (1,271 MB).
+      - The 270 MB that go at the job's end are most likely the job's own importer, which reads
+        the whole file again and is let go when the job ends.
+    - **In Chrome with the phone's settings** (two workers, level 2), the same job takes 12.0 s,
+      so the phone takes 1.8× as long.
+    - **The first runs showed no refinement, and the fault was in the check, not the viewer.**
+      - First, it waited only 6 s for the count to change. It now waits while a job runs.
+      - Then it stopped as soon as the job ended. The count changes only when a frame draws the
+        new segment, so it could stop just before that frame. That run's job was done and
+        reported no new triangles. The check now waits 3 s after a job too.
+      - Each job in the report now says what the importer made (triangles, failed faces, crashed
+        workers), how many segments it sent, and how many the page refused.
   - **Measured** in Chrome with the scripted check, `test=refine` (six wheel steps in on the
     middle):
 

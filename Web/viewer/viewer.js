@@ -477,6 +477,7 @@ function refineDocument(token, name, level, definitions) {
     let ok = false;
     const started = performance.now();
     let note = "";
+    let made = null, segments = 0, refused = 0;
     try {
       const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
       if (!file) return;
@@ -484,7 +485,8 @@ function refineDocument(token, name, level, definitions) {
       const result = await new Promise((resolve) => {
         importer.onmessage = ({ data }) => {
           if (data.type === "segment") {
-            if (!job.cancelled) engine.refineSegment(token, data.bytes);
+            segments += 1;
+            if (!job.cancelled && !engine.refineSegment(token, data.bytes)) refused += 1;
           } else if (data.type !== "progress") {
             resolve(data);
           }
@@ -494,11 +496,16 @@ function refineDocument(token, name, level, definitions) {
       });
       ok = result.type === "done";
       note = result.message ?? "";
+      if (ok) {
+        made = { triangles: result.triangles, failedFaces: result.failedFaces,
+                 crashedWorkers: result.crashedWorkers };
+      }
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
       if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
     } finally {
       refinements.push({ name, level, definitions: definitions.length, waitedMs: Math.round(started - asked),
-                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note });
+                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note,
+                         made, segments, refused });
       if (!job.cancelled) engine.finishRefinement(token, ok);
       if (refinement === job) refinement = null;
     }
@@ -781,9 +788,10 @@ async function runRefineTest() {
     await new Promise(requestAnimationFrame);
   }
   // Refinement starts once the view has been still a moment, and may run several jobs, finest
-  // first; a job's segments can all come at its end. Done when none runs and the count is steady.
+  // first; a job's segments can all come at its end, and count once a frame has drawn them. Done
+  // after 3 s with no job running and the count steady.
   const zoomed = performance.now();
-  let triangles = before, changed = zoomed;
+  let triangles = before, changed = zoomed, quietFrom = zoomed + 3000;
   const patience = Number(params.get("wait") ?? 120000);
   while (performance.now() - zoomed < patience) {
     await sleep(100);
@@ -792,7 +800,8 @@ async function runRefineTest() {
       triangles = now;
       changed = performance.now();
     }
-    if (!refinement && performance.now() - Math.max(changed, zoomed + 3000) >= 3000) break;
+    if (refinement) quietFrom = performance.now();
+    if (performance.now() - Math.max(changed, quietFrom) >= 3000) break;
   }
   await post({ before, after: triangles, refinedMs: triangles === before ? null : Math.round(changed - zoomed),
                workers: importWorkers, refinements });
