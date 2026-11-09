@@ -193,7 +193,10 @@ async function refine(data) {
     await mesh(step, pool, true);
     if (step._step_finish() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
     postSegments(step);
-    self.postMessage({ type: "done" });
+    // What it made, for the page's scripted check: a definition can mesh to nothing at all.
+    const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);
+    self.postMessage({ type: "done", triangles: stats[11], faces: stats[10], failedFaces: stats[12],
+                       crashedWorkers: stats[14] });
   } catch (error) {
     self.postMessage({ type: "failed", message: String(error.message ?? error) });
   }

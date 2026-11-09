@@ -477,6 +477,7 @@ function refineDocument(token, name, level, definitions) {
     let ok = false;
     const started = performance.now();
     let note = "";
+    let made = null, segments = 0, refused = 0;
     try {
       const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
       if (!file) return;
@@ -484,7 +485,8 @@ function refineDocument(token, name, level, definitions) {
       const result = await new Promise((resolve) => {
         importer.onmessage = ({ data }) => {
           if (data.type === "segment") {
-            if (!job.cancelled) engine.refineSegment(token, data.bytes);
+            segments += 1;
+            if (!job.cancelled && !engine.refineSegment(token, data.bytes)) refused += 1;
           } else if (data.type !== "progress") {
             resolve(data);
           }
@@ -494,11 +496,16 @@ function refineDocument(token, name, level, definitions) {
       });
       ok = result.type === "done";
       note = result.message ?? "";
+      if (ok) {
+        made = { triangles: result.triangles, failedFaces: result.failedFaces,
+                 crashedWorkers: result.crashedWorkers };
+      }
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
       if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
     } finally {
       refinements.push({ name, level, definitions: definitions.length, waitedMs: Math.round(started - asked),
-                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note });
+                         ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note,
+                         made, segments, refused });
       if (!job.cancelled) engine.finishRefinement(token, ok);
       if (refinement === job) refinement = null;
     }
