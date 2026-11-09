@@ -64,8 +64,10 @@ struct BodyHash {
     std::array<double, 3> lo{}, hi{};
 };
 
-bool readPoint(const Part21& index, u32 record, simd_double3& point) {
-    if (record == kNoRecord || index.kinds[record] != Kind::CARTESIAN_POINT) {
+// The three numbers of a CARTESIAN_POINT, or of a DIRECTION with `kind`.
+bool readPoint(const Part21& index, u32 record, simd_double3& point,
+               Kind kind = Kind::CARTESIAN_POINT) {
+    if (record == kNoRecord || index.kinds[record] != kind) {
         return false;
     }
     ParamCursor cursor(index.text(record));
@@ -118,11 +120,57 @@ void addCurvedExtent(const Part21& index, u32 record, PointBounds& bounds) {
     }
 }
 
+// Adds the reach of a surface of revolution whose curve is a circle or an ellipse, as its curve's
+// box swept about the axis. Only for a body whose vertices say nothing of its size: for any other,
+// a whole turn about a far axis could overstate a small face as much as a whole circle would.
+void addRevolvedExtent(const Part21& index, u32 record, PointBounds& bounds) {
+    const std::span<const u32> refs = index.refsOf(record);
+    if (refs.size() < 2 || refs[0] == kNoRecord || refs[1] == kNoRecord ||
+        index.kinds[refs[1]] != Kind::AXIS1_PLACEMENT) {
+        return;
+    }
+    PointBounds curve;
+    const Kind curveKind = index.kinds[refs[0]];
+    if (curveKind == Kind::CIRCLE || curveKind == Kind::ELLIPSE) {
+        addCurvedExtent(index, refs[0], curve);
+    }
+    const std::span<const u32> axis = index.refsOf(refs[1]);
+    simd_double3 origin, direction;
+    if (curve.empty() || axis.size() < 2 || !readPoint(index, axis[0], origin) ||
+        !readPoint(index, axis[1], direction, Kind::DIRECTION) || simd_length(direction) == 0.0) {
+        return;
+    }
+    direction = simd_normalize(direction);
+    double radius = 0.0, low = INFINITY, high = -INFINITY;
+    for (int corner = 0; corner < 8; ++corner) {
+        const simd_double3 point = {corner & 1 ? curve.hi.x : curve.lo.x,
+                                    corner & 2 ? curve.hi.y : curve.lo.y,
+                                    corner & 4 ? curve.hi.z : curve.lo.z};
+        const simd_double3 offset = point - origin;
+        const double along = simd_dot(offset, direction);
+        radius = std::max(radius, simd_length(offset - along * direction));
+        low = std::min(low, along);
+        high = std::max(high, along);
+    }
+    // A disc of that radius about the axis reaches radius * sqrt(1 - d_i^2) along each axis i.
+    const simd_double3 reach =
+        radius * simd_make_double3(std::sqrt(1.0 - direction.x * direction.x),
+                                   std::sqrt(1.0 - direction.y * direction.y),
+                                   std::sqrt(1.0 - direction.z * direction.z));
+    for (const double along : {low, high}) {
+        bounds.add(origin + along * direction - reach);
+        bounds.add(origin + along * direction + reach);
+    }
+}
+
 // Bounds of the points that shape `records`. Curves can bulge beyond their vertices, so this is an
 // estimate, good for framing and for choosing tolerances. With `curves`, round surfaces count too,
 // which matters for a body with few vertices, such as a closed sphere. Circles count only when they
 // are no larger than the vertices' own extent: a shallow arc of a huge circle is common, and its
-// whole circle would wildly overstate the body.
+// whole circle would wildly overstate the body. Where the vertices are all at one point, as on a
+// ring whose one face closes on itself, they give no extent: then circles count whole, and a
+// surface of revolution counts as swept about its axis. Bounds of a single point made the
+// tolerances those of a body one unit across, about 70 times too fine for a 47 mm seal.
 PointBounds boundsOf(const Part21& index, std::span<const u32> records, bool curves) {
     PointBounds bounds;
     for (const u32 record : records) {
@@ -144,10 +192,13 @@ PointBounds boundsOf(const Part21& index, std::span<const u32> records, bool cur
             } else if (kind == Kind::CIRCLE || kind == Kind::ELLIPSE) {
                 PointBounds circle;
                 addCurvedExtent(index, record, circle);
-                if (!circle.empty() && simd_length(circle.hi - circle.lo) <= 2.0 * extent) {
+                if (!circle.empty() &&
+                    (extent == 0.0 || simd_length(circle.hi - circle.lo) <= 2.0 * extent)) {
                     rounded.add(circle.lo);
                     rounded.add(circle.hi);
                 }
+            } else if (kind == Kind::SURFACE_OF_REVOLUTION && extent == 0.0) {
+                addRevolvedExtent(index, record, rounded);
             }
         }
         bounds = rounded;
