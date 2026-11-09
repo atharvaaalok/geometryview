@@ -1,0 +1,31 @@
+{
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "idleFrames": 0,
+    "heapMB": 16,
+    "loadMs": 223,
+    "startupMs": 110,
+    "triangles": 10000006,
+    "read": {
+        "bytes": 158138368,
+        "firstMs": 107.10000000000002,
+        "ms": 223.84000000000003,
+        "pieces": 3,
+        "largest": 79691776
+    },
+    "settledAfterDrag": 1,
+    "loopingAfter": false,
+    "idleSettledFrames": 0,
+    "devicePixelRatio": 3,
+    "gpuMs": 12.369416999999999,
+    "height": 1748,
+    "hovered": 1,
+    "targetMB": 41.88394546508789,
+    "thermalState": "nominal",
+    "width": 804,
+    "errors": [],
+    "label": "iphone-loopback-sab-before-1-p4-open-stl10m",
+    "bufferMB": 268.8437957763672,
+    "looping": false,
+    "dragFrames": 118,
+    "dragMs": 2012
+}
