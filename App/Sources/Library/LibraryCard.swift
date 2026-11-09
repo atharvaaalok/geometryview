@@ -1,56 +1,73 @@
 import AppKit
+import GeometryViewEngine
 
-/// The connected folders as a tree of their STEP and STL files. Clicking a file opens it alone;
-/// Command-clicking adds it to what is shown.
+/// The Library: the switcher and the two ways in, opening files and connecting a folder, then the
+/// connected folders and the recent files, as rows like the structure tree's. A click on a file
+/// opens it alone; Command-click adds it to what is shown. The web viewer's Library is the same.
 @MainActor
-final class LibraryCard: StickerCard, NSOutlineViewDataSource, NSOutlineViewDelegate {
+final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate {
     let switcher = SegmentedPill(
         ["Library", "Structure"],
         selected: 0,
         help: "Show files or parts"
     )
     private let store: LibraryStore
-    private let outline = NSOutlineView()
+    private let table = TreeTableView()
     private let scroll = NSScrollView()
-    private let connect = PillButton(icon: .plus, help: "Connect a folder")
-    private let empty = NSTextField(
-        wrappingLabelWithString: "Connect a folder to browse its STEP and STL files."
-    )
+    private let add = PillButton(icon: .plus, help: "Open files (⌘O)")
+    private let connect = PillButton(icon: .folderPlus, help: "Connect a folder (⌥⌘O)")
+    private var rows: [LibraryRow] = []
+    /// The paths of the folders shown open.
+    private var expanded: Set<String> = []
+    private var collapsed: Set<LibrarySection>
+    private static let collapsedKey = "library.collapsed"
+
+    /// The paths of the files shown now, marked in the rows.
+    var openPaths: Set<String> = [] {
+        didSet {
+            if openPaths != oldValue {
+                reload()
+            }
+        }
+    }
 
     var onOpen: ((URL, _ adding: Bool) -> Void)?
+    var onReopen: ((RecentFile, _ adding: Bool) -> Void)?
+    var onChoose: (() -> Void)?
     var onConnect: (() -> Void)?
 
     init(store: LibraryStore) {
         self.store = store
+        collapsed = Set(
+            (UserDefaults.standard.stringArray(forKey: Self.collapsedKey) ?? []).compactMap(LibrarySection.init)
+        )
         super.init()
 
         let column = NSTableColumn(identifier: .init("name"))
-        outline.addTableColumn(column)
-        outline.outlineTableColumn = column
-        outline.headerView = nil
-        outline.rowHeight = StructureCard.rowHeight
-        outline.intercellSpacing = .zero
-        outline.backgroundColor = .clear
-        outline.style = .plain
-        outline.indentationPerLevel = 14
-        outline.dataSource = self
-        outline.delegate = self
-        outline.target = self
-        outline.action = #selector(rowClicked)
-        outline.menu = NSMenu()
-        outline.menu?.delegate = self
+        table.addTableColumn(column)
+        table.headerView = nil
+        table.rowHeight = StructureCard.rowHeight
+        table.intercellSpacing = .zero
+        table.backgroundColor = .clear
+        table.style = .plain
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.action = #selector(rowClicked)
+        table.onToggle = { [weak self] row in self?.toggle(row) }
+        table.menu = NSMenu()
+        table.menu?.delegate = self
 
-        scroll.documentView = outline
+        scroll.documentView = table
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
 
-        empty.font = Typography.font(Typography.textSmall)
-        empty.textColor = Palette.muted
+        add.onPress = { [weak self] in self?.onChoose?() }
         connect.onPress = { [weak self] in self?.onConnect?() }
 
-        for view in [switcher, connect, scroll, empty] as [NSView] {
+        for view in [switcher, add, connect, scroll] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -60,131 +77,208 @@ final class LibraryCard: StickerCard, NSOutlineViewDataSource, NSOutlineViewDele
             switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
             connect.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             connect.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
+            add.trailingAnchor.constraint(equalTo: connect.leadingAnchor, constant: -8),
+            add.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            empty.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-            empty.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
-            empty.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 14),
         ])
         reload()
     }
 
-    /// Shows the store's folders afresh.
+    /// Shows the store's folders and recent files afresh.
     func reload() {
-        outline.reloadData()
-        empty.isHidden = !store.roots.isEmpty
+        rows = LibraryRows.rows(
+            roots: store.roots,
+            expanded: expanded,
+            collapsed: collapsed,
+            recent: store.recent,
+            open: openPaths
+        )
+        table.reloadData()
     }
 
-    /// Lists a folder again after it changed, keeping what is open.
-    func refresh(_ node: FileNode) {
-        node.invalidate()
-        outline.reloadItem(node, reloadChildren: true)
+    /// Opens a folder's row, listing it.
+    func expand(_ node: FileNode) {
+        expanded.insert(node.url.path)
+        node.list { [weak self] in self?.reload() }
+        reload()
     }
+
+    /// Lists a folder again after it changed, if it is open.
+    func refresh(_ node: FileNode) {
+        guard expanded.contains(node.url.path) else {
+            return
+        }
+        node.list { [weak self] in self?.reload() }
+    }
+
+    // MARK: Clicks
 
     @objc private func rowClicked() {
-        guard let node = outline.item(atRow: outline.clickedRow) as? FileNode else {
+        let index = table.clickedRow
+        guard rows.indices.contains(index) else {
             return
         }
-        if node.isDirectory {
-            if outline.isItemExpanded(node) {
-                outline.collapseItem(node)
-            } else {
-                outline.expandItem(node)
-            }
-            return
-        }
+        let row = rows[index]
         let adding = NSApp.currentEvent?.modifierFlags.contains(.command) == true
-        onOpen?(node.url, adding)
-    }
-
-    // MARK: NSOutlineViewDataSource
-
-    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        guard let node = item as? FileNode else {
-            return store.roots.count
+        switch row.kind {
+        case .section, .folder:
+            toggle(index)
+        case .file:
+            if let node = row.node {
+                onOpen?(node.url, adding)
+            }
+        case .recent:
+            if let file = row.recent {
+                onReopen?(file, adding)
+            }
+        case .message:
+            break
         }
-        return node.children.count
     }
 
-    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        guard let node = item as? FileNode else {
-            return store.roots[index]
+    private func toggle(_ index: Int) {
+        guard rows.indices.contains(index) else {
+            return
         }
-        return node.children[index]
-    }
-
-    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-        (item as? FileNode)?.isDirectory == true
-    }
-
-    // MARK: NSOutlineViewDelegate
-
-    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any)
-        -> NSView?
-    {
-        guard let node = item as? FileNode else {
-            return nil
+        let row = rows[index]
+        if let section = row.section {
+            if collapsed.contains(section) {
+                collapsed.remove(section)
+            } else {
+                collapsed.insert(section)
+            }
+            UserDefaults.standard.set(collapsed.map(\.rawValue), forKey: Self.collapsedKey)
+            reload()
+        } else if let node = row.node, row.kind == .folder, !node.isMissing {
+            // A folder is listed each time it opens, so opening it again shows what changed.
+            if expanded.contains(node.url.path) {
+                expanded.remove(node.url.path)
+                reload()
+            } else {
+                expand(node)
+            }
         }
-        let identifier = NSUserInterfaceItemIdentifier("file")
-        let cell =
-            outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
-            ?? makeCell(identifier)
-        cell.textField?.stringValue = node.name
-        cell.imageView?.image = Icons.image(node.isDirectory ? .folder : .cube, size: 14)
-        return cell
     }
 
-    private func makeCell(_ identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = identifier
-        let icon = NSImageView()
-        icon.contentTintColor = Palette.muted
-        let label = NSTextField(labelWithString: "")
-        label.font = Typography.font(Typography.textMedium)
-        label.textColor = Palette.ink
-        label.lineBreakMode = .byTruncatingMiddle
-        for view in [icon, label] as [NSView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(view)
+    fileprivate func remove(_ row: LibraryRow) {
+        if let file = row.recent {
+            store.forget(file)
+        } else if let node = row.node, node.parent == nil {
+            expanded = expanded.filter { !$0.hasPrefix(node.url.path) }
+            store.disconnect(node)
         }
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 14),
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        cell.imageView = icon
-        cell.textField = label
+    }
+
+    // MARK: NSTableViewDataSource and NSTableViewDelegate
+
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        rows.count
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        false
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        TreeRowView()
+    }
+
+    func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+        guard let view = rowView as? TreeRowView, rows.indices.contains(row) else {
+            return
+        }
+        view.isHovered = table.isHovered(row)
+        view.isChosen = rows[row].isOpen
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row index: Int) -> NSView? {
+        let cell = tableView.makeView(withIdentifier: TreeCell.identifier, owner: self) as? TreeCell ?? TreeCell()
+        let row = rows[index]
+        let disclosure: TreeCell.Disclosure = row.isExpanded ? .open : .closed
+        switch row.kind {
+        case .section:
+            cell.configure(
+                name: row.name, depth: row.depth, mark: .none, isDocument: true, disclosure: disclosure,
+                count: row.end, state: nil, actions: [])
+        case .folder:
+            let missing = row.node?.isMissing == true
+            let top = row.node?.parent == nil
+            cell.configure(
+                name: row.name, depth: row.depth, mark: .folder, isDocument: false,
+                disclosure: missing ? .none : disclosure, count: row.end, state: nil,
+                actions: top ? [.remove] : [], tone: missing ? .dimmed : .normal, removeHelp: "Disconnect")
+        case .file:
+            cell.configure(
+                name: row.name, depth: row.depth, mark: .file, isDocument: false, disclosure: .none,
+                count: "", state: nil, actions: [])
+        case .recent:
+            cell.configure(
+                name: row.name, depth: row.depth, mark: .file, isDocument: false, disclosure: .none,
+                count: row.end, state: nil, actions: [.remove], removeHelp: "Remove from Recent")
+        case .message:
+            cell.configure(
+                name: row.name, depth: row.depth, mark: .blank, isDocument: false, disclosure: .none,
+                count: "", state: nil, actions: [], tone: .message)
+        }
+        cell.toolTip = row.recent?.path ?? row.node?.url.path
+        cell.onAction = { [weak self] action in
+            if action == .remove {
+                self?.remove(row)
+            }
+        }
+        cell.showsActions = table.isUnderPointer(index)
         return cell
     }
 }
 
 extension LibraryCard: NSMenuDelegate {
-    // A connected folder's menu offers to disconnect it.
+    // A row's menu: disconnect a folder or forget a recent file, and show either in Finder.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let node = outline.item(atRow: outline.clickedRow) as? FileNode,
-            node.parent == nil
-        else {
+        guard rows.indices.contains(table.clickedRow) else {
             return
         }
-        let item = NSMenuItem(
-            title: "Disconnect \(node.name)",
-            action: #selector(disconnect(_:)),
-            keyEquivalent: ""
-        )
-        item.target = self
-        item.representedObject = node
-        menu.addItem(item)
+        let row = rows[table.clickedRow]
+        if let node = row.node, node.parent == nil {
+            menu.addItem(item("Disconnect \(node.name)", #selector(removeChosen(_:)), RowBox(row)))
+        }
+        if row.recent != nil {
+            menu.addItem(item("Remove from Recent", #selector(removeChosen(_:)), RowBox(row)))
+        }
+        let url = row.node.flatMap { $0.isMissing ? nil : $0.url } ?? row.recent.flatMap { store.resolve($0) }
+        if let url {
+            menu.addItem(item("Show in Finder", #selector(showInFinder(_:)), url))
+        }
     }
 
-    @objc private func disconnect(_ sender: NSMenuItem) {
-        if let node = sender.representedObject as? FileNode {
-            store.disconnect(node)
+    private func item(_ title: String, _ action: Selector, _ object: Any) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.representedObject = object
+        return item
+    }
+
+    @objc private func removeChosen(_ sender: NSMenuItem) {
+        if let box = sender.representedObject as? RowBox {
+            remove(box.row)
         }
+    }
+
+    @objc private func showInFinder(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+}
+
+/// A row, as a menu item's object.
+@MainActor
+private final class RowBox: NSObject {
+    let row: LibraryRow
+    init(_ row: LibraryRow) {
+        self.row = row
     }
 }

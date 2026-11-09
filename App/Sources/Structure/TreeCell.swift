@@ -20,7 +20,20 @@ final class TreeRowView: NSTableRowView {
 
     private var plate: NSRect { bounds.insetBy(dx: 6, dy: 1) }
 
+    /// Drawn as selected without being the table's selection: a Library row for a file shown now.
+    var isChosen = false {
+        didSet {
+            if isChosen != oldValue {
+                needsDisplay = true
+            }
+        }
+    }
+
     override func drawBackground(in dirtyRect: NSRect) {
+        if isChosen, !isSelected {
+            drawSelection(in: dirtyRect)
+            return
+        }
         guard isHovered, !isSelected else {
             return
         }
@@ -51,15 +64,25 @@ final class TreeCell: NSTableCellView {
         case none, open, closed
     }
 
-    /// What stands before the name.
+    /// What stands before the name: a glyph or swatch in its slot, an empty slot, or nothing, which
+    /// brings the name up to the chevron.
     enum Mark {
         case document
         case assembly
         case swatch(NSColor?, small: Bool)
+        case folder
+        case file
+        case blank
+        case none
     }
 
     enum Action {
-        case ghost, hide, isolate
+        case ghost, hide, isolate, remove
+    }
+
+    /// How the name reads: as a name, a line of text in place of rows, or something dimmed.
+    enum Tone {
+        case normal, message, dimmed
     }
 
     /// Called with a row button's action.
@@ -82,9 +105,15 @@ final class TreeCell: NSTableCellView {
     private let ghostButton = RowButton(icon: .ghost)
     private let hideButton = RowButton(icon: .eye)
     private let isolateButton = RowButton(icon: .scope)
+    private let removeButton = RowButton(icon: .close)
     private let actions = NSStackView()
+    private var shownActions: Set<Action> = []
+    private var tone = Tone.normal
+    private var labelAfterGlyph: NSLayoutConstraint?
+    private var labelAfterChevron: NSLayoutConstraint?
     private var labelBeforeCount: NSLayoutConstraint?
     private var labelBeforeActions: NSLayoutConstraint?
+    private var labelBeforeEdge: NSLayoutConstraint?
     private var indent: NSLayoutConstraint?
     private var name = ""
     private var state: GeoNodeState?
@@ -100,6 +129,9 @@ final class TreeCell: NSTableCellView {
         label.font = Typography.font(Typography.textMedium)
         label.textColor = Palette.ink
         label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        label.cell?.wraps = false
+        label.cell?.usesSingleLineMode = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         count.font = Typography.font(Typography.textSmall)
         count.textColor = Palette.muted
@@ -108,11 +140,12 @@ final class TreeCell: NSTableCellView {
             view.setContentCompressionResistancePriority(.required, for: .horizontal)
             view.setContentHuggingPriority(.required, for: .horizontal)
         }
-        actions.setViews([ghostButton, hideButton, isolateButton], in: .leading)
+        actions.setViews([ghostButton, hideButton, isolateButton, removeButton], in: .leading)
         actions.spacing = 1
         ghostButton.onPress = { [weak self] in self?.onAction?(.ghost) }
         hideButton.onPress = { [weak self] in self?.onAction?(.hide) }
         isolateButton.onPress = { [weak self] in self?.onAction?(.isolate) }
+        removeButton.onPress = { [weak self] in self?.onAction?(.remove) }
         isolateButton.toolTip = "Show only this, framed"
 
         for (view, name) in [(chevron, "chevron"), (glyph, "glyph"), (swatch, "swatch"), (label, "name"), (count, "count")] as [(NSView, String)] {
@@ -134,6 +167,11 @@ final class TreeCell: NSTableCellView {
         )
         labelBeforeCount = beforeCount
         labelBeforeActions = beforeActions
+        labelBeforeEdge = label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8)
+        let afterGlyph = label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 7)
+        afterGlyph.isActive = true
+        labelAfterGlyph = afterGlyph
+        labelAfterChevron = label.leadingAnchor.constraint(equalTo: chevron.trailingAnchor, constant: 7)
         NSLayoutConstraint.activate([
             indent,
             chevron.widthAnchor.constraint(equalToConstant: Self.chevronSize),
@@ -144,7 +182,6 @@ final class TreeCell: NSTableCellView {
             glyph.widthAnchor.constraint(equalToConstant: 16),
             swatch.centerXAnchor.constraint(equalTo: glyph.centerXAnchor),
             swatch.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 7),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
             beforeCount,
             count.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
@@ -161,7 +198,9 @@ final class TreeCell: NSTableCellView {
         fatalError("TreeCell is not used from Interface Builder")
     }
 
-    /// `state` is nil for a file's row, which has no buttons.
+    /// `state` is nil for a row with no part, such as a file's or the Library's. A part's row has the
+    /// ghost, hide and isolate buttons unless `actions` says otherwise; `removeHelp` names what the
+    /// remove button does.
     func configure(
         name: String,
         depth: Int,
@@ -169,28 +208,44 @@ final class TreeCell: NSTableCellView {
         isDocument: Bool,
         disclosure: Disclosure,
         count text: String,
-        state: GeoNodeState?
+        state: GeoNodeState?,
+        actions shown: Set<Action>? = nil,
+        tone: Tone = .normal,
+        removeHelp: String = "Remove"
     ) {
         indent?.constant = 8 + CGFloat(depth) * Self.indentStep
         self.name = name
         self.state = state
-        label.font = Typography.font(Typography.textMedium, isDocument ? .semibold : .regular)
+        self.tone = tone
+        shownActions = shown ?? (state == nil ? [] : [.ghost, .hide, .isolate])
+        removeButton.toolTip = removeHelp
+        let size = tone == .message ? Typography.textSmall : Typography.textMedium
+        label.font = Typography.font(size, isDocument ? .semibold : .regular)
         count.stringValue = text
         chevron.isHidden = disclosure == .none
         chevron.image = disclosure == .open ? TreeGlyph.open : TreeGlyph.closed
+        glyph.isHidden = true
+        swatch.isHidden = true
         switch mark {
-        case .document:
-            glyph.image = TreeGlyph.document
-            glyph.isHidden = false
-            swatch.isHidden = true
-        case .assembly:
-            glyph.image = TreeGlyph.assembly
-            glyph.isHidden = false
-            swatch.isHidden = true
+        case .document: glyph.image = TreeGlyph.document
+        case .assembly: glyph.image = TreeGlyph.assembly
+        case .folder: glyph.image = TreeGlyph.folder
+        case .file: glyph.image = TreeGlyph.file
         case .swatch(let color, let small):
-            glyph.isHidden = true
             swatch.isHidden = false
             swatch.show(color, small: small)
+        case .blank, .none: break
+        }
+        switch mark {
+        case .document, .assembly, .folder, .file: glyph.isHidden = false
+        default: break
+        }
+        if case .none = mark {
+            labelAfterGlyph?.isActive = false
+            labelAfterChevron?.isActive = true
+        } else {
+            labelAfterChevron?.isActive = false
+            labelAfterGlyph?.isActive = true
         }
         refreshName()
         refreshEnd()
@@ -208,7 +263,7 @@ final class TreeCell: NSTableCellView {
         case GeoNodeGhosted:
             color = Palette.muted
         default:
-            color = Palette.ink
+            color = tone == .message ? Palette.muted : tone == .dimmed ? Palette.faint : Palette.ink
         }
         attributes[.foregroundColor] = color
         attributes[.font] = label.font
@@ -218,10 +273,13 @@ final class TreeCell: NSTableCellView {
     // The row's end: buttons under the pointer, else a mark for what is hidden or ghosted, else
     // the count.
     private func refreshEnd() {
-        let buttons = showsActions && state != nil
+        let buttons = showsActions && !shownActions.isEmpty
         actions.isHidden = !buttons
+        ghostButton.isHidden = !shownActions.contains(.ghost)
+        hideButton.isHidden = !shownActions.contains(.hide)
+        isolateButton.isHidden = !shownActions.contains(.isolate)
+        removeButton.isHidden = !shownActions.contains(.remove)
         labelBeforeActions?.isActive = buttons
-        labelBeforeCount?.isActive = !buttons
         let hidden = state == GeoNodeHidden
         let ghosted = state == GeoNodeGhosted
         ghostButton.isOn = ghosted
@@ -239,7 +297,11 @@ final class TreeCell: NSTableCellView {
             }
         stateMark.image = mark
         stateMark.isHidden = buttons || mark == nil
-        count.isHidden = buttons || mark != nil
+        count.isHidden = buttons || mark != nil || count.stringValue.isEmpty
+        // With nothing at its end, the name may run to the row's edge.
+        let bare = !buttons && mark == nil && count.stringValue.isEmpty
+        labelBeforeCount?.isActive = !buttons && !bare
+        labelBeforeEdge?.isActive = bare
     }
 
     func disclosureHit(_ point: NSPoint) -> Bool {
@@ -384,4 +446,6 @@ enum TreeGlyph {
     /// A circle, half filled: some of what is under the row is hidden or ghosted.
     static let mixed = Icons.image(.seeThrough, size: 12)
     static let document = Icons.image(.file, size: 14)
+    static let folder = Icons.image(.folder, size: 14)
+    static let file = Icons.image(.cube, size: 14)
 }

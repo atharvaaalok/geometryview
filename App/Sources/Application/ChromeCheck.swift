@@ -162,7 +162,8 @@ final class ChromeCheck {
             guard let cell = table.view(atColumn: 0, row: 1, makeIfNecessary: false) else {
                 return nil
             }
-            let buttons = Self.views(RowButton.self, in: cell)
+            // The buttons a part's row shows: ghost, hide and isolate (the Library's remove stays hidden).
+            let buttons = Self.views(RowButton.self, in: cell).filter { !$0.isHidden }
             return buttons.count == 3 ? buttons[index] : nil
         }
         let showAll = { () -> NSView? in

@@ -25,6 +25,12 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         guard let url = task.request.url else {
             return
         }
+        if let listing = files.listing(url.path) {
+            respond(task, status: 200, type: "application/json", length: listing.count)
+            task.didReceive(listing)
+            task.didFinish()
+            return
+        }
         guard let file = files.resolve(url.path),
             let handle = try? FileHandle(forReadingFrom: file),
             let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize
@@ -34,7 +40,8 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         defer { try? handle.close() }
-        respond(task, status: 200, type: WebFiles.type(of: file), length: size)
+        respond(task, status: 200, type: WebFiles.type(of: file), length: size,
+                modified: url.path.hasPrefix("/open/") ? WebFiles.modified(file) : nil)
         while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
             guard !stopped.contains(id) else {
                 return
@@ -50,13 +57,20 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         stopped.insert(ObjectIdentifier(task))
     }
 
-    private func respond(_ task: any WKURLSchemeTask, status: Int, type: String, length: Int) {
+    private func respond(
+        _ task: any WKURLSchemeTask,
+        status: Int,
+        type: String,
+        length: Int,
+        modified: String? = nil
+    ) {
         guard let url = task.request.url else {
             return
         }
         var headers = WebFiles.isolation
         headers["Content-Type"] = type
         headers["Content-Length"] = String(length)
+        headers["GeometryView-Modified"] = modified
         if let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
                                           headerFields: headers) {
             task.didReceive(response)

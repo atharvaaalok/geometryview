@@ -5,7 +5,8 @@
   compare_chrome.py <mac.json> <web.json> [--tolerance 1]
 
 Boxes are compared on their left edge, top, width and height; text, whose boxes each toolkit pads
-its own way, on its left edge and vertical centre only. The masthead's left edge is left out: the
+its own way, on its left edge and vertical centre only; controls sized by their labels, on their
+position and height, within 2.5. The masthead's left edge is left out: the
 Mac's sits beside its window buttons. Exits 1 if anything differs by more than the tolerance.
 """
 
@@ -15,6 +16,11 @@ import sys
 
 TEXT = {"masthead.title", "masthead.subtitle", "tree.name", "tree.count", "status.heading", "status.body"}
 PLATFORM_X = {"masthead.title", "masthead.subtitle", "masthead.progress"}
+# Sized by their labels, which Chrome and CoreText measure a fraction of a point apart: compared on
+# position and height, with the slack that adds up along a row of them.
+TEXT_SIZED = {"toolbar.card", "toolbar.item", "status.button", "structure.segment", "structure.switcher",
+              "library.switcher"}
+TEXT_SLACK = 2.5
 
 
 def boxes(value):
@@ -42,14 +48,18 @@ def main():
         if len(a) != len(b):
             print(f"{name:20s} {len(a)} on the Mac, {len(b)} on the web; comparing the first {min(len(a), len(b))}")
         for index, (m, w) in enumerate(zip(a, b)):
+            tolerance = args.tolerance
             if name in TEXT:
                 keys = {"x": (m["x"], w["x"]), "cy": (m["y"] + m["h"] / 2, w["y"] + w["h"] / 2)}
+            elif name in TEXT_SIZED:
+                keys = {k: (m[k], w[k]) for k in ("x", "y", "h")}
+                tolerance = max(tolerance, TEXT_SLACK)
             else:
                 keys = {k: (m[k], w[k]) for k in ("x", "y", "w", "h")}
             if name in PLATFORM_X:
                 keys.pop("x", None)
-            off = {k: round(w_ - m_, 1) for k, (m_, w_) in keys.items() if abs(w_ - m_) > args.tolerance}
-            worst = max([worst] + [abs(v) for v in off.values()])
+            off = {k: round(w_ - m_, 1) for k, (m_, w_) in keys.items() if abs(w_ - m_) > tolerance}
+            worst = max([worst] + [abs(v) - (tolerance - args.tolerance) for v in off.values()])
             label = f"{name}[{index}]" if isinstance(mac[name], list) else name
             print(f"{label:20s} {'ok' if not off else 'web - mac: ' + ', '.join(f'{k} {v:+g}' for k, v in off.items())}")
     print(f"largest difference: {worst:g}")

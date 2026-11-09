@@ -64,9 +64,17 @@ choices are in the View menu, and the look is remembered.
 The toolbar at the bottom switches the selection mode and holds the hide and ghost tools, and the
 card on the right shows what is selected, with buttons to hide, ghost, isolate or fit to it.
 
-The left card switches between Library and Structure. Connect Folder (⌥⌘O) adds folders to the
-library, which lists their STEP and STL files and remembers them across launches. Open files that
-change on disk reload. Settings (⌘,) rebinds every key and what each mouse button drags.
+The first page, the Library card and the start of the toolbar each have **+ Open files** (⌘O) and
+**Connect a folder** (⌥⌘O); dropping files opens them and dropping a folder connects it. The left
+card switches between Library and Structure. The Library lists the connected folders as trees of
+their STEP and STL files, read as they are opened, then **Recent**, the twelve files opened last,
+which reopen at once; both are remembered across launches. Open files that change on disk reload.
+Settings (⌘,) rebinds every key and what each mouse button drags.
+
+The browser viewer and the iPhone app have the same Library and buttons. In Chrome and Edge a
+connected folder is remembered between visits (the browser may ask once more for permission, with
+a Reconnect button); Safari and Firefox keep it for the visit. On the iPhone the system's pickers
+choose files and folders, and folders are remembered.
 
 The Structure card lists each open file's assembly tree. Each part shows a swatch of the colour it
 is drawn in, each assembly how many parts it holds, and a part of several bodies how many it has.

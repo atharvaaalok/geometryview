@@ -5,7 +5,7 @@
 
 import { Actions, NodeActions, NodeKinds } from "./engine.js";
 import { iconNode, icons } from "./icons.js";
-import { el, pill, segmented } from "./ui.js";
+import { el, pill, segmented, VirtualList } from "./ui.js";
 
 // A row's height, as the Mac's; a phone's are taller, for fingers.
 const rowHeight = () => (document.body.classList.contains("phone") ? 30 : 28);
@@ -163,9 +163,8 @@ export class TreeRows {
 export class StructureCard {
   tree = new TreeRows();
   #engine;
-  #scroll;
-  #spacer;
   #list;
+  #nothing;
   #search;
   #matchLabel;
   #footer;
@@ -180,7 +179,6 @@ export class StructureCard {
   #selected = null; // { document, node } of the selection's focus row
   #highlighted = null; // from the pointer in the view
   #pointerRow = -1;
-  #pending = false;
 
   constructor(engine, { onSwitch }) {
     this.#engine = engine;
@@ -199,11 +197,9 @@ export class StructureCard {
       }
     });
     this.#matchLabel = el("span.match");
-    this.#spacer = el("div.spacer");
-    this.#list = el("div.rows", { role: "tree" });
-    this.#scroll = el("div.tree", {}, [this.#spacer, this.#list]);
-    this.#scroll.addEventListener("scroll", () => this.#schedule());
-    this.#scroll.addEventListener("pointerleave", () => this.#hoverRow(-1));
+    this.#list = new VirtualList({ role: "tree", rowHeight, count: () => this.tree.rows.length,
+                                   row: (index) => this.#row(index) });
+    this.#list.element.addEventListener("pointerleave", () => this.#hoverRow(-1));
     this.#hiddenLabel = el("span");
     this.#ghostedLabel = el("span");
     this.#showAll = pill({ title: "Show all", onPress: () => engine.perform(Actions.ShowAll) });
@@ -212,13 +208,20 @@ export class StructureCard {
       el("div.counts", {}, [this.#hiddenLabel, this.#ghostedLabel]),
       el("div.buttons", {}, [this.#showAll, this.#unghostAll]),
     ]);
+    this.#nothing = el("p.nothing", { hidden: true, text: "Nothing open yet." });
     this.element = el("section.card.structure", { "aria-label": "Structure" }, [
       this.switcher.element,
+      this.#nothing,
       el("label.searchbox", {}, [el("span.glyph", { html: icons.search(14) }), this.#search, this.#matchLabel]),
-      this.#scroll,
+      this.#list.element,
       this.#footer,
     ]);
-    new ResizeObserver(() => this.#schedule()).observe(this.#scroll);
+  }
+
+  // With nothing open, the card says so in place of the search and the tree.
+  showNothing(nothing) {
+    this.#nothing.hidden = !nothing;
+    for (const part of this.element.querySelectorAll(".searchbox, .tree")) part.hidden = nothing;
   }
 
   reset() {
@@ -316,35 +319,9 @@ export class StructureCard {
 
   // ---- Rows --------------------------------------------------------------------------------
 
-  #scrollToRow(index) {
-    const kRowHeight = rowHeight();
-    const top = index * kRowHeight;
-    const view = this.#scroll.clientHeight;
-    if (top < this.#scroll.scrollTop || top + kRowHeight > this.#scroll.scrollTop + view) {
-      this.#scroll.scrollTop = Math.max(0, top - view / 3);
-    }
-  }
-
-  #schedule() {
-    if (this.#pending) return;
-    this.#pending = true;
-    requestAnimationFrame(() => {
-      this.#pending = false;
-      this.#render();
-    });
-  }
-
-  #render() {
-    const rows = this.tree.rows;
-    const kRowHeight = rowHeight();
-    this.#spacer.style.height = `${rows.length * kRowHeight}px`;
-    const first = Math.max(0, Math.floor(this.#scroll.scrollTop / kRowHeight) - 4);
-    const last = Math.min(rows.length, first + Math.ceil(this.#scroll.clientHeight / kRowHeight) + 8);
-    this.#list.style.transform = `translateY(${first * kRowHeight}px)`;
-    const children = [];
-    for (let index = first; index < last; ++index) children.push(this.#row(index));
-    this.#list.replaceChildren(...children);
-  }
+  #scrollToRow(index) { this.#list.scrollToRow(index); }
+  #schedule() { this.#list.schedule(); }
+  #render() { this.#list.render(); }
 
   #state(row) {
     if (row.node === kDocumentRow) return null;
@@ -405,7 +382,10 @@ export class StructureCard {
     }
     const mark = state === 1 ? "eyeSlash" : state === 2 ? "ghost" : state === 3 ? "seeThrough" : null;
     if (mark) element.append(el("span.mark", {}, [iconNode(mark, 12)]));
-    else element.append(el("span.count", { text: this.tree.count(row) }));
+    else {
+      const count = this.tree.count(row);
+      if (count) element.append(el("span.count", { text: count }));
+    }
 
     element.addEventListener("click", (e) => {
       if (isDocument) {

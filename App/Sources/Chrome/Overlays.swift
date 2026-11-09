@@ -61,7 +61,10 @@ final class DropZone: NSView {
         border.lineWidth = 2
         border.lineDashPattern = [8, 6]
         layer?.addSublayer(border)
-        let label = Chip.text("Drop to open. Hold ⌘ to add to what is shown.", weight: .semibold)
+        let label = Chip.text(
+            "Drop files to open them, or a folder to connect it. Hold ⌘ to add to what is shown.",
+            weight: .semibold
+        )
         label.font = Typography.font(Typography.textLarge, .semibold)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)

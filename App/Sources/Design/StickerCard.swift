@@ -65,7 +65,16 @@ class StickerCard: NSView {
 final class StatusCard: StickerCard {
     private let heading = NSTextField(labelWithString: "")
     private let body = NSTextField(wrappingLabelWithString: "")
+    private let openFiles = PillButton(title: "Open files", icon: .plus, help: "Open STEP or STL files (⌘O)")
+    private let connectFolder = PillButton(
+        title: "Connect a folder",
+        icon: .folderPlus,
+        help: "Connect a folder (⌥⌘O)"
+    )
+    private let buttons = NSStackView()
     private var loadingName = ""
+    var onOpen: (() -> Void)?
+    var onConnect: (() -> Void)?
 
     init() {
         super.init()
@@ -76,10 +85,15 @@ final class StatusCard: StickerCard {
 
         ChromeLayout.name(heading, "status.heading")
         ChromeLayout.name(body, "status.body")
-        let stack = NSStackView(views: [heading, body])
+        openFiles.onPress = { [weak self] in self?.onOpen?() }
+        connectFolder.onPress = { [weak self] in self?.onConnect?() }
+        buttons.setViews([openFiles, connectFolder], in: .leading)
+        buttons.spacing = 8
+        let stack = NSStackView(views: [heading, body, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
+        stack.setCustomSpacing(12, after: body)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -94,7 +108,7 @@ final class StatusCard: StickerCard {
     }
 
     func showInvitation() {
-        show("Nothing open yet", "Drop a STEP or STL file here, or press ⌘O to choose one.")
+        show("Nothing open yet", "Drop STEP or STL files to open them, or a folder to connect it.", offerWaysIn: true)
     }
 
     func showLoading(_ name: String) {
@@ -112,12 +126,13 @@ final class StatusCard: StickerCard {
     }
 
     func showFailure(_ message: String) {
-        show("That did not open", message)
+        show("That did not open", message, offerWaysIn: true)
     }
 
-    private func show(_ title: String, _ detail: String) {
+    private func show(_ title: String, _ detail: String, offerWaysIn: Bool = false) {
         heading.stringValue = title
         body.stringValue = detail
+        buttons.isHidden = !offerWaysIn
         isHidden = false
     }
 }

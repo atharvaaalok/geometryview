@@ -227,7 +227,8 @@ export class Toolbar {
   #needSelection = [];
   #needModel = [];
 
-  constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen, onParts }) {
+  constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect, canConnect,
+                onParts }) {
     this.pick = segmented(["Face", "Body", "Part"], {
       help: "What a click selects (1, 2, 3)",
       tips: ["Clicks select single faces (1)", "Clicks select whole bodies (2)", "Clicks select whole parts (3)"],
@@ -246,7 +247,10 @@ export class Toolbar {
     const look = pill({ icon: icons.palette, help: "Style and colour", onPress: onLook });
     const views = pill({ icon: icons.cube, help: "Standard views", onPress: () => this.#toggleViews(views) });
     const fit = pill({ icon: icons.fit, help: "Fit to view (F)", onPress: act(Actions.Fit) });
-    const open = pill({ icon: icons.folder, help: "Open a file (⌘O)", onPress: onOpen });
+    // The two ways in, as on the first page and in the Library.
+    const open = pill({ icon: icons.plus, help: "Open files (⌘O)", onPress: onOpen });
+    const connect = pill({ icon: icons.folderPlus, help: "Connect a folder (⌥⌘O)", onPress: onConnect });
+    connect.hidden = !canConnect;
     // On a phone the tree is a sheet over the view, opened from here.
     const parts = pill({ icon: icons.parts, help: "Parts and library", onPress: onParts });
     parts.classList.add("phone-only");
@@ -263,7 +267,7 @@ export class Toolbar {
                                           onclick: () => { this.viewsMenu.hidden = true; onAction(a); } })));
     const rule = () => el("span.rule");
     this.element = el("nav.card.toolbar", { "aria-label": "Tools" }, [
-      parts, open, rule(), this.pick.element, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(),
+      parts, open, connect, rule(), this.pick.element, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(),
       seeThrough, cut, look, this.projection.element, views, fit, shortcuts,
     ]);
     this.update({ hasSelection: false, hasModel: false });
@@ -314,16 +318,25 @@ export class Masthead {
 export class StatusCard {
   #heading = el("h2");
   #body = el("p");
-  #open;
+  #buttons;
+  #invitation;
   element;
 
-  constructor(onOpen) {
-    this.#open = pill({ title: "Choose a file", onPress: onOpen });
-    this.element = el("section.card.status", { hidden: true, role: "status" }, [this.#heading, this.#body, this.#open]);
+  // The two ways in: opening files and, where this browser can reach folders, connecting one.
+  constructor({ onOpen, onConnect, canConnect, phone }) {
+    const open = pill({ icon: icons.plus, title: "Open files", help: "Open STEP, STL or cache files (⌘O)", onPress: onOpen });
+    const connect = pill({ icon: icons.folderPlus, title: "Connect a folder", help: "Connect a folder (⌥⌘O)",
+                           onPress: onConnect });
+    connect.hidden = !canConnect;
+    this.#buttons = el("div.buttons", {}, [open, connect]);
+    this.#invitation = phone ? (canConnect ? "Open STEP or STL files, or connect a folder." : "Open STEP or STL files.")
+                             : (canConnect ? "Drop STEP or STL files to open them, or a folder to connect it."
+                                           : "Drop STEP or STL files here to open them.");
+    this.element = el("section.card.status", { hidden: true, role: "status" }, [this.#heading, this.#body, this.#buttons]);
   }
 
   showInvitation() {
-    this.#show("Nothing open yet", "Drop a STEP, STL or cache file here, or press ⌘O to choose one.", true);
+    this.#show("Nothing open yet", this.#invitation, true);
   }
   showLoading(name) { this.#show(`Opening ${name}`, "This only takes a moment."); }
   showImporting(name, done, total) {
@@ -336,7 +349,7 @@ export class StatusCard {
   #show(heading, body, offerOpen = false) {
     this.#heading.textContent = heading;
     this.#body.textContent = body;
-    this.#open.hidden = !offerOpen;
+    this.#buttons.hidden = !offerOpen;
     this.element.hidden = false;
   }
 }
@@ -377,7 +390,7 @@ export class HoverChip {
 
 export class DropZone {
   element = el("div.dropzone", { hidden: true }, [
-    el("div.words", { text: "Drop to open. Hold ⌘ to add to what is shown." }),
+    el("div.words", { text: "Drop files to open them, or a folder to connect it. Hold ⌘ to add to what is shown." }),
   ]);
 }
 

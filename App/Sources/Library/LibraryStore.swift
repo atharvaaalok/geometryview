@@ -1,59 +1,93 @@
 import AppKit
 
-/// A file or folder in a connected directory. Folders list their children only when first
-/// opened, and nothing ever reads a file's contents, so a tree of a hundred thousand files costs
-/// only the folders someone looks into.
+/// A file or folder in a connected directory. A folder lists its children when it is opened, off
+/// the main thread, by names and kinds alone; nothing reads a file's contents, so a tree of a
+/// hundred thousand files costs only the folders someone looks into.
 @MainActor
 final class FileNode {
+    enum Listing {
+        case unlisted, reading, listed, failed
+    }
+
     let url: URL
     let isDirectory: Bool
     weak var parent: FileNode?
-    private var listed: [FileNode]?
+    /// A connected folder whose bookmark no longer leads anywhere.
+    let isMissing: Bool
+    private(set) var listing = Listing.unlisted
+    /// Set once a listing has taken long enough to say "Reading…".
+    private(set) var isSlow = false
+    private(set) var children: [FileNode] = []
 
     /// The file types the viewer opens.
-    static let extensions: Set<String> = ["step", "stp", "stl"]
+    nonisolated static let extensions: Set<String> = ["step", "stp", "stl"]
 
-    init(url: URL, isDirectory: Bool, parent: FileNode?) {
+    init(url: URL, isDirectory: Bool, parent: FileNode?, isMissing: Bool = false) {
         self.url = url
         self.isDirectory = isDirectory
         self.parent = parent
+        self.isMissing = isMissing
     }
 
     var name: String { url.lastPathComponent }
 
-    /// The folder's subfolders and openable files, folders first, listed on first use.
-    var children: [FileNode] {
-        if let listed {
-            return listed
+    /// Lists the folder afresh, folders first, then the files the viewer opens, each in the order
+    /// Finder sorts names; `changed` runs on the main thread as the listing moves along.
+    func list(changed: @escaping @MainActor () -> Void) {
+        guard isDirectory, !isMissing else {
+            return
         }
-        let keys: [URLResourceKey] = [.isDirectoryKey]
-        let entries =
-            (try? FileManager.default.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
-            )) ?? []
-        var folders: [FileNode] = []
-        var files: [FileNode] = []
-        for entry in entries {
-            let directory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory
-            if directory == true {
-                folders.append(FileNode(url: entry, isDirectory: true, parent: self))
-            } else if Self.extensions.contains(entry.pathExtension.lowercased()) {
-                files.append(FileNode(url: entry, isDirectory: false, parent: self))
+        listing = .reading
+        isSlow = false
+        let url = url
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            if let self, listing == .reading {
+                isSlow = true
+                changed()
             }
         }
-        let byName: (FileNode, FileNode) -> Bool = {
-            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        Task.detached(priority: .userInitiated) {
+            let found = Self.read(url)
+            await MainActor.run { [weak self] in
+                guard let self else {
+                    return
+                }
+                if let found {
+                    children = found.map { FileNode(url: $0.url, isDirectory: $0.isDirectory, parent: self) }
+                    listing = .listed
+                } else {
+                    children = []
+                    listing = .failed
+                }
+                changed()
+            }
         }
-        let all = folders.sorted(by: byName) + files.sorted(by: byName)
-        listed = all
-        return all
     }
 
-    /// Forgets the listing, so it is read again when next needed.
-    func invalidate() {
-        listed = nil
+    private nonisolated static func read(_ url: URL) -> [(url: URL, isDirectory: Bool)]? {
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return nil
+        }
+        var folders: [(url: URL, isDirectory: Bool)] = []
+        var files: [(url: URL, isDirectory: Bool)] = []
+        for entry in entries {
+            if (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                folders.append((entry, true))
+            } else if extensions.contains(entry.pathExtension.lowercased()) {
+                files.append((entry, false))
+            }
+        }
+        let byName = { (a: (url: URL, isDirectory: Bool), b: (url: URL, isDirectory: Bool)) in
+            a.url.lastPathComponent.localizedStandardCompare(b.url.lastPathComponent) == .orderedAscending
+        }
+        return folders.sorted(by: byName) + files.sorted(by: byName)
     }
 
     /// The listed node at `path`, if it has been listed, searching down from here.
@@ -61,10 +95,10 @@ final class FileNode {
         if url.path == path {
             return self
         }
-        guard path.hasPrefix(url.path + "/"), let listed else {
+        guard path.hasPrefix(url.path + "/"), listing == .listed else {
             return nil
         }
-        for child in listed where child.isDirectory || child.url.path == path {
+        for child in children where child.isDirectory || child.url.path == path {
             if let found = child.find(path) {
                 return found
             }
@@ -73,61 +107,132 @@ final class FileNode {
     }
 }
 
-/// The folders the user has connected, remembered across launches with security-scoped
-/// bookmarks, so access survives a relaunch of the sandboxed app.
+/// A file opened before, to open again from Recent: its security-scoped bookmark carries the
+/// sandbox's permission to read it across launches.
+struct RecentFile: Codable, Equatable {
+    var path: String
+    var name: String
+    var openedAt: Date
+    var bookmark: Data
+}
+
+/// The folders the user has connected, and the files opened recently, remembered across launches
+/// with security-scoped bookmarks, so access survives a relaunch of the sandboxed app.
 @MainActor
 final class LibraryStore {
     private(set) var roots: [FileNode] = []
+    private(set) var recent: [RecentFile] = []
+    private var bookmarks: [Data] = []
     private static let key = "library.bookmarks"
+    private static let recentKey = "library.recent"
+    static let recentLimit = 12
     var onChange: (() -> Void)?
 
     init() {
         for data in UserDefaults.standard.array(forKey: Self.key) as? [Data] ?? [] {
             var stale = false
-            guard
-                let url = try? URL(
-                    resolvingBookmarkData: data,
-                    options: .withSecurityScope,
-                    bookmarkDataIsStale: &stale
-                ),
-                url.startAccessingSecurityScopedResource()
-            else {
-                continue
+            if let url = try? URL(
+                resolvingBookmarkData: data,
+                options: [.withSecurityScope, .withoutUI, .withoutMounting],
+                bookmarkDataIsStale: &stale
+            ), url.startAccessingSecurityScopedResource() {
+                roots.append(FileNode(url: url, isDirectory: true, parent: nil))
+                bookmarks.append(Self.bookmark(url) ?? data)
+            } else {
+                // Kept, and shown as missing, until the person disconnects it.
+                let name =
+                    URL.resourceValues(forKeys: [.nameKey], fromBookmarkData: data)?.name ?? "Folder"
+                roots.append(
+                    FileNode(url: URL(fileURLWithPath: "/\(name)"), isDirectory: true, parent: nil, isMissing: true)
+                )
+                bookmarks.append(data)
             }
-            roots.append(FileNode(url: url, isDirectory: true, parent: nil))
         }
-        if roots.contains(where: { _ in true }) {
-            save()  // refreshes any stale bookmark
+        saveFolders()
+        if let data = UserDefaults.standard.data(forKey: Self.recentKey),
+            let saved = try? JSONDecoder().decode([RecentFile].self, from: data)
+        {
+            recent = saved
         }
     }
 
-    /// Connects a folder the user chose in an open panel.
-    func connect(_ url: URL) {
-        guard !roots.contains(where: { $0.url == url }) else {
-            return
+    private static func bookmark(_ url: URL) -> Data? {
+        try? url.bookmarkData(
+            options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+    }
+
+    /// Connects a folder the user chose or dropped. Returns its node.
+    @discardableResult
+    func connect(_ url: URL) -> FileNode {
+        if let existing = roots.first(where: { $0.url == url }) {
+            return existing
         }
         _ = url.startAccessingSecurityScopedResource()
-        roots.append(FileNode(url: url, isDirectory: true, parent: nil))
-        save()
+        let node = FileNode(url: url, isDirectory: true, parent: nil)
+        roots.append(node)
+        bookmarks.append(Self.bookmark(url) ?? Data())
+        saveFolders()
         onChange?()
+        return node
     }
 
     func disconnect(_ root: FileNode) {
-        roots.removeAll { $0 === root }
-        root.url.stopAccessingSecurityScopedResource()
-        save()
+        guard let index = roots.firstIndex(where: { $0 === root }) else {
+            return
+        }
+        roots.remove(at: index)
+        bookmarks.remove(at: index)
+        if !root.isMissing {
+            root.url.stopAccessingSecurityScopedResource()
+        }
+        saveFolders()
         onChange?()
     }
 
-    private func save() {
-        let bookmarks = roots.compactMap {
-            try? $0.url.bookmarkData(
-                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
+    private func saveFolders() {
+        UserDefaults.standard.set(bookmarks.filter { !$0.isEmpty }, forKey: Self.key)
+    }
+
+    // MARK: Recent
+
+    /// Puts a file that opened at the top of Recent, while the app can still read it.
+    func remember(_ url: URL) {
+        guard let bookmark = Self.bookmark(url) else {
+            return
         }
-        UserDefaults.standard.set(bookmarks, forKey: Self.key)
+        recent.removeAll { $0.path == url.path }
+        recent.insert(RecentFile(path: url.path, name: url.lastPathComponent, openedAt: Date(), bookmark: bookmark), at: 0)
+        recent = Array(recent.prefix(Self.recentLimit))
+        saveRecent()
+        onChange?()
+    }
+
+    func forget(_ file: RecentFile) {
+        recent.removeAll { $0.path == file.path }
+        saveRecent()
+        onChange?()
+    }
+
+    /// Where a recent file is now, with the sandbox's permission to read it, or nil if it is gone.
+    func resolve(_ file: RecentFile) -> URL? {
+        var stale = false
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: file.bookmark,
+                options: [.withSecurityScope, .withoutUI, .withoutMounting],
+                bookmarkDataIsStale: &stale
+            ), FileManager.default.fileExists(atPath: url.path)
+        else {
+            return nil
+        }
+        return url
+    }
+
+    private func saveRecent() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(recent), forKey: Self.recentKey)
     }
 }
 

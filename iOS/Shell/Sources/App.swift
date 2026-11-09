@@ -54,6 +54,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         Run(transport: .loopback, page: "viewer", label: "", query: "", name: "viewer"),
     ]
     private let opened = OpenedFiles()
+    private lazy var library = ShellLibrary(opened: opened)
     private var pageReady = false
     private var pending: String?    // a document to hand the page once it is ready
     private var lastOpened: String? // the last document handed over, to reopen after a restart
@@ -123,7 +124,9 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         configuration.setURLSchemeHandler(SchemeHandler(files: files), forURLScheme: SchemeHandler.scheme)
         configuration.userContentController.add(self, name: "census")
         configuration.userContentController.add(self, name: "shell")
+        configuration.userContentController.addScriptMessageHandler(library, contentWorld: .page, name: "library")
         let view = WKWebView(frame: .zero, configuration: configuration)
+        library.webView = view
         view.navigationDelegate = self
         view.isInspectable = true
         view.isOpaque = false
