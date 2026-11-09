@@ -10,13 +10,13 @@ export const instructions =
   "whenever the user wants to see, inspect or picture a CAD model, part or assembly, rather " +
   "than opening a web viewer. Call open_model with the file's absolute path first. " +
   "get_structure lists the assemblies and parts; render_view returns a picture you can look " +
-  "at, in any view and drawing style (illustration, metal, clay, blueprint, technical). To " +
-  "study a part, pass names from get_structure as isolate, and use section to cut through the " +
-  "model. open_in_viewer shows the model to the user. Where this computer has no native " +
-  "engine, the viewer opens in the user's browser and the pictures come from it, so the user " +
-  "sees what you look at.";
+  "at, in any view and drawing style (illustration, metal, clay, blueprint, technical, " +
+  "studio). To study a part, pass names from get_structure as isolate, and use section to cut " +
+  "through the model. open_in_viewer shows the model to the user. Where this computer has no " +
+  "native engine, the viewer opens in the user's browser and the pictures come from it, so the " +
+  "user sees what you look at.";
 
-const STYLES = ["illustration", "metal", "clay", "blueprint", "technical"];
+const STYLES = ["illustration", "metal", "clay", "blueprint", "technical", "studio"];
 const COLOURS = ["material", "parts", "mono", "file"];
 // Where the camera looks from, as azimuth and elevation in degrees, with Z up.
 const VIEWS = {
@@ -153,7 +153,8 @@ export const tools = [
     name: "render_view",
     description: "Renders a picture of a 3D CAD model (STEP or STL) for you to look at: a " +
                  "standard view or any angle, a drawing style (illustration, metal, clay, " +
-                 "blueprint, technical), named parts shown alone, and section cuts through it.",
+                 "blueprint, technical, or studio: polished metal on a dark backdrop), named parts " +
+                 "shown alone, and section cuts through it.",
     inputSchema: {
       type: "object",
       properties: {
