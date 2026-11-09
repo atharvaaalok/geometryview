@@ -342,6 +342,30 @@ void packUnit(const PackContext& context, std::span<const u32> unitTriangles, Un
 
 } // namespace
 
+// True if every face is planar: all of a face's vertex normals agree, which they do only for a flat
+// face, since a vertex belongs to one face and takes its surface's normal there. Such a face is
+// tessellated exactly. Stops at the first curved face, so curved models pay almost nothing.
+static bool allFacesPlanar(const IndexedMesh& mesh) {
+    constexpr float kSame = 1.0f - 1e-5f; // cosine of about a quarter of a degree
+    std::vector<u32> first(mesh.faceCount, ~0u);
+    for (u32 v = 0; v < mesh.vertexCount(); ++v) {
+        const u32 face = mesh.faceOfVertex[v];
+        if (face >= mesh.faceCount) {
+            return false;
+        }
+        if (first[face] == ~0u) {
+            first[face] = v;
+            continue;
+        }
+        const float* a = &mesh.normals[3 * usize(first[face])];
+        const float* b = &mesh.normals[3 * usize(v)];
+        if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < kSame) {
+            return false;
+        }
+    }
+    return mesh.vertexCount() > 0;
+}
+
 PackedDefinition packMesh(const IndexedMesh& mesh) {
     PackedDefinition packed;
     if (mesh.triangleCount() == 0) {
@@ -455,7 +479,8 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
     std::copy_n(reinterpret_cast<const float*>(&bounds.hi), 3, packed.boundsMax.begin());
     std::copy_n(reinterpret_cast<const float*>(&scale), 3, packed.decodeScale.begin());
     std::copy_n(reinterpret_cast<const float*>(&boundsScale), 3, packed.boundsScale.begin());
-    packed.flags = (wide ? u32(kDefinitionWide) : 0) | (mesh.closed ? 0 : u32(kDefinitionOpen));
+    packed.flags = (wide ? u32(kDefinitionWide) : 0) | (mesh.closed ? 0 : u32(kDefinitionOpen)) |
+                   (allFacesPlanar(mesh) ? u32(kDefinitionFlat) : 0);
     packed.faceCount = mesh.faceCount;
     packed.originalFace = faces.originalOfPacked;
     trace.lap("concatenate");

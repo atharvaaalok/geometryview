@@ -789,7 +789,8 @@ bool Core::refineDocument(u32 index) {
     for (u32 d = 0; d < needed.size(); ++d) {
         const format::DefinitionRecord* geometry = document.geometry(d);
         const u32 have = std::max(requested[d], geometry ? geometry->level : 0);
-        if (needed[d] <= have) {
+        // A flat definition is exact already: meshing it finer gives the same triangles.
+        if (needed[d] <= have || (geometry && (geometry->flags & kDefinitionFlat) != 0)) {
             continue;
         }
         // The finest level needed goes first: it is what the view is closest to.
@@ -979,7 +980,6 @@ render::ViewState Core::frameView() const {
     view.uniforms.hoverEnd = hover_.second;
     view.uniforms.ghostPickable = tool_ == GeoToolGhost ? 1 : 0;
     view.uniforms.hoverHides = tool_ == GeoToolHide ? 1 : 0;
-    view.uniforms.lineOffset = float(2.0 * scene_.coarsestDeflection());
     view.uniforms.aoRadius = float(0.025 * simd_length(bounds_.max - bounds_.min));
     view.uniforms.aoSamples = 12;
     render::applySection(section_, bounds_, view.uniforms);

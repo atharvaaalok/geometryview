@@ -52,6 +52,14 @@ bool Document::attachGeometry(const Segment& segment, std::string& error) {
     return true;
 }
 
+float Document::edgeLift(const format::DefinitionRecord& record) const {
+    if ((record.flags & kDefinitionFlat) != 0 || !hasModel() || model().modelInfo.empty()) {
+        return 0.0f;
+    }
+    const double coarsest = model().modelInfo[0].linearDeflection;
+    return float(2.0 * std::ldexp(coarsest, -int(std::min(record.level, 30u))));
+}
+
 bool Document::add(std::shared_ptr<Segment> segment, std::string& error) {
     if (segment->view().hasModel() && !attachModel(segment, error)) {
         return false;
@@ -160,16 +168,6 @@ bool Scene::hasGeometry() const {
         }
     }
     return false;
-}
-
-double Scene::coarsestDeflection() const {
-    double deflection = 0.0;
-    for (const std::unique_ptr<Document>& document : documents_) {
-        if (document->hasModel() && !document->model().modelInfo.empty()) {
-            deflection = std::max(deflection, document->model().modelInfo[0].linearDeflection);
-        }
-    }
-    return deflection;
 }
 
 std::optional<Aabb> Scene::bounds() const {

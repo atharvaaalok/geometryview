@@ -95,7 +95,6 @@ bool prepareOffscreen(render::Backend& backend,
     nav::fit(camera, bounds, viewport, kFitMargin);
 
     out.view = render::makeView(camera, viewport, bounds);
-    out.view.uniforms.lineOffset = float(2.0 * out.scene.coarsestDeflection());
     out.view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
     out.view.uniforms.aoSamples = 12;
     render::Section section;

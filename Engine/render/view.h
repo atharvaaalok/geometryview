@@ -35,6 +35,13 @@ struct Section {
 /// Writes the section's planes into the frame, in world space.
 void applySection(const Section& section, const Aabb& bounds, FrameUniforms& uniforms);
 
+/// How far every edge moves toward the eye at least, in points of depth at its distance: enough
+/// for most of a crease line's width to clear a concave crease's faces, and to beat depth
+/// precision. A definition's own chord error adds to it (GpuDefinition.edgeLift). It was 2
+/// points, which, zoomed out, let the edges of everything just behind show through: on the 100k
+/// rack the whole column turned to ink. At 1 point, visible creases keep 97-99.7% of their ink.
+inline constexpr float kEdgeFloorPoints = 1.0f;
+
 /// Builds the uniforms for a frame. Depth is reversed, because float precision is highest near
 /// zero: distant geometry then keeps its precision. Orthographic depth hugs the scene bounds.
 ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,

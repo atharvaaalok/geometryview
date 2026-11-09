@@ -117,6 +117,7 @@ ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,
     const double downward = -simd_dot(forward, zUp);
     const double t = std::clamp((downward - 0.02) / (0.25 - 0.02), 0.0, 1.0);
     u.shadowVisibility = float(t * t * (3.0 - 2.0 * t));
+    u.edgeFloor = kEdgeFloorPoints;
     u.depthNear = float(view.depth.nearPlane);
     u.depthFar = float(view.depth.farPlane);
     return view;
