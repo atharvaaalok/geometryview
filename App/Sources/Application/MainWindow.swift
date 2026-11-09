@@ -308,11 +308,89 @@ final class MainWindow: NSWindow {
         run(.toggleProjection)
     }
 
+    // MARK: Requests from AI apps
+
+    /// What an AI app's tool asked to see, through geometryview://show?file=…&isolate=…&style=…
+    /// &colour=…, sent just after the file itself: some parts shown alone, a style and colours.
+    /// The request names the file, which the app opens through the usual route, with its sandbox
+    /// grant; the request itself reads nothing.
+    struct ShowRequest {
+        var path: String
+        var isolate: [String]
+        var style: Look.Style?
+        var colour: Look.Colour?
+
+        init?(url: URL) {
+            guard url.scheme == "geometryview", url.host == "show",
+                let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                let path = items.first(where: { $0.name == "file" })?.value
+            else {
+                return nil
+            }
+            let value = { (name: String) in items.first { $0.name == name }?.value?.lowercased() }
+            self.path = path
+            isolate = items.filter { $0.name == "isolate" }.compactMap(\.value).filter { !$0.isEmpty }
+            style = value("style").flatMap { name in Look.Style.allCases.first { $0.title.lowercased() == name } }
+            colour = value("colour").flatMap { name in Look.Colour.allCases.first { $0.title.lowercased() == name } }
+        }
+    }
+
+    private var requestedShow: ShowRequest?
+
+    func show(_ request: ShowRequest) {
+        if request.style != nil || request.colour != nil {
+            var next = look
+            if let style = request.style {
+                next.choose(style)
+            }
+            if let colour = request.colour {
+                next.colour = colour
+            }
+            apply(next, remember: false)
+        }
+        requestedShow = request.isolate.isEmpty ? nil : request
+        showAsRequested()
+    }
+
+    /// Shows the requested parts alone, once the file's model is in and the scene is complete.
+    private func showAsRequested() {
+        guard let request = requestedShow, progress.isEmpty,
+            let document = openURLs.firstIndex(where: { $0.path == request.path }),
+            document < structure.tree.documents.count,
+            let model = structure.tree.documents[document].model
+        else {
+            return
+        }
+        requestedShow = nil
+        engine.perform(GeoActionShowAll)
+        engine.perform(GeoActionClearSelection)
+        // Only the outermost of nested matches: "rotor" finds the rotor assembly and its
+        // rotor_core, and selecting the core again, inside the selected assembly, would take it out.
+        let matches = Set(request.isolate.flatMap { model.search($0).matches })
+        var found = 0
+        var insideMatch = 0
+        for node in matches.sorted() where node >= insideMatch {
+            guard model.nodes[node].kind != GeoNodeBody.rawValue else {
+                continue
+            }
+            engine.selectNode(document: UInt32(document), node: UInt32(node), extend: true)
+            found += 1
+            insideMatch = Int(model.nodes[node].subtree_end)
+        }
+        if found > 0 {
+            engine.perform(GeoActionIsolate)
+            engine.perform(GeoActionClearSelection)
+        }
+    }
+
     // MARK: Look
 
-    private func apply(_ newLook: Look) {
+    /// Shows `newLook`, and remembers it unless an AI app's request chose it.
+    private func apply(_ newLook: Look, remember: Bool = true) {
         look = newLook
-        look.save()
+        if remember {
+            look.save()
+        }
         lookCard.show(look)
         masthead.setOnDarkSheet(look.style.onDark)
         engine.setLook(look)
@@ -561,6 +639,7 @@ final class MainWindow: NSWindow {
         case .sceneReady:
             progress = [:]
             refreshMasthead()
+            showAsRequested()
             startAutomation()
         case .failed(_, let message):
             progress = [:]
