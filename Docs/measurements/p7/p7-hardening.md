@@ -219,9 +219,33 @@ iPhone in 4.9 s, with no error:
 - iOS stopped pages at 1.7–2.0 GB in Phase 0, so this leaves 400–700 MB to spare, for the GPU
   process and whatever else the phone is running.
 
+**Packing, a third round** (branch `p7-memory-and-sweep`, 2026-11-08, about 5 PM). The trace under
+Node showed the heap at 879 MB through the sort of triangles, not growing there as thought. It
+grew afterwards, while edges and meshlets are found together, to 1,166 MB, and again as the
+meshlets' outputs are joined.
+- **The units now keep only their triangles' indices.** The sorted triangles carried a 64-bit key
+  beside each index, 160 MB for 10M triangles, until the meshlets were built. Only the split
+  into units reads the key, so once the units are made the list becomes 4-byte indices (40 MB),
+  freed of the keys before the heaviest stage.
+- **Four alternating runs:**
+
+  | 10M STL under Node | Before | After |
+  |---|---|---|
+  | Importer's heap at its peak | 1,218–1,293 MB | 1,101–1,176 MB |
+  | Import | 2.55–2.70 s | 2.44–2.60 s |
+
+  The cache file is byte for byte the same. The machine was busy with other work (load average
+  15–19), so the times are within noise.
+- **Tried and left out:** a sort that writes each item straight into its bucket, so the unsorted
+  list is never held (160 MB less at the sort). The sort was not the peak, and it saved nothing
+  measurable beyond the change above.
+- **The rest of the growth** comes from the edges' working lists (160 MB) and the meshlets'
+  outputs, found together, and from joining the outputs, which holds them and the joined arrays
+  at once. In WebAssembly the space each unit's output frees is scattered, so the joined arrays
+  cannot reuse it.
+
 **Still to do:**
-- The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
-  not fit the holes the earlier stages leave in a heap that cannot shrink.
+- The joined meshlet arrays and the units' outputs are held at once, for a moment.
 - The native footprint is still two-thirds memory malloc has freed and kept. Native imports run in
   their own helper process, which ends, so this matters less there.
 
