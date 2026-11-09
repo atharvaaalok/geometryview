@@ -82,6 +82,26 @@ A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` 
 - The old cull's runs were the warmer ones (thermal state "fair" to "serious", against
   "nominal"), which may account for its pack's extra 0.1–0.5 ms.
 
+**Why the 100k rack costs so much next to the 1M** (2026-11-08, about 6:30 PM): its edges. Native
+Dawn, 2880×1800, GPU ms (p10 / p50 / p90):
+
+| | With edges | `GEOMETRY_NO_EDGES` |
+|---|---|---|
+| Rack of 100k parts | 3.79 / 4.01 / 4.38 | 1.88 / 1.96 / 2.13 |
+| Rack of 1M parts | 5.35 / 5.69 / 6.14 | 5.32 / 5.57 / 6.00 |
+
+- **An edge chunk under 3 pixels of radius on screen is left out** (`cull.wgsl`), since its lines
+  would only blot the part. The 1M rack's boxes are below that, so its 12M edge segments cost
+  nothing. The 100k rack's are just above it, so all its 1.2M segments are drawn.
+- **Instruments' Metal System Trace** puts it in the main pass's vertex stage: 1.94 ms of the
+  frame, nearly the 2.23 ms the 1M rack's 12M triangles take. Each segment is six vertices, and
+  each works the whole segment out again: its faces' states, both ends decoded, moved and
+  projected.
+- **Tried and left out:** four corners as a triangle strip, an instance a segment, rather than six.
+  It made the frame slower, 5.3–5.5 ms: Apple's GPU handles a million instances of four vertices
+  worse than one long list. The Metal renderer's mesh stage works a segment out once; WebGPU has no
+  such stage.
+
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.
 
