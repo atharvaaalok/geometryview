@@ -246,7 +246,7 @@ export class Toolbar {
     const look = pill({ icon: icons.palette, help: "Style and colour", onPress: onLook });
     const views = pill({ icon: icons.cube, help: "Standard views", onPress: () => this.#toggleViews(views) });
     const fit = pill({ icon: icons.fit, help: "Fit to view (F)", onPress: act(Actions.Fit) });
-    const open = pill({ icon: icons.open, help: "Open a file (⌘O)", onPress: onOpen });
+    const open = pill({ icon: icons.folder, help: "Open a file (⌘O)", onPress: onOpen });
     // On a phone the tree is a sheet over the view, opened from here.
     const parts = pill({ icon: icons.parts, help: "Parts and library", onPress: onParts });
     parts.classList.add("phone-only");
@@ -303,7 +303,7 @@ export class Masthead {
 
   setProgress(fraction) {
     this.#bar.hidden = fraction === null;
-    if (fraction !== null) this.#bar.firstChild.style.width = `${Math.round(fraction * 100)}%`;
+    if (fraction !== null) this.#bar.firstChild.style.transform = `translateX(${(fraction - 1) * 100}%)`;
   }
 
   setOnDark(dark) { this.element.classList.toggle("on-dark", dark); }
@@ -353,6 +353,7 @@ export class HoldHint {
     };
     const hint = hints[tool];
     this.element.hidden = !hint;
+    this.element.classList.toggle("hiding", tool === Tools.Hide);
     if (hint) this.element.replaceChildren(keyCap(hint[0]), el("span", { text: hint[1] }));
   }
 }
@@ -376,7 +377,7 @@ export class HoverChip {
 
 export class DropZone {
   element = el("div.dropzone", { hidden: true }, [
-    el("div.chip", { text: "Drop to open. Hold ⌘ to add to what is shown." }),
+    el("div.words", { text: "Drop to open. Hold ⌘ to add to what is shown." }),
   ]);
 }
 

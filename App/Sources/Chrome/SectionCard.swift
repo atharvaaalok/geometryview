@@ -15,7 +15,7 @@ final class SectionCard: StickerCard {
     var onChange: ((GeoSection) -> Void)?
 
     init() {
-        super.init(frame: .zero)
+        super.init()
         let title = NSTextField(labelWithString: "SECTION")
         title.font = Typography.font(Typography.textExtraSmall, .medium)
         title.textColor = Palette.muted

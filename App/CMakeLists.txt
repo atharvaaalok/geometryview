@@ -31,6 +31,10 @@ add_custom_target(app_icon DEPENDS "${app_icon}")
 add_dependencies(GeometryView app_icon)
 
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")
+# The chrome's icons, shared with the web viewer (App/Sources/Design/Icons.swift reads them). A
+# change to them relinks the app, so the bundle is copied and signed again.
+set(chrome_icons "${CMAKE_SOURCE_DIR}/Web/viewer/icons.js")
+set_property(TARGET GeometryView APPEND PROPERTY LINK_DEPENDS "${chrome_icons}")
 set(bundle_resources "$<TARGET_BUNDLE_CONTENT_DIR:GeometryView>/Resources")
 add_custom_command(TARGET GeometryView POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle_resources}"
@@ -38,6 +42,7 @@ add_custom_command(TARGET GeometryView POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${app_icon}" "${bundle_resources}/AppIcon.icns"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle_resources}/Fonts"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${font_files} "${bundle_resources}/Fonts/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${chrome_icons}" "${bundle_resources}/icons.js"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometryview-import>"
             "$<TARGET_BUNDLE_CONTENT_DIR:GeometryView>/MacOS/geometryview-import"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometryview-occt-worker>"

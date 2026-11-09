@@ -5,7 +5,7 @@ import GeometryViewEngine
 /// view, and selecting in the view reveals its row.
 @MainActor
 final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate,
-    NSSearchFieldDelegate
+    NSTextFieldDelegate
 {
     private let engine: EngineHandle
     let tree = TreeRows()
@@ -15,8 +15,9 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         selected: 1,
         help: "Show files or parts"
     )
-    private let searchField = NSSearchField()
-    private let matchLabel = NSTextField(labelWithString: "")
+    private let searchBox = SearchBox(placeholder: "Search parts")
+    private var searchField: NSTextField { searchBox.field }
+    private var matchLabel: NSTextField { searchBox.match }
     private let table = TreeTableView()
     private let scroll = NSScrollView()
     private let footer = VisibilityFooter()
@@ -32,17 +33,10 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
 
     init(engine: EngineHandle) {
         self.engine = engine
-        super.init(frame: .zero)
+        super.init()
 
-        searchField.placeholderString = "Search parts"
-        searchField.font = Typography.font(Typography.textMedium)
         searchField.delegate = self
-        searchField.sendsSearchStringImmediately = true
-        searchField.target = self
-        searchField.action = #selector(searchChanged)
-
-        matchLabel.font = Typography.font(Typography.textExtraSmall)
-        matchLabel.textColor = Palette.muted
+        ChromeLayout.name(searchBox, "structure.search")
 
         let column = NSTableColumn(identifier: .init("name"))
         table.addTableColumn(column)
@@ -78,7 +72,7 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         footer.onUnghostAll = { [weak self] in self?.engine.perform(GeoActionUnghostAll) }
         footer.isHidden = true
 
-        for view in [switcher, searchField, matchLabel, scroll, footer] as [NSView] {
+        for view in [switcher, searchBox, scroll, footer] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -86,14 +80,12 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         NSLayoutConstraint.activate([
             switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
-            matchLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
-            matchLabel.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
-            searchField.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
+            searchBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            searchBox.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            scroll.topAnchor.constraint(equalTo: searchBox.bottomAnchor, constant: 10),
             footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
@@ -181,7 +173,15 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
 
     // MARK: Search
 
-    @objc private func searchChanged() {
+    func controlTextDidChange(_ notification: Notification) {
+        searchChanged()
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        searchBox.editingEnded()
+    }
+
+    private func searchChanged() {
         let query = searchField.stringValue
         matches = []
         matchIndex = 0
@@ -207,7 +207,12 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         textView: NSTextView,
         doCommandBy selector: Selector
     ) -> Bool {
-        // Return steps through the matches.
+        // Escape clears the search, as on the page; Return steps through the matches.
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            searchField.stringValue = ""
+            searchChanged()
+            return true
+        }
         guard selector == #selector(NSResponder.insertNewline(_:)), !matches.isEmpty else {
             return false
         }

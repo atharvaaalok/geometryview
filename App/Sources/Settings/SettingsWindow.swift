@@ -181,7 +181,7 @@ final class SettingsWindow: NSWindow {
     }
 
     private func card(_ rows: [NSView]) -> NSView {
-        let card = StickerCard(frame: .zero)
+        let card = StickerCard()
         let stack = NSStackView(views: rows)
         stack.orientation = .vertical
         stack.alignment = .leading

@@ -17,26 +17,26 @@ final class Toolbar: StickerCard {
     )
     let projection = SegmentedPill(["Ortho", "Persp"], selected: 0, help: "Projection (P)")
     private let hide = PillButton(
-        symbol: "eye.slash",
+        icon: .eyeSlash,
         help: "Hide the selection (hold H and click)"
     )
     private let ghost = PillButton(
-        symbol: "circle.dashed",
+        icon: .ghost,
         help: "Ghost the selection (hold G and click)"
     )
     private let isolate = PillButton(title: "Isolate", help: "Hide everything else (I)")
-    private let showAll = PillButton(symbol: "eye", help: "Show everything (⇧H)")
-    private let undo = PillButton(symbol: "arrow.uturn.backward", help: "Undo (⌘Z)")
-    private let redo = PillButton(symbol: "arrow.uturn.forward", help: "Redo (⇧⌘Z)")
+    private let showAll = PillButton(icon: .eye, help: "Show everything (⇧H)")
+    private let undo = PillButton(icon: .undo, help: "Undo (⌘Z)")
+    private let redo = PillButton(icon: .redo, help: "Redo (⇧⌘Z)")
     private let fit = PillButton(
-        symbol: "arrow.up.left.and.arrow.down.right",
+        icon: .fit,
         help: "Fit to view (F)"
     )
-    private let views = PillButton(symbol: "cube", help: "Standard views")
-    private let look = PillButton(symbol: "paintpalette", help: "Style and colour")
-    private let cut = PillButton(symbol: "scissors", help: "Section (S)")
+    private let views = PillButton(icon: .cube, help: "Standard views")
+    private let look = PillButton(icon: .palette, help: "Style and colour")
+    private let cut = PillButton(icon: .scissors, help: "Section (S)")
     private let seeThrough = PillButton(
-        symbol: "circle.lefthalf.filled",
+        icon: .seeThrough,
         help: "See through the housing (T)"
     )
     private let shortcuts = PillButton(title: "?", style: .ghostly, help: "Shortcuts (?)")
@@ -47,7 +47,7 @@ final class Toolbar: StickerCard {
     var onShowSection: (() -> Void)?
 
     init() {
-        super.init(frame: .zero)
+        super.init()
         let actions: [(PillButton, GeoAction)] = [
             (hide, GeoActionHideSelection), (ghost, GeoActionGhostSelection),
             (isolate, GeoActionIsolate), (showAll, GeoActionShowAll), (undo, GeoActionUndo),
@@ -90,29 +90,15 @@ final class Toolbar: StickerCard {
         return view
     }
 
-    private func showViewsMenu() {
-        let menu = NSMenu()
-        let entries: [(String, GeoAction)] = [
-            ("Front", GeoActionViewFront), ("Back", GeoActionViewBack), ("Left", GeoActionViewLeft),
-            ("Right", GeoActionViewRight), ("Top", GeoActionViewTop),
-            ("Bottom", GeoActionViewBottom),
-            ("Isometric", GeoActionViewIso),
-        ]
-        for (title, action) in entries {
-            let item = NSMenuItem(
-                title: title,
-                action: #selector(chooseView(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.tag = Int(action.rawValue)
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: views.frame.minX, y: bounds.maxY + 6), in: self)
-    }
+    /// The standard views, in a menu above their button, which the window places over everything.
+    lazy var viewsMenu = MenuCard(items: [
+        ("Front", GeoActionViewFront), ("Back", GeoActionViewBack), ("Left", GeoActionViewLeft),
+        ("Right", GeoActionViewRight), ("Top", GeoActionViewTop), ("Bottom", GeoActionViewBottom),
+        ("Isometric", GeoActionViewIso),
+    ].map { title, action in (title, { [weak self] in self?.onAction?(action) }) })
 
-    @objc private func chooseView(_ sender: NSMenuItem) {
-        onAction?(GeoAction(rawValue: UInt32(sender.tag)))
+    func showViewsMenu() {
+        viewsMenu.toggle(above: views)
     }
 
     /// Reflects what the engine can do now.

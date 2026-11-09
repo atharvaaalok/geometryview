@@ -30,7 +30,7 @@ final class PillButton: ChromeControl {
 
     static let height: CGFloat = 30
 
-    init(title: String? = nil, symbol: String? = nil, style: Style = .normal, help: String) {
+    init(title: String? = nil, icon name: Icons.Name? = nil, style: Style = .normal, help: String) {
         self.style = style
         iconOnly = title == nil
         super.init(frame: .zero)
@@ -44,10 +44,8 @@ final class PillButton: ChromeControl {
         setAccessibilityLabel(help)
 
         var views: [NSView] = []
-        if let symbol {
-            let configuration = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: help)?
-                .withSymbolConfiguration(configuration)
+        if let name {
+            icon.image = Icons.image(name, size: 15)
             icon.contentTintColor = Palette.ink
             views.append(icon)
         }

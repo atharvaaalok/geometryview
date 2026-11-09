@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         geo_trace_memory("window shown")
         let openingFile = !pendingURLs.isEmpty
+        if ChromeLayout.isRequested, !openingFile {
+            ChromeLayout.write(window)
+        }
         open(pendingURLs, in: window)
         pendingURLs = []
         pendingShows.forEach(window.show)

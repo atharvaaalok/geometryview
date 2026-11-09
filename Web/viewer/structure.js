@@ -4,11 +4,14 @@
 // million nodes scrolls as one of ten.
 
 import { Actions, NodeActions, NodeKinds } from "./engine.js";
-import { icons } from "./icons.js";
+import { iconNode, icons } from "./icons.js";
 import { el, pill, segmented } from "./ui.js";
 
-const kRowHeight = 30;
+// A row's height, as the Mac's; a phone's are taller, for fingers.
+const rowHeight = () => (document.body.classList.contains("phone") ? 30 : 28);
+const kIndent = 14;
 const kNoNode = 0xFFFFFFFF;
+const kInk = [0x23, 0x1e, 0x16];
 const kDocumentRow = -1;
 
 // The visible rows across all open documents.
@@ -314,6 +317,7 @@ export class StructureCard {
   // ---- Rows --------------------------------------------------------------------------------
 
   #scrollToRow(index) {
+    const kRowHeight = rowHeight();
     const top = index * kRowHeight;
     const view = this.#scroll.clientHeight;
     if (top < this.#scroll.scrollTop || top + kRowHeight > this.#scroll.scrollTop + view) {
@@ -332,6 +336,7 @@ export class StructureCard {
 
   #render() {
     const rows = this.tree.rows;
+    const kRowHeight = rowHeight();
     this.#spacer.style.height = `${rows.length * kRowHeight}px`;
     const first = Math.max(0, Math.floor(this.#scroll.scrollTop / kRowHeight) - 4);
     const last = Math.min(rows.length, first + Math.ceil(this.#scroll.clientHeight / kRowHeight) + 8);
@@ -353,7 +358,7 @@ export class StructureCard {
     const d = this.tree.documents[row.document];
     const kind = isDocument ? null : d.model?.[row.node]?.kind;
     const element = el("div.row", { role: "treeitem", "data-index": index });
-    element.style.paddingLeft = `${8 + row.depth * 16}px`;
+    element.style.paddingLeft = `${8 + row.depth * kIndent}px`;
     const selected = this.#selected && this.#selected.document === row.document &&
                      this.#selected.node === row.node;
     const highlighted = this.#highlighted && !isDocument &&
@@ -364,8 +369,7 @@ export class StructureCard {
     element.classList.toggle("ghosted-node", state === 2);
 
     if (this.tree.hasChildren(row)) {
-      const chevron = el("button.chevron", { type: "button", "aria-label": "Expand",
-                                             html: icons.chevron(12) });
+      const chevron = el("button.chevron", { type: "button", "aria-label": "Expand" }, [iconNode("chevron", 12)]);
       chevron.classList.toggle("open", this.tree.isExpanded(row));
       chevron.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -377,30 +381,30 @@ export class StructureCard {
       element.append(el("span.chevron"));
     }
     if (isDocument) {
-      element.append(el("span.glyph", { html: icons.open(14) }));
+      element.append(el("span.glyph", {}, [iconNode("file", 14)]));
     } else if (kind === NodeKinds.Assembly) {
-      element.append(el("span.glyph", { html: icons.assembly(14) }));
+      element.append(el("span.glyph", {}, [iconNode("assembly", 16)]));
     } else {
       const swatch = el(`span.swatch${kind === NodeKinds.Body ? ".small" : ""}`);
-      const color = this.#colorOf(row);
-      if (color !== null) swatch.style.background = color;
+      const chip = this.#chipOf(row);
+      if (chip !== null) swatch.style.backgroundImage = chip;
       element.append(swatch);
     }
     element.append(el("span.name", { text: this.tree.name(row.document, row.node) }));
     if (!isDocument) {
       const ghosted = state === 2, hidden = state === 1;
       const actions = el("span.actions", {}, [
-        this.#rowButton(ghosted ? "Unghost" : "Ghost", icons.ghost, ghosted, () =>
+        this.#rowButton(ghosted ? "Unghost" : "Ghost", "ghost", ghosted, () =>
           this.#engine.nodeAction(row.document, row.node, ghosted ? NodeActions.Unghost : NodeActions.Ghost)),
-        this.#rowButton(hidden ? "Show" : "Hide", hidden ? icons.eyeSlash : icons.eye, hidden, () =>
+        this.#rowButton(hidden ? "Show" : "Hide", hidden ? "eyeSlash" : "eye", hidden, () =>
           this.#engine.nodeAction(row.document, row.node, hidden ? NodeActions.Show : NodeActions.Hide)),
-        this.#rowButton("Show only this, framed", icons.scope, false, () =>
+        this.#rowButton("Show only this, framed", "scope", false, () =>
           this.#engine.nodeAction(row.document, row.node, NodeActions.Isolate)),
       ]);
       element.append(actions);
     }
-    const mark = state === 1 ? icons.eyeSlash(12) : state === 2 ? icons.ghost(12) : null;
-    if (mark) element.append(el("span.mark", { html: mark }));
+    const mark = state === 1 ? "eyeSlash" : state === 2 ? "ghost" : state === 3 ? "seeThrough" : null;
+    if (mark) element.append(el("span.mark", {}, [iconNode(mark, 12)]));
     else element.append(el("span.count", { text: this.tree.count(row) }));
 
     element.addEventListener("click", (e) => {
@@ -419,7 +423,7 @@ export class StructureCard {
 
   #rowButton(help, icon, on, press) {
     const button = el(`button.rowbutton${on ? ".on" : ""}`, { type: "button", title: help,
-                                                            "aria-label": help, html: icon(13) });
+                                                            "aria-label": help }, [iconNode(icon, 13)]);
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       press();
@@ -435,14 +439,17 @@ export class StructureCard {
     else this.#engine.hoverNode(row.document, row.node);
   }
 
-  // The colour the part is drawn in, from its first occurrence's swatch.
-  #colorOf(row) {
+  // The colour the part is drawn in, from its first occurrence's swatch, as its chip: the colour,
+  // and past a diagonal 55% of the way across, the colour 16% toward ink.
+  #chipOf(row) {
     const d = this.tree.documents[row.document];
     const n = d.model?.[row.node];
     if (!n || n.occurrenceEnd <= n.firstOccurrence) return null;
     const base = this.#swatches.bases[row.document];
     const color = base === undefined ? 0 : this.#swatches.colors[base + n.firstOccurrence] ?? 0;
     if (color === 0) return null;
-    return `rgb(${color & 255}, ${(color >>> 8) & 255}, ${(color >>> 16) & 255})`;
+    const rgb = [color & 255, (color >>> 8) & 255, (color >>> 16) & 255];
+    const shade = rgb.map((c, i) => Math.round(c * 0.84 + kInk[i] * 0.16));
+    return `linear-gradient(to bottom right, rgb(${rgb}) 55%, rgb(${shade}) 55%)`;
   }
 }

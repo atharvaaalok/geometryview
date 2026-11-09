@@ -33,7 +33,7 @@ final class LookCard: StickerCard {
     var onChange: ((Look) -> Void)?
 
     init() {
-        super.init(frame: .zero)
+        super.init()
         let title = NSTextField(labelWithString: "LOOK")
         title.font = Typography.font(Typography.textExtraSmall, .medium)
         title.textColor = Palette.muted

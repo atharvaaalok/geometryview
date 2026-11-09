@@ -96,6 +96,8 @@ final class MainWindow: NSWindow {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
+        // Placed by frame where it opens, over the cards and under the sheets.
+        root.addSubview(toolBar.viewsMenu, positioned: .below, relativeTo: status)
         // The space right of the tree card, where the toolBar and hints centre themselves.
         let free = NSLayoutGuide()
         root.addLayoutGuide(free)
@@ -682,10 +684,15 @@ final class MainWindow: NSWindow {
             guard let model = document.model else {
                 continue
             }
-            for node in model.nodes where node.kind == GeoNodePart.rawValue {
-                parts += 1
+            // One pass, with nothing allocated: this runs on every progress report.
+            var most: UInt32 = 0
+            for node in model.nodes {
+                if node.kind == GeoNodePart.rawValue {
+                    parts += 1
+                }
+                most = max(most, node.occurrence_end)
             }
-            bodies += Int(model.nodes.map(\.occurrence_end).max() ?? 0)
+            bodies += Int(most)
         }
         var detail = names.count == 1 ? "" : names.joined(separator: ", ")
         if bodies > 0 {
@@ -736,6 +743,9 @@ final class MainWindow: NSWindow {
     }
 
     private func startAutomation() {
+        if ChromeLayout.isRequested {
+            ChromeLayout.write(self)
+        }
         if ChromeSnapshot.isRequested {
             // With GEOMETRYVIEW_SNAPSHOT_SELECT set, the first part is selected, to show its card.
             let environment = ProcessInfo.processInfo.environment
@@ -764,6 +774,10 @@ final class MainWindow: NSWindow {
             }
             if environment["GEOMETRYVIEW_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
+            }
+            // GEOMETRYVIEW_SNAPSHOT_VIEWS opens the standard views' menu.
+            if environment["GEOMETRYVIEW_SNAPSHOT_VIEWS"] != nil {
+                toolBar.showViewsMenu()
             }
             // GEOMETRYVIEW_SNAPSHOT_SEE_THROUGH fades the shell, as T does.
             if environment["GEOMETRYVIEW_SNAPSHOT_SEE_THROUGH"] != nil {

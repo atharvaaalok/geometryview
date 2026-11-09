@@ -50,3 +50,16 @@ compares the engine's frame counter before and after.
   the window's layer tree over it, so a check sees what the user sees.
 - The insets are fixed per layout. If a card is resized or hidden, the window reports new insets, and
   the next fit uses them. The current view does not move.
+
+## Addendum (2026-11-09): one chrome on the Mac and the web
+
+The web viewer had drifted from the Mac app in many small ways: the assembly glyph, flat swatches, a
+thin progress line, row metrics, its own icons and the Mac's SF Symbols. Both now follow
+`Docs/design/chrome-spec.md`. Where they differed, the Mac's version was kept, except that the Mac's
+stock controls (the search field, the views menu, the Library's rows) gave way to the page's own,
+which the Mac now draws too. The icons are one file, `Web/viewer/icons.js`, which the Mac reads from
+its bundle and draws through NSImage's SVG support. A layout check (`--chrome-layout`,
+`Tools/web_chrome.mjs`, `Tools/compare_chrome.py`) holds the two within a point of each other.
+
+None of it draws a 3D frame: the exercise's 12 chrome-only changes still draw 0, the page's open
+check still reports 0 idle frames, and the click check passes.
