@@ -984,6 +984,11 @@ render::ViewState Core::frameView() const {
     view.uniforms.aoSamples = 12;
     render::applySection(section_, bounds_, view.uniforms);
     view.uniforms.seeThrough = seeThrough_;
+    // Nothing to cast a shadow, so none: the sheet would otherwise read a mask no pass wrote, and
+    // the Mac's empty window came out shadow blue where the page's is paper.
+    if (!scene_.hasGeometry()) {
+        view.uniforms.shadowVisibility = 0.0f;
+    }
     return view;
 }
 
