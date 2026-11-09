@@ -914,26 +914,34 @@ async function runImportTest() {
                heapMB: stats.heapMB });
 }
 
-// Connects a folder, made in the origin-private file system as a person's would be on a disk,
-// opens a file from it, then the same file from Recent, which should come from the kept import,
-// and counts the frames drawn while nothing happens with the Library showing. Reports each step.
+// Connects a folder, made in the origin-private file system as a person's would be on a disk (in
+// the iPhone shell, the shell connects one in its own storage), opens a file from it, then the
+// same file from Recent, which should come from the kept import, and counts the frames drawn while
+// nothing happens with the Library showing. Reports each step. With keep, what an earlier run kept
+// is left, so the first open shows whether it lasted.
 async function runLibraryTest() {
   const name = params.get("file") ?? "pack.step";
-  const bytes = await (await fetch(`${fixtures}step/${name}`)).blob();
-  const opfs = await navigator.storage.getDirectory();
-  await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
-  const folder = await opfs.getDirectoryHandle("library-test", { create: true });
-  const inner = await folder.getDirectoryHandle("sub", { create: true });
-  const writable = await (await inner.getFileHandle(name, { create: true })).createWritable();
-  await writable.write(bytes);
-  await writable.close();
-  await (await (await folder.getFileHandle("notes.txt", { create: true })).createWritable()).close();
-  await forgetKept(name);
-
-  const id = libraryStore.kind === "visit"
-    ? libraryStore.folders.adoptFiles("library-test", new Map([
-        [`sub/${name}`, new File([bytes], name, { lastModified: 1 })], ["notes.txt", new File([], "notes.txt")]]))
-    : await libraryStore.folders.adoptHandle(folder);
+  if (!params.has("keep")) await forgetKept(name);
+  const keptBefore = (await libraryEntries()).map((e) => e.name);
+  let id;
+  if (libraryStore.kind === "shell") {
+    id = (await libraryStore.folders.folders()).find((f) => f.name === "library-test")?.id;
+    if (!id) throw new Error("The shell connected no test folder.");
+  } else {
+    const bytes = await (await fetch(`${fixtures}step/${name}`)).blob();
+    const opfs = await navigator.storage.getDirectory();
+    await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
+    const folder = await opfs.getDirectoryHandle("library-test", { create: true });
+    const inner = await folder.getDirectoryHandle("sub", { create: true });
+    const writable = await (await inner.getFileHandle(name, { create: true })).createWritable();
+    await writable.write(bytes);
+    await writable.close();
+    await (await (await folder.getFileHandle("notes.txt", { create: true })).createWritable()).close();
+    id = libraryStore.kind === "visit"
+      ? libraryStore.folders.adoptFiles("library-test", new Map([
+          [`sub/${name}`, new File([bytes], name, { lastModified: 1 })], ["notes.txt", new File([], "notes.txt")]]))
+      : await libraryStore.folders.adoptHandle(folder);
+  }
   await showConnected([id]);
   const listed = (await libraryStore.folders.list(id, "")).map((e) => e.name).sort();
 
@@ -962,10 +970,14 @@ async function runLibraryTest() {
   const idle = engine.stats();
   const rows = [...library.element.querySelectorAll(".row")].map((r) => r.textContent.trim());
 
-  await libraryStore.folders.disconnect(id);
-  await forgetRecent(name);
-  await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
-  await post({ backend: libraryStore.kind, listed, firstMs, imported, recentFirst: recent[0]?.key,
+  if (!params.has("keep")) {
+    await libraryStore.folders.disconnect(id);
+    await forgetRecent(name);
+    const opfs = await navigator.storage.getDirectory();
+    await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
+  }
+  await post({ backend: libraryStore.kind, origin: location.origin, keptBefore, listed, firstMs, imported,
+               recentFirst: recent[0]?.key,
                recentWhere: recent[0]?.where, reopenMs, reopenedFromCache,
                idleFrames: idle.frames - settled.frames, looping: idle.looping, rows });
 }

@@ -100,7 +100,9 @@ final class ShellLibrary: NSObject, WKScriptMessageHandlerWithReply, UIDocumentP
         if let existing = current.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
             return existing.id
         }
-        guard url.startAccessingSecurityScopedResource(), let bookmark = try? url.bookmarkData() else {
+        // A folder from the picker is security-scoped; one in the app's own storage needs no scope.
+        _ = url.startAccessingSecurityScopedResource()
+        guard let bookmark = try? url.bookmarkData() else {
             return nil
         }
         let id = UUID().uuidString.lowercased()
@@ -125,6 +127,22 @@ final class ShellLibrary: NSObject, WKScriptMessageHandlerWithReply, UIDocumentP
     private func save() {
         let saved = (folders ?? []).map { Saved(id: $0.id, bookmark: $0.bookmark) }
         UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: Self.key)
+    }
+
+    /// For the page's scripted Library check: a folder in the app's own storage, as a person's would
+    /// be, holding the pack in a sub-folder and a file the Library leaves out, connected.
+    func connectTestFolder(bundle: URL) {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = documents.appendingPathComponent("library-test", isDirectory: true)
+        let inner = folder.appendingPathComponent("sub", isDirectory: true)
+        let pack = inner.appendingPathComponent("pack.step")
+        if !FileManager.default.fileExists(atPath: pack.path) {
+            try? FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+            try? FileManager.default.copyItem(
+                at: bundle.appendingPathComponent("spike/fixtures/step/pack.step"), to: pack)
+            FileManager.default.createFile(atPath: folder.appendingPathComponent("notes.txt").path, contents: Data())
+        }
+        _ = connect(folder)
     }
 
     // MARK: Pickers
