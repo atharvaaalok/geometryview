@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -100,6 +101,7 @@ struct Counters {
     u32 indices[8];
 };
 static_assert(sizeof(Counters) == 104);
+static_assert(sizeof(StyleUniforms) == 384); // as WGSL lays out its Style
 static_assert(sizeof(DrawIndexed) == 20);
 constexpr u32 kLists = 7;
 // A list is drawn in chunks of this many slots, so its indices fit 16 bits. See cull.wgsl.
@@ -240,7 +242,9 @@ struct Renderer::State {
     float glyphAdvance = 0.0f;
     wgpu::ComputePipeline countSurfaces, scanSurfaces, writeSurfaces, chunkDraws, cullEdges;
     wgpu::ComputePipeline occlusion;
-    wgpu::RenderPipeline sheet, resolve, composite;
+    wgpu::RenderPipeline sheet, resolve;
+    // By whether the style draws outlines: without, the tag search and the fold are left out.
+    std::array<wgpu::RenderPipeline, 2> composite;
     std::unordered_map<u32, wgpu::RenderPipeline> pipelines;
     wgpu::Sampler linearClamp;
 
@@ -309,6 +313,7 @@ struct Renderer::State {
     std::vector<u16> looks;
     u64 stateVersion = ~u64(0);
     bool hasGhosts = false, hasShells = false;
+    bool hasSelection = false; // a part or a face, whose edges a style without creases highlights
 
     // Natively, map callbacks run when the renderer processes events at each frame; in the
     // browser, whenever they arrive.
@@ -522,8 +527,13 @@ struct Renderer::State {
 
         wgpu::ColorTargetState output{};
         output.format = outputFormat;
-        composite = screenPipeline(postModule, "compositeFragment", compositePipelineLayout,
-                                   &output, 1, nullptr, "composite");
+        for (const bool outlines : {false, true}) {
+            const wgpu::ConstantEntry entries[] = {constant("kOutlines", outlines)};
+            composite[outlines] =
+                screenPipeline(postModule, "compositeFragment", compositePipelineLayout, &output, 1,
+                               nullptr, outlines ? "composite" : "composite without outlines",
+                               entries);
+        }
 
         // The overlay takes away the ink beneath it, by its alpha; the cube writes pick ids and
         // clears the tags of what is behind it, and the scale bar's quads blend.
@@ -577,10 +587,13 @@ struct Renderer::State {
                                         const wgpu::PipelineLayout& layout,
                                         const wgpu::ColorTargetState* targets, u32 targetCount,
                                         const wgpu::DepthStencilState* depthState,
-                                        const char* label) {
+                                        const char* label,
+                                        std::span<const wgpu::ConstantEntry> constants = {}) {
         wgpu::FragmentState fragment{};
         fragment.module = module;
         fragment.entryPoint = entry;
+        fragment.constantCount = constants.size();
+        fragment.constants = constants.data();
         fragment.targetCount = targetCount;
         fragment.targets = targets;
         wgpu::RenderPipelineDescriptor descriptor{};
@@ -1013,10 +1026,13 @@ struct Renderer::State {
         std::vector<GpuState> gpu(std::max<usize>(words.size(), 1));
         hasGhosts = false;
         hasShells = false;
+        hasSelection = false;
         for (usize o = 0; o < words.size(); ++o) {
             const u16 look = o < looks.size() ? looks[o] : 0;
             gpu[o] = {words[o].flags, words[o].facePage, look, 0};
             hasGhosts = hasGhosts || (words[o].flags & (kStateGhost | kStateFaceGhost)) != 0;
+            hasSelection =
+                hasSelection || (words[o].flags & (kStateSelected | kStateFaceSelected)) != 0;
             hasShells = hasShells || (look & kLookShell) != 0;
         }
         states = buffer(gpu.size() * sizeof(GpuState), U::Storage | U::CopyDst, "states");
@@ -1265,6 +1281,18 @@ struct Renderer::State {
     }
     std::vector<DrawIndexed> resetDraws;
 
+    // Creases and highlights: a style without creases draws edges only for a highlight.
+    bool drawsCreases(const render::ViewState& view) const {
+        const bool highlighted = hasSelection || view.uniforms.hoverEnd > view.uniforms.hoverFirst;
+        return surfaceInstances != 0 && drawsEdges && !reducedDetail &&
+               (style.crease > 0.0f || highlighted);
+    }
+
+    bool drawsGhostLines() const {
+        return surfaceInstances != 0 && hasGhosts && (style.ghostStyle & kGhostLines) != 0 &&
+               style.ghostLine > 0.0f && drawsEdges && !reducedDetail;
+    }
+
     // The shadow's list fills in the same passes, when resetCounters said it is on.
     void encodeCull(const wgpu::CommandEncoder& encoder, bool edges, u32 slot = kViewSlot) {
         const u32 offset = u32(slot * kUniformStride);
@@ -1388,7 +1416,7 @@ struct Renderer::State {
         pass.SetPipeline(sheet);
         pass.SetBindGroup(1, sheetGroup);
         pass.Draw(3);
-        if (hasScene && drawsEdges && !reducedDetail) {
+        if (drawsCreases(view)) {
             pass.SetBindGroup(1, edgeGroup);
             pass.SetPipeline(pipeline({.kind = Kind::Edges, .section = section}));
             pass.DrawIndirect(counters, kEdgeDrawOffset);
@@ -1410,7 +1438,7 @@ struct Renderer::State {
                       .section = section,
                       .pickable = view.uniforms.ghostPickable != 0},
                      2);
-            if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges && !reducedDetail) {
+            if (drawsGhostLines()) {
                 pass.SetBindGroup(1, edgeGroup);
                 pass.SetPipeline(
                     pipeline({.kind = Kind::Edges, .section = section, .ghostLines = true}));
@@ -1482,7 +1510,8 @@ struct Renderer::State {
         const bool shadow = castsShadow(view);
         resetCounters(shadow);
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        encodeCull(encoder, true);
+        // The edge counts were reset above, so a frame that draws no edges need not cull them.
+        encodeCull(encoder, drawsCreases(view) || drawsGhostLines());
         if (shadow) {
             encodeShadow(encoder, section);
         }
@@ -1523,7 +1552,7 @@ struct Renderer::State {
         }
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
         const u32 offset = u32(kViewSlot * kUniformStride);
-        pass.SetPipeline(composite);
+        pass.SetPipeline(composite[render::drawsOutlines(style)]);
         pass.SetBindGroup(0, sceneGroup, 1, &offset);
         pass.SetBindGroup(1, compositeGroup);
         pass.Draw(3);

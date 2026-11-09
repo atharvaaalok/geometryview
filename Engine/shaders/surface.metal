@@ -326,8 +326,8 @@ static float3 lit(float3 n, float3 v, float3 baseColor, float metal, float rough
     const float3 f0 = mix(float3(0.04), base, metal);
     const float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0) * (1.0 - 0.75 * rough);
     const float3 specular = studio(reflect(-v, n), rough, s) * fresnel;
-    // Metals keep a little body colour, as a satin finish does.
-    const float3 diffuse = base * irradiance(n, s) * mix(1.0, 0.4, metal);
+    // Metals keep a little body colour, as a satin finish does, and less when polished.
+    const float3 diffuse = base * irradiance(n, s) * mix(1.0, s.metalDiffuse, metal);
     return tone(diffuse + specular, s);
 }
 

@@ -95,7 +95,7 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
     if (kGhostLinePass) {
         kind = select(0u, kInked, !solid && (shownA || shownB) && edgeClass != kEdgeSmooth);
     } else {
-        kind = select(0u, kInked, solid && edgeClass != kEdgeSmooth) |
+        kind = select(0u, kInked, solid && edgeClass != kEdgeSmooth && style.crease > 0.0) |
                select(0u, kHighlighted, hovered || selected);
     }
 
@@ -114,7 +114,8 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
     let spanLength = length(span);
     let direction = select(vec2f(1.0, 0.0), span / spanLength, spanLength > 1e-4);
     let normal = vec2f(-direction.y, direction.x);
-    let width = max(select(0.0, style.crease, (kind & kInked) != 0u),
+    let inked = select(style.crease, style.ghostLine, kGhostLinePass);
+    let width = max(select(0.0, inked, (kind & kInked) != 0u),
                     select(0.0, style.highlight, (kind & kHighlighted) != 0u));
     let halfWidth = 0.5 * width + 1.0; // a pixel more, for the soft edge
 
@@ -167,7 +168,9 @@ fn edgeFragment(in: EdgeVertex) -> @location(3) vec4f {
     var ink = vec4f(0.0);
     if (kGhostLinePass) {
         if ((in.kind & kInked) != 0u) {
-            ink.g = crease * (1.0 - smoothstep(4.0 / 7.0 - soft, 4.0 / 7.0 + soft, phase));
+            let dashed = 1.0 - smoothstep(0.5 * style.ghostLine - 0.5, 0.5 * style.ghostLine + 0.5,
+                                          distance);
+            ink.g = dashed * (1.0 - smoothstep(4.0 / 7.0 - soft, 4.0 / 7.0 + soft, phase));
         }
     } else {
         ink.r = select(0.0, crease, (in.kind & kInked) != 0u);

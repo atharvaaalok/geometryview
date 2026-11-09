@@ -139,6 +139,10 @@ fn ambientOcclusion(@builtin(global_invocation_id) gid: vec3u) {
 // folds in front of itself, a step in depth within one body. Ghosts get a faint outline of their
 // own. Everything is sampled through the hand-drawn wobble, so outlines wobble with the edges.
 
+// Whether the style draws outlines. Without them the search below would find nothing: its nearest
+// samples are half a pixel away, where a line of no width covers nothing.
+override kOutlines: bool = true;
+
 const kDirections = array<vec2f, 8>(
     vec2f(1.0, 0.0), vec2f(0.7071, 0.7071), vec2f(0.0, 1.0), vec2f(-0.7071, 0.7071),
     vec2f(-1.0, 0.0), vec2f(-0.7071, -0.7071), vec2f(0.0, -1.0), vec2f(0.7071, -0.7071));
@@ -162,7 +166,7 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
     // Search outward for a change of body, solid and ghost alike.
     var solid = 0.0;
     var ghost = 0.0;
-    let reach = 0.5 * max(style.silhouette, style.partLine) + 1.0;
+    let reach = select(0.0, 0.5 * max(style.silhouette, style.partLine) + 1.0, kOutlines);
     for (var r = 1.0; r <= reach; r += 1.0) {
         for (var k = 0u; k < 8u; k++) {
             let o = vec2i(round(kDirections[k] * r));
@@ -188,7 +192,7 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
     // A body folding in front of itself, such as a boss before its own plate: a step in depth
     // within one body. A step, not a kink: the second difference must be large in world terms and
     // large against the slope, so a curved surface seen edge on does not ink its facets.
-    if (c.r != 0u && (c.r & kTagCap) == 0u && solid < 1.0) {
+    if (kOutlines && style.fold > 0.0 && c.r != 0u && (c.r & kTagCap) == 0u && solid < 1.0) {
         let s = max(1, i32(round(style.pixelsPerPoint)));
         let left = p - vec2i(s, 0);
         let right = p + vec2i(s, 0);
@@ -208,7 +212,7 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
             let jumpX = stepX > threshold && stepX > 0.8 * 0.5 * abs(zr - zl);
             let jumpY = stepY > threshold && stepY > 0.8 * 0.5 * abs(zu - zd);
             if (jumpX || jumpY) {
-                solid = max(solid, 0.85);
+                solid = max(solid, style.fold);
             }
         }
     }

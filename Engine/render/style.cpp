@@ -235,7 +235,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .colorModes = true,
         .sheet = {kPaper, kPaper, 0.0f, true, none, 0.0f, 0.0f},
         .wobble = true,
-        .ink = {kInk, 1.0f, 2.4f, 1.5f, 1.0f, 2.0f},
+        .ink = {kInk, 1.0f, 2.4f, 1.5f, 1.0f, 2.0f, 0.85f, 1.0f},
         .ao = 0.0f,
         .capInk = 0.0f,
         .shadow = {kShadowBlue, 0.9f, 1.0f, true},
@@ -255,7 +255,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .colorModes = true,
         .sheet = {hex(0xF6F5F3), hex(0xF6F5F3), 0.0f, false, none, 0.0f, 0.0f},
         .wobble = false,
-        .ink = {hex(0x45433F), 0.9f, 1.25f, 1.0f, 0.8f, 2.0f},
+        .ink = {hex(0x45433F), 0.9f, 1.25f, 1.0f, 0.8f, 2.0f, 0.85f, 0.8f},
         .ao = 0.85f,
         .capInk = 0.0f,
         .shadow = {hex(0x2A2F35), 0.16f, 10.0f, true},
@@ -283,7 +283,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .colorModes = true,
         .sheet = {hex(0xF5F3EF), hex(0xE9E5DE), 0.06f, false, none, 0.0f, 0.0f},
         .wobble = false,
-        .ink = {hex(0x3D362D), 0.55f, 1.5f, 0.9f, 0.7f, 2.0f},
+        .ink = {hex(0x3D362D), 0.55f, 1.5f, 0.9f, 0.7f, 2.0f, 0.85f, 0.7f},
         .ao = 0.9f,
         .capInk = 0.0f,
         .shadow = {hex(0x3A332A), 0.2f, 12.0f, true},
@@ -311,7 +311,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .colorModes = false,
         .sheet = {hex(0x1E4479), hex(0x173765), 0.18f, true, kWhite, 0.06f, 24.0f},
         .wobble = false,
-        .ink = {hex(0xEEF4FF), 0.95f, 1.8f, 1.2f, 0.9f, 2.2f},
+        .ink = {hex(0xEEF4FF), 0.95f, 1.8f, 1.2f, 0.9f, 2.2f, 0.85f, 0.9f},
         .ao = 0.0f,
         .capInk = 1.0f,
         .shadow = {hex(0x0D2244), 0.35f, 8.0f, false},
@@ -331,7 +331,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .colorModes = false,
         .sheet = {kWhite, kWhite, 0.0f, false, none, 0.0f, 0.0f},
         .wobble = false,
-        .ink = {hex(0x15171A), 1.0f, 2.0f, 1.2f, 1.0f, 2.0f},
+        .ink = {hex(0x15171A), 1.0f, 2.0f, 1.2f, 1.0f, 2.0f, 0.85f, 1.0f},
         .ao = 0.0f,
         .capInk = 1.0f,
         .shadow = {hex(0x15171A), 0.12f, 6.0f, false},
@@ -520,6 +520,9 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.ghostStyle = settings.ghostStyle;
     u.shadowOn = settings.shadow ? 1u : 0u;
     u.capInk = style.capInk;
+    u.metalDiffuse = style.studio.metalDiffuse;
+    u.fold = style.ink.fold;
+    u.ghostLine = style.ink.ghost * px;
     return u;
 }
 

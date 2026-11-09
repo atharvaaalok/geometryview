@@ -86,6 +86,9 @@ struct Style {
     ghostStyle: u32,
     shadowOn: u32,
     capInk: f32,
+    metalDiffuse: f32,
+    fold: f32,
+    ghostLine: f32,
 }
 
 // One per definition. Geometry lives in one buffer of words, so a definition records where each

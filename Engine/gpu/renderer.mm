@@ -76,6 +76,7 @@ struct Renderer::State {
     id<MTLBuffer> occurrenceStates, faceStates;
     u64 stateVersion = ~u64(0);
     bool hasGhosts = false;
+    bool hasSelection = false; // a part or a face, whose edges a style without creases highlights
 
     // Each occurrence's look, and three palette texels per look.
     id<MTLBuffer> looks, palette;
@@ -296,7 +297,9 @@ struct Renderer::State {
         [encoder setArgumentTable:compositeTable
                          atStages:MTLRenderStageVertex | MTLRenderStageFragment];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-        if (hasScene && drawsEdges && !reducedDetail) {
+        // A style without creases draws edges only for a highlight.
+        const bool highlighted = hasSelection || view.uniforms.hoverEnd > view.uniforms.hoverFirst;
+        if (hasScene && drawsEdges && !reducedDetail && (style.crease > 0.0f || highlighted)) {
             drawEdges(encoder, false);
         }
         if (seeThrough) {
@@ -323,7 +326,8 @@ struct Renderer::State {
                                                            [section]];
             [encoder setDepthStencilState:pipelines.depthTest];
             drawSurfaces(encoder);
-            if ((style.ghostStyle & kGhostLines) != 0 && drawsEdges && !reducedDetail) {
+            if ((style.ghostStyle & kGhostLines) != 0 && style.ghostLine > 0.0f && drawsEdges &&
+                !reducedDetail) {
                 drawEdges(encoder, true);
             }
         }
@@ -383,7 +387,7 @@ struct Renderer::State {
         [composite barrierAfterQueueStages:MTLStageTile | MTLStageFragment | MTLStageDispatch
                               beforeStages:MTLStageFragment
                          visibilityOptions:MTL4VisibilityOptionDevice];
-        [composite setRenderPipelineState:pipelines.composite];
+        [composite setRenderPipelineState:pipelines.composite[render::drawsOutlines(style)]];
         [composite setArgumentTable:compositeTable
                            atStages:MTLRenderStageVertex | MTLRenderStageFragment];
         [composite drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
@@ -642,6 +646,9 @@ void Renderer::syncState(const model::FaceState& state) {
 
     s.hasGhosts = std::any_of(words.begin(), words.end(), [](const OccurrenceState& word) {
         return (word.flags & (kStateGhost | kStateFaceGhost)) != 0;
+    });
+    s.hasSelection = std::any_of(words.begin(), words.end(), [](const OccurrenceState& word) {
+        return (word.flags & (kStateSelected | kStateFaceSelected)) != 0;
     });
 }
 

@@ -70,12 +70,21 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
                 const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                 uint group [[threadgroup_position_in_grid]]) {
     // Whether this pass can draw anything of an occurrence. Faces are checked one by one later.
-    const auto keeps = [&](uint flags) {
+    const auto keeps = [&](uint flags, const device GpuOccurrence& occurrence) {
         if ((flags & kStateHidden) != 0) {
             return false;
         }
-        return !kGhostLinePass || ((style.ghostStyle & kGhostLines) != 0 &&
-                                   (flags & (kStateGhost | kStateFaceGhost)) != 0);
+        if (kGhostLinePass) {
+            return (style.ghostStyle & kGhostLines) != 0 &&
+                   (flags & (kStateGhost | kStateFaceGhost)) != 0;
+        }
+        if (style.crease > 0.0 || (flags & (kStateSelected | kStateFaceSelected)) != 0) {
+            return true;
+        }
+        // Without creases only highlights draw: a selected part, or the one under the pointer.
+        const uint first = occurrence.idBase + 1;
+        const uint end = first + definitions[occurrence.definition].faceCount;
+        return frame.hoverEnd > frame.hoverFirst && frame.hoverFirst < end && frame.hoverEnd > first;
     };
     const auto inView = [&](const device GpuOccurrence& occurrence, uint chunk) {
         const device GpuDefinition& definition = definitions[occurrence.definition];
@@ -93,8 +102,8 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
     const device Batch& batch = batches[drawBase + group];
     uint count = 0;
     if (batch.kind == kBatchRun) {
-        if (keeps(states[batch.occurrence].flags)) {
-            const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
+        const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
+        if (keeps(states[batch.occurrence].flags, occurrence)) {
             for (uint i = 0; i < batch.count; ++i) {
                 if (inView(occurrence, batch.first + i)) {
                     payload.visible[count++] = batch.first + i;
@@ -104,7 +113,7 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
     } else {
         for (uint i = 0; i < batch.count; ++i) {
             const MeshletRef ref = refs[batch.first + i];
-            if (keeps(states[ref.occurrence].flags) &&
+            if (keeps(states[ref.occurrence].flags, occurrences[ref.occurrence]) &&
                 inView(occurrences[ref.occurrence], ref.meshlet)) {
                 payload.visible[count++] = batch.first + i;
             }
@@ -177,7 +186,7 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     if (kGhostLinePass) {
         kind = !solid && (shownA || shownB) && edgeClass != kEdgeSmooth ? kInked : 0;
     } else {
-        kind = (solid && edgeClass != kEdgeSmooth ? kInked : 0) |
+        kind = (solid && edgeClass != kEdgeSmooth && style.crease > 0.0 ? kInked : 0) |
                (hovered || selected ? kHighlighted : 0);
     }
 
@@ -225,7 +234,8 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     const float length = metal::length(span);
     const float2 direction = length > 1e-4 ? span / length : float2(1.0, 0.0);
     const float2 normal = float2(-direction.y, direction.x);
-    const float width = max((kind & kInked) != 0 ? style.crease : 0.0,
+    const float inked = kGhostLinePass ? style.ghostLine : style.crease;
+    const float width = max((kind & kInked) != 0 ? inked : 0.0,
                             (kind & kHighlighted) != 0 ? style.highlight : 0.0);
     const float halfWidth = 0.5 * width + 1.0; // a pixel more, for the soft edge
 
@@ -273,7 +283,7 @@ fragment InkOutput edgeFragment(EdgeFragmentIn in [[stage_in]],
     float4 ink = float4(0.0);
     if (kGhostLinePass) {
         ink.g = (in.kind & kInked) != 0
-                    ? cover(style.crease) *
+                    ? cover(style.ghostLine) *
                           (1.0 - smoothstep(4.0 / 7.0 - soft, 4.0 / 7.0 + soft, phase))
                     : 0.0;
     } else {

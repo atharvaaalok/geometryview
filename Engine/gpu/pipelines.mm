@@ -196,10 +196,12 @@ public:
 
     // Outlines and print texture, over the resolved image: each pixel's result is premultiplied
     // ink plus what remains of the colour beneath, so it blends as ink + colour * alpha.
-    id<MTLRenderPipelineState> composite() {
+    id<MTLRenderPipelineState> composite(bool outlines) {
+        MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
+        [constants setConstantValue:&outlines type:MTLDataTypeBool atIndex:kConstantOutlines];
         MTL4RenderPipelineDescriptor* descriptor = [MTL4RenderPipelineDescriptor new];
         descriptor.vertexFunctionDescriptor = function(@"sheetVertex");
-        descriptor.fragmentFunctionDescriptor = function(@"compositeFragment");
+        descriptor.fragmentFunctionDescriptor = function(@"compositeFragment", constants);
         MTL4RenderPipelineColorAttachmentDescriptor* color = descriptor.colorAttachments[0];
         color.pixelFormat = kColorFormat;
         color.blendingState = MTL4BlendStateEnabled;
@@ -308,10 +310,11 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
                            {.blended = true, .ids = false, .clearsInk = true},
                            "Could not create the overlay pipeline");
     resolveTile = builder.tile(@"resolveTile", "Could not create the tile resolve pipeline");
-    composite = builder.composite();
+    composite[0] = builder.composite(false);
+    composite[1] = builder.composite(true);
     ambientOcclusion =
         builder.compute(@"ambientOcclusion", "Could not create the occlusion kernel");
-    if (!shadow[0] || !shadow[1] || !sheet || !cube || !quad || !resolveTile || !composite ||
+    if (!shadow[0] || !shadow[1] || !sheet || !cube || !quad || !resolveTile || !composite[0] || !composite[1] ||
         !ambientOcclusion) {
         return false;
     }

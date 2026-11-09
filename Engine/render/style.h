@@ -66,7 +66,8 @@ struct Studio {
     float sharpness = 0; // 0 soft-edged boxes, 1 crisp ones
     std::array<float, 2> strips{}; // tall strip lights right and left
     float exposure = 1;
-    float contrast = 0; // 0 a gentle shoulder, 1 a filmic curve
+    float contrast = 0;        // 0 a gentle shoulder, 1 a filmic curve
+    float metalDiffuse = 0.4f; // the share of diffuse light a metal keeps; polish lowers it
 };
 
 struct Style {
@@ -88,6 +89,8 @@ struct Style {
         Rgb color;
         float alpha;
         float silhouette, part, crease, highlight; // widths in points
+        float fold;  // strength of a body folding in front of itself, 0 to 1
+        float ghost; // width of a ghost's dashed lines, points
     } ink;
     float ao;     // ambient occlusion strength
     float capInk; // 0 hatches section caps in the part's own dark tone, 1 in ink
@@ -129,5 +132,10 @@ struct LookSettings {
 /// The style's uniforms for shaders, at a display scale.
 StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
                                 float pixelsPerPoint);
+
+/// Whether a style's composite looks for outlines: silhouettes, part lines or folds.
+inline bool drawsOutlines(const StyleUniforms& style) {
+    return style.silhouette > 0.0f || style.partLine > 0.0f || style.fold > 0.0f;
+}
 
 } // namespace geo::render
