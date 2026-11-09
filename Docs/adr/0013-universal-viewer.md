@@ -192,7 +192,7 @@ The plan was, from the spike's indexed path:
   - the browser importer's peak for the 10M STL is 117 MB lower (1.10–1.18 GB);
   - WebKit held back any body of known length and handed it over 65–90 ms at a time, so on the iPhone a cache file reached the page whole rather than streamed; the shell and the launcher now send files chunked: on the iPhone a cache file's first data comes 17–26 ms after asking (was 90–107 ms), in 61–104 pieces, and the page's peak is about 90 MB lower;
   - half the 100k rack's frame is its edges, which the 1M rack's boxes are too small to draw;
-  - the browser importer, run on 851 real STEP files (CADBench and our own) in Chrome and WebKit, now agrees with OCCT as the native one does, but for one face too large for a worker's 512 MB and one slice past the 120 s limit; a ring closed on one vertex had been meshed some 70 times too finely, natively too.
+  - the browser importer, run on 851 real STEP files (CADBench and our own) in Chrome and WebKit, now agrees with OCCT as the native one does, but for one slice past the 120 s limit; a face too large for a worker's 512 MB is now meshed coarser rather than lost (a new rung in the failure ladder, also taken when OCCT's allocator fails); a ring closed on one vertex had been meshed some 70 times too finely, natively too.
 
 ## Learned along the way
 
