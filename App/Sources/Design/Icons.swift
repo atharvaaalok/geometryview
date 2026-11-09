@@ -7,7 +7,7 @@ import AppKit
 enum Icons {
     enum Name: String, CaseIterable {
         case eye, eyeSlash, ghost, scope, undo, redo, seeThrough, scissors, palette, cube, fit
-        case chevron, assembly, search, folder, folderPlus, file, plus, close, parts
+        case chevron, assembly, search, folder, folderPlus, file, plus, close, parts, more, check
     }
 
     /// Each icon's SVG markup, by name. icons.js keeps one icon on each line, `  name: \`markup\`,`,

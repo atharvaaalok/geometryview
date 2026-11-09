@@ -73,6 +73,13 @@ final class MainWindow: NSWindow {
         backgroundColor = Palette.paper
         isReleasedWhenClosed = false
         minSize = NSSize(width: 960, height: 600)
+        // --window WxH sizes the window, for the layout checks at narrower widths.
+        if let at = CommandLine.arguments.firstIndex(of: "--window"), at + 1 < CommandLine.arguments.count {
+            let parts = CommandLine.arguments[at + 1].split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2 {
+                setContentSize(NSSize(width: max(parts[0], 960), height: max(parts[1], 600)))
+            }
+        }
         center()
 
         contentView = makeLayout()
@@ -83,8 +90,11 @@ final class MainWindow: NSWindow {
     // MARK: Layout
 
     private func makeLayout() -> NSView {
-        let root = NSView()
+        let root = ChromeRoot()
         root.wantsLayer = true
+        // The toolbar folds what doesn't fit into More: worked out when the width changes. Its room
+        // is the window's width less the cards', as the page leaves it.
+        root.onWidthChange = { [weak self] width in self?.toolBar.fit(available: width - 336) }
         let views: [NSView] = [
             viewport, dragArea, masthead, structure, libraryCard, selection, toolBar, lookCard,
             sectionCard,
@@ -98,6 +108,7 @@ final class MainWindow: NSWindow {
         }
         // Placed by frame where it opens, over the cards and under the sheets.
         root.addSubview(toolBar.viewsMenu, positioned: .below, relativeTo: status)
+        root.addSubview(toolBar.moreMenu, positioned: .below, relativeTo: status)
         // The space right of the tree card, where the toolBar and hints centre themselves.
         let free = NSLayoutGuide()
         root.addLayoutGuide(free)
@@ -224,6 +235,13 @@ final class MainWindow: NSWindow {
                 return
             }
             perspective = index == 1
+            engine.perform(GeoActionToggleProjection)
+        }
+        toolBar.onProjection = { [weak self] persp in
+            guard let self, persp != perspective else {
+                return
+            }
+            perspective = persp
             engine.perform(GeoActionToggleProjection)
         }
         selection.onAction = { [weak self] action in self?.engine.perform(action) }
@@ -842,6 +860,10 @@ final class MainWindow: NSWindow {
                     }
                 }
             }
+            // GEOMETRYVIEW_SNAPSHOT_MORE opens the toolbar's More menu, if anything has folded.
+            if environment["GEOMETRYVIEW_SNAPSHOT_MORE"] != nil {
+                toolBar.toggleMore()
+            }
             // GEOMETRYVIEW_SNAPSHOT_VIEWS opens the standard views' menu.
             if environment["GEOMETRYVIEW_SNAPSHOT_VIEWS"] != nil {
                 toolBar.showViewsMenu()
@@ -883,6 +905,22 @@ final class MainWindow: NSWindow {
             let run = Exercise(engine: engine, size: contentView?.bounds.size ?? .zero)
             exercise = run
             run.start(window: self)
+        }
+    }
+}
+
+/// The window's content view: tells the window when its width changes, which is when the toolbar
+/// folds or unfolds, and only then.
+@MainActor
+final class ChromeRoot: NSView {
+    var onWidthChange: ((CGFloat) -> Void)?
+    private var width: CGFloat = -1
+
+    override func layout() {
+        super.layout()
+        if bounds.width != width {
+            width = bounds.width
+            onWidthChange?(width)
         }
     }
 }

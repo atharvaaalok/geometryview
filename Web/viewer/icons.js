@@ -28,6 +28,8 @@ export const iconMarkup = {
   plus: `<path d="M8 3v10M3 8h10"/>`,
   close: `<path d="M4 4l8 8M12 4l-8 8"/>`,
   parts: `<path d="M3 4h10M3 8h10M3 12h10"/>`,
+  more: `<circle cx="3.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor" stroke="none"/>`,
+  check: `<path d="M3.5 8.5l3 3 6-7"/>`,
 };
 
 export const icons = Object.fromEntries(

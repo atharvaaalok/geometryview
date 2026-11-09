@@ -13,7 +13,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const [url, out, width = "1440", height = "900", scale = "2"] = process.argv.slice(2);
+const [url, out, width = "1440", height = "900", scale = "2", device = "desktop"] = process.argv.slice(2);
+// "phone" sends an iPhone's user agent, as the viewer tells a phone by it.
+const kPhoneAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 " +
+                    "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 if (!url || !out) {
   process.stderr.write("usage: web_chrome.mjs <viewer url> <out-prefix> [width height scale]\n");
   process.exit(2);
@@ -60,6 +63,9 @@ function measure(elements) {
   };
   const shown = (e) => e.getClientRects().length > 0;
   const report = {};
+  // The toolbar's tools that show, by name, in order.
+  report["toolbar.tools"] = [...document.querySelectorAll(".toolbar [data-tool]")].filter(shown)
+    .map((e) => e.dataset.tool);
   for (const [name, selector] of Object.entries(elements)) {
     if (Array.isArray(selector)) {
       report[name] = [...document.querySelectorAll(selector[0])].filter(shown).slice(0, 8).map(box);
@@ -103,8 +109,9 @@ try {
     (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result?.result?.value;
 
   await send("Runtime.enable");
+  if (device === "phone") await send("Emulation.setUserAgentOverride", { userAgent: kPhoneAgent });
   await send("Emulation.setDeviceMetricsOverride", { width: +width, height: +height,
-                                                     deviceScaleFactor: +scale, mobile: false });
+                                                     deviceScaleFactor: +scale, mobile: device === "phone" });
   await send("Page.navigate", { url });
   const wantsModel = /[?&](model|import)=/.test(url);
   for (let i = 0; i < 600; ++i) {
@@ -115,6 +122,11 @@ try {
     if (ready) break;
   }
   await sleep(1500); // the view settles, and fonts are in
+  // GEOMETRYVIEW_CLICK clicks an element first, such as a menu's button, to picture what it opens.
+  if (process.env.GEOMETRYVIEW_CLICK) {
+    await evaluate(`document.querySelector(${JSON.stringify(process.env.GEOMETRYVIEW_CLICK)})?.click()`);
+    await sleep(300);
+  }
   const report = await evaluate(`(${measure})(${JSON.stringify(kElements)})`);
   if (pageErrors.length) report.errors = pageErrors;
   writeFileSync(`${out}.json`, JSON.stringify(report, null, 1));

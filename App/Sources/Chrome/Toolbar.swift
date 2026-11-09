@@ -2,7 +2,8 @@ import AppKit
 import GeometryViewEngine
 
 /// The bottom toolbar: what clicks pick, what to do with a selection, history, projection and
-/// framing. Every control here also has a key.
+/// framing. Every control here also has a key. When the window is too narrow for all of it, the
+/// least used tools fold into a More menu, by the rule the page follows (Web/viewer/toolbar-fold.js).
 @MainActor
 final class Toolbar: StickerCard {
     let pick = SegmentedPill(
@@ -50,6 +51,22 @@ final class Toolbar: StickerCard {
     var onShowShortcuts: (() -> Void)?
     var onShowLook: (() -> Void)?
     var onShowSection: (() -> Void)?
+    /// Called with the projection chosen from the More menu: true for perspective.
+    var onProjection: ((Bool) -> Void)?
+
+    private let more = PillButton(icon: .more, help: "More tools")
+    /// The tools, by name, in order, each in a group; groups are divided by rules.
+    private var tools: [(key: String, view: NSView, group: Int)] = []
+    private var rules: [NSView] = []
+    private var widths: [String: CGFloat] = [:]
+    private var folded: Set<String> = []
+    private var fittedTo: CGFloat = -1
+    /// What folds, in toolbar order, for the More menu.
+    lazy var moreMenu = MenuCard(iconColumn: true)
+    /// The tools showing, by name, in order: for the layout check.
+    var shownTools: [String] {
+        tools.filter { !$0.view.isHidden }.map(\.key) + (more.isHidden ? [] : ["more"])
+    }
 
     init() {
         super.init()
@@ -68,11 +85,30 @@ final class Toolbar: StickerCard {
 
         openFiles.onPress = { [weak self] in self?.onOpen?() }
         connectFolder.onPress = { [weak self] in self?.onConnect?() }
-        let stack = NSStackView(views: [
-            openFiles, connectFolder, rule(), pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), seeThrough,
-            cut, look,
-            projection, views, fit, shortcuts,
-        ])
+        more.onPress = { [weak self] in self?.toggleMore() }
+        more.isHidden = true
+        let groups: [[(String, NSView)]] = [
+            [("open", openFiles), ("connect", connectFolder)],
+            [("pick", pick)],
+            [("hide", hide), ("ghost", ghost), ("isolate", isolate), ("showAll", showAll)],
+            [("undo", undo), ("redo", redo)],
+            [("seeThrough", seeThrough), ("section", cut), ("look", look), ("projection", projection),
+             ("views", views), ("fit", fit), ("shortcuts", shortcuts)],
+        ]
+        var views: [NSView] = []
+        for (group, members) in groups.enumerated() {
+            if group > 0 {
+                let divider = rule()
+                rules.append(divider)
+                views.append(divider)
+            }
+            for (key, view) in members {
+                tools.append((key, view, group))
+                views.append(view)
+            }
+        }
+        views.append(more)
+        let stack = NSStackView(views: views)
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -106,6 +142,144 @@ final class Toolbar: StickerCard {
 
     func showViewsMenu() {
         viewsMenu.toggle(above: views)
+    }
+
+    // MARK: Folding
+
+    /// Folds the least used tools into More until the toolbar fits `available` points: the
+    /// window's width less the cards' room, as the page leaves it. Measures each tool once.
+    func fit(available: CGFloat) {
+        guard abs(available - fittedTo) >= 0.5 else {
+            return
+        }
+        fittedTo = available
+        if widths.isEmpty {
+            for tool in tools {
+                widths[tool.key] = tool.view.fittingSize.width
+            }
+        }
+        let items = tools.map { FoldItem(key: $0.key, width: widths[$0.key] ?? 0, group: $0.group) }
+        folded = Self.foldPlan(items, available: available)
+        for tool in tools {
+            tool.view.isHidden = folded.contains(tool.key)
+        }
+        for (group, divider) in rules.enumerated() {
+            divider.isHidden = !Self.ruleShows(items, folded: folded, group: group)
+        }
+        more.isHidden = folded.isEmpty
+        if folded.isEmpty {
+            moreMenu.close()
+        }
+    }
+
+    struct FoldItem {
+        let key: String
+        let width: CGFloat
+        let group: Int
+    }
+
+    /// The order tools fold in, as kFoldRanks in toolbar-fold.js: lower first, a rank at a time.
+    static let foldRanks: [String: Int] = [
+        "shortcuts": 0, "projection": 1, "views": 2, "fit": 3, "open": 4, "connect": 4, "look": 5,
+        "section": 6, "seeThrough": 7, "isolate": 8, "ghost": 9, "hide": 9, "undo": 10, "redo": 10,
+        "showAll": 11,
+    ]
+    // As kToolbarMeasures: the inset each side, the gap, a rule's width and More's.
+    private static let inset: CGFloat = 10, gap: CGFloat = 8, ruleWidth = Metrics.line, moreWidth: CGFloat = 30
+
+    static func foldPlan(_ items: [FoldItem], available: CGFloat) -> Set<String> {
+        let ranks = Set(items.filter { $0.width > 0 }.compactMap { foldRanks[$0.key] }).sorted()
+        var folded: Set<String> = []
+        for n in 0...ranks.count {
+            folded = n == 0 ? [] : Set(items.filter { (foldRanks[$0.key] ?? .max) <= ranks[n - 1] }.map(\.key))
+            if width(items, folded: folded) <= available {
+                break
+            }
+        }
+        return folded
+    }
+
+    static func width(_ items: [FoldItem], folded: Set<String>) -> CGFloat {
+        var shown = items.filter { $0.width > 0 && !folded.contains($0.key) }
+        if !folded.isEmpty {
+            shown.append(FoldItem(key: "more", width: moreWidth, group: items.last?.group ?? 0))
+        }
+        let groups = Set(shown.map(\.group)).count
+        let rules = max(0, groups - 1)
+        let count = shown.count + rules
+        return 2 * inset + shown.reduce(0) { $0 + $1.width } + CGFloat(rules) * ruleWidth
+            + CGFloat(max(0, count - 1)) * gap
+    }
+
+    static func ruleShows(_ items: [FoldItem], folded: Set<String>, group: Int) -> Bool {
+        let last = items.last?.group ?? 0
+        let showing = { (g: Int) in
+            items.contains { $0.group == g && $0.width > 0 && !folded.contains($0.key) }
+                || (!folded.isEmpty && g == last)
+        }
+        let groups = Array(Set(items.map(\.group))).sorted()
+        guard let at = groups.firstIndex(of: group) else {
+            return false
+        }
+        return showing(group) && groups[(at + 1)...].contains(where: showing)
+    }
+
+    /// The folded tools, as rows in toolbar order: the views under a heading of their own.
+    func toggleMore() {
+        if moreMenu.isOpen {
+            moreMenu.close()
+            return
+        }
+        let act = { [weak self] (action: GeoAction) -> () -> Void in { self?.onAction?(action) } }
+        let row = { (key: String, icon: Icons.Name?, title: String, action: @escaping () -> Void) -> MenuItem in
+            let enabled = (self.tools.first { $0.key == key }?.view as? ChromeControl)?.isEnabled ?? true
+            return .row(title: title, icon: icon, checked: false, enabled: enabled, action: action)
+        }
+        var items: [MenuItem] = []
+        for tool in tools where folded.contains(tool.key) {
+            switch tool.key {
+            case "open": items.append(row("open", .plus, "Open files") { [weak self] in self?.onOpen?() })
+            case "connect":
+                items.append(row("connect", .folderPlus, "Connect a folder") { [weak self] in self?.onConnect?() })
+            case "hide": items.append(row("hide", .eyeSlash, "Hide the selection", act(GeoActionHideSelection)))
+            case "ghost": items.append(row("ghost", .ghost, "Ghost the selection", act(GeoActionGhostSelection)))
+            case "isolate": items.append(row("isolate", .scope, "Isolate", act(GeoActionIsolate)))
+            case "showAll": items.append(row("showAll", .eye, "Show everything", act(GeoActionShowAll)))
+            case "undo": items.append(row("undo", .undo, "Undo", act(GeoActionUndo)))
+            case "redo": items.append(row("redo", .redo, "Redo", act(GeoActionRedo)))
+            case "seeThrough":
+                items.append(row("seeThrough", .seeThrough, "See through", act(GeoActionToggleSeeThrough)))
+            case "section": items.append(row("section", .scissors, "Section") { [weak self] in self?.onShowSection?() })
+            case "look": items.append(row("look", .palette, "Look") { [weak self] in self?.onShowLook?() })
+            case "projection":
+                for (index, title) in ["Orthographic", "Perspective"].enumerated() {
+                    items.append(
+                        .row(title: title, icon: nil, checked: projection.selected == index, enabled: true) {
+                            [weak self] in
+                            guard let self, projection.selected != index else {
+                                return
+                            }
+                            projection.selected = index
+                            onProjection?(index == 1)
+                        })
+                }
+            case "views":
+                items.append(.heading("Views"))
+                let views: [(String, GeoAction)] = [
+                    ("Front", GeoActionViewFront), ("Back", GeoActionViewBack), ("Left", GeoActionViewLeft),
+                    ("Right", GeoActionViewRight), ("Top", GeoActionViewTop), ("Bottom", GeoActionViewBottom),
+                    ("Isometric", GeoActionViewIso),
+                ]
+                for (title, action) in views {
+                    items.append(row("views", nil, title, act(action)))
+                }
+            case "fit": items.append(row("fit", .fit, "Fit to view", act(GeoActionFit)))
+            case "shortcuts": items.append(row("shortcuts", nil, "Shortcuts") { [weak self] in self?.onShowShortcuts?() })
+            default: break
+            }
+        }
+        moreMenu.setItems(items)
+        moreMenu.toggle(above: more)
     }
 
     /// Reflects what the engine can do now.
