@@ -56,6 +56,32 @@ Other work on the machine was using the GPU at the time, so runs varied by about
 The main pass's vertex stage, 2.23 ms for 12M triangles, is now the frame's largest part. The rack
 is far faster than Metal on the same frames (19.35 ms with four samples).
 
+**On the iPhone 16 Pro** (2026-11-08, 4:29–4:39 PM), the new cull runs without errors and changes
+nothing measurable, so the rack's time there is spent elsewhere. The old cull was put back for an
+A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` old). DPR 2
+(804×1748), one sample, GPU ms p50 at the three zooms:
+
+| Scene | New cull | Old cull |
+|---|---|---|
+| Rack of 100k parts, 60 Hz | 24.81 / 15.61 / 9.13 | 25.40 / 15.84 / 9.22 |
+| Rack of 100k parts, 3 frames a refresh | 25.04 / 15.19 / 8.76 | 24.82 / 15.31 / 8.84 |
+| 13S4P pack, 3 frames a refresh | 3.94 / 3.84 / 3.46 | 4.02 / 4.11 / 3.97 |
+| 13S4P pack, 60 Hz (P3: 8.56 / 8.46 / 8.62) | 8.66 / 8.69 / 8.77 | |
+| Rack of 100k parts, reduced detail, 60 Hz | 8.39 / 8.78 / 9.51 | |
+
+- **The rack is the phone's first.** In full, the rack takes 25 ms at the widest zoom: about 40 fps.
+  That is 6.6 times the M4 Max's 3.77 ms (native Dawn), which draws nearly four times the pixels.
+  It costs by parts, not triangles: its 1.2M triangles take nearly as long as the 10M STL's
+  (30.65 ms in P3).
+- **In motion the viewer draws it at reduced detail**, without edges or the shadow, since the phone's
+  budget is 400,000 edge segments and the rack has 1.2 million. Then it holds 60 Hz: frames 17 ms
+  apart at p50, 20–23 ms at p99. The full picture comes once the view settles.
+- **The pack is as in P3**, and its gate still passes (p99 at most 15.7 ms at 60 Hz).
+- **Hover probes:** all came back (923–3,576 a run, none failed). On the rack most find a gap
+  between boxes, as on the Mac.
+- The old cull's runs were the warmer ones (thermal state "fair" to "serious", against
+  "nominal"), which may account for its pack's extra 0.1–0.5 ms.
+
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.
 

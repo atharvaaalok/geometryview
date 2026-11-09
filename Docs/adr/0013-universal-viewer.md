@@ -182,8 +182,11 @@ The plan was, from the spike's indexed path:
   - The 10M STL draws in 5.3–7.4 ms at 2880×1800.
   - Chrome on Linux needs Vulkan on for WebGPU, so there the launcher opens its own Chrome window with Vulkan on.
   - Firefox on Linux has no WebGPU.
-- On the iPhone: an 8.4M-triangle STL imports, near the phone's limit (1.27 GB page at its peak), and PLE120 refines within 620 MB.
-- to do on the iPhone: the hard file's refinement, and the new cull's frame times (Safari on the Mac runs it without errors).
+- On the iPhone:
+  - an 8.4M-triangle STL imports, near the phone's limit (1.27 GB page at its peak);
+  - PLE120 refines within 620 MB, and the hard file to 589,673 triangles in 21 s with the page at 835 MB at its peak;
+  - the new cull changes nothing measurable there;
+  - the 100k rack, the phone's first, draws in 25 ms in full and holds 60 Hz at reduced detail, as the viewer draws it in motion.
 
 ## Learned along the way
 
