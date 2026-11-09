@@ -36,7 +36,14 @@ const pool = [];
 function spawn() {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./occt-worker.js", import.meta.url), { type: "module" });
-    worker.onmessage = () => resolve({ worker, heapMB: 0, job: null, timer: 0 });
+    worker.onmessage = ({ data }) => {
+      if (data.ready) {
+        resolve({ worker, heapMB: 0, job: null, timer: 0 });
+      } else {
+        worker.terminate();
+        reject(new Error(`An OCCT worker failed to start: ${data.error}`));
+      }
+    };
     worker.onerror = (event) => reject(new Error(event.message ?? "An OCCT worker failed to start."));
     worker.postMessage({ module: occtModule });
   });

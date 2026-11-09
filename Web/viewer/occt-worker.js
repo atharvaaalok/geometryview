@@ -8,15 +8,20 @@ let occt = null;
 self.onmessage = async (event) => {
   const message = event.data;
   if (message.module) {
-    occt = await createOcct({
-      // Instantiated from the importer's compiled module, so no worker compiles it again.
-      instantiateWasm(imports, done) {
-        WebAssembly.instantiate(message.module, imports).then((instance) => done(instance));
-        return {};
-      },
-    });
-    occt._occt_init();
-    self.postMessage({ ready: true });
+    // A worker that cannot start says so, rather than leave the importer waiting for it.
+    try {
+      occt = await createOcct({
+        // Instantiated from the importer's compiled module, so no worker compiles it again.
+        instantiateWasm(imports, done) {
+          WebAssembly.instantiate(message.module, imports).then((instance) => done(instance));
+          return {};
+        },
+      });
+      occt._occt_init();
+      self.postMessage({ ready: true });
+    } catch (error) {
+      self.postMessage({ ready: false, error: String(error) });
+    }
     return;
   }
   const { id, text, linear, angular, minSize } = message;
