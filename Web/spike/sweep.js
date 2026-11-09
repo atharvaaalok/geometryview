@@ -2,7 +2,8 @@
 // worker, with its supervisor, warm OCCT pool and recycling as the viewer uses them, and keeps each
 // cache file it makes, for the native tools to check against OCCT (Tools/web_step_sweep.py).
 //
-// sweep.html?label=<where it runs>[&list=fixtures/sweep/list.txt&workers=N&from=0&count=N]
+// sweep.html?label=<where it runs>[&list=fixtures/sweep/list.txt&workers=N&from=0&count=N
+//            &memoryMB=2048&timeout=ms]
 //
 // The list names files under /fixtures/, one a line. Each cache file is posted to /blob as
 // <label>-p7-sweep-<line>; the report lists every file's outcome and time, posted as it goes and
@@ -13,6 +14,8 @@ const listUrl = params.get("list") ?? "fixtures/sweep/list.txt";
 const workers = Math.max(1, Number(params.get("workers") ??
                                    Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2))));
 const from = Number(params.get("from") ?? 0);
+// Each OCCT worker's memory limit, as the viewer sets it: 2048 MB, or 512 on a phone.
+const workerMemoryMB = Number(params.get("memoryMB") ?? 2048);
 const label = `${params.get("label") ?? "unlabelled"}-p7-sweep`;
 const status = document.getElementById("status");
 // Longer than any file in the sample takes, so only a hang reaches it.
@@ -47,7 +50,7 @@ function importOne(file, name) {
     // As the viewer does: the long-lived importer's supervisor runs without threads, whose memory
     // and workers would outlive each import.
     importer.postMessage({ type: "import", file, kind: "step", name, workers, threads: false,
-                           progressive: false });
+                           progressive: false, workerMemoryMB });
   });
   let timer = 0;
   const timedOut = new Promise((resolve) => {

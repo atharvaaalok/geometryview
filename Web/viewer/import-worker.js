@@ -13,8 +13,9 @@
 // A STEP file's source is kept beside its cache, so its definitions can be imported again, finer,
 // when the view comes close: a refinement, whose segments the page adds to the open document.
 //
-// Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads, progressive }
-//               { type: "refine", file, level, definitions, workers }
+// Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads, progressive,
+//                 workerMemoryMB }
+//               { type: "refine", file, level, definitions, workers, workerMemoryMB }
 // Messages out: { type: "progress", done, total } and, if progressive or refining,
 //               { type: "segment", bytes } as each is written; then { type: "done", ... } or
 //               { type: "failed", message }
@@ -32,13 +33,16 @@ const kTimeoutMs = 120_000;
 
 let occtModule = null;
 const pool = [];
+// How large each OCCT worker's memory may grow, as the page says: small on a phone, so a worker
+// that runs out fails by itself rather than taking the page past what iOS allows.
+let workerMemoryMB = 0;
 
 function spawn() {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./occt-worker.js", import.meta.url), { type: "module" });
     worker.onmessage = () => resolve({ worker, heapMB: 0, job: null, timer: 0 });
     worker.onerror = (event) => reject(new Error(event.message ?? "An OCCT worker failed to start."));
-    worker.postMessage({ module: occtModule });
+    worker.postMessage({ module: occtModule, memoryMB: workerMemoryMB });
   });
 }
 
@@ -216,6 +220,7 @@ async function readPieces(step, file) {
 }
 
 self.onmessage = async ({ data }) => {
+  workerMemoryMB = data.workerMemoryMB ?? workerMemoryMB;
   if (data.type === "refine") {
     await refine(data);
     return;

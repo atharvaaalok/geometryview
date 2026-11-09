@@ -46,9 +46,10 @@ if(GEO_TARGET STREQUAL "wasm")
             -Wl,--start-group ${occt_wasm_libraries} -Wl,--end-group)
         target_link_options(geometry-occt-web PRIVATE
             -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sALLOW_MEMORY_GROWTH=1
-            # Each worker's own cap, so one that runs out fails by itself rather than taking
-            # the page past what iOS allows.
-            -sMAXIMUM_MEMORY=512MB -sABORTING_MALLOC=0
+            # Each worker's memory is made by the page, as large as it allows: small on a phone,
+            # so one that runs out fails by itself rather than taking the page past what iOS
+            # allows. 2 GB is the most any may have.
+            -sMAXIMUM_MEMORY=2GB -sIMPORTED_MEMORY -sABORTING_MALLOC=0
             -sSTACK_SIZE=8MB -sENVIRONMENT=worker -sMODULARIZE=1
             -sEXPORT_ES6=1 -sEXPORT_NAME=createOcct
             -sEXPORTED_FUNCTIONS=_occt_init,_occt_mesh,_occt_stats,_occt_payload,_occt_trap,_occt_exhaust,_malloc,_free

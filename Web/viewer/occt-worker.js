@@ -9,6 +9,9 @@ self.onmessage = async (event) => {
   const message = event.data;
   if (message.module) {
     occt = await createOcct({
+      // Memory of the size the page allows each worker (16 MB to start, as the module does).
+      wasmMemory: message.memoryMB
+        ? new WebAssembly.Memory({ initial: 256, maximum: message.memoryMB * 16 }) : undefined,
       // Instantiated from the importer's compiled module, so no worker compiles it again.
       instantiateWasm(imports, done) {
         WebAssembly.instantiate(message.module, imports).then((instance) => done(instance));
