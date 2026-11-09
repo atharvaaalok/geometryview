@@ -177,15 +177,9 @@ final class MainWindow: NSWindow {
 
     private func connect() {
         viewport.onDropFiles = { [weak self] urls in
-            // Holding Command adds files to what is shown, as in the library.
+            // Folders connect; files open, and holding Command adds them to what is shown.
             let adding = NSApp.currentEvent?.modifierFlags.contains(.command) == true
-            for (index, url) in urls.enumerated() {
-                if adding || index > 0 {
-                    self?.add(url)
-                } else {
-                    self?.open(url)
-                }
-            }
+            self?.receive(urls, adding: adding)
         }
         viewport.onKeyCommand = { [weak self] command in self?.run(command) }
         viewport.onToolChange = { [weak self] tool in self?.toolChanged(tool) }
@@ -201,6 +195,12 @@ final class MainWindow: NSWindow {
             adding ? self?.add(url) : self?.open(url)
         }
         libraryCard.onConnect = { [weak self] in self?.connectFolder(nil) }
+        libraryCard.onChoose = { [weak self] in self?.chooseFile(adding: false) }
+        libraryCard.onReopen = { [weak self] file, adding in self?.reopen(file, adding: adding) }
+        status.onOpen = { [weak self] in self?.chooseFile(adding: false) }
+        status.onConnect = { [weak self] in self?.connectFolder(nil) }
+        toolBar.onOpen = { [weak self] in self?.chooseFile(adding: false) }
+        toolBar.onConnect = { [weak self] in self?.connectFolder(nil) }
         library.onChange = { [weak self] in
             guard let self else {
                 return
@@ -243,6 +243,7 @@ final class MainWindow: NSWindow {
         }
         accessedURLs = []
         openURLs = []
+        libraryCard.openPaths = []
         names = []
         progress = [:]
         structure.reset()
@@ -263,6 +264,7 @@ final class MainWindow: NSWindow {
         }
         names.append(url.lastPathComponent)
         openURLs.append(url)
+        libraryCard.openPaths = Set(openURLs.map(\.path))
         watchFiles()
         structure.addDocument(named: url.lastPathComponent)
         showLibrary(false)
@@ -275,9 +277,44 @@ final class MainWindow: NSWindow {
         refreshMasthead()
     }
 
+    /// Dropped or handed over: folders connect, and open in the Library; STEP and STL files open.
+    func receive(_ urls: [URL], adding: Bool) {
+        var files: [URL] = []
+        var connected = false
+        for url in urls {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                libraryCard.expand(library.connect(url))
+                connected = true
+            } else if FileNode.extensions.contains(url.pathExtension.lowercased()) {
+                files.append(url)
+            } else {
+                status.showFailure("\(url.lastPathComponent) is not a STEP or STL file.")
+            }
+        }
+        for (index, url) in files.enumerated() {
+            if adding || index > 0 {
+                add(url)
+            } else {
+                open(url)
+            }
+        }
+        if connected, files.isEmpty {
+            showLibrary(true)
+        }
+    }
+
+    /// A recent file, from where it is now.
+    private func reopen(_ file: RecentFile, adding: Bool) {
+        guard let url = library.resolve(file) else {
+            status.showFailure("\(file.name) is no longer where it was.")
+            return
+        }
+        adding ? add(url) : open(url)
+    }
+
     func chooseFile(adding: Bool) {
         let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = adding
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = ["stl", "step", "stp"].compactMap {
             UTType(filenameExtension: $0)
@@ -438,10 +475,12 @@ final class MainWindow: NSWindow {
 
     // MARK: Library
 
-    /// Shows the library, or the structure of what is open, in the left card.
+    /// Shows the library, or the structure of what is open, in the left card; the structure card
+    /// says so when nothing is open.
     private func showLibrary(_ show: Bool) {
         libraryCard.isHidden = !show
         structure.isHidden = show
+        structure.showNothing(names.isEmpty)
         libraryCard.switcher.selected = 0
         structure.switcher.selected = 1
         updateInsets()
@@ -463,7 +502,7 @@ final class MainWindow: NSWindow {
                 return
             }
             for url in panel.urls {
-                library.connect(url)
+                libraryCard.expand(library.connect(url))
             }
             showLibrary(true)
         }
@@ -641,6 +680,10 @@ final class MainWindow: NSWindow {
             refreshMasthead()
         case .modelReady(let document):
             structure.modelReady(document: document)
+            // Into Recent, while the app can still read it.
+            if Int(document) < openURLs.count {
+                library.remember(openURLs[Int(document)])
+            }
             refreshMasthead()
             toolBar.update(hasSelection: false, hasModel: true)
         case .sceneReady:
@@ -723,10 +766,11 @@ final class MainWindow: NSWindow {
         )
     }
 
+    /// Nothing open: the invitation, with the Library beside it.
     private func showEmpty() {
         status.showInvitation()
         structure.isHidden = true
-        libraryCard.isHidden = library.roots.isEmpty
+        libraryCard.isHidden = false
         updateInsets()
         toolBar.update(hasSelection: false, hasModel: false)
     }
@@ -755,6 +799,8 @@ final class MainWindow: NSWindow {
             // GEOMETRYVIEW_SNAPSHOT_ISOLATE isolates the first part, and waits for the view to
             // frame it.
             let isolating = environment["GEOMETRYVIEW_SNAPSHOT_ISOLATE"] != nil
+            // Isolating frames the view, and a folder is listed off the main thread: both take a moment.
+            let settling = isolating || environment["GEOMETRYVIEW_SNAPSHOT_LIBRARY"] != nil
             if isolating {
                 engine.selectNode(document: 0, node: 1, extend: false)
                 engine.perform(GeoActionIsolate)
@@ -774,6 +820,25 @@ final class MainWindow: NSWindow {
             }
             if environment["GEOMETRYVIEW_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
+            }
+            // GEOMETRYVIEW_SNAPSHOT_LIBRARY connects a folder holding a copy of the open file, in a
+            // sub-folder, and shows the Library with both open: the app's sandbox reads its own
+            // temporary folder, as it would one the person chose.
+            if environment["GEOMETRYVIEW_SNAPSHOT_LIBRARY"] != nil, let source = openURLs.first {
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("library-test")
+                let inner = folder.appendingPathComponent("sub")
+                try? FileManager.default.removeItem(at: folder)
+                try? FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+                try? FileManager.default.copyItem(at: source, to: inner.appendingPathComponent(source.lastPathComponent))
+                try? Data().write(to: folder.appendingPathComponent("notes.txt"))
+                let root = library.connect(folder)
+                libraryCard.expand(root)
+                showLibrary(true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                    if let sub = root.children.first(where: { $0.isDirectory }) {
+                        libraryCard.expand(sub)
+                    }
+                }
             }
             // GEOMETRYVIEW_SNAPSHOT_VIEWS opens the standard views' menu.
             if environment["GEOMETRYVIEW_SNAPSHOT_VIEWS"] != nil {
@@ -798,7 +863,7 @@ final class MainWindow: NSWindow {
                 engine.perform(GeoActionGhostSelection)
                 engine.perform(GeoActionClearSelection)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + (isolating ? 1.5 : 0.5)) { [self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + (settling ? 1.5 : 0.5)) { [self] in
                 ChromeSnapshot.capture(self, engine: engine)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSApp.terminate(nil)

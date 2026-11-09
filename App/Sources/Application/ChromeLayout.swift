@@ -25,7 +25,8 @@ enum ChromeLayout {
             collect(root, root: root, into: &boxes)
             var report: [String: Any] = [:]
             for (name, list) in boxes {
-                let sorted = list.sorted { ($0["y"]!, $0["x"]!) < ($1["y"]!, $1["x"]!) }
+                // In reading order: a row's items, such as the toolbar's, may differ in top by a few points.
+                let sorted = list.sorted { (($0["y"]! / 10).rounded(), $0["x"]!) < (($1["y"]! / 10).rounded(), $1["x"]!) }
                 report[name] = listed.contains(name) ? Array(sorted.prefix(8)) : sorted.first
             }
             let output = FileManager.default.temporaryDirectory
@@ -44,7 +45,7 @@ enum ChromeLayout {
     /// The names reported as lists, as the web tool reports them.
     private static let listed: Set<String> = [
         "structure.segment", "tree.row", "tree.chevron", "tree.glyph", "tree.swatch", "tree.name",
-        "tree.count", "toolbar.item", "status.button",
+        "tree.count", "toolbar.item", "status.button", "library.button",
     ]
 
     private static func collect(_ view: NSView, root: NSView, into boxes: inout [String: [[String: Double]]]) {
@@ -78,6 +79,7 @@ enum ChromeLayout {
         }
         switch view {
         case is StructureCard: return "structure.card"
+        case is LibraryCard: return "library.card"
         case is TreeRowView: return "tree.row"
         case is Toolbar: return "toolbar.card"
         case is StatusCard: return "status.card"
@@ -85,6 +87,12 @@ enum ChromeLayout {
         }
         if view is SegmentedPill, view.superview is StructureCard {
             return "structure.switcher"
+        }
+        if view is SegmentedPill, view.superview is LibraryCard {
+            return "library.switcher"
+        }
+        if view is PillButton, view.superview is LibraryCard {
+            return "library.button"
         }
         if view is NSSearchField, view.superview is StructureCard {
             return "structure.search"

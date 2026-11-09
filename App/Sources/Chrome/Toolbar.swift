@@ -40,6 +40,11 @@ final class Toolbar: StickerCard {
         help: "See through the housing (T)"
     )
     private let shortcuts = PillButton(title: "?", style: .ghostly, help: "Shortcuts (?)")
+    // The two ways in, as on the first page and in the Library.
+    private let openFiles = PillButton(icon: .plus, help: "Open files (⌘O)")
+    private let connectFolder = PillButton(icon: .folderPlus, help: "Connect a folder (⌥⌘O)")
+    var onOpen: (() -> Void)?
+    var onConnect: (() -> Void)?
 
     var onAction: ((GeoAction) -> Void)?
     var onShowShortcuts: (() -> Void)?
@@ -61,8 +66,10 @@ final class Toolbar: StickerCard {
         look.onPress = { [weak self] in self?.onShowLook?() }
         cut.onPress = { [weak self] in self?.onShowSection?() }
 
+        openFiles.onPress = { [weak self] in self?.onOpen?() }
+        connectFolder.onPress = { [weak self] in self?.onConnect?() }
         let stack = NSStackView(views: [
-            pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), seeThrough,
+            openFiles, connectFolder, rule(), pick, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(), seeThrough,
             cut, look,
             projection, views, fit, shortcuts,
         ])

@@ -16,6 +16,7 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         help: "Show files or parts"
     )
     private let searchBox = SearchBox(placeholder: "Search parts")
+    private let nothing = NSTextField(labelWithString: "Nothing open yet.")
     private var searchField: NSTextField { searchBox.field }
     private var matchLabel: NSTextField { searchBox.match }
     private let table = TreeTableView()
@@ -72,7 +73,10 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         footer.onUnghostAll = { [weak self] in self?.engine.perform(GeoActionUnghostAll) }
         footer.isHidden = true
 
-        for view in [switcher, searchBox, scroll, footer] as [NSView] {
+        nothing.font = Typography.font(Typography.textSmall)
+        nothing.textColor = Palette.muted
+        nothing.isHidden = true
+        for view in [switcher, searchBox, scroll, footer, nothing] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -83,6 +87,8 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
             searchBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             searchBox.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
+            nothing.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset - 2),
+            nothing.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: searchBox.bottomAnchor, constant: 10),
@@ -169,6 +175,13 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         }
         let row = tree.rows[index]
         engine.hoverNode(document: row.document, node: row.node)
+    }
+
+    /// With nothing open, the card says so in place of the search and the tree.
+    func showNothing(_ empty: Bool) {
+        nothing.isHidden = !empty
+        searchBox.isHidden = empty
+        scroll.isHidden = empty
     }
 
     // MARK: Search
@@ -285,12 +298,13 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         }
         let row = tree.rows[index]
         let state = engine.nodeState(document: row.document, node: row.node)
-        let nodeAction: GeoNodeAction =
-            switch action {
-            case .ghost: state == GeoNodeGhosted ? GeoNodeUnghost : GeoNodeGhost
-            case .hide: state == GeoNodeHidden ? GeoNodeShow : GeoNodeHide
-            case .isolate: GeoNodeIsolate
-            }
+        let nodeAction: GeoNodeAction
+        switch action {
+        case .ghost: nodeAction = state == GeoNodeGhosted ? GeoNodeUnghost : GeoNodeGhost
+        case .hide: nodeAction = state == GeoNodeHidden ? GeoNodeShow : GeoNodeHide
+        case .isolate: nodeAction = GeoNodeIsolate
+        case .remove: return  // the Library's, not the tree's
+        }
         engine.nodeAction(document: row.document, node: row.node, action: nodeAction)
     }
 
