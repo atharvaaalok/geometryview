@@ -64,7 +64,7 @@ Phase 0 measured the risky parts against go/no-go gates before any of that is bu
 **The Mac app** is unaffected by Phase 0:
 - unit tests pass in debug, ASan and TSan;
 - `--chrome-check` passes;
-- `--exercise` holds 59.8 fps on a 60 Hz display. This said "with 0 allocations per frame", which was wrong: the exercise reports 52–54 in its last frame on every build back to refinement round 2 (see `p3/p3-renderer.md`);
+- `--exercise` holds 59.8 fps on a 60 Hz display. This said "with 0 allocations per frame", which was wrong: the exercise reports 52–54 in its last frame on every build back to refinement round 2 (see `p3/p3-renderer.md`). All of them are made inside Metal and Core Animation; our code makes none, and the count now says so (`p7/p7-hardening.md`);
 - the importer matches `main` when the two are run alternately under the same load. Stage by stage they agree within noise: tokenize 11 ms; worker phase 1.72–1.83 s on the hard file.
 
 `Tools/perf_gate.py` itself reported up to 14% slower than its baseline, because the machine was busy with other work at the time.

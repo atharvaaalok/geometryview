@@ -85,6 +85,41 @@ A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` 
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.
 
+## The Mac's allocations per frame
+
+`--exercise` reported 52–54 allocations in each frame's `render` call, where PLAN.md asks for none
+(branch `p7-frame-allocations`, 2026-11-08, about 5 PM).
+
+**None of them is ours.** `GEOMETRY_ALLOCS=stacks` now prints the call stack of every allocation
+in the 300th frame. All 52 were made inside Metal and Core Animation, on our behalf:
+
+| Where | Allocations |
+|---|---|
+| Metal 4's `waitForDrawable:`: Core Animation reads the drawable's surface events, an object for each transaction it lists | 33 |
+| The drawable's `present` and `signalDrawable:` | 5 |
+| Starting each render pass (`renderCommandEncoderWithDescriptor:`), in the GPU driver | 10 |
+| Committing, and the queue's GPU events | 4 |
+
+- **Our own code allocates nothing in a frame.** Any Metal program pays these: about 52 small
+  allocations, a few microseconds of a 0.24 ms encode.
+- **The count now tells them apart.**
+  - An allocation is the system's when its stack passes through Metal, the GPU driver, Core
+    Animation or IOSurface before reaching our code.
+  - The exercise now reports "54 allocations in the last frame (0 by our code, the rest inside
+    Metal and Core Animation)".
+  - A unit test checks the split: an allocation of ours counts as ours, a command buffer's as
+    Metal's.
+  - With `GEOMETRY_TRACE` as well, a frame makes 60, one of them ours: the commit options that
+    carry the GPU timing, which only tracing makes.
+- **Telling them apart takes each allocation's stack**, so the count is on only with
+  `GEOMETRY_ALLOCS`.
+- **ADR 0009's "zero per frame" was most likely a run without the count.** The exercise printed
+  "0 allocations" whenever `GEOMETRY_ALLOCS` was unset, and its GPU times read 0.00 ms without
+  `GEOMETRY_TRACE`. It now says when either was not measured. Metal's validation layers, which
+  ADR 0009's run used, make 729 allocations a frame, not fewer.
+- **Sanitizers bring allocators of their own**, which the malloc logger never sees, so the count and
+  its test work only in builds without them.
+
 ## Fuzzing the web paths
 
 | Target | What it feeds | Runs, 5 min | Found |

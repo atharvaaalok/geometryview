@@ -205,6 +205,7 @@ typedef struct GeoEngineStats {
     uint64_t frames_rendered;
     double last_frame_seconds;
     uint64_t last_frame_allocations; // counted only when GEOMETRY_ALLOCS is set
+    uint64_t last_frame_own_allocations; // of those, our code's, not Metal's or Core Animation's
     uint32_t hovered_id;             // 0 when nothing is under the pointer
     uint32_t selected_count;         // occurrences with anything selected
     uint32_t hidden_count;           // occurrences with anything hidden

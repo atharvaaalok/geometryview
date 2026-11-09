@@ -165,19 +165,32 @@ final class Exercise {
         post(GeoPointerUp, GeoButtonLeft, x: center.x, y: center.y)
         let stats = engine.stats()
         let frames = stats.frames_rendered - startFrames
+        // GPU times and allocations are measured only when asked for, since measuring them costs
+        // time in every frame; a zero would otherwise read as a result.
+        let environment = ProcessInfo.processInfo.environment
+        let gpu =
+            environment["GEOMETRY_TRACE"] == nil
+            ? "GPU not timed (GEOMETRY_TRACE=1 times it)"
+            : String(
+                format: "mean GPU %.2f ms, p99 %.2f ms",
+                stats.gpu_frame_seconds * 1000,
+                stats.gpu_frame_p99_seconds * 1000
+            )
+        let allocations =
+            environment["GEOMETRY_ALLOCS"] == nil
+            ? "allocations not counted (GEOMETRY_ALLOCS=1 counts them)"
+            : "\(stats.last_frame_allocations) allocations in the last frame "
+                + "(\(stats.last_frame_own_allocations) by our code, "
+                + "the rest inside Metal and Core Animation)"
         print(
             String(
-                format:
-                    "exercise: %llu frames in %.2f s, %.1f fps, last CPU encode %.2f ms, "
-                    + "mean GPU %.2f ms, p99 %.2f ms, %llu allocations in the last frame",
+                format: "exercise: %llu frames in %.2f s, %.1f fps, last CPU encode %.2f ms, ",
                 frames,
                 elapsed,
                 Double(frames) / elapsed,
-                stats.last_frame_seconds * 1000,
-                stats.gpu_frame_seconds * 1000,
-                stats.gpu_frame_p99_seconds * 1000,
-                stats.last_frame_allocations
+                stats.last_frame_seconds * 1000
             )
+                + "\(gpu), \(allocations)"
         )
         let screen = NSApp.windows.first?.screen
         print(
