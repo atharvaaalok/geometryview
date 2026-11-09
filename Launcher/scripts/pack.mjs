@@ -17,6 +17,7 @@ rmSync(join(launcher, "dist"), { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
 cpSync(join(launcher, "mcpb/manifest.json"), join(stage, "manifest.json"));
 cpSync(join(launcher, "package.json"), join(stage, "package.json"));
+cpSync(join(launcher, "web/icons/icon-512.png"), join(stage, "icon.png"));
 for (const folder of ["bin", "src", "web"]) {
   cpSync(join(launcher, folder), join(stage, folder), { recursive: true });
 }
