@@ -3,7 +3,7 @@
 import { basename } from "node:path";
 import { importModel, nativeAvailable, openInViewer, readStats, readTree, render,
          viewerApplication } from "./native.mjs";
-import { openInPage, pageRender, pageTree, viewerServer } from "./page.mjs";
+import { linkToPage, openInPage, pageRender, pageTree, showInPage, viewerServer } from "./page.mjs";
 
 export const instructions =
   "GeometryView views 3D CAD models (STEP .step/.stp and STL .stl files) on this computer. Use it " +
@@ -12,9 +12,10 @@ export const instructions =
   "get_structure lists the assemblies and parts; render_view returns a picture you can look " +
   "at, in any view and drawing style (illustration, metal, clay, blueprint, technical, " +
   "studio). To study a part, pass names from get_structure as isolate, and use section to cut " +
-  "through the model. open_in_viewer shows the model to the user. Where this computer has no " +
-  "native engine, the viewer opens in the user's browser and the pictures come from it, so the " +
-  "user sees what you look at.";
+  "through the model. open_in_viewer shows the model to the user, live: in the GeometryView app, " +
+  "in their browser, or, when they want to see it inside this chat app, as a link to open in " +
+  "the app's own browser (where: link). Where this computer has no native engine, the viewer " +
+  "opens in the user's browser and the pictures come from it, so the user sees what you look at.";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical", "studio"];
 const COLOURS = ["material", "parts", "mono", "file"];
@@ -216,18 +217,49 @@ export const tools = [
   },
   {
     name: "open_in_viewer",
-    description: "Shows a STEP or STL model to the user, in the GeometryView app on a Mac that has " +
-                 "it, or else in the viewer in their browser, where they can turn it, select " +
-                 "parts and cut sections.",
-    inputSchema: { type: "object", properties: { path }, required: ["path"] },
-    async call({ path: file }) {
-      if (nativeAvailable() && viewerApplication()) {
-        await openInViewer(file);
-        return [{ type: "text", text: `Opened ${basename(file)} in GeometryView.` }];
+    description: "Shows a STEP or STL model to the user, live, where they can turn it, select " +
+                 "parts and cut sections: in the GeometryView app on a Mac that has it (where: " +
+                 "app), in their web browser (where: browser), or as a link for this chat app to " +
+                 "open in its own browser (where: link; open the returned address there, and the " +
+                 "model appears once the page loads). It can show only some parts, in a chosen " +
+                 "style and colours.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path,
+        where: { type: "string", enum: ["app", "browser", "link"],
+                 description: "Where to show it. By default the app where it is installed, else " +
+                              "the browser." },
+        isolate: { type: "array", items: { type: "string" },
+                   description: "Show only parts whose names contain one of these." },
+        style: { type: "string", enum: STYLES },
+        colour: { type: "string", enum: COLOURS },
+      },
+      required: ["path"],
+    },
+    async call({ path: file, where, isolate = [], style, colour }) {
+      const application = process.platform === "darwin" ? viewerApplication() : null;
+      where ??= application ? "app" : "browser";
+      const name = basename(file);
+      const shown = (isolate.length ? `, showing only ${isolate.join(", ")}` : "") +
+                    (style ? `, in ${style} style` : "") + (colour ? `, coloured by ${colour}` : "");
+      if (where === "app") {
+        if (!application) throw new Error("The GeometryView app is not installed here: use where browser or link.");
+        await openInViewer(file, { isolate, style, colour });
+        return [{ type: "text", text: `Opened ${name} in GeometryView${shown}.` }];
       }
-      await openInPage(file);
+      const show = { isolate };
+      if (style) show.style = STYLES.indexOf(style);
+      if (colour) show.colour = COLOURS.indexOf(colour);
+      if (where === "link") {
+        const { url, shown: now } = await linkToPage(file, show);
+        return [{ type: "text", text: now
+          ? `Showing ${name}${shown} in the viewer page already open at ${url}.`
+          : `Open ${url} in this app's browser to see ${name}${shown}; it appears once the page loads.` }];
+      }
+      await showInPage(file, show);
       const { address } = await viewerServer();
-      return [{ type: "text", text: `Opened ${basename(file)} in the viewer in the browser (${address}).` }];
+      return [{ type: "text", text: `Opened ${name}${shown} in the viewer in the browser (${address}).` }];
     },
   },
 ];

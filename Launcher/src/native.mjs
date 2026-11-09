@@ -138,11 +138,22 @@ export function viewerApplication() {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-export async function openInViewer(path) {
+/// Opens `path` in the app, then, if asked, shows some parts alone, in a style and colours: a
+/// geometryview://show request sent after the file, which the app applies once the model is in.
+/// The file itself goes the usual way, which grants the app's sandbox access to it.
+export async function openInViewer(path, { isolate = [], style, colour } = {}) {
   const application = viewerApplication();
   if (!application) {
     throw new Error("The GeometryView app was not found on this Mac.");
   }
-  await run("open", ["-a", application, resolve(path)]);
+  const file = resolve(path);
+  await run("open", ["-a", application, file]);
+  if (isolate.length > 0 || style || colour) {
+    const query = new URLSearchParams({ file });
+    for (const name of isolate) query.append("isolate", name);
+    if (style) query.set("style", style);
+    if (colour) query.set("colour", colour);
+    await run("open", ["-a", application, `geometryview://show?${query}`]);
+  }
   return application;
 }

@@ -21,6 +21,43 @@
 
 import createStepImporter from "./occt/geometryview-step-web.mjs";
 
+// Some browsers refuse a worker that starts another worker by URL. Claude Desktop's built-in
+// browser is one: the nested worker fails at once, with no message and no request sent. A module
+// worker made from a blob whose one line imports the script starts there too. The script is
+// fetched exactly as before, and inside it import.meta.url is still its own.
+//
+// The OCCT pool starts its workers by URL, and by blob once one fails before its first message,
+// which costs nothing where URLs work. The threaded packer starts its own threads, which can't be
+// retried, so every other worker made here starts by blob: for those threads that measured the
+// same as by URL. Pages on the iPhone shell's geo:// scheme keep plain URLs, which a blob can't
+// import from.
+const kWorkerByUrl = self.Worker;
+const kBlobsWork = location.protocol === "http:" || location.protocol === "https:";
+const blobWrappers = new Map();
+
+function blobWrapper(href) {
+  let url = blobWrappers.get(href);
+  if (url === undefined) {
+    url = URL.createObjectURL(new Blob([`import ${JSON.stringify(href)};\n`], { type: "text/javascript" }));
+    blobWrappers.set(href, url); // kept: workers start from it again
+  }
+  return url;
+}
+
+function startWorker(url, options, byBlob) {
+  const href = new URL(url, import.meta.url).href;
+  return byBlob ? new kWorkerByUrl(blobWrapper(href), { ...options, type: "module" })
+                : new kWorkerByUrl(href, options);
+}
+
+if (kBlobsWork) {
+  self.Worker = class extends kWorkerByUrl {
+    constructor(url, options = {}) {
+      super(blobWrapper(new URL(url, import.meta.url).href), { ...options, type: "module" });
+    }
+  };
+}
+
 async function supervisor(threads) {
   if (!threads) return createStepImporter();
   const { default: create } = await import("./occt-threads/geometryview-step-web.mjs");
@@ -34,9 +71,12 @@ const kTimeoutMs = 120_000;
 let occtModule = null;
 const pool = [];
 
+let poolByBlob = false;
+
 function spawn() {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("./occt-worker.js", import.meta.url), { type: "module" });
+    const byBlob = poolByBlob;
+    const worker = startWorker("./occt-worker.js", { type: "module" }, byBlob);
     worker.onmessage = ({ data }) => {
       if (data.ready) {
         resolve({ worker, heapMB: 0, job: null, timer: 0 });
@@ -45,14 +85,24 @@ function spawn() {
         reject(new Error(`An OCCT worker failed to start: ${data.error}`));
       }
     };
-    worker.onerror = (event) => reject(new Error(event.message ?? "An OCCT worker failed to start."));
+    worker.onerror = (event) => {
+      worker.terminate();
+      if (!byBlob && kBlobsWork) {
+        poolByBlob = true; // this browser won't start a worker from a worker by URL
+        spawn().then(resolve, reject);
+      } else {
+        reject(new Error(event.message ?? "An OCCT worker failed to start."));
+      }
+    };
     worker.postMessage({ module: occtModule });
   });
 }
 
 async function warm(size) {
   occtModule ??= await WebAssembly.compileStreaming(fetch(new URL("./occt/geometryview-occt-web.wasm", import.meta.url)));
-  while (pool.length < size) pool.push(await spawn());
+  // All at once: each instantiates OCCT on its own thread.
+  const missing = size - pool.length;
+  if (missing > 0) pool.push(...await Promise.all(Array.from({ length: missing }, spawn)));
 }
 
 // Posts each segment the importer has written since the last call, so the page shows the model

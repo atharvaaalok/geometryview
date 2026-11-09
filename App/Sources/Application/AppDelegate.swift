@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindow?
     // Files opened from Finder arrive before launch finishes, while there is no window yet.
     private var pendingURLs: [URL] = []
+    private var pendingShows: [MainWindow.ShowRequest] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         geo_trace_memory("did finish launching")
@@ -30,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openingFile = !pendingURLs.isEmpty
         open(pendingURLs, in: window)
         pendingURLs = []
+        pendingShows.forEach(window.show)
+        pendingShows = []
 
         // GEOMETRYVIEW_SNAPSHOT_SETTINGS saves the Settings window to settings.png in the temporary
         // directory, for checking its layout.
@@ -80,11 +83,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window?.chooseFile(adding: true)
     }
 
+    /// Files to open, and geometryview://show requests from AI apps' tools, in the order sent.
     func application(_ application: NSApplication, open urls: [URL]) {
+        let files = urls.filter(\.isFileURL)
+        let shows = urls.compactMap(MainWindow.ShowRequest.init(url:))
         if let window {
-            open(urls, in: window)
+            open(files, in: window)
+            shows.forEach(window.show)
         } else {
-            pendingURLs += urls
+            pendingURLs += files
+            pendingShows += shows
         }
     }
 

@@ -18,6 +18,17 @@
     <string>APPL</string>
     <key>ATSApplicationFontsPath</key>
     <string>Fonts</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.aalok.geometryview.show</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>geometryview</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

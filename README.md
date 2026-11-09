@@ -88,18 +88,23 @@ cmake --build --preset wasm-webgpu && cmake --build --preset wasm-release && \
 cd Launcher && npm link && cd ..    # once: puts the geometryview command on your PATH
 geometryview                        # serves the viewer and opens it in the browser
 geometryview part.step              # the same, with a file open
+geometryview --no-open [part.step]  # serves it and prints its address, for any browser to open
 ```
 
 The viewer is always at http://127.0.0.1:47700, so the browser keeps its library and look from one
 run to the next. Running `geometryview` while it is already running just opens the browser there.
 It stops with Ctrl-C. While it runs, the browser can also install the page as an app window
-(Chrome's Install button in the address bar, or Safari's File ▸ Add to Dock).
+(Chrome's Install button in the address bar, or Safari's File ▸ Add to Dock). `--no-open` suits a
+browser built into another app, such as Claude Desktop's: open the printed address there, and the
+file given, if any, appears in the first page to load.
 
 The same launcher is a tool server for AI apps (MCP). It lets Claude, Codex or ChatGPT open a
 STEP or STL file on this computer, list its assemblies and parts, render pictures of it (any view
 or style, parts alone, sections), and show it to the person. On a Mac with the release preset
 built, it uses the native engine (`gcli`) and the GeometryView app; anywhere else it opens the viewer
-in the browser and works through it, so the person sees what the AI looks at.
+in the browser and works through it, so the person sees what the AI looks at. `open_in_viewer`
+shows a model live in the app, in the browser, or as a link the AI app opens in its own browser
+(`where: link`), with some parts alone and a style and colours if asked.
 
 - **Claude Desktop:** `node Launcher/scripts/pack.mjs`, then double-click
   `Launcher/dist/geometryview.mcpb`. It carries the viewer, and on a Mac the native engine. To show

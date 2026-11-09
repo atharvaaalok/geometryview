@@ -620,6 +620,46 @@ function bridgeHandlers() {
              triangles: info.triangles, min: info.min, max: info.max };
   };
 
+  // A style and colours, as the look card numbers them; either may be left as it is.
+  const restyle = (style, colour) => {
+    if (style === undefined && colour === undefined) return;
+    const next = Object.assign(new Look(), look);
+    if (style !== undefined) next.choose(style);
+    if (colour !== undefined) next.colour = colour;
+    look = next;
+    lookCard.show(next);
+    engine.setLook(next.engineLook);
+  };
+
+  // Shows alone the parts and assemblies whose names contain one of `isolate`, framed, after
+  // undoing what an earlier request isolated. Returns how many it found. Only the outermost of
+  // nested matches is selected: "rotor" finds the rotor assembly and its rotor_core, and selecting
+  // the core again, inside the selected assembly, would take it out.
+  const showAlone = (isolate) => {
+    if (isolate.length > 0 || isolatedByRequest) engine.perform(Actions.ShowAll);
+    isolatedByRequest = false;
+    if (isolate.length === 0) return 0;
+    const wanted = isolate.map((n) => n.toLowerCase());
+    engine.perform(Actions.ClearSelection);
+    let found = 0;
+    structure.tree.documents.forEach((d, document) => {
+      let insideMatch = 0; // nodes before this one are inside the last match
+      d.model?.forEach((n, node) => {
+        if (node < insideMatch || n.kind === NodeKinds.Body) return;
+        if (wanted.some((w) => n.name.toLowerCase().includes(w))) {
+          engine.selectNode(document, node, true);
+          found += 1;
+          insideMatch = n.end;
+        }
+      });
+    });
+    if (found === 0) throw new Error(`No part's name contains ${isolate.join(" or ")}.`);
+    engine.perform(Actions.Isolate);
+    engine.perform(Actions.ClearSelection);
+    isolatedByRequest = true;
+    return found;
+  };
+
   const toBase64 = (bytes) => {
     let text = "";
     for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
@@ -658,15 +698,18 @@ function bridgeHandlers() {
 
     // A picture as the AI app asked: a direction, a style and colours, parts shown alone, and
     // cuts. The viewer shows it too, so the person sees what the AI looked at.
+    // Some parts shown alone, and a style and colours, as the AI app asked: the view stays the
+    // person's to turn.
+    async show({ style, colour, isolate = [] }) {
+      if (names.length === 0) throw new Error("Nothing is open in the viewer.");
+      restyle(style, colour);
+      return { ...describe(), isolated: showAlone(isolate) };
+    },
+
     async render({ azimuth = 35, elevation = 25, perspective: persp = false, style, colour,
                    isolate = [], section = [], width = 1200, height = 800 }) {
       if (names.length === 0) throw new Error("Nothing is open in the viewer.");
-      const next = Object.assign(new Look(), look);
-      if (style !== undefined) next.choose(style);
-      if (colour !== undefined) next.colour = colour;
-      look = next;
-      lookCard.show(next);
-      engine.setLook(next.engineLook);
+      restyle(style, colour);
 
       sectionCard.cuts.forEach((cut) => { cut.enabled = false; });
       for (const cut of section) {
@@ -676,25 +719,7 @@ function bridgeHandlers() {
       sectionCard.show();
       engine.setSection(sectionCard.cuts);
 
-      if (isolate.length > 0 || isolatedByRequest) engine.perform(Actions.ShowAll);
-      isolatedByRequest = false;
-      if (isolate.length > 0) {
-        const wanted = isolate.map((n) => n.toLowerCase());
-        engine.perform(Actions.ClearSelection);
-        let found = 0;
-        structure.tree.documents.forEach((d, document) => {
-          d.model?.forEach((n, node) => {
-            if (n.kind !== NodeKinds.Body && wanted.some((w) => n.name.toLowerCase().includes(w))) {
-              engine.selectNode(document, node, true);
-              found += 1;
-            }
-          });
-        });
-        if (found === 0) throw new Error(`No part's name contains ${isolate.join(" or ")}.`);
-        engine.perform(Actions.Isolate);
-        engine.perform(Actions.ClearSelection);
-        isolatedByRequest = true;
-      }
+      showAlone(isolate);
 
       perspective = persp;
       toolbar.projection.selected = persp ? 1 : 0;
