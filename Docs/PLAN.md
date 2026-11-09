@@ -1,8 +1,8 @@
-# Geometry: an extreme-performance native CAD viewer for macOS
+# GeometryView: an extreme-performance native CAD viewer for macOS
 
 ## Context
 
-`/Users/atharvaaalok/Desktop/geometry` holds only `notes.md`, the full requirements. We are building a standalone viewer for STEP, STL and similar files, from scratch. Priorities in order: speed, memory, leanness. It must also be beautiful and highly maintainable, with small atomic commits. Users open their own files or connect whole directories. The earlier projects (step_viewer, proto Godela, main_platform, colorfigures) are references for behaviour and look, and no code is copied.
+`/Users/atharvaaalok/Desktop/geometry/geometryview` (then `~/Desktop/geometry`) held only `notes.md`, the full requirements. We are building a standalone viewer for STEP, STL and similar files, from scratch. Priorities in order: speed, memory, leanness. It must also be beautiful and highly maintainable, with small atomic commits. Users open their own files or connect whole directories. The earlier projects (step_viewer, proto Godela, main_platform, colorfigures) are references for behaviour and look, and no code is copied.
 
 **User decisions:** macOS only with native Metal. OCCT in a separate helper with our own fast paths. Wheel zooms toward the cursor by default (about-target stays in Settings). Clicking a file opens it alone, and Cmd-click adds it to the same viewport.
 
@@ -179,7 +179,7 @@ Layout: full-bleed canvas with a floating masthead, a 300 px left card (Library,
 ## Repository layout
 
 ```
-geometry/
+geometryview/
   App/            Swift AppKit: Chrome, Design, Library, Structure, Settings, Bridge
   Engine/
     include/engine.h   the only public header (C ABI)
@@ -280,7 +280,7 @@ Viewer memory target: about 134 MB render targets at 3456×2234 plus under 150 M
 
 ## Key references (ideas only)
 
-- Requirements: `/Users/atharvaaalok/Desktop/geometry/notes.md`
+- Requirements: `/Users/atharvaaalok/Desktop/geometry/geometryview/notes.md`
 - Rotation: `/Users/atharvaaalok/Desktop/Godela/platform/godela-web/src/viewer/{navigation.ts,geometryOrbit.ts}`, `tests/e2e/rotation.spec.ts` (test vector: 2-unit cube, fov 90, z=2.2 no, 1.6 yes, 1.75 stays, 2.0 exits)
 - Styles and constants: `/Users/atharvaaalok/Desktop/Godela/exploration/claude/step_viewer/web/src/core/render/{styles.ts,pipeline.ts,glsl/surface.ts,glsl/composite.ts,glsl/ao.ts,glsl/lines.ts,shadowLight.ts}`, `core/palette.ts`, `core/seethrough/classify.ts`
 - Tokens: `step_viewer/web/src/styles/{tokens.css,app.css}`

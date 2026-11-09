@@ -1,8 +1,9 @@
-# Geometry
+# GeometryView
 
-A native macOS viewer for STEP, STL and other geometry files, built for extreme speed and low
-memory use. Open your own files or connect a whole directory, then browse, inspect, section and
-see through them.
+A viewer for 3D geometry, built for extreme speed and low memory use: STEP and STL files today,
+more formats to come. It is a native Mac app, a viewer in any browser, and a set of tools AI apps
+use to open, inspect and picture models. Open your own files or connect a whole directory, then
+browse, inspect, section and see through them. Everything runs on your computer.
 
 Status: early development. See [Docs/PLAN.md](Docs/PLAN.md) for the design and milestones, and
 [Docs/adr](Docs/adr) for recorded decisions.
@@ -15,13 +16,18 @@ Status: early development. See [Docs/PLAN.md](Docs/PLAN.md) for the design and m
 - OCCT, for STEP files: run `ThirdParty/build_occt.sh` once, which builds the pinned version in
   about five minutes. Without it everything else still builds, and STEP files will not open.
 
-## Build and run
+## Build, install and run
 
 ```sh
 cmake --preset release
 cmake --build --preset release
-open build/release/App/Geometry.app
+cmake --build --preset release --target install-app    # puts GeometryView in /Applications
 ```
+
+`install-app` copies the app to `/Applications` and registers it, so it opens from Spotlight,
+Launchpad or the Dock, and double-clicking a STEP or STL file opens it in GeometryView (unless you
+chose another app for those files). Run it again after a build to update the installed copy. From
+a terminal, `open -a GeometryView part.step` opens a file in it.
 
 Drop a STEP or STL file on the window, or press ⌘O. Large STEP files appear while they import, and
 parts you zoom into are retessellated more finely once the view settles.
@@ -49,8 +55,8 @@ parts you zoom into are retessellated more finely once the view settles.
 | ? | Show every shortcut |
 | Drag the top edge or the file's name | Move the window. Double-click to zoom it, as with a title bar |
 
-The palette button in the toolbar, or ⇧⌘L, opens the look: five drawing styles (Illustration,
-Metal, Clay, Blueprint and Technical), what decides each part's colour (its material, read from
+The palette button in the toolbar, or ⇧⌘L, opens the look: six drawing styles (Illustration,
+Metal, Clay, Blueprint, Technical, and Studio, polished metal on a dark backdrop), what decides each part's colour (its material, read from
 its name, one colour per part, one throughout, or the file's colours), how ghosts look (a faint
 shell, dashed lines or both), the cast shadow, paper grain and a hand-drawn wobble. The same
 choices are in the View menu, and the look is remembered.
@@ -79,30 +85,41 @@ the machine; there is no account or hosted site.
 ```sh
 cmake --build --preset wasm-webgpu && cmake --build --preset wasm-release && \
     cmake --build --preset wasm-threads
-node Launcher/bin/geometry-viewer.mjs          # serves the viewer and opens the browser
+cd Launcher && npm link && cd ..    # once: puts the geometryview command on your PATH
+geometryview                        # serves the viewer and opens it in the browser
+geometryview part.step              # the same, with a file open
 ```
+
+The viewer is always at http://127.0.0.1:47700, so the browser keeps its library and look from one
+run to the next. Running `geometryview` while it is already running just opens the browser there.
+It stops with Ctrl-C. While it runs, the browser can also install the page as an app window
+(Chrome's Install button in the address bar, or Safari's File ▸ Add to Dock).
 
 The same launcher is a tool server for AI apps (MCP). It lets Claude, Codex or ChatGPT open a
 STEP or STL file on this computer, list its assemblies and parts, render pictures of it (any view
 or style, parts alone, sections), and show it to the person. On a Mac with the release preset
-built, it uses the native engine (`gcli`) and the Geometry app; anywhere else it opens the viewer
+built, it uses the native engine (`gcli`) and the GeometryView app; anywhere else it opens the viewer
 in the browser and works through it, so the person sees what the AI looks at.
 
 - **Claude Desktop:** `node Launcher/scripts/pack.mjs`, then double-click
-  `Launcher/dist/geometry-viewer.mcpb`. It carries the viewer, and on a Mac the native engine.
-- **Codex or ChatGPT desktop:** add to `~/.codex/config.toml`:
+  `Launcher/dist/geometryview.mcpb`. It carries the viewer, and on a Mac the native engine. To show
+  you a model in the app rather than the browser, it needs GeometryView in `/Applications`
+  (`install-app`).
+- **Codex or ChatGPT desktop:** add to `~/.codex/config.toml`, with the full path to `node`, since
+  an app started from the Dock does not see your shell's PATH (`which node` prints it):
 
   ```toml
-  [mcp_servers.geometry]
-  command = "node"
-  args = ["<repo>/Launcher/bin/geometry-viewer.mjs", "--mcp"]
+  [mcp_servers.geometryview]
+  command = "/path/to/node"
+  args = ["<repo>/Launcher/bin/geometryview.mjs", "--mcp"]
   ```
 
   Or, from a packed copy (`cd Launcher && npm pack`), `command = "npx"` with
-  `args = ["-y", "--package=<path>/geometry-viewer-0.1.0.tgz", "geometry-viewer", "--mcp"]`.
-- **Claude Code:** `claude mcp add geometry -- node <repo>/Launcher/bin/geometry-viewer.mjs --mcp`.
+  `args = ["-y", "--package=<path>/geometryview-0.1.0.tgz", "geometryview", "--mcp"]`.
+- **Claude Code:** `claude mcp add geometryview -- node <repo>/Launcher/bin/geometryview.mjs --mcp`.
 
-`GEOMETRYVIEW_ENGINE=page` makes a Mac use the browser's viewer too, and `--port N` fixes the port.
+`GEOMETRYVIEW_ENGINE=page` makes a Mac use the browser's viewer too, and `--port N` chooses another
+port.
 `cd Launcher && npm test` checks the server and drives the tools as an AI app does.
 
 ## Development
@@ -125,8 +142,8 @@ A section can be added as `x0.5` or `x0.6,y-0.4` (a minus removes the low side),
 leaves out the view cube and scale bar.
 
 `Tests/golden` holds an image of every style and colour mode. After a deliberate change to how
-things look, `GEOMETRYVIEW_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites them,
-to be checked by eye before committing.
+things look, `GEOMETRYVIEW_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites
+them, to be checked by eye before committing.
 
 `Tools/step_equivalence.py` compares STEP imports with OCCT reading each file whole, on face count,
 area, volume and bounds:
@@ -141,12 +158,14 @@ The `asan` and `tsan` presets run the same tests under sanitizers.
 than `Tools/perf_baseline.json`; `--update` records a new baseline. `Tools/fuzz.sh 600` fuzzes the
 STEP tokenizer, the STL reader and the cache reader for ten minutes each.
 
-Setting `GEOMETRYVIEW_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRYVIEW_LATENCY=1` measures
-input-to-present latency, and `GEOMETRYVIEW_ALLOCS=1` counts per-frame heap allocations. Launching with
-`--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
-the interface draws no 3D frame. `--chrome-check` clicks every segment and card label with real
-events and checks that none of them reaches the 3D view. `--snapshot` writes the window, engine output and interface
-together, to `chrome.png` in the app's temporary directory.
+Setting `GEOMETRYVIEW_TRACE=1` prints stage timings, memory use and GPU time per frame,
+`GEOMETRYVIEW_LATENCY=1` measures input-to-present latency, and `GEOMETRYVIEW_ALLOCS=1` counts
+per-frame heap allocations. Launching with `--exercise` runs a scripted drag, hover and click on
+the opened file, then checks that changing only the interface draws no 3D frame. `--chrome-check`
+clicks every segment and card label with real events and checks that none of them reaches the 3D
+view. `--snapshot` writes the window, engine output and interface together, to `chrome.png` in the
+app's temporary directory. `Tools/make_icons.sh --web` remakes the web viewer's icons from the
+app icon's master, `App/Resources/AppIcon.png`.
 
 ## Project goals, in order
 

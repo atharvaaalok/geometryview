@@ -395,7 +395,7 @@ a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
   sends at 1.5–2.0 GB/s, so the STL's 151 MB cache file would have come in one or two pieces, each
   held whole by the page first.
 - **The fix:** the shell's server and the desktop launcher (for Safari) now send file bodies
-  chunked. The size goes in a `Geometry-Size` header, which the viewer reads where there is no
+  chunked. The size goes in a `GeometryView-Size` header, which the viewer reads where there is no
   Content-Length: it bounds what a file's header may ask to be placed.
 - **Chrome** streams either way. The launcher's tests, its end-to-end test in Chrome, and the
   harness above pass.
@@ -625,7 +625,7 @@ mean anything:
 - **The `.mcpb`:** unpacked and run with Node, as Claude Desktop runs it, on both. It listed its
   four tools, opened the pack in 4.3–4.9 s and pictured it.
 - **The npm package:** a global install and `npx` both answered. A local tarball needs
-  `npx --package=<tarball> geometry-viewer`.
+  `npx --package=<tarball> geometryview`.
 
 **What the runs found, and the fixes:**
 - **Chrome on Linux has no adapter in roughly the first 200 ms after the browser starts.** A page
