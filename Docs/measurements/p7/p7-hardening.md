@@ -350,6 +350,38 @@ The shell now:
 - **The import check's report was named after `step/pack.step`.** The slash made the shell write
   the report into a folder that does not exist. Report names now use a dash.
 
+## Large files from the shell's server
+
+Phase 0 found the iPhone shell's loopback server sending a large file's first byte 100–140 ms late,
+and guessed that WebKit was buffering it (`phase0/s3-ios-shell.md`). It is, and it was worse than
+a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
+- **Reproduced on the Mac**, with the shell's own server code compiled for macOS and a WKWebView
+  reading a 256 MB file, as the viewer reads a cache file:
+
+  | 256 MB file | First data | Pieces | Whole file |
+  |---|---|---|---|
+  | The shell's server, as it was | 97–118 ms | 1–2 | 97–118 ms, 2.2–2.6 GB/s |
+  | Node, with Content-Length | 71–97 ms | 3 | 176–222 ms |
+  | Node, chunked | 1.6–1.8 ms | 1,321–2,731 | 133–284 ms |
+  | Node, with Content-Length, sent at 50 MB/s | 77–81 ms | 85 | 5.6 s |
+  | **The shell's server, chunked** | **1.7–6.4 ms** | **214–257** | **73–81 ms, 3.2–3.5 GB/s** |
+
+- **WebKit holds back a body whose length it knows**, handing it to the page some 65–90 ms at a
+  time, however fast it arrives. The shell's server sends a file faster than that, so the page got
+  it in one piece, all at the end. A body without a length, sent chunked, is handed over as it
+  arrives.
+- **So a cache file most likely never streamed on the phone.** The viewer reads a cache file from
+  fetch straight into GPU buffers, a piece at a time, to keep memory down. The phone's server
+  sends at 1.5–2.0 GB/s, so the STL's 151 MB cache file would have come in one or two pieces, each
+  held whole by the page first.
+- **The fix:** the shell's server and the desktop launcher (for Safari) now send file bodies
+  chunked. The size goes in a `Geometry-Size` header, which the viewer reads where there is no
+  Content-Length: it bounds what a file's header may ask to be placed.
+- **Chrome** streams either way. The launcher's tests, its end-to-end test in Chrome, and the
+  harness above pass.
+- **Still to do on the iPhone:** the viewer's memory with the STL's cache file, which should fall
+  by up to the file's size, and the first byte.
+
 ## Linux and Windows
 
 No physical Linux or Windows machine is at hand. Linux runs first in Docker on this Mac, without a
