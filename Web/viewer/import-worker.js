@@ -236,15 +236,29 @@ async function keepSource(name, file) {
 }
 const kSourcePiece = 8 << 20;
 
+// Reads `file` straight into the importer's input, a piece at a time, so it is never held whole a
+// second time on its way in: _step_open makes room for all of it, and nothing calls into the
+// importer while it fills, so the heap cannot grow and move under the copy.
+async function readInto(step, file) {
+  const pointer = step._step_open(file.size);
+  let at = pointer;
+  const reader = file.stream().getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    step.HEAPU8.set(value, at);
+    at += value.length;
+  }
+  if (at - pointer !== file.size) throw new Error(`${file.name} changed while it was read.`);
+}
+
 // Imports some of a STEP file's definitions again at a finer level, posting each segment as it is
 // written; they hold geometry only, for the page to add to the document already open.
 async function refine(data) {
   try {
     const step = await supervisor(false);
-    const bytes = new Uint8Array(await data.file.arrayBuffer());
+    await readInto(step, data.file);
     // Each call may grow the heap, which detaches views made before it: read them after.
-    const pointer = step._step_open(bytes.length);
-    step.HEAPU8.set(bytes, pointer);
     const room = step._step_refine(data.level, data.definitions.length);
     new Uint32Array(step.HEAPU8.buffer, room, data.definitions.length).set(data.definitions);
     if (step._step_begin() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
@@ -285,11 +299,7 @@ self.onmessage = async ({ data }) => {
     const step = await supervisor(data.threads && self.crossOriginIsolated);
     // A binary STL file is read in pieces, so it is never held whole; anything else, whole.
     const inPieces = data.kind === "stl" && await readPieces(step, data.file);
-    if (!inPieces) {
-      const bytes = new Uint8Array(await data.file.arrayBuffer());
-      const pointer = step._step_open(bytes.length);
-      step.HEAPU8.set(bytes, pointer);
-    }
+    if (!inPieces) await readInto(step, data.file);
     let slices = 0;
     if (data.kind === "stl") {
       const made = inPieces ? step._mesh_import_pieces() : step._mesh_import();
