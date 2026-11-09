@@ -13,7 +13,7 @@ import Network
 /// knows, handing it to the page some 80 ms at a time, so a file the loopback sends within that
 /// time reached the page whole and late: a 256 MB cache file, meant to stream into GPU buffers,
 /// sat in the page's memory first. A chunked body is handed over as it arrives. The size goes in
-/// Geometry-Size instead, for the viewer to bound what a file's header may ask for.
+/// GeometryView-Size instead, for the viewer to bound what a file's header may ask for.
 final class LoopbackServer: @unchecked Sendable {
     private let files: WebFiles
     private let listener: NWListener
@@ -87,7 +87,7 @@ final class LoopbackServer: @unchecked Sendable {
         let chunked = handle != nil
         if chunked {
             headers["Transfer-Encoding"] = "chunked"
-            headers["Geometry-Size"] = String(remaining)
+            headers["GeometryView-Size"] = String(remaining)
         } else {
             headers["Content-Length"] = "0"
         }

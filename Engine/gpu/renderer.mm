@@ -93,8 +93,8 @@ struct Renderer::State {
     std::atomic<u64> gpuFrames{0};
     std::array<std::atomic<float>, 2048> gpuRecent{}; // the latest frames' times, for percentiles
 
-    // GEOMETRY_NO_EDGES leaves feature edges out, to measure what they cost.
-    bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
+    // GEOMETRYVIEW_NO_EDGES leaves feature edges out, to measure what they cost.
+    bool drawsEdges = std::getenv("GEOMETRYVIEW_NO_EDGES") == nullptr;
     bool reducedDetail = false; // a heavy scene in motion: no edges or shadow
 
     bool createTables() {
@@ -424,7 +424,7 @@ Renderer::~Renderer() = default;
 
 std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* libraryPath) {
     if (![device supportsFamily:MTLGPUFamilyMetal4]) {
-        std::fprintf(stderr, "Geometry needs a GPU that supports Metal 4.\n");
+        std::fprintf(stderr, "GeometryView needs a GPU that supports Metal 4.\n");
         return nullptr;
     }
     std::unique_ptr<Renderer> renderer(new Renderer);

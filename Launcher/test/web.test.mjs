@@ -33,7 +33,7 @@ test("the page is served cross-origin isolated", async () => {
   assert.equal(page.headers["cross-origin-opener-policy"], "same-origin");
   assert.equal(page.headers["cross-origin-embedder-policy"], "require-corp");
   assert.match(page.body.toString(), /viewer\.js/);
-  const engine = await get("/build/geometry-web.wasm");
+  const engine = await get("/build/geometryview-web.wasm");
   assert.equal(engine.status, 200);
   assert.equal(engine.headers["content-type"], "application/wasm");
 });
@@ -90,4 +90,14 @@ test("the bridge takes the page's answers, and refuses strangers", async () => {
     });
     assert.equal(opened, false);
   }
+});
+
+test("the page has its manifest and icons, so a browser can install it", async () => {
+  const manifest = await get("/manifest.webmanifest");
+  assert.equal(manifest.status, 200);
+  assert.equal(manifest.headers["content-type"], "application/manifest+json");
+  assert.equal(JSON.parse(manifest.body.toString()).name, "GeometryView");
+  const icon = await get("/icons/icon-192.png");
+  assert.equal(icon.status, 200);
+  assert.equal(icon.headers["content-type"], "image/png");
 });

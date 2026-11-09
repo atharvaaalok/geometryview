@@ -9,7 +9,7 @@ Raw reports are in `step/`. Native times are the perf gate's fastest of five.
   portable `StepImport` (begin, jobs, finish) and `SliceScheduler` (hands out jobs, takes back
   replies and crashes, runs the failure ladder, packs each definition as its last job returns).
   - The Mac drives it with OCCT helper processes, one thread each (`runWorkerProcesses`).
-  - The browser drives it from its event loop: `geometry-step-web`
+  - The browser drives it from its event loop: `geometryview-step-web`
     (`Import/web/step_supervisor.cpp`) is a small C API over the same code, and the page's Web
     Workers run the OCCT jobs.
 - **A warm pool.** `Web/spike/step.html` keeps its OCCT workers between files. It replaces a worker

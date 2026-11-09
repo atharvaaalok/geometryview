@@ -5,7 +5,7 @@ Status: accepted (2026-11-07). P5 of ADR 0013.
 ## Context
 
 S1's launcher gave AI apps four tools: `open_model`, `get_structure`, `render_view` and
-`open_in_viewer`. They were backed by `gcli` and the Geometry app, so they worked only on a Mac.
+`open_in_viewer`. They were backed by `gcli` and the GeometryView app, so they worked only on a Mac.
 
 P4 made a viewer that runs in any browser. P5 had three aims:
 - serve that viewer from the same launcher;
@@ -15,8 +15,8 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 ## Decisions
 
 **1. One Node launcher, no dependencies, two modes.**
-- `geometry-viewer` serves the viewer on 127.0.0.1 and opens it in the default browser.
-- `geometry-viewer --mcp` is the tool server an AI app starts. It starts the viewer's server the
+- `geometryview` serves the viewer on 127.0.0.1 and opens it in the default browser.
+- `geometryview --mcp` is the tool server an AI app starts. It starts the viewer's server the
   first time a tool needs it.
 - Node is all it needs: Claude ships it, and `npx` brings it to Codex and ChatGPT.
 
@@ -38,8 +38,8 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 
 **4. Without a native engine, the tools work through the page, which the person sees.**
 - On a Mac with `gcli` built or bundled, the tools keep S1's native path. Pictures need no browser
-  there, and `open_in_viewer` opens the Geometry app.
-- Anywhere else, or with `GEOMETRY_ENGINE=page`, the launcher opens the viewer in the browser and
+  there, and `open_in_viewer` opens the GeometryView app.
+- Anywhere else, or with `GEOMETRYVIEW_ENGINE=page`, the launcher opens the viewer in the browser and
   asks it to:
   - import or open the file, and describe it;
   - list its tree;
@@ -71,9 +71,38 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 - **The AI's pictures change what the person sees** (look, cuts, parts shown alone). That is
   intended, but a person in the middle of their own work may not want it. A separate,
   invisible view for the AI would need a second set of render targets; it waits for a need.
-- **The end-to-end test** (`GEOMETRY_E2E=1`) needs Chrome and a GPU, so it is not part of the
+- **The end-to-end test** (`GEOMETRYVIEW_E2E=1`) needs Chrome and a GPU, so it is not part of the
   default suite.
 - **Found along the way:** Metal allows only a few timing counter buffers across the whole system.
   With dozens of viewer tabs open, the renderer's query set could not be made, and every frame
   failed with it. The renderer now adopts the query set only once the GPU confirms it, and goes
   untimed otherwise.
+
+## Addendum: GeometryView, and launching it (2026-11-08)
+
+The product was called just "Geometry", after the folder it was built in, which is meant to hold
+other geometry projects too. It is now **GeometryView**: plain about what it does, and not tied to
+CAD or to one format, since IGES, OBJ, PLY, 3MF and glTF are planned. The repository moves to
+`~/Desktop/geometry/geometryview/`.
+- **Renamed:** the app (`GeometryView.app`, bundle ID `com.aalok.geometryview` on the Mac and the
+  iPhone), its helpers and build outputs (`geometryview-*`), the Swift module, the `geometryview`
+  command, npm package, MCP server and `.mcpb`, the `GEOMETRYVIEW_*` switches, the page's title,
+  and the `GeometryView-Size` header.
+- **Kept:** the `geo`, `Geo`, `geo_` and `GEO_` code prefixes, the `.geoblob` format and its magic,
+  and the iPhone shell's `geo://` scheme, so no saved model or library is lost.
+- **What a new bundle ID costs:** the Mac app starts with a new sandbox container. Its settings can
+  be carried over with `defaults`; its library's folders must be connected again, since their
+  bookmarks belong to the old ID. The iPhone app installs beside the old shell.
+
+**Launching:**
+- `cmake --build --preset release --target install-app` mirrors the app into `/Applications` and
+  registers it. STEP and STL files name their system types (`org.iso.step`,
+  `public.standard-tesselated-geometry-format`) at rank Default, so a double-click opens them in
+  GeometryView unless another app was chosen.
+- The app has an icon: a part drawn in Studio by our own renderer.
+- `npm link` in `Launcher/` puts `geometryview` on the PATH; `geometryview [file]` opens the viewer.
+- **The viewer is at 127.0.0.1:47700 each run.** On a new random port each run, the browser had
+  kept the library and look for a new origin every time, so both were lost. A second launcher finds
+  the first by its identity route (`/geometryview.json`) and opens the browser there; one that finds
+  the port held by something else takes any free port, with a library of its own.
+- The page has a manifest and icons, so a browser can install it as an app window while it runs.

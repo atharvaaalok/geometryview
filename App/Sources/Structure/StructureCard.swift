@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// The assembly tree of everything open, with search. Selecting a row selects that part in the
 /// view, and selecting in the view reveals its row.

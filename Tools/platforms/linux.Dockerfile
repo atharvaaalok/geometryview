@@ -9,4 +9,4 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium mesa-vulkan-drivers libvulkan1 vulkan-tools xvfb xauth \
       fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
-ENV GEOMETRY_CHROME=/usr/bin/chromium
+ENV GEOMETRYVIEW_CHROME=/usr/bin/chromium

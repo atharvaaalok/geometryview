@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 
-const fixtures = process.env.GEOMETRY_FIXTURES ?? join(homedir(), "Desktop/Godela");
+const fixtures = process.env.GEOMETRYVIEW_FIXTURES ?? join(homedir(), "Desktop/Godela");
 const model = join(fixtures, "exploration/claude/motor_cad/outrunner_tmotor_u/U8II-KV100/" +
                              "detailed/part.step");
 
@@ -23,7 +23,7 @@ function call(method, params) {
 }
 
 before(() => {
-  server = spawn(process.execPath, [fileURLToPath(new URL("../bin/geometry-viewer.mjs", import.meta.url)),
+  server = spawn(process.execPath, [fileURLToPath(new URL("../bin/geometryview.mjs", import.meta.url)),
                                     "--mcp"], { stdio: ["pipe", "pipe", "inherit"] });
   let buffered = "";
   server.stdout.on("data", (chunk) => {

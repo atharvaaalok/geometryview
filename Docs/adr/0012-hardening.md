@@ -8,7 +8,7 @@ The hard 52.7 MB file is the one fixture that misses its import target: 1.6 s wa
 measured. Its workers spend 15 s of CPU in transfer, nearly all of it in ShapeFix. In OCCT 8,
 STEP's default shape processing is the single FixShape operation. Its sub-modes can be set on the
 reader, but only after a file is read, since the actor that holds them exists only then.
-`GEOMETRY_SHAPE_PROCESS` selects the variants measured:
+`GEOMETRYVIEW_SHAPE_PROCESS` selects the variants measured:
 
 | Healing | Transfer CPU | Import | Hard file's geometry | Equivalence |
 |---|---|---|---|---|
@@ -59,9 +59,9 @@ script takes a time in seconds for longer runs.
 
 | Binary | Entitlements | What it reaches |
 |---|---|---|
-| Geometry.app | sandbox, user-selected files read-only, app-scoped bookmarks | Files and folders the user chose, through security-scoped URLs. Connected folders through bookmarks. Its own container, which holds the cache |
-| geometry-import | sandbox, inherit | Nothing by path. The source file arrives as an open descriptor and the cache file is written to a descriptor, so the helper that parses untrusted files names no file itself |
-| geometry-occt-worker | sandbox, inherit | Requests and slices over fixed descriptors 3, 4 and 5, so OCCT writing to stdout cannot corrupt the protocol |
+| GeometryView.app | sandbox, user-selected files read-only, app-scoped bookmarks | Files and folders the user chose, through security-scoped URLs. Connected folders through bookmarks. Its own container, which holds the cache |
+| geometryview-import | sandbox, inherit | Nothing by path. The source file arrives as an open descriptor and the cache file is written to a descriptor, so the helper that parses untrusted files names no file itself |
+| geometryview-occt-worker | sandbox, inherit | Requests and slices over fixed descriptors 3, 4 and 5, so OCCT writing to stdout cannot corrupt the protocol |
 
 The viewer treats every cache file as untrusted, since a compromised helper could write one:
 - sections are validated on read;

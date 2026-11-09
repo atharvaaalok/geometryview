@@ -85,7 +85,7 @@ A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` 
 **Why the 100k rack costs so much next to the 1M** (2026-11-08, about 6:30 PM): its edges. Native
 Dawn, 2880×1800, GPU ms (p10 / p50 / p90):
 
-| | With edges | `GEOMETRY_NO_EDGES` |
+| | With edges | `GEOMETRYVIEW_NO_EDGES` |
 |---|---|---|
 | Rack of 100k parts | 3.79 / 4.01 / 4.38 | 1.88 / 1.96 / 2.13 |
 | Rack of 1M parts | 5.35 / 5.69 / 6.14 | 5.32 / 5.57 / 6.00 |
@@ -110,7 +110,7 @@ Dawn, 2880×1800, GPU ms (p10 / p50 / p90):
 `--exercise` reported 52–54 allocations in each frame's `render` call, where PLAN.md asks for none
 (branch `p7-frame-allocations`, 2026-11-08, about 5 PM).
 
-**None of them is ours.** `GEOMETRY_ALLOCS=stacks` now prints the call stack of every allocation
+**None of them is ours.** `GEOMETRYVIEW_ALLOCS=stacks` now prints the call stack of every allocation
 in the 300th frame. All 52 were made inside Metal and Core Animation, on our behalf:
 
 | Where | Allocations |
@@ -129,13 +129,13 @@ in the 300th frame. All 52 were made inside Metal and Core Animation, on our beh
     Metal and Core Animation)".
   - A unit test checks the split: an allocation of ours counts as ours, a command buffer's as
     Metal's.
-  - With `GEOMETRY_TRACE` as well, a frame makes 60, one of them ours: the commit options that
+  - With `GEOMETRYVIEW_TRACE` as well, a frame makes 60, one of them ours: the commit options that
     carry the GPU timing, which only tracing makes.
 - **Telling them apart takes each allocation's stack**, so the count is on only with
-  `GEOMETRY_ALLOCS`.
+  `GEOMETRYVIEW_ALLOCS`.
 - **ADR 0009's "zero per frame" was most likely a run without the count.** The exercise printed
-  "0 allocations" whenever `GEOMETRY_ALLOCS` was unset, and its GPU times read 0.00 ms without
-  `GEOMETRY_TRACE`. It now says when either was not measured. Metal's validation layers, which
+  "0 allocations" whenever `GEOMETRYVIEW_ALLOCS` was unset, and its GPU times read 0.00 ms without
+  `GEOMETRYVIEW_TRACE`. It now says when either was not measured. Metal's validation layers, which
   ADR 0009's run used, make 729 allocations a frame, not fewer.
 - **Sanitizers bring allocators of their own**, which the malloc logger never sees, so the count and
   its test work only in builds without them.
@@ -395,7 +395,7 @@ a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
   sends at 1.5–2.0 GB/s, so the STL's 151 MB cache file would have come in one or two pieces, each
   held whole by the page first.
 - **The fix:** the shell's server and the desktop launcher (for Safari) now send file bodies
-  chunked. The size goes in a `Geometry-Size` header, which the viewer reads where there is no
+  chunked. The size goes in a `GeometryView-Size` header, which the viewer reads where there is no
   Content-Length: it bounds what a file's header may ask to be placed.
 - **Chrome** streams either way. The launcher's tests, its end-to-end test in Chrome, and the
   harness above pass.
@@ -528,7 +528,7 @@ GPU; drawing on either system needs a machine with one.
 - `linux.Dockerfile` is Debian 12 with Node 22, Debian's Chromium 156 (arm64), Mesa's lavapipe
   and Chromium's SwiftShader. `linux-run.sh` starts the census and viewer servers inside it and
   runs one check.
-- The launcher's end-to-end test takes `GEOMETRY_CHROME` and `GEOMETRY_CHROME_FLAGS`, with
+- The launcher's end-to-end test takes `GEOMETRYVIEW_CHROME` and `GEOMETRYVIEW_CHROME_FLAGS`, with
   Chrome's usual place on each system as the default.
 - `browser-run.ps1` opens a check page in any browser on Windows, Firefox included, and waits for
   the report the page posts. It is the AWS runs' script, with their fixed paths taken out.
@@ -625,7 +625,7 @@ mean anything:
 - **The `.mcpb`:** unpacked and run with Node, as Claude Desktop runs it, on both. It listed its
   four tools, opened the pack in 4.3–4.9 s and pictured it.
 - **The npm package:** a global install and `npx` both answered. A local tarball needs
-  `npx --package=<tarball> geometry-viewer`.
+  `npx --package=<tarball> geometryview`.
 
 **What the runs found, and the fixes:**
 - **Chrome on Linux has no adapter in roughly the first 200 ms after the browser starts.** A page

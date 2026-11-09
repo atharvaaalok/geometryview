@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Owns the application's one window and its menu bar.
 @MainActor
@@ -31,9 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open(pendingURLs, in: window)
         pendingURLs = []
 
-        // GEOMETRY_SNAPSHOT_SETTINGS saves the Settings window to settings.png in the temporary
+        // GEOMETRYVIEW_SNAPSHOT_SETTINGS saves the Settings window to settings.png in the temporary
         // directory, for checking its layout.
-        if ProcessInfo.processInfo.environment["GEOMETRY_SNAPSHOT_SETTINGS"] != nil {
+        if ProcessInfo.processInfo.environment["GEOMETRYVIEW_SNAPSHOT_SETTINGS"] != nil {
             showSettings(nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
                 if let view = settings?.contentView,
@@ -105,8 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentUnsupportedHardware() {
         let alert = NSAlert()
-        alert.messageText = "This Mac can't run Geometry"
-        alert.informativeText = "Geometry needs a GPU that supports Metal 4."
+        alert.messageText = "This Mac can't run GeometryView"
+        alert.informativeText = "GeometryView needs a GPU that supports Metal 4."
         alert.runModal()
         NSApp.terminate(nil)
     }

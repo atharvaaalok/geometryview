@@ -1,10 +1,10 @@
-// geometry-webgpu: the WebGPU renderer natively on Dawn, beside the Metal one. Built with
+// geometryview-webgpu: the WebGPU renderer natively on Dawn, beside the Metal one. Built with
 // GEO_WEBGPU on the Mac.
 //
-//   geometry-webgpu compare <metallib> <blob> <out-prefix> [options]
+//   geometryview-webgpu compare <metallib> <blob> <out-prefix> [options]
 //       renders the file with both renderers, writes <out-prefix>-metal.png and -webgpu.png,
 //       and prints how far apart they are
-//   geometry-webgpu bench <blob> [options] [--frames N] [--samples S] [--metal <metallib>]
+//   geometryview-webgpu bench <blob> [options] [--frames N] [--samples S] [--metal <metallib>]
 //       times an orbit of frames drawn by the WebGPU renderer, each waited for, or with --metal
 //       the same orbit drawn by the Metal renderer offscreen (its GPU time includes the readback)
 //
@@ -210,7 +210,7 @@ int compareCommand(int argc, const char** argv) {
 // The Metal renderer's offscreen frames over the same orbit. Metal reports GPU times only while
 // tracing, for its latest 2048 frames, so after 10 frames to warm up, 2048 are drawn and timed.
 int benchMetal(const char* library, const char* blob, const GeoRenderOptions& options) {
-    setenv("GEOMETRY_TRACE", "1", 1);
+    setenv("GEOMETRYVIEW_TRACE", "1", 1);
     std::string error;
     std::unique_ptr<gpu::Renderer> metal =
         gpu::Renderer::create(MTLCreateSystemDefaultDevice(), library);
@@ -374,7 +374,7 @@ int main(int argc, const char** argv) {
         if (command == "bench" && argc >= 3) {
             return benchCommand(argc, argv);
         }
-        std::println(stderr, "usage: geometry-webgpu compare <metallib> <blob> <out-prefix> "
+        std::println(stderr, "usage: geometryview-webgpu compare <metallib> <blob> <out-prefix> "
                              "[options] | bench <blob> [options]");
         return 2;
     }

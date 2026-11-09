@@ -359,7 +359,7 @@ struct Renderer::State {
     StyleUniforms style{};
     bool physical = false;
     bool reducedDetail = false;
-    bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
+    bool drawsEdges = std::getenv("GEOMETRYVIEW_NO_EDGES") == nullptr;
     u32 samples = 1;
 
     // Targets for one size.

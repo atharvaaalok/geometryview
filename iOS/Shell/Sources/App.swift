@@ -4,7 +4,7 @@ import WebKit
 /// The shell: the viewer's web files in a full-screen web view, served locally, with no network.
 /// STEP and STL files opened in it from Files or the share sheet go to the viewer.
 @main
-struct GeometryShellApp: App {
+struct GeometryViewShellApp: App {
     var body: some Scene {
         WindowGroup {
             WebView()
@@ -209,7 +209,7 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate?.timeIntervalSince1970 ?? 0
         let path = "/open/\(id)/\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)"
-        let call = "geometryShell.open(\(Self.quoted(path)), \(Self.quoted(name)), \(Int(modified * 1000)))"
+        let call = "geometryViewShell.open(\(Self.quoted(path)), \(Self.quoted(name)), \(Int(modified * 1000)))"
         lastOpened = call
         if pageReady {
             webView?.evaluateJavaScript(call)

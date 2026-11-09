@@ -387,10 +387,10 @@ TEST_CASE("the see-through shell blends once, even where its faces coincide") {
         };
         // Edges are left out: the doubled mesh's sides pair differently, which is not what this
         // checks.
-        setenv("GEOMETRY_NO_EDGES", "1", 1);
+        setenv("GEOMETRYVIEW_NO_EDGES", "1", 1);
         Stage single(box());
         Stage twin(doubled);
-        unsetenv("GEOMETRY_NO_EDGES");
+        unsetenv("GEOMETRYVIEW_NO_EDGES");
         const std::vector<u8> once = seeThrough(single);
         const std::vector<u8> twice = seeThrough(twin);
         usize differing = 0, covered = 0;

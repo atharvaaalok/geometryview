@@ -12,7 +12,7 @@
 //
 // The supervisor runs on the page's own thread here; the web runtime moves it into a worker.
 
-import createStepImporter from "./occt/geometry-step-web.mjs";
+import createStepImporter from "./occt/geometryview-step-web.mjs";
 
 const params = new URLSearchParams(location.search);
 const model = params.get("model") ?? "ple120";
@@ -182,7 +182,7 @@ try {
   let [file, step, occtModule] = await Promise.all([
     fetch(`fixtures/step/${model}.step`).then((response) => response.arrayBuffer()),
     createStepImporter(),
-    WebAssembly.compileStreaming(fetch("occt/geometry-occt-web.wasm")),
+    WebAssembly.compileStreaming(fetch("occt/geometryview-occt-web.wasm")),
   ]);
   const loadMs = performance.now() - started;
 

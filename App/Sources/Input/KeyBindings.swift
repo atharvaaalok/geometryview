@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// What a key press does in the viewport.
 enum KeyCommand {

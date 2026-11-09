@@ -1,5 +1,5 @@
 import Foundation
-import GeometryEngine
+import GeometryViewEngine
 
 /// What each mouse button drags, and how the wheel zooms. Remembered across launches.
 struct MouseSettings: Equatable {

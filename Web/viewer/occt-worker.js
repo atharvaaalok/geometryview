@@ -1,7 +1,7 @@
 // One OCCT worker: meshes the STEP slices the importer sends, one at a time, with the module the
 // importer compiled once and shared, and answers with OCCT's timings and the triangles it made.
 
-import createOcct from "./occt/geometry-occt-web.mjs";
+import createOcct from "./occt/geometryview-occt-web.mjs";
 
 let occt = null;
 

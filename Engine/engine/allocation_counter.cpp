@@ -115,7 +115,7 @@ void logAllocation(uint32_t type, uintptr_t, uintptr_t size, uintptr_t, uintptr_
 
 bool stacksWanted() {
     static const bool wanted = [] {
-        const char* value = std::getenv("GEOMETRY_ALLOCS");
+        const char* value = std::getenv("GEOMETRYVIEW_ALLOCS");
         return value != nullptr && std::strcmp(value, "stacks") == 0;
     }();
     return wanted;
@@ -124,7 +124,7 @@ bool stacksWanted() {
 } // namespace
 
 bool allocationCountingEnabled() {
-    static const bool enabled = std::getenv("GEOMETRY_ALLOCS") != nullptr;
+    static const bool enabled = std::getenv("GEOMETRYVIEW_ALLOCS") != nullptr;
     return enabled;
 }
 

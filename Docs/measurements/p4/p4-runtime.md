@@ -11,7 +11,7 @@ it could be reached again: see "The iPhone" below. **The memory gate passes.**
 
 ## What P4 built
 
-- **The engine in the page** (`Engine/browser/web_engine.cpp`, target `geometry-web`, 667 KB of
+- **The engine in the page** (`Engine/browser/web_engine.cpp`, target `geometryview-web`, 667 KB of
   WebAssembly). It is the portable core and the WebGPU renderer, with a host made of the page's
   frame loop, timers and callbacks, all on the main thread.
 - **Cache files stream from fetch, a File or the library straight into GPU buffers.**
@@ -73,7 +73,7 @@ and syncing.
 - **The heap stays at 16 MB with the 10M STL open**, where P3's bench page held 363 MB. The file
   is never in WebAssembly or JavaScript memory whole, only a megabyte at a time.
 - **GPU buffers are as P3 measured.** Reading a file whole natively and streaming it
-  (`geometry-webgpu bench --stream`) both give 268.8 MB.
+  (`geometryview-webgpu bench --stream`) both give 268.8 MB.
 - **A first version of the stream placed the first segment before the host reserved room**, which
   added a second copy of the file's size: 419.6 MB. The stream now tells its sink the size first.
 

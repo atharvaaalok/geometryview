@@ -1,18 +1,18 @@
 {
   "manifest_version": "0.3",
-  "name": "geometry-viewer",
-  "display_name": "Geometry",
+  "name": "geometryview",
+  "display_name": "GeometryView",
   "version": "0.1.0",
   "description": "View 3D CAD models: open, inspect and picture STEP and STL files on this computer.",
-  "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and show them to you: in the Geometry app on a Mac that has it, or else in a viewer in your browser that runs on this computer only.",
+  "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and show them to you: in the GeometryView app on a Mac that has it, or else in a viewer in your browser that runs on this computer only.",
   "author": { "name": "Atharva Aalok" },
   "server": {
     "type": "node",
-    "entry_point": "bin/geometry-viewer.mjs",
+    "entry_point": "bin/geometryview.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/bin/geometry-viewer.mjs", "--mcp"],
-      "env": { "GEOMETRY_NATIVE_DIR": "${__dirname}/native" }
+      "args": ["${__dirname}/bin/geometryview.mjs", "--mcp"],
+      "env": { "GEOMETRYVIEW_NATIVE_DIR": "${__dirname}/native" }
     }
   },
   "tools": [

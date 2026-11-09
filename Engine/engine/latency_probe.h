@@ -1,7 +1,7 @@
 // Measures the time from an input event to the frame showing it being presented.
 //
 // This starts at the event's timestamp and ends at the time the display reports for the present, so
-// it excludes the mouse's own latency and the panel's response. Enable with GEOMETRY_LATENCY=1.
+// it excludes the mouse's own latency and the panel's response. Enable with GEOMETRYVIEW_LATENCY=1.
 #pragma once
 
 #ifdef __OBJC__

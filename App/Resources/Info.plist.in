@@ -12,6 +12,8 @@
     <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
     <key>CFBundleVersion</key>
     <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>ATSApplicationFontsPath</key>
@@ -24,7 +26,11 @@
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSHandlerRank</key>
-            <string>Alternate</string>
+            <string>Default</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.standard-tesselated-geometry-format</string>
+            </array>
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>stl</string>
@@ -36,12 +42,64 @@
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSHandlerRank</key>
-            <string>Alternate</string>
+            <string>Default</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>org.iso.step</string>
+            </array>
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>step</string>
                 <string>stp</string>
             </array>
+        </dict>
+    </array>
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>org.iso.step</string>
+            <key>UTTypeDescription</key>
+            <string>STEP model</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.3d-content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>step</string>
+                    <string>stp</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>model/step</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>public.standard-tesselated-geometry-format</string>
+            <key>UTTypeDescription</key>
+            <string>STL model</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.3d-content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>stl</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>model/stl</string>
+                </array>
+            </dict>
         </dict>
     </array>
     <key>LSMinimumSystemVersion</key>

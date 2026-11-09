@@ -1,6 +1,6 @@
 # The iPhone and iPad shell: the universal viewer's files in WKWebView, fully offline.
 # Generate the Xcode project with `xcodegen` in this folder; the project itself is not committed.
-name: GeometryShell
+name: GeometryViewShell
 options:
   deploymentTarget:
     iOS: "26.0"
@@ -12,7 +12,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
-  GeometryShell:
+  GeometryViewShell:
     type: application
     platform: iOS
     sources:
@@ -40,25 +40,25 @@ targets:
           cp "${SRCROOT}/../../build/fixtures/"*.geoblob "$spike/fixtures/"
           # The import spike: OCCT for Web Workers, and STEP slices saved from the native importer.
           mkdir -p "$spike/occt"
-          cp "${SRCROOT}/../../build/wasm-release/Import/geometry-occt-web."{mjs,wasm} "$spike/occt/"
+          cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-occt-web."{mjs,wasm} "$spike/occt/"
           rm -rf "$spike/fixtures/slices"
           cp -R "${SRCROOT}/../../build/fixtures/slices" "$spike/fixtures/slices"
           # The viewer's WebGPU renderer, timed.
           mkdir -p "$spike/bench"
-          cp "${SRCROOT}/../../build/wasm-webgpu/Tools/geometry-webgpu-bench."{mjs,wasm} "$spike/bench/"
+          cp "${SRCROOT}/../../build/wasm-webgpu/Tools/geometryview-webgpu-bench."{mjs,wasm} "$spike/bench/"
           # Whole STEP imports: the supervisor, and the files it reads.
-          cp "${SRCROOT}/../../build/wasm-release/Import/geometry-step-web."{mjs,wasm} "$spike/occt/"
+          cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-step-web."{mjs,wasm} "$spike/occt/"
           rm -rf "$spike/fixtures/step"
           cp -R "${SRCROOT}/../../build/fixtures/step" "$spike/fixtures/step"
           # The viewer: its engine and fonts. It opens fixtures from the spike's folder.
           viewer="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/viewer"
           mkdir -p "$viewer/build" "$viewer/fonts"
-          cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometry-web."{mjs,wasm} "$viewer/build/"
+          cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometryview-web."{mjs,wasm} "$viewer/build/"
           cp "${SRCROOT}/../../ThirdParty/ibm-plex-mono/"*.ttf "$viewer/fonts/"
           # Its importers: the supervisor, single- and multi-threaded, and OCCT for its workers.
           mkdir -p "$viewer/occt" "$viewer/occt-threads"
           cp "${SRCROOT}/../../build/wasm-release/Import/geometry-"{step,occt}"-web."{mjs,wasm} "$viewer/occt/"
-          cp "${SRCROOT}/../../build/wasm-threads/Import/geometry-step-web."{mjs,wasm} "$viewer/occt-threads/"
+          cp "${SRCROOT}/../../build/wasm-threads/Import/geometryview-step-web."{mjs,wasm} "$viewer/occt-threads/"
     # Generated from here at `xcodegen` time and merged with the keys below. The page's loopback
     # server is plain HTTP on 127.0.0.1, which App Transport Security allows only when asked.
     info:
@@ -84,11 +84,11 @@ targets:
               public.filename-extension: [step, stp]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.aalok.geometry.shell
-        PRODUCT_NAME: Geometry
+        PRODUCT_BUNDLE_IDENTIFIER: com.aalok.geometryview
+        PRODUCT_NAME: GeometryView
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Geometry
+        INFOPLIST_KEY_CFBundleDisplayName: GeometryView
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"

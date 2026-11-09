@@ -1,5 +1,5 @@
 import Foundation
-import GeometryEngine
+import GeometryViewEngine
 
 /// One visible row: a document's own row, or one of its tree nodes.
 struct TreeRow: Equatable {

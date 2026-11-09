@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Builds the native menu bar.
 @MainActor
@@ -190,7 +190,7 @@ enum MainMenu {
     private static func applicationMenu() -> NSMenuItem {
         let menu = NSMenu()
         menu.addItem(
-            withTitle: "About Geometry",
+            withTitle: "About GeometryView",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         )
@@ -202,12 +202,12 @@ enum MainMenu {
         )
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Hide Geometry",
+            withTitle: "Hide GeometryView",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         )
         menu.addItem(
-            withTitle: "Quit Geometry",
+            withTitle: "Quit GeometryView",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )

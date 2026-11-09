@@ -19,32 +19,32 @@ if(GEO_TARGET STREQUAL "wasm")
     # OCCT is built without threads, as each worker runs one slice at a time, so it links only
     # into a build without them.
     if(EXISTS "${GEO_OCCT_WASM_ROOT}/lib/libTKDESTEP.a" AND NOT GEO_WASM_THREADS)
-        add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
-        set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
-        target_include_directories(geometry-occt-worker PRIVATE .)
-        target_include_directories(geometry-occt-worker SYSTEM PRIVATE
+        add_executable(geometryview-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
+        set_target_properties(geometryview-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
+        target_include_directories(geometryview-occt-worker PRIVATE .)
+        target_include_directories(geometryview-occt-worker SYSTEM PRIVATE
             "${GEO_OCCT_WASM_ROOT}/include/opencascade")
         # WebAssembly's own exceptions, as OCCT was built with; JavaScript's are far slower.
-        target_compile_options(geometry-occt-worker PRIVATE -fwasm-exceptions)
+        target_compile_options(geometryview-occt-worker PRIVATE -fwasm-exceptions)
         file(GLOB occt_wasm_libraries CONFIGURE_DEPENDS "${GEO_OCCT_WASM_ROOT}/lib/*.a")
-        target_link_libraries(geometry-occt-worker PRIVATE
+        target_link_libraries(geometryview-occt-worker PRIVATE
             geo_base geo_warnings
             -Wl,--start-group ${occt_wasm_libraries} -Wl,--end-group)
-        target_link_options(geometry-occt-worker PRIVATE
+        target_link_options(geometryview-occt-worker PRIVATE
             -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1
             -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=8MB -sEXIT_RUNTIME=1)
 
         # The same meshing as a module for a Web Worker, called directly by the page's script.
-        add_executable(geometry-occt-web occt/web_worker.cpp occt/mesh_shape.cpp)
-        set_target_properties(geometry-occt-web PROPERTIES GEO_ALLOW_EXCEPTIONS ON SUFFIX ".mjs")
-        target_include_directories(geometry-occt-web PRIVATE .)
-        target_include_directories(geometry-occt-web SYSTEM PRIVATE
+        add_executable(geometryview-occt-web occt/web_worker.cpp occt/mesh_shape.cpp)
+        set_target_properties(geometryview-occt-web PROPERTIES GEO_ALLOW_EXCEPTIONS ON SUFFIX ".mjs")
+        target_include_directories(geometryview-occt-web PRIVATE .)
+        target_include_directories(geometryview-occt-web SYSTEM PRIVATE
             "${GEO_OCCT_WASM_ROOT}/include/opencascade")
-        target_compile_options(geometry-occt-web PRIVATE -fwasm-exceptions)
-        target_link_libraries(geometry-occt-web PRIVATE
+        target_compile_options(geometryview-occt-web PRIVATE -fwasm-exceptions)
+        target_link_libraries(geometryview-occt-web PRIVATE
             geo_base geo_warnings
             -Wl,--start-group ${occt_wasm_libraries} -Wl,--end-group)
-        target_link_options(geometry-occt-web PRIVATE
+        target_link_options(geometryview-occt-web PRIVATE
             -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sALLOW_MEMORY_GROWTH=1
             # Each worker's own cap, so one that runs out fails by itself rather than taking
             # the page past what iOS allows.
@@ -57,13 +57,13 @@ if(GEO_TARGET STREQUAL "wasm")
 
     # The STEP importer for the browser: the portable StepImport, driven by the page, whose Web
     # Workers run the OCCT jobs.
-    add_executable(geometry-step-web web/step_supervisor.cpp)
-    target_include_directories(geometry-step-web PRIVATE .)
-    target_link_libraries(geometry-step-web PRIVATE import_core geo_warnings)
-    set_target_properties(geometry-step-web PROPERTIES SUFFIX ".mjs")
+    add_executable(geometryview-step-web web/step_supervisor.cpp)
+    target_include_directories(geometryview-step-web PRIVATE .)
+    target_link_libraries(geometryview-step-web PRIVATE import_core geo_warnings)
+    set_target_properties(geometryview-step-web PROPERTIES SUFFIX ".mjs")
     # A large STL holds its mesh as it is packed, and then the cache file; a binary file is read
     # in pieces, never whole. The 10M triangle fixture peaks near 1.3 GB on several threads.
-    target_link_options(geometry-step-web PRIVATE
+    target_link_options(geometryview-step-web PRIVATE
         -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=4MB
         -sENVIRONMENT=web,worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createStepImporter
         -sEXPORTED_FUNCTIONS=_step_open,_step_refine,_step_begin,_step_next,_step_text,_step_text_size,_step_request,_step_payload,_step_reply,_step_crash,_step_finish,_step_blob,_step_blob_size,_step_error,_step_stats,_step_jobs,_mesh_import,_step_take_segment,_step_read,_stl_open,_stl_piece_size,_stl_take,_mesh_import_pieces,_malloc,_free
@@ -71,26 +71,26 @@ if(GEO_TARGET STREQUAL "wasm")
     if(GEO_WASM_THREADS)
         # Threads are started ahead, one per core, since one started on demand waits for the
         # importer's worker to return to its event loop, which it does not while it packs.
-        target_link_options(geometry-step-web PRIVATE
+        target_link_options(geometryview-step-web PRIVATE
             "-sPTHREAD_POOL_SIZE=Math.min(16,navigator.hardwareConcurrency||4)")
     endif()
     return()
 endif()
 
-add_executable(geometry-import helper/main.cpp)
-target_link_libraries(geometry-import PRIVATE import_core geo_warnings)
+add_executable(geometryview-import helper/main.cpp)
+target_link_libraries(geometryview-import PRIVATE import_core geo_warnings)
 
 # The OCCT worker is optional, so everything else builds on a machine that has not run
 # ThirdParty/build_occt.sh. It is the only target that sees OCCT.
 set(GEO_OCCT_ROOT "${CMAKE_SOURCE_DIR}/ThirdParty/.occt/install")
 if(EXISTS "${GEO_OCCT_ROOT}/lib/libTKDESTEP.a")
-    add_executable(geometry-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
-    set_target_properties(geometry-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
-    target_include_directories(geometry-occt-worker PRIVATE .)
-    target_include_directories(geometry-occt-worker SYSTEM PRIVATE
+    add_executable(geometryview-occt-worker occt/worker_main.cpp occt/mesh_shape.cpp)
+    set_target_properties(geometryview-occt-worker PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
+    target_include_directories(geometryview-occt-worker PRIVATE .)
+    target_include_directories(geometryview-occt-worker SYSTEM PRIVATE
         "${GEO_OCCT_ROOT}/include/opencascade")
     file(GLOB occt_libraries CONFIGURE_DEPENDS "${GEO_OCCT_ROOT}/lib/*.a")
-    target_link_libraries(geometry-occt-worker PRIVATE
+    target_link_libraries(geometryview-occt-worker PRIVATE
         geo_base geo_warnings
         ${occt_libraries} ${occt_libraries} ${occt_libraries}
     )

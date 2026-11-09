@@ -4,8 +4,8 @@
 //
 //   node Tools/platforms/headless.mjs <url> [--timeout ms] [--shot out.png] [--size WxH] [--phone]
 //
-// The browser is GEOMETRY_CHROME, or Chrome where it usually lives; GEOMETRY_CHROME_FLAGS adds
-// flags, such as the ones that choose a software WebGPU adapter. Exits 0 once a final report
+// The browser is GEOMETRYVIEW_CHROME, or Chrome where it usually lives; GEOMETRYVIEW_CHROME_FLAGS
+// adds flags, such as the ones that choose a software WebGPU adapter. Exits 0 once a final report
 // (one not marked partial) is posted, 1 on a timeout or a report with an error. Zero dependencies.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -28,7 +28,7 @@ const defaults = {
   win32: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   linux: "/usr/bin/google-chrome",
 };
-const browser = process.env.GEOMETRY_CHROME ?? defaults[process.platform];
+const browser = process.env.GEOMETRYVIEW_CHROME ?? defaults[process.platform];
 if (!url || !existsSync(browser)) {
   console.error(`usage: headless.mjs <url> [options]; browser ${browser} ${existsSync(browser) ? "" : "not found"}`);
   process.exit(2);
@@ -36,18 +36,19 @@ if (!url || !existsSync(browser)) {
 
 const port = 9300 + Math.floor(Math.random() * 500);
 const profile = mkdtempSync(join(tmpdir(), "geometry-headless-"));
-const flags = (process.env.GEOMETRY_CHROME_FLAGS ?? "").split(" ").filter(Boolean);
-// GEOMETRY_HEADFUL=1 shows a window instead, as on a virtual X display, where Linux's Chromium can
-// present WebGPU and headless cannot.
-const headless = process.env.GEOMETRY_HEADFUL === "1" ? [] : ["--headless=new"];
+const flags = (process.env.GEOMETRYVIEW_CHROME_FLAGS ?? "").split(" ").filter(Boolean);
+// GEOMETRYVIEW_HEADFUL=1 shows a window instead, as on a virtual X display, where Linux's Chromium
+// can present WebGPU and headless cannot.
+const headless = process.env.GEOMETRYVIEW_HEADFUL === "1" ? [] : ["--headless=new"];
 const chrome = spawn(browser, [...headless, "--enable-unsafe-webgpu", `--user-data-dir=${profile}`,
                                `--remote-debugging-port=${port}`, `--window-size=${width},${height}`,
                                "--hide-scrollbars", "--no-first-run", ...flags, "about:blank"],
-                     { stdio: ["ignore", "ignore", process.env.GEOMETRY_CHROME_LOG ? "pipe" : "ignore"] });
-// GEOMETRY_CHROME_LOG names a file for the browser's own log, for a GPU that is not found.
-if (process.env.GEOMETRY_CHROME_LOG) {
+                     { stdio: ["ignore", "ignore",
+                               process.env.GEOMETRYVIEW_CHROME_LOG ? "pipe" : "ignore"] });
+// GEOMETRYVIEW_CHROME_LOG names a file for the browser's own log, for a GPU that is not found.
+if (process.env.GEOMETRYVIEW_CHROME_LOG) {
   const { createWriteStream } = await import("node:fs");
-  chrome.stderr.pipe(createWriteStream(process.env.GEOMETRY_CHROME_LOG));
+  chrome.stderr.pipe(createWriteStream(process.env.GEOMETRYVIEW_CHROME_LOG));
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // The whole run is bounded, a browser that never answers included.

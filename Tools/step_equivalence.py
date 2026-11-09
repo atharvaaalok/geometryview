@@ -119,7 +119,7 @@ def main() -> int:
     arguments = parser.parse_args()
 
     gcli = arguments.build / "Tools" / "gcli"
-    worker = arguments.build / "Import" / "geometry-occt-worker"
+    worker = arguments.build / "Import" / "geometryview-occt-worker"
     paths = [line.strip() for line in arguments.files.read_text().splitlines() if line.strip()]
     if arguments.limit:
         paths = paths[: arguments.limit]

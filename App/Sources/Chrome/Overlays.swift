@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Shown while H or G is held, so the changed meaning of a click is never a surprise.
 @MainActor

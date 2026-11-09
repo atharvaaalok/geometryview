@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 import QuartzCore
 
 /// What the engine reports back to the interface.
@@ -33,7 +33,7 @@ final class EngineHandle {
 
     init?() {
         guard let library = Bundle.main.path(forResource: "default", ofType: "metallib"),
-            let helper = Bundle.main.path(forAuxiliaryExecutable: "geometry-import")
+            let helper = Bundle.main.path(forAuxiliaryExecutable: "geometryview-import")
         else {
             return nil
         }
@@ -71,7 +71,7 @@ final class EngineHandle {
         let manager = FileManager.default
         guard
             let caches = manager.urls(for: .cachesDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("Geometry", isDirectory: true)
+                .appendingPathComponent("GeometryView", isDirectory: true)
         else {
             return nil
         }

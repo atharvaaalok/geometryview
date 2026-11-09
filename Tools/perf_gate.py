@@ -8,9 +8,9 @@ for the multi-process STEP imports, which a 5% gate cannot tell from a regressio
 than 5% over its baseline fails, unless it is within 10 ms, below which timer noise dominates.
 Run it on AC power with nothing else busy.
 
-Fixtures live outside the repository, under $GEOMETRY_FIXTURES, which defaults to the folder they
-were measured from. Those since archived out of that folder are also looked for in build/fixtures,
-where the spikes keep their copies.
+Fixtures live outside the repository, under $GEOMETRYVIEW_FIXTURES, which defaults to the folder
+they were measured from. Those since archived out of that folder are also looked for in
+build/fixtures, where the spikes keep their copies.
 
 Usage: perf_gate.py <build-dir> [--update] [--runs N]
 """
@@ -50,7 +50,7 @@ LOCAL_COPIES = {
 
 def import_seconds(build: Path, source: Path) -> float:
     gcli = build / "Tools" / "gcli"
-    worker = build / "Import" / "geometry-occt-worker"
+    worker = build / "Import" / "geometryview-occt-worker"
     with tempfile.TemporaryDirectory() as scratch:
         blob = Path(scratch) / "fixture.geoblob"
         result = subprocess.run(
@@ -69,7 +69,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=5)
     args = parser.parse_args()
 
-    root = Path(os.environ.get("GEOMETRY_FIXTURES", DEFAULT_FIXTURES))
+    root = Path(os.environ.get("GEOMETRYVIEW_FIXTURES", DEFAULT_FIXTURES))
     baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
     fastest_times: dict[str, float] = {}
     failed = False

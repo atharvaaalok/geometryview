@@ -199,4 +199,4 @@ The plan was, from the spike's indexed path:
 - **Paced GPU times measure the clock governor, not the renderer.** Compare unpaced, or at equal pacing; on the iPhone, render a burst of frames per refresh.
 - **On the iPhone, runs that follow others in one web process came out 2–3× slower.** Earlier pages are probably kept alive by WebKit's back-forward cache. The viewer is one page; test runs need fresh launches.
 - **Mac benchmarks need an idle machine.** Another heavy build on the same Mac turned a 1.35× WebAssembly ratio into an apparent 2–4.5×.
-- **The test fixtures can move.** The hard file was archived to S3 during Phase 0. The perf gate takes `GEOMETRY_FIXTURES` to point at a copy.
+- **The test fixtures can move.** The hard file was archived to S3 during Phase 0. The perf gate takes `GEOMETRYVIEW_FIXTURES` to point at a copy.

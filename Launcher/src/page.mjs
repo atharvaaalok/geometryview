@@ -6,14 +6,30 @@ import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { startViewer } from "./web.mjs";
+import { kDefaultPort, startViewer } from "./web.mjs";
 
 let viewer = null;
 let shownFor = null; // the path the page has open, as the launcher asked
 
-/// The viewer's server, started once per launcher.
+/// The port asked for: GEOMETRYVIEW_PORT, or the usual one.
+export function preferredPort() {
+  return Number(process.env.GEOMETRYVIEW_PORT ?? kDefaultPort);
+}
+
+/// The viewer's server, started once per launcher, on the preferred port. If something else holds
+/// it, such as another launcher, on any free port: a page there has a library of its own.
 export async function viewerServer() {
-  viewer ??= await startViewer({ port: Number(process.env.GEOMETRY_PORT ?? 0) });
+  if (!viewer) {
+    const port = preferredPort();
+    try {
+      viewer = await startViewer({ port });
+    } catch (error) {
+      if (error.code !== "EADDRINUSE" || port === 0) throw error;
+      viewer = await startViewer({ port: 0 });
+      process.stderr.write(`Port ${port} is in use, so the viewer is at ${viewer.address}, where ` +
+                           "the browser keeps a library of its own.\n");
+    }
+  }
   return viewer;
 }
 
@@ -25,10 +41,10 @@ const linuxChromes = ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
 
 /// The arguments that open `url` in the viewer's own Chrome window on Linux, or null without Chrome.
 export function linuxViewerWindow(url, home = homedir(), exists = existsSync) {
-  const chrome = process.env.GEOMETRY_CHROME ?? linuxChromes.find((path) => exists(path));
+  const chrome = process.env.GEOMETRYVIEW_CHROME ?? linuxChromes.find((path) => exists(path));
   if (!chrome) return null;
   const state = process.env.XDG_STATE_HOME ?? join(home, ".local/state");
-  return [chrome, [`--user-data-dir=${join(state, "geometry-viewer/chrome")}`, "--enable-features=Vulkan",
+  return [chrome, [`--user-data-dir=${join(state, "geometryview/chrome")}`, "--enable-features=Vulkan",
                    "--no-first-run", "--no-default-browser-check", `--app=${url}`]];
 }
 

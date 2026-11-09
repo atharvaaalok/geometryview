@@ -1,5 +1,5 @@
 import Foundation
-import GeometryEngine
+import GeometryViewEngine
 
 /// How the model is drawn, as the user chose it. Remembered between launches.
 struct Look: Equatable {

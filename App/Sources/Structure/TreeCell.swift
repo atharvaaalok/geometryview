@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// A tree row's background: cream while the pointer is over the row or over its part in the view,
 /// and the cobalt wash with a bar down its left edge while selected.

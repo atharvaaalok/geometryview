@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// What is selected: its name and place in the assembly, how much of it, and what to do with it.
 @MainActor

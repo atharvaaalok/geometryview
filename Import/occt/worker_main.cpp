@@ -1,4 +1,4 @@
-// geometry-occt-worker: reads STEP text with OCCT and returns triangles.
+// geometryview-occt-worker: reads STEP text with OCCT and returns triangles.
 //
 // OCCT uses gigabytes on large inputs and can crash on bad ones, so it runs only here, in small
 // single-threaded processes the supervisor can replace. Each request is one slice of the file.
@@ -6,9 +6,9 @@
 // With --truth it instead reads a file the ordinary way and prints totals, which is how the
 // slicing pipeline is checked against OCCT itself.
 //
-// For comparing builds, GEOMETRY_DUMP_SLICES=<folder> makes it save every slice it is sent, with
-// the request and its own timings, and --replay <folder> meshes saved slices one after another and
-// prints what each took. The WebAssembly build runs the same replay.
+// For comparing builds, GEOMETRYVIEW_DUMP_SLICES=<folder> makes it save every slice it is sent,
+// with the request and its own timings, and --replay <folder> meshes saved slices one after another
+// and prints what each took. The WebAssembly build runs the same replay.
 #include "base/types.h"
 #include "occt/mesh_shape.h"
 #include "occt/worker_protocol.h"
@@ -62,11 +62,11 @@ bool writeExactly(int fd, const void* data, usize size) {
     return true;
 }
 
-// Saving slices for replay, when GEOMETRY_DUMP_SLICES names a folder.
+// Saving slices for replay, when GEOMETRYVIEW_DUMP_SLICES names a folder.
 class SliceDump {
 public:
     SliceDump() {
-        const char* folder = std::getenv("GEOMETRY_DUMP_SLICES");
+        const char* folder = std::getenv("GEOMETRYVIEW_DUMP_SLICES");
         if (folder != nullptr && *folder != '\0') {
             folder_ = folder;
             prefix_ = std::to_string(getpid());
