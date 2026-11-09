@@ -7,7 +7,7 @@
 //                                              browser does, so it is never held whole
 //   probe step <file.step>                       tokenizes, reads the structure, finds definitions
 //
-// GEOMETRY_TRACE=1 times each stage and shows the memory it holds.
+// GEOMETRYVIEW_TRACE=1 times each stage and shows the memory it holds.
 #include "base/parallel.h"
 #include "base/time.h"
 #include "import.h"

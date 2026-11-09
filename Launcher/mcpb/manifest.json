@@ -12,7 +12,7 @@
     "mcp_config": {
       "command": "node",
       "args": ["${__dirname}/bin/geometryview.mjs", "--mcp"],
-      "env": { "GEOMETRY_NATIVE_DIR": "${__dirname}/native" }
+      "env": { "GEOMETRYVIEW_NATIVE_DIR": "${__dirname}/native" }
     }
   },
   "tools": [

@@ -210,7 +210,7 @@ int compareCommand(int argc, const char** argv) {
 // The Metal renderer's offscreen frames over the same orbit. Metal reports GPU times only while
 // tracing, for its latest 2048 frames, so after 10 frames to warm up, 2048 are drawn and timed.
 int benchMetal(const char* library, const char* blob, const GeoRenderOptions& options) {
-    setenv("GEOMETRY_TRACE", "1", 1);
+    setenv("GEOMETRYVIEW_TRACE", "1", 1);
     std::string error;
     std::unique_ptr<gpu::Renderer> metal =
         gpu::Renderer::create(MTLCreateSystemDefaultDevice(), library);

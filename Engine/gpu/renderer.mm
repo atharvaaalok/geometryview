@@ -93,8 +93,8 @@ struct Renderer::State {
     std::atomic<u64> gpuFrames{0};
     std::array<std::atomic<float>, 2048> gpuRecent{}; // the latest frames' times, for percentiles
 
-    // GEOMETRY_NO_EDGES leaves feature edges out, to measure what they cost.
-    bool drawsEdges = std::getenv("GEOMETRY_NO_EDGES") == nullptr;
+    // GEOMETRYVIEW_NO_EDGES leaves feature edges out, to measure what they cost.
+    bool drawsEdges = std::getenv("GEOMETRYVIEW_NO_EDGES") == nullptr;
     bool reducedDetail = false; // a heavy scene in motion: no edges or shadow
 
     bool createTables() {

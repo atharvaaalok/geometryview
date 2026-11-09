@@ -31,9 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open(pendingURLs, in: window)
         pendingURLs = []
 
-        // GEOMETRY_SNAPSHOT_SETTINGS saves the Settings window to settings.png in the temporary
+        // GEOMETRYVIEW_SNAPSHOT_SETTINGS saves the Settings window to settings.png in the temporary
         // directory, for checking its layout.
-        if ProcessInfo.processInfo.environment["GEOMETRY_SNAPSHOT_SETTINGS"] != nil {
+        if ProcessInfo.processInfo.environment["GEOMETRYVIEW_SNAPSHOT_SETTINGS"] != nil {
             showSettings(nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
                 if let view = settings?.contentView,

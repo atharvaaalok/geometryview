@@ -653,44 +653,45 @@ final class MainWindow: NSWindow {
 
     private func startAutomation() {
         if ChromeSnapshot.isRequested {
-            // With GEOMETRY_SNAPSHOT_SELECT set, the first part is selected, to show its card.
+            // With GEOMETRYVIEW_SNAPSHOT_SELECT set, the first part is selected, to show its card.
             let environment = ProcessInfo.processInfo.environment
-            if environment["GEOMETRY_SNAPSHOT_SELECT"] != nil {
+            if environment["GEOMETRYVIEW_SNAPSHOT_SELECT"] != nil {
                 engine.selectNode(document: 0, node: 1, extend: false)
             }
-            // GEOMETRY_SNAPSHOT_ISOLATE isolates the first part, and waits for the view to frame it.
-            let isolating = environment["GEOMETRY_SNAPSHOT_ISOLATE"] != nil
+            // GEOMETRYVIEW_SNAPSHOT_ISOLATE isolates the first part, and waits for the view to
+            // frame it.
+            let isolating = environment["GEOMETRYVIEW_SNAPSHOT_ISOLATE"] != nil
             if isolating {
                 engine.selectNode(document: 0, node: 1, extend: false)
                 engine.perform(GeoActionIsolate)
             }
-            // With GEOMETRY_SNAPSHOT_HOLD set, the hide tool's hint shows, as while H is held.
-            if environment["GEOMETRY_SNAPSHOT_HOLD"] != nil {
+            // With GEOMETRYVIEW_SNAPSHOT_HOLD set, the hide tool's hint shows, as while H is held.
+            if environment["GEOMETRYVIEW_SNAPSHOT_HOLD"] != nil {
                 toolChanged(GeoToolHide)
             }
-            // GEOMETRY_SNAPSHOT_STYLE picks a style by number, and GEOMETRY_SNAPSHOT_LOOK opens
-            // the look card.
-            if let style = environment["GEOMETRY_SNAPSHOT_STYLE"].flatMap(Int.init)
+            // GEOMETRYVIEW_SNAPSHOT_STYLE picks a style by number, and GEOMETRYVIEW_SNAPSHOT_LOOK
+            // opens the look card.
+            if let style = environment["GEOMETRYVIEW_SNAPSHOT_STYLE"].flatMap(Int.init)
                 .flatMap(Look.Style.init(rawValue:))
             {
                 var next = look
                 next.choose(style)
                 apply(next)
             }
-            if environment["GEOMETRY_SNAPSHOT_LOOK"] != nil {
+            if environment["GEOMETRYVIEW_SNAPSHOT_LOOK"] != nil {
                 lookCard.isHidden = false
             }
-            // GEOMETRY_SNAPSHOT_SEE_THROUGH fades the shell, as T does.
-            if environment["GEOMETRY_SNAPSHOT_SEE_THROUGH"] != nil {
+            // GEOMETRYVIEW_SNAPSHOT_SEE_THROUGH fades the shell, as T does.
+            if environment["GEOMETRYVIEW_SNAPSHOT_SEE_THROUGH"] != nil {
                 engine.perform(GeoActionToggleSeeThrough)
             }
-            // GEOMETRY_SNAPSHOT_SECTION cuts across X, as S does, with the card open.
-            if environment["GEOMETRY_SNAPSHOT_SECTION"] != nil {
+            // GEOMETRYVIEW_SNAPSHOT_SECTION cuts across X, as S does, with the card open.
+            if environment["GEOMETRYVIEW_SNAPSHOT_SECTION"] != nil {
                 toggleSection(nil)
             }
-            // GEOMETRY_SNAPSHOT_GHOSTS ghosts the selection, drawn as shell, lines or both (1 to 3),
-            // and then clears it.
-            if let ghosts = environment["GEOMETRY_SNAPSHOT_GHOSTS"].flatMap(Int.init)
+            // GEOMETRYVIEW_SNAPSHOT_GHOSTS ghosts the selection, drawn as shell, lines or both (1
+            // to 3), and then clears it.
+            if let ghosts = environment["GEOMETRYVIEW_SNAPSHOT_GHOSTS"].flatMap(Int.init)
                 .flatMap(Look.Ghosts.init(rawValue:))
             {
                 var next = look

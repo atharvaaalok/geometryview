@@ -1,5 +1,5 @@
-// Renders a small assembly in every style and colour mode and compares each image with a golden
-// one in Tests/golden. Set GEOMETRY_UPDATE_GOLDENS=1 to write the goldens instead, after checking
+// Renders a small assembly in every style and colour mode and compares each image with a golden one
+// in Tests/golden. Set GEOMETRYVIEW_UPDATE_GOLDENS=1 to write the goldens instead, after checking
 // the new images by eye. Needs the OCCT worker, since the assembly is STEP.
 #include "engine.h"
 #include "render/style.h"
@@ -81,7 +81,7 @@ Difference compare(const std::vector<u8>& a, const std::vector<u8>& b) {
 TEST_CASE("every style and colour mode matches its golden image") {
     @autoreleasepool {
         const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
-        const bool update = std::getenv("GEOMETRY_UPDATE_GOLDENS") != nullptr;
+        const bool update = std::getenv("GEOMETRYVIEW_UPDATE_GOLDENS") != nullptr;
         const fs::path goldens = GEO_TEST_GOLDEN_DIR;
         const char* styles[] = {"illustration", "metal",     "clay",
                                 "blueprint",    "technical", "studio"};
@@ -111,7 +111,7 @@ TEST_CASE("every style and colour mode matches its golden image") {
                 const std::vector<u8> image = readPng(rendered, w, h);
                 const std::vector<u8> golden = readPng((goldens / name).string(), gw, gh);
                 REQUIRE_MESSAGE(!golden.empty(),
-                                "no golden image; run with GEOMETRY_UPDATE_GOLDENS");
+                                "no golden image; run with GEOMETRYVIEW_UPDATE_GOLDENS");
                 REQUIRE(w == gw);
                 REQUIRE(h == gh);
                 const Difference d = compare(image, golden);

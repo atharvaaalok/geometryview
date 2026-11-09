@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { linuxViewerWindow } from "../src/page.mjs";
 
 test("on Linux the viewer opens in a Chrome window of its own, with Vulkan on", () => {
-  const saved = { chrome: process.env.GEOMETRY_CHROME, state: process.env.XDG_STATE_HOME };
-  delete process.env.GEOMETRY_CHROME;
+  const saved = { chrome: process.env.GEOMETRYVIEW_CHROME, state: process.env.XDG_STATE_HOME };
+  delete process.env.GEOMETRYVIEW_CHROME;
   delete process.env.XDG_STATE_HOME;
   try {
     const url = "http://127.0.0.1:4100/?token=t";
@@ -19,7 +19,7 @@ test("on Linux the viewer opens in a Chrome window of its own, with Vulkan on", 
     // Without Chrome, the default browser opens it instead.
     assert.equal(linuxViewerWindow(url, "/home/a", () => false), null);
   } finally {
-    if (saved.chrome !== undefined) process.env.GEOMETRY_CHROME = saved.chrome;
+    if (saved.chrome !== undefined) process.env.GEOMETRYVIEW_CHROME = saved.chrome;
     if (saved.state !== undefined) process.env.XDG_STATE_HOME = saved.state;
   }
 });

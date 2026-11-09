@@ -11,7 +11,7 @@ out the mouse's own latency and the panel's response, so real input-to-photon is
 The measurement uses the oldest input waiting for each frame, which is the worst case in that frame.
 Input arrives from a scripted 240 Hz drag posted at the engine's public interface, so AppKit's own
 event delivery is also excluded. Results come from `--exercise` on a release build, with the 1M-triangle
-car, 6 s of dragging, and `GEOMETRY_LATENCY=1`.
+car, 6 s of dragging, and `GEOMETRYVIEW_LATENCY=1`.
 
 This Mac's displays both report a 60 Hz maximum, including the built-in ProMotion panel.
 

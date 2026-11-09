@@ -14,11 +14,11 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 
-/// Where gcli, the OCCT worker and the shader library are: GEOMETRY_NATIVE_DIR if set, else the
+/// Where gcli, the OCCT worker and the shader library are: GEOMETRYVIEW_NATIVE_DIR if set, else the
 /// copy bundled beside this package, else the repository's release build.
 function nativeDirectory() {
   const candidates = [
-    process.env.GEOMETRY_NATIVE_DIR,
+    process.env.GEOMETRYVIEW_NATIVE_DIR,
     join(here, "../native"),
     join(here, "../../build/release"),
   ].filter(Boolean);
@@ -28,13 +28,13 @@ function nativeDirectory() {
     }
   }
   throw new Error("The native engine was not found. Build it with `cmake --build --preset " +
-                  "release`, or set GEOMETRY_NATIVE_DIR.");
+                  "release`, or set GEOMETRYVIEW_NATIVE_DIR.");
 }
 
 /// Whether this machine has the native engine (a Mac with gcli built or bundled), unless
-/// GEOMETRY_ENGINE=page asks for the browser's.
+/// GEOMETRYVIEW_ENGINE=page asks for the browser's.
 export function nativeAvailable() {
-  if (process.env.GEOMETRY_ENGINE === "page") return false;
+  if (process.env.GEOMETRYVIEW_ENGINE === "page") return false;
   try {
     nativeDirectory();
     return process.platform === "darwin";
@@ -130,7 +130,7 @@ export async function render(blob, view) {
 /// The native GeometryView app, if it is installed or built.
 export function viewerApplication() {
   const candidates = [
-    process.env.GEOMETRY_APP,
+    process.env.GEOMETRYVIEW_APP,
     "/Applications/GeometryView.app",
     join(homedir(), "Applications/GeometryView.app"),
     join(here, "../../build/release/App/GeometryView.app"),

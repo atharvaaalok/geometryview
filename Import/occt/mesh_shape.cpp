@@ -285,12 +285,12 @@ FaceIds mapFaces(STEPControl_Reader& reader) {
     return ids;
 }
 
-// GEOMETRY_SHAPE_PROCESS chooses OCCT's shape healing, for the ShapeFix experiment in ADR 0012:
+// GEOMETRYVIEW_SHAPE_PROCESS chooses OCCT's shape healing, for the ShapeFix experiment in ADR 0012:
 // "none" turns it off, and "lean" skips the checks for intersecting edges and wires. Read once per
 // worker process.
 std::string_view shapeProcess() {
     static const std::string value = [] {
-        const char* setting = std::getenv("GEOMETRY_SHAPE_PROCESS");
+        const char* setting = std::getenv("GEOMETRYVIEW_SHAPE_PROCESS");
         return std::string(setting != nullptr ? setting : "");
     }();
     return value;

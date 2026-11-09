@@ -4,7 +4,7 @@ Measured 2026-11-07 on the M4 Max (Chrome 157, Safari 26) and the iPhone 16 Pro 
 
 ## Method
 
-**How the slices were captured.** With `GEOMETRY_DUMP_SLICES`, the native OCCT worker saves each STEP slice the importer sends it, with the request. `--replay` meshes saved slices one by one. Only the worker changes, never the importer.
+**How the slices were captured.** With `GEOMETRYVIEW_DUMP_SLICES`, the native OCCT worker saves each STEP slice the importer sends it, with the request. `--replay` meshes saved slices one by one. Only the worker changes, never the importer.
 
 **Fixtures:**
 - the 13S4P pack (102 slices);

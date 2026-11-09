@@ -22,12 +22,12 @@ const kTypes = {
   ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png",
 };
 
-/// Where the viewer's files are, as URL prefixes and folders: GEOMETRY_WEB_DIR; else, in the
+/// Where the viewer's files are, as URL prefixes and folders: GEOMETRYVIEW_WEB_DIR; else, in the
 /// repository, its sources and builds, so an edit shows at once; else the copy packed beside this
 /// package.
 export function viewerMounts() {
   const root = join(here, "../..");
-  const packed = [process.env.GEOMETRY_WEB_DIR,
+  const packed = [process.env.GEOMETRYVIEW_WEB_DIR,
                   existsSync(join(root, "Web/viewer/index.html")) ? null : join(here, "../web")];
   for (const directory of packed.filter(Boolean)) {
     if (existsSync(join(directory, "index.html"))) return [["/", directory]];

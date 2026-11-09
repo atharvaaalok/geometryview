@@ -46,7 +46,7 @@ namespace {
 using namespace geo;
 
 constexpr usize kCommandCapacity = 4096;
-// The frame whose allocations GEOMETRY_ALLOCS=stacks prints: one well past startup.
+// The frame whose allocations GEOMETRYVIEW_ALLOCS=stacks prints: one well past startup.
 constexpr u64 kStacksFrame = 300;
 
 // Seconds since this process started, for measuring launch.
@@ -422,7 +422,7 @@ struct GeoEngine final : engine::Host {
             latency.track(tick.drawable, frame->inputTime, frame->started, tick.commitDeadline,
                           tick.presentationTime);
         }
-        // GEOMETRY_ALLOCS=stacks prints where a frame well past startup allocates.
+        // GEOMETRYVIEW_ALLOCS=stacks prints where a frame well past startup allocates.
         const bool printStacks = framesRendered.load(std::memory_order_relaxed) == kStacksFrame;
         if (printStacks) {
             engine::keepAllocationStacks();

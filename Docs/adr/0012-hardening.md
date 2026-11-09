@@ -8,7 +8,7 @@ The hard 52.7 MB file is the one fixture that misses its import target: 1.6 s wa
 measured. Its workers spend 15 s of CPU in transfer, nearly all of it in ShapeFix. In OCCT 8,
 STEP's default shape processing is the single FixShape operation. Its sub-modes can be set on the
 reader, but only after a file is read, since the actor that holds them exists only then.
-`GEOMETRY_SHAPE_PROCESS` selects the variants measured:
+`GEOMETRYVIEW_SHAPE_PROCESS` selects the variants measured:
 
 | Healing | Transfer CPU | Import | Hard file's geometry | Equivalence |
 |---|---|---|---|---|

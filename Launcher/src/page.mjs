@@ -13,7 +13,7 @@ let shownFor = null; // the path the page has open, as the launcher asked
 
 /// The viewer's server, started once per launcher.
 export async function viewerServer() {
-  viewer ??= await startViewer({ port: Number(process.env.GEOMETRY_PORT ?? 0) });
+  viewer ??= await startViewer({ port: Number(process.env.GEOMETRYVIEW_PORT ?? 0) });
   return viewer;
 }
 
@@ -25,7 +25,7 @@ const linuxChromes = ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
 
 /// The arguments that open `url` in the viewer's own Chrome window on Linux, or null without Chrome.
 export function linuxViewerWindow(url, home = homedir(), exists = existsSync) {
-  const chrome = process.env.GEOMETRY_CHROME ?? linuxChromes.find((path) => exists(path));
+  const chrome = process.env.GEOMETRYVIEW_CHROME ?? linuxChromes.find((path) => exists(path));
   if (!chrome) return null;
   const state = process.env.XDG_STATE_HOME ?? join(home, ".local/state");
   return [chrome, [`--user-data-dir=${join(state, "geometryview/chrome")}`, "--enable-features=Vulkan",

@@ -2,10 +2,10 @@
 //
 // A dropped frame costs far more than the allocation itself, so a frame must not touch the heap.
 // Metal and Core Animation allocate inside their own calls (about 52 a frame on macOS 26: encoders,
-// and the drawable's wait), which no Metal program avoids, so those are counted apart.
-// This hooks the malloc logger, which exists for developer tools, and is enabled by
-// GEOMETRY_ALLOCS=1 only. GEOMETRY_ALLOCS=stacks also keeps each counted allocation's call stack,
-// so one frame's allocations can be printed and traced to their source.
+// and the drawable's wait), which no Metal program avoids, so those are counted apart. This hooks
+// the malloc logger, which exists for developer tools, and is enabled by GEOMETRYVIEW_ALLOCS=1
+// only. GEOMETRYVIEW_ALLOCS=stacks also keeps each counted allocation's call stack, so one frame's
+// allocations can be printed and traced to their source.
 #pragma once
 
 #include "base/types.h"
@@ -26,8 +26,8 @@ u64 allocationCount();
 /// display's frameworks on its behalf. These are the ones a frame must not make.
 u64 ownAllocationCount();
 
-/// With GEOMETRY_ALLOCS=stacks: from now on, keeps the call stacks of counted allocations (up to a
-/// fixed number), forgetting those kept before.
+/// With GEOMETRYVIEW_ALLOCS=stacks: from now on, keeps the call stacks of counted allocations (up
+/// to a fixed number), forgetting those kept before.
 void keepAllocationStacks();
 
 /// Writes the kept call stacks to `fd`, symbolized, without allocating.

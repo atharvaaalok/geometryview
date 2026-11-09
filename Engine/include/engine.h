@@ -2,8 +2,8 @@
 //
 // Every function here is safe to call from the main thread and never blocks: calls enqueue work for
 // the engine thread, which is the single writer of all view state.
-#ifndef GEOMETRY_ENGINE_H
-#define GEOMETRY_ENGINE_H
+#ifndef GEOMETRYVIEW_ENGINE_H
+#define GEOMETRYVIEW_ENGINE_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -208,7 +208,7 @@ GeoSelectionSummary geo_engine_selection(GeoEngine* engine);
 typedef struct GeoEngineStats {
     uint64_t frames_rendered;
     double last_frame_seconds;
-    uint64_t last_frame_allocations; // counted only when GEOMETRY_ALLOCS is set
+    uint64_t last_frame_allocations; // counted only when GEOMETRYVIEW_ALLOCS is set
     uint64_t last_frame_own_allocations; // of those, our code's, not Metal's or Core Animation's
     uint32_t hovered_id;             // 0 when nothing is under the pointer
     uint32_t selected_count;         // occurrences with anything selected
@@ -349,10 +349,10 @@ void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float 
 /// once it is complete.
 void geo_engine_write_snapshot(GeoEngine* engine, const char* path);
 
-/// Prints input-to-present latency to stderr when GEOMETRY_LATENCY is set.
+/// Prints input-to-present latency to stderr when GEOMETRYVIEW_LATENCY is set.
 void geo_engine_report_latency(GeoEngine* engine);
 
-/// Prints current and peak memory footprint to stderr when GEOMETRY_TRACE is set.
+/// Prints current and peak memory footprint to stderr when GEOMETRYVIEW_TRACE is set.
 void geo_trace_memory(const char* label);
 
 /// How to render a cache file headlessly.
@@ -382,4 +382,4 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
 }
 #endif
 
-#endif // GEOMETRY_ENGINE_H
+#endif // GEOMETRYVIEW_ENGINE_H

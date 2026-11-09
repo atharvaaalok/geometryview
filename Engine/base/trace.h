@@ -1,4 +1,4 @@
-// Stage timing for performance work. Prints only when GEOMETRY_TRACE is set, so it stays in the
+// Stage timing for performance work. Prints only when GEOMETRYVIEW_TRACE is set, so it stays in the
 // code and costs one branch otherwise.
 #pragma once
 

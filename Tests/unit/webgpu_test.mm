@@ -1,6 +1,6 @@
 // The WebGPU renderer against the Metal one: the golden scenes, rendered by both from the same
 // view, must match as the goldens must match Metal. Built only with GEO_WEBGPU, natively on Dawn.
-// Set GEOMETRY_WEBGPU_IMAGES to a folder to keep both images of each scene.
+// Set GEOMETRYVIEW_WEBGPU_IMAGES to a folder to keep both images of each scene.
 #if defined(GEO_HAS_WEBGPU)
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
@@ -289,7 +289,7 @@ TEST_CASE("the WebGPU renderer draws every style as Metal does") {
         std::unique_ptr<gpu::Renderer> metal =
             gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
         REQUIRE(metal != nullptr);
-        const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
+        const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES");
 
         const char* styles[] = {"illustration", "metal",     "clay",
                                 "blueprint",    "technical", "studio"};
@@ -353,7 +353,7 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
         std::unique_ptr<gpu::Renderer> metal =
             gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
         REQUIRE(metal != nullptr);
-        const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
+        const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES");
 
         const auto whole = [](u32 occurrence) {
             return model::Target{occurrence, model::Target::kWholeOccurrence};
@@ -560,7 +560,7 @@ TEST_CASE("the WebGPU renderer draws the overlay as Metal does") {
         std::unique_ptr<gpu::Renderer> metal =
             gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
         REQUIRE(metal != nullptr);
-        const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
+        const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES");
         for (const GeoStyle style : {GeoStyleIllustration, GeoStyleBlueprint}) {
             const std::string name =
                 style == GeoStyleIllustration ? "overlay" : "overlay-blueprint";

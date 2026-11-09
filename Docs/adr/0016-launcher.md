@@ -39,7 +39,7 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 **4. Without a native engine, the tools work through the page, which the person sees.**
 - On a Mac with `gcli` built or bundled, the tools keep S1's native path. Pictures need no browser
   there, and `open_in_viewer` opens the Geometry app.
-- Anywhere else, or with `GEOMETRY_ENGINE=page`, the launcher opens the viewer in the browser and
+- Anywhere else, or with `GEOMETRYVIEW_ENGINE=page`, the launcher opens the viewer in the browser and
   asks it to:
   - import or open the file, and describe it;
   - list its tree;
@@ -71,7 +71,7 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 - **The AI's pictures change what the person sees** (look, cuts, parts shown alone). That is
   intended, but a person in the middle of their own work may not want it. A separate,
   invisible view for the AI would need a second set of render targets; it waits for a need.
-- **The end-to-end test** (`GEOMETRY_E2E=1`) needs Chrome and a GPU, so it is not part of the
+- **The end-to-end test** (`GEOMETRYVIEW_E2E=1`) needs Chrome and a GPU, so it is not part of the
   default suite.
 - **Found along the way:** Metal allows only a few timing counter buffers across the whole system.
   With dozens of viewer tabs open, the renderer's query set could not be made, and every frame

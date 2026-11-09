@@ -8,7 +8,7 @@
 
 namespace geo::engine {
 
-LatencyProbe::LatencyProbe() : enabled_(std::getenv("GEOMETRY_LATENCY") != nullptr) {}
+LatencyProbe::LatencyProbe() : enabled_(std::getenv("GEOMETRYVIEW_LATENCY") != nullptr) {}
 
 void LatencyProbe::report() {
     std::lock_guard lock(mutex_);

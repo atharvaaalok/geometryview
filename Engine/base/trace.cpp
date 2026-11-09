@@ -46,7 +46,7 @@ bool footprint(double& now, double& peak, double& inUse) {
 } // namespace
 
 bool traceEnabled() {
-    static const bool enabled = std::getenv("GEOMETRY_TRACE") != nullptr;
+    static const bool enabled = std::getenv("GEOMETRYVIEW_TRACE") != nullptr;
     return enabled;
 }
 

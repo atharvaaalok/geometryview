@@ -59,7 +59,7 @@ use, occurrence transform, definition and chunk.
 | Wasm threads | 3.76 s (2.7×) | 0.06 | 1.92 (**2.7×**) |
 | Wasm, 1 thread | 18.9 s | 0.08 | 13.7 |
 
-Stages where the threaded build loses most, from `GEOMETRY_TRACE`:
+Stages where the threaded build loses most, from `GEOMETRYVIEW_TRACE`:
 
 | Stage | Native | Wasm threads | Ratio |
 |---|---|---|---|

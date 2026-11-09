@@ -102,7 +102,7 @@ in the browser and works through it, so the person sees what the AI looks at.
   `args = ["-y", "--package=<path>/geometry-viewer-0.1.0.tgz", "geometry-viewer", "--mcp"]`.
 - **Claude Code:** `claude mcp add geometry -- node <repo>/Launcher/bin/geometry-viewer.mjs --mcp`.
 
-`GEOMETRY_ENGINE=page` makes a Mac use the browser's viewer too, and `--port N` fixes the port.
+`GEOMETRYVIEW_ENGINE=page` makes a Mac use the browser's viewer too, and `--port N` fixes the port.
 `cd Launcher && npm test` checks the server and drives the tools as an AI app does.
 
 ## Development
@@ -125,7 +125,7 @@ A section can be added as `x0.5` or `x0.6,y-0.4` (a minus removes the low side),
 leaves out the view cube and scale bar.
 
 `Tests/golden` holds an image of every style and colour mode. After a deliberate change to how
-things look, `GEOMETRY_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites them,
+things look, `GEOMETRYVIEW_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites them,
 to be checked by eye before committing.
 
 `Tools/step_equivalence.py` compares STEP imports with OCCT reading each file whole, on face count,
@@ -141,8 +141,8 @@ The `asan` and `tsan` presets run the same tests under sanitizers.
 than `Tools/perf_baseline.json`; `--update` records a new baseline. `Tools/fuzz.sh 600` fuzzes the
 STEP tokenizer, the STL reader and the cache reader for ten minutes each.
 
-Setting `GEOMETRY_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRY_LATENCY=1` measures
-input-to-present latency, and `GEOMETRY_ALLOCS=1` counts per-frame heap allocations. Launching with
+Setting `GEOMETRYVIEW_TRACE=1` prints stage timings, memory use and GPU time per frame, `GEOMETRYVIEW_LATENCY=1` measures
+input-to-present latency, and `GEOMETRYVIEW_ALLOCS=1` counts per-frame heap allocations. Launching with
 `--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing only
 the interface draws no 3D frame. `--chrome-check` clicks every segment and card label with real
 events and checks that none of them reaches the 3D view. `--snapshot` writes the window, engine output and interface
