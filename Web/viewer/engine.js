@@ -142,6 +142,15 @@ export class Engine {
   setLook({ style, colorMode, ghostStyle, castShadow, grain, wobble }) {
     this.#module._geo_web_set_look(style, colorMode, ghostStyle, castShadow ? 1 : 0, grain, wobble);
   }
+  // The look every app starts with, as setLook takes it: the engine's, so all agree.
+  defaultLook() {
+    const m = this.#module;
+    const out = m._malloc(6 * 8);
+    m._geo_web_default_look(out);
+    const v = new Float64Array(m.HEAPU8.buffer, out, 6).slice();
+    m._free(out);
+    return { style: v[0], colorMode: v[1], ghostStyle: v[2], castShadow: v[3] !== 0, grain: v[4], wobble: v[5] };
+  }
   // `cuts` is three { enabled, position, flip }.
   setSection(cuts) {
     let bits = 0;

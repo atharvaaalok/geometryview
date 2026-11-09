@@ -164,7 +164,7 @@ export const tools = [
         azimuth: { type: "number", description: "Degrees around Z, overriding view." },
         elevation: { type: "number", description: "Degrees above the XY plane, overriding view." },
         style: { type: "string", enum: STYLES, default: "illustration" },
-        colour: { type: "string", enum: COLOURS, default: "material" },
+        colour: { type: "string", enum: COLOURS, default: "parts" },
         isolate: { type: "array", items: { type: "string" },
                    description: "Show only parts whose names contain one of these." },
         section: {
@@ -197,7 +197,7 @@ export const tools = [
         elevation: args.elevation ?? elevation,
         perspective: args.perspective ?? false,
         style: Math.max(0, STYLES.indexOf(args.style ?? "illustration")),
-        colour: Math.max(0, COLOURS.indexOf(args.colour ?? "material")),
+        colour: Math.max(0, COLOURS.indexOf(args.colour ?? "parts")),
         section: (args.section ?? [])
           .map(({ axis, at, flip }) => `${axis}${flip ? "-" : ""}${at}`)
           .join(","),

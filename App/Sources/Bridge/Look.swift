@@ -65,12 +65,23 @@ struct Look: Equatable {
     }
 
     var style = Style.illustration
-    var colour = Colour.material
+    var colour = Colour.parts
     var ghosts = Ghosts.shell
     var shadow = true
     var grain = true
     /// Hand-drawn wobble, in points.
     var wobble: Float = 0
+
+    /// The engine's default look, which every app starts with until the person chooses.
+    init() {
+        let look = geo_default_look()
+        style = Style(rawValue: Int(look.style.rawValue)) ?? .illustration
+        colour = Colour(rawValue: Int(look.color_mode.rawValue)) ?? .parts
+        ghosts = Ghosts(rawValue: Int(look.ghost_style.rawValue)) ?? .shell
+        shadow = look.cast_shadow
+        grain = look.grain > 0
+        wobble = look.wobble
+    }
 
     static let wobbleSteps: [Float] = [0, 1, 3, 5]
 
@@ -103,15 +114,17 @@ struct Look: Equatable {
     }
 
     static func saved(in defaults: UserDefaults = .standard) -> Look {
+        // A key never saved keeps the default: reading it as 0 would choose Material.
         var look = Look()
-        if let style = Style(rawValue: defaults.integer(forKey: Key.style)) {
+        let saved = { (key: String) in defaults.object(forKey: key) == nil ? nil : defaults.integer(forKey: key) }
+        if let style = saved(Key.style).flatMap(Style.init(rawValue:)) {
             look.style = style
             look.shadow = style.castsShadow
         }
-        if let colour = Colour(rawValue: defaults.integer(forKey: Key.colour)) {
+        if let colour = saved(Key.colour).flatMap(Colour.init(rawValue:)) {
             look.colour = colour
         }
-        if let ghosts = Ghosts(rawValue: defaults.integer(forKey: Key.ghosts)) {
+        if let ghosts = saved(Key.ghosts).flatMap(Ghosts.init(rawValue:)) {
             look.ghosts = ghosts
         }
         if defaults.object(forKey: Key.shadow) != nil {
@@ -120,7 +133,9 @@ struct Look: Equatable {
         if defaults.object(forKey: Key.grain) != nil {
             look.grain = defaults.bool(forKey: Key.grain)
         }
-        look.wobble = defaults.float(forKey: Key.wobble)
+        if defaults.object(forKey: Key.wobble) != nil {
+            look.wobble = defaults.float(forKey: Key.wobble)
+        }
         return look
     }
 

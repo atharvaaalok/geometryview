@@ -73,7 +73,7 @@ std::vector<u32> LookState::takeSwatches() {
 
 // The public defaults, here so every platform shares them.
 GeoLook geo_default_look(void) {
-    return {GeoStyleIllustration, GeoColorMaterial, GeoGhostShell, true, 1.0f, 0.0f};
+    return {GeoStyleIllustration, GeoColorParts, GeoGhostShell, true, 1.0f, 0.0f};
 }
 
 namespace {

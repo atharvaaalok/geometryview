@@ -398,6 +398,18 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_tool(u32 tool) {
     web.core->setTool(GeoTool(tool));
 }
 
+/// The look every app starts with: style, colour mode, ghost style, shadow (0 or 1), grain and
+/// wobble, as six doubles.
+EMSCRIPTEN_KEEPALIVE void geo_web_default_look(double* out) {
+    const GeoLook look = geo_default_look();
+    out[0] = double(look.style);
+    out[1] = double(look.color_mode);
+    out[2] = double(look.ghost_style);
+    out[3] = look.cast_shadow ? 1.0 : 0.0;
+    out[4] = double(look.grain);
+    out[5] = double(look.wobble);
+}
+
 EMSCRIPTEN_KEEPALIVE void geo_web_set_look(u32 style, u32 colorMode, u32 ghostStyle, int castShadow,
                                            float grain, float wobble) {
     web.core->setLook({GeoStyle(style), GeoColorMode(colorMode), GeoGhostStyle(ghostStyle),

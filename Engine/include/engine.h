@@ -111,7 +111,8 @@ typedef struct GeoLook {
     float wobble; // hand-drawn wobble in points, 0 to 7, in styles that have it
 } GeoLook;
 
-/// The look a new engine starts with: Illustration, by material, shell ghosts, a shadow.
+/// The look a new engine starts with, and every app's until the person chooses another:
+/// Illustration, a colour per part, shell ghosts, a shadow.
 GeoLook geo_default_look(void);
 
 /// Whether a style casts a shadow unless asked not to. Blueprint and Technical do not.
