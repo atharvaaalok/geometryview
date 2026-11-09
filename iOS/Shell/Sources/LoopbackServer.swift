@@ -93,7 +93,7 @@ final class LoopbackServer: @unchecked Sendable {
         }
         let text = (["HTTP/1.1 \(status)"] + headers.map { "\($0.key): \($0.value)" })
             .joined(separator: "\r\n") + "\r\n\r\n"
-        connection.send(content: Data(text.utf8), completion: .contentProcessed { [self] _ in
+        connection.send(content: Data(text.utf8), completion: .contentProcessed { [self, remaining] _ in
             pump(connection, handle, remaining: remaining, chunked: chunked)
         })
     }
