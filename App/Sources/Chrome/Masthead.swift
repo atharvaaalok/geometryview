@@ -58,7 +58,7 @@ final class Masthead: NSView {
         WindowDragging.handle(event, in: window)
     }
 
-    /// On Blueprint's dark sheet the masthead, drawn straight on it, turns light.
+    /// On a dark sheet, Blueprint's or Studio's, the masthead, drawn straight on it, turns light.
     func setOnDarkSheet(_ dark: Bool) {
         title.textColor = dark ? Palette.inkOnDark : Palette.ink
         subtitle.textColor = dark ? Palette.mutedOnDark : Palette.muted

@@ -4,7 +4,7 @@ import GeometryEngine
 /// How the model is drawn, as the user chose it. Remembered between launches.
 struct Look: Equatable {
     enum Style: Int, CaseIterable {
-        case illustration, metal, clay, blueprint, technical
+        case illustration, metal, clay, blueprint, technical, studio
 
         var title: String {
             switch self {
@@ -13,6 +13,7 @@ struct Look: Equatable {
             case .clay: "Clay"
             case .blueprint: "Blueprint"
             case .technical: "Technical"
+            case .studio: "Studio"
             }
         }
 
@@ -22,6 +23,8 @@ struct Look: Equatable {
         var castsShadow: Bool { geo_style_casts_shadow(GeoStyle(rawValue: UInt32(rawValue))) }
         var hasGrain: Bool { self == .illustration || self == .blueprint }
         var canWobble: Bool { self == .illustration }
+        /// Blueprint and Studio draw on a dark sheet, where the chrome over it turns light.
+        var onDark: Bool { geo_style_on_dark(GeoStyle(rawValue: UInt32(rawValue))) }
     }
 
     enum Colour: Int, CaseIterable {
