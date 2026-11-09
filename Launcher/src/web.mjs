@@ -19,8 +19,27 @@ const here = dirname(fileURLToPath(import.meta.url));
 const kTypes = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript",
   ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json",
-  ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png",
+  ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 };
+
+/// The port the viewer prefers: always the same, so the page's origin, and with it the library
+/// and look the browser keeps for it, are the same from one run to the next.
+export const kDefaultPort = 47700;
+
+/// What the identity route answers, so a second launcher can tell this one holds the port.
+const kIdentity = JSON.stringify({ name: "geometryview" });
+
+/// Whether a GeometryView viewer already answers on `port`.
+export async function viewerAt(port) {
+  try {
+    const answer = await fetch(`http://127.0.0.1:${port}/geometryview.json`,
+                               { signal: AbortSignal.timeout(1000) });
+    return answer.ok && (await answer.json()).name === "geometryview";
+  } catch {
+    return false;
+  }
+}
 
 /// Where the viewer's files are, as URL prefixes and folders: GEOMETRYVIEW_WEB_DIR; else, in the
 /// repository, its sources and builds, so an edit shows at once; else the copy packed beside this
@@ -74,6 +93,10 @@ export async function startViewer({ port = 0 } = {}) {
     const url = new URL(request.url, address);
     if (request.method !== "GET" && request.method !== "HEAD") {
       response.writeHead(405, headers).end();
+      return;
+    }
+    if (url.pathname === "/geometryview.json") {
+      response.writeHead(200, { ...headers, "Content-Type": "application/json" }).end(kIdentity);
       return;
     }
     // A model file the AI app asked to show.
