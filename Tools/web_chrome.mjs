@@ -32,10 +32,13 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const kElements = {
   "masthead.title": ".masthead .title",
   "masthead.subtitle": ".masthead .subtitle",
-  "structure.card": ".card.structure:not([hidden])",
-  "structure.switcher": ".card.structure:not([hidden]) .segmented",
-  "structure.segment": [".card.structure:not([hidden]) .segmented button"],
-  "structure.search": ".card.structure:not([hidden]) .searchbox",
+  "structure.card": ".card.structure:not(.library):not([hidden])",
+  "structure.switcher": ".card.structure:not(.library):not([hidden]) .segmented",
+  "structure.segment": [".card.structure:not(.library):not([hidden]) .segmented button"],
+  "structure.search": ".card.structure:not(.library):not([hidden]) .searchbox",
+  "library.card": ".card.library:not([hidden])",
+  "library.switcher": ".card.library:not([hidden]) .segmented",
+  "library.button": [".card.library:not([hidden]) .header .pill"],
   "tree.row": [".tree .row"],
   "tree.chevron": [".tree .row button.chevron"],
   "tree.glyph": [".tree .row .glyph"],
@@ -80,8 +83,14 @@ try {
   await new Promise((done, fail) => { socket.onopen = done; socket.onerror = fail; });
   let next = 1;
   const pending = new Map();
+  const pageErrors = [];
   socket.onmessage = ({ data }) => {
     const message = JSON.parse(data);
+    if (message.method === "Runtime.exceptionThrown") {
+      pageErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+    } else if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
+      pageErrors.push(message.params.args.map((a) => a.value ?? a.description).join(" "));
+    }
     pending.get(message.id)?.(message);
     pending.delete(message.id);
   };
@@ -93,6 +102,7 @@ try {
   const evaluate = async (expression) =>
     (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result?.result?.value;
 
+  await send("Runtime.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: +width, height: +height,
                                                      deviceScaleFactor: +scale, mobile: false });
   await send("Page.navigate", { url });
@@ -106,6 +116,7 @@ try {
   }
   await sleep(1500); // the view settles, and fonts are in
   const report = await evaluate(`(${measure})(${JSON.stringify(kElements)})`);
+  if (pageErrors.length) report.errors = pageErrors;
   writeFileSync(`${out}.json`, JSON.stringify(report, null, 1));
   const shot = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(`${out}.png`, Buffer.from(shot.result.data, "base64"));
