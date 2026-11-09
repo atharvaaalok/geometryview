@@ -1,10 +1,10 @@
 {
-  "name": "geometry-viewer",
+  "name": "geometryview",
   "version": "0.1.0",
   "description": "A STEP and STL viewer for this machine, in the browser, that AI apps can open, inspect and picture models with.",
   "type": "module",
   "bin": {
-    "geometry-viewer": "bin/geometry-viewer.mjs"
+    "geometryview": "bin/geometryview.mjs"
   },
   "files": ["bin", "src", "web"],
   "engines": {

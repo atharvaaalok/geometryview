@@ -23,7 +23,7 @@ function call(method, params) {
 }
 
 before(() => {
-  server = spawn(process.execPath, [fileURLToPath(new URL("../bin/geometry-viewer.mjs", import.meta.url)),
+  server = spawn(process.execPath, [fileURLToPath(new URL("../bin/geometryview.mjs", import.meta.url)),
                                     "--mcp"], { stdio: ["pipe", "pipe", "inherit"] });
   let buffered = "";
   server.stdout.on("data", (chunk) => {

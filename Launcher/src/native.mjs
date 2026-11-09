@@ -54,7 +54,7 @@ function binaries() {
   };
 }
 
-const cacheDirectory = join(homedir(), "Library/Caches/geometry-viewer");
+const cacheDirectory = join(homedir(), "Library/Caches/geometryview");
 
 /// Imports `path` unless an import of the same file, unchanged, is cached. Returns the cache file.
 export async function importModel(path) {

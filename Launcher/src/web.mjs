@@ -60,7 +60,7 @@ export async function startViewer({ port = 0 } = {}) {
   // into GPU buffers arrived in pieces of up to its whole size, late. A HEAD answer has no body to
   // hold back.
   const sized = (request, size) =>
-    request.method === "HEAD" ? { "Content-Length": size } : { "Geometry-Size": size };
+    request.method === "HEAD" ? { "Content-Length": size } : { "GeometryView-Size": size };
   const ours = (request) => {
     const host = request.headers.host ?? "";
     return host === `127.0.0.1:${server.address().port}` || host === `localhost:${server.address().port}`;

@@ -6,7 +6,7 @@ import { importModel, nativeAvailable, openInViewer, readStats, readTree, render
 import { openInPage, pageRender, pageTree, viewerServer } from "./page.mjs";
 
 export const instructions =
-  "Geometry views 3D CAD models (STEP .step/.stp and STL .stl files) on this computer. Use it " +
+  "GeometryView views 3D CAD models (STEP .step/.stp and STL .stl files) on this computer. Use it " +
   "whenever the user wants to see, inspect or picture a CAD model, part or assembly, rather " +
   "than opening a web viewer. Call open_model with the file's absolute path first. " +
   "get_structure lists the assemblies and parts; render_view returns a picture you can look " +
@@ -98,7 +98,7 @@ export const tools = [
     name: "open_model",
     description: "Opens a 3D CAD model, a STEP (.step, .stp) or STL (.stl) file on this " +
                  "computer, and summarises it: size, counts and top-level assemblies and parts. " +
-                 "Call this before the other Geometry tools.",
+                 "Call this before the other GeometryView tools.",
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
       const started = performance.now();
@@ -216,14 +216,14 @@ export const tools = [
   },
   {
     name: "open_in_viewer",
-    description: "Shows a STEP or STL model to the user, in the Geometry app on a Mac that has " +
+    description: "Shows a STEP or STL model to the user, in the GeometryView app on a Mac that has " +
                  "it, or else in the viewer in their browser, where they can turn it, select " +
                  "parts and cut sections.",
     inputSchema: { type: "object", properties: { path }, required: ["path"] },
     async call({ path: file }) {
       if (nativeAvailable() && viewerApplication()) {
         await openInViewer(file);
-        return [{ type: "text", text: `Opened ${basename(file)} in Geometry.` }];
+        return [{ type: "text", text: `Opened ${basename(file)} in GeometryView.` }];
       }
       await openInPage(file);
       const { address } = await viewerServer();

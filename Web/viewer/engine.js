@@ -241,7 +241,7 @@ export class Engine {
         body = response.body;
         // The launcher and the iPhone shell send files chunked, which WebKit streams, with their
         // size apart.
-        const length = response.headers.get("content-length") ?? response.headers.get("geometry-size");
+        const length = response.headers.get("content-length") ?? response.headers.get("geometryview-size");
         size = Number(length ?? 0);
       } else if (source instanceof Blob) {
         body = source.stream();
@@ -379,7 +379,7 @@ export class Engine {
   // The view cube's labels and the scale bar's glyphs, drawn as the Mac draws them with Core
   // Text: IBM Plex Mono SemiBold, white on black, each centred on its cap height in its cell.
   async #drawAtlas() {
-    const family = "Geometry Plex Mono";
+    const family = "GeometryView Plex Mono";
     try {
       const face = new FontFace(family, `url(${new URL("./fonts/IBMPlexMono-SemiBold.ttf", import.meta.url)})`,
                                 { weight: "600" });

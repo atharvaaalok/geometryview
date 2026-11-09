@@ -65,7 +65,7 @@ function webgpuAdvice() {
   }
   return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
-window.geometry = engine; // for the console and the shell's checks
+window.geometryView = engine; // for the console and the shell's checks
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
 const startupMs = Math.round(performance.now());
 
@@ -570,7 +570,7 @@ if (params.has("import")) {
 }
 
 // In the iOS shell: documents the person opens from Files or the share sheet arrive here.
-window.geometryShell = {
+window.geometryViewShell = {
   async open(url, name, lastModified) {
     if (/\.geoblob$/i.test(name)) {
       openCache(url, name, false);

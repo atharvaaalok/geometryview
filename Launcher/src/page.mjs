@@ -28,7 +28,7 @@ export function linuxViewerWindow(url, home = homedir(), exists = existsSync) {
   const chrome = process.env.GEOMETRY_CHROME ?? linuxChromes.find((path) => exists(path));
   if (!chrome) return null;
   const state = process.env.XDG_STATE_HOME ?? join(home, ".local/state");
-  return [chrome, [`--user-data-dir=${join(state, "geometry-viewer/chrome")}`, "--enable-features=Vulkan",
+  return [chrome, [`--user-data-dir=${join(state, "geometryview/chrome")}`, "--enable-features=Vulkan",
                    "--no-first-run", "--no-default-browser-check", `--app=${url}`]];
 }
 
