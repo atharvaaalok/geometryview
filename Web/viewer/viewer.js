@@ -1096,5 +1096,8 @@ async function runTest() {
     loopingAfter: after.looping, loopCauseAfter: after.loopCause, afterCalls,
     bufferMB: after.bufferMB, targetMB: after.targetMB, heapMB: after.heapMB,
     triangles: after.triangles, read: engine.lastRead,
+    // The toolbar's tools that show, by name: what folds into More on this screen.
+    tools: [...toolbar.element.querySelectorAll("[data-tool]")].filter((e) => e.getClientRects().length > 0)
+      .map((e) => e.dataset.tool),
   });
 }
