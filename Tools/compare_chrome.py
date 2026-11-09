@@ -44,6 +44,11 @@ def main():
             print(f"{name:20s} only on the {'Mac' if name in mac else 'web'}")
             worst = max(worst, 99)
             continue
+        if name == "toolbar.tools":
+            same = mac[name] == web[name]
+            print(f"{name:20s} {'ok' if same else 'mac ' + ' '.join(mac[name]) + ' | web ' + ' '.join(web[name])}")
+            worst = max(worst, 0 if same else 99)
+            continue
         a, b = boxes(mac[name]), boxes(web[name])
         if len(a) != len(b):
             print(f"{name:20s} {len(a)} on the Mac, {len(b)} on the web; comparing the first {min(len(a), len(b))}")

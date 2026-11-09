@@ -24,6 +24,9 @@ enum ChromeLayout {
             var boxes: [String: [[String: Double]]] = [:]
             collect(root, root: root, into: &boxes)
             var report: [String: Any] = [:]
+            if let toolbar = toolbar(in: root) {
+                report["toolbar.tools"] = toolbar.shownTools
+            }
             for (name, list) in boxes {
                 // In reading order: a row's items, such as the toolbar's, may differ in top by a few points.
                 let sorted = list.sorted { (($0["y"]! / 10).rounded(), $0["x"]!) < (($1["y"]! / 10).rounded(), $1["x"]!) }
@@ -66,6 +69,13 @@ enum ChromeLayout {
         for subview in view.subviews {
             collect(subview, root: root, into: &boxes)
         }
+    }
+
+    private static func toolbar(in view: NSView) -> Toolbar? {
+        if let toolbar = view as? Toolbar {
+            return toolbar
+        }
+        return view.subviews.lazy.compactMap { toolbar(in: $0) }.first
     }
 
     private static func reportedName(_ view: NSView) -> String? {

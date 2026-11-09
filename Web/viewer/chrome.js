@@ -3,7 +3,8 @@
 // the drop zone and the shortcuts sheet.
 
 import { Actions, Tools } from "./engine.js";
-import { icons } from "./icons.js";
+import { iconNode, icons } from "./icons.js";
+import { foldPlan, ruleShows } from "./toolbar-fold.js";
 import { el, formatNumber, keyCap, pill, segmented, slider } from "./ui.js";
 
 // ---- The look ---------------------------------------------------------------------------------
@@ -226,6 +227,11 @@ export class SelectionCard {
 export class Toolbar {
   #needSelection = [];
   #needModel = [];
+  #tools = [];   // { key, element, group }, in order
+  #rules = [];   // the rule after each group but the last
+  #folded = new Set();
+  #handlers;
+  #more;
 
   constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect, canConnect,
                 onParts }) {
@@ -265,12 +271,101 @@ export class Toolbar {
       ["Isometric", Actions.ViewIso],
     ].map(([title, a]) => el("button", { type: "button", role: "menuitem", text: title,
                                           onclick: () => { this.viewsMenu.hidden = true; onAction(a); } })));
-    const rule = () => el("span.rule");
-    this.element = el("nav.card.toolbar", { "aria-label": "Tools" }, [
-      parts, open, connect, rule(), this.pick.element, rule(), hide, ghost, isolate, showAll, rule(), undo, redo, rule(),
-      seeThrough, cut, look, this.projection.element, views, fit, shortcuts,
-    ]);
+    this.#handlers = { onAction, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect };
+    this.#more = pill({ icon: icons.more, help: "More tools", onPress: () => this.#toggleMore() });
+    this.#more.classList.add("folded");
+    this.#more.dataset.tool = "more";
+    this.moreMenu = el("div.menu.more", { hidden: true, role: "menu" });
+    const groups = [
+      [["parts", parts], ["open", open], ["connect", connect]],
+      [["pick", this.pick.element]],
+      [["hide", hide], ["ghost", ghost], ["isolate", isolate], ["showAll", showAll]],
+      [["undo", undo], ["redo", redo]],
+      [["seeThrough", seeThrough], ["section", cut], ["look", look], ["projection", this.projection.element],
+       ["views", views], ["fit", fit], ["shortcuts", shortcuts]],
+    ];
+    const children = [];
+    groups.forEach((tools, group) => {
+      if (group > 0) {
+        const rule = el("span.rule");
+        this.#rules.push(rule);
+        children.push(rule);
+      }
+      for (const [key, element] of tools) {
+        element.dataset.tool = key;
+        this.#tools.push({ key, element, group });
+        children.push(element);
+      }
+    });
+    children.push(this.#more);
+    this.element = el("nav.card.toolbar", { "aria-label": "Tools" }, children);
     this.update({ hasSelection: false, hasModel: false });
+  }
+
+  // Folds the least used tools into More until the toolbar fits `available` pixels, by the rule in
+  // toolbar-fold.js. Measures each tool as shown, so it runs only when the space changes.
+  fit(available) {
+    for (const tool of this.#tools) tool.element.classList.remove("folded");
+    const items = this.#tools.map(({ key, element, group }) => ({ key, group, width: element.offsetWidth }));
+    this.#folded = foldPlan(items, available);
+    for (const tool of this.#tools) tool.element.classList.toggle("folded", this.#folded.has(tool.key));
+    this.#rules.forEach((rule, group) => rule.classList.toggle("folded", !ruleShows(items, this.#folded, group)));
+    this.#more.classList.toggle("folded", this.#folded.size === 0);
+    if (this.#folded.size === 0) this.moreMenu.hidden = true;
+  }
+
+  // The folded tools, as rows in toolbar order: the views under a heading of their own.
+  #toggleMore() {
+    const menu = this.moreMenu;
+    if (!menu.hidden) {
+      menu.hidden = true;
+      return;
+    }
+    const h = this.#handlers;
+    const tool = (key) => this.#tools.find((t) => t.key === key).element;
+    const row = (icon, title, press, { disabled = false, checked = false } = {}) => {
+      const button = el("button", { type: "button", role: "menuitem", disabled },
+                        [el("span.icon", {}, icon ? [iconNode(icon, 15)] : []), el("span", { text: title }),
+                         el("span.check", {}, checked ? [iconNode("check", 13)] : [])]);
+      button.addEventListener("click", () => { menu.hidden = true; press(); });
+      return button;
+    };
+    const action = (key, icon, title, a) => row(icon, title, () => h.onAction(a), { disabled: tool(key).disabled });
+    const rows = {
+      open: () => [row("plus", "Open files", h.onOpen)],
+      connect: () => (tool("connect").hidden ? [] : [row("folderPlus", "Connect a folder", h.onConnect)]),
+      hide: () => [action("hide", "eyeSlash", "Hide the selection", Actions.HideSelection)],
+      ghost: () => [action("ghost", "ghost", "Ghost the selection", Actions.GhostSelection)],
+      isolate: () => [action("isolate", "scope", "Isolate", Actions.Isolate)],
+      showAll: () => [action("showAll", "eye", "Show everything", Actions.ShowAll)],
+      undo: () => [action("undo", "undo", "Undo", Actions.Undo)],
+      redo: () => [action("redo", "redo", "Redo", Actions.Redo)],
+      seeThrough: () => [action("seeThrough", "seeThrough", "See through", Actions.ToggleSeeThrough)],
+      section: () => [row("scissors", "Section", h.onSection)],
+      look: () => [row("palette", "Look", h.onLook)],
+      projection: () => ["Orthographic", "Perspective"].map((title, i) => row(null, title, () => {
+        this.projection.selected = i;
+        h.onProjection(i === 1);
+      }, { checked: this.projection.selected === i })),
+      views: () => [el("div.heading", { text: "Views" }),
+                    ...[["Front", Actions.ViewFront], ["Back", Actions.ViewBack], ["Left", Actions.ViewLeft],
+                        ["Right", Actions.ViewRight], ["Top", Actions.ViewTop], ["Bottom", Actions.ViewBottom],
+                        ["Isometric", Actions.ViewIso]]
+                      .map(([title, a]) => row(null, title, () => h.onAction(a), { disabled: tool("views").disabled }))],
+      fit: () => [action("fit", "fit", "Fit to view", Actions.Fit)],
+      shortcuts: () => [row(null, "Shortcuts", h.onShortcuts)],
+    };
+    const items = this.#tools.filter((t) => this.#folded.has(t.key)).flatMap((t) => rows[t.key]?.() ?? []);
+    menu.replaceChildren(...items);
+    menu.hidden = false;
+    this.#place(menu, this.#more);
+  }
+
+  // A menu above its button, kept 8 pixels inside the window.
+  #place(menu, button) {
+    const rect = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${rect.top - menu.offsetHeight - 10}px`;
   }
 
   // The standard views, in a menu above their button, outside the toolbar so nothing clips it.
@@ -278,9 +373,7 @@ export class Toolbar {
     const menu = this.viewsMenu;
     menu.hidden = !menu.hidden;
     if (menu.hidden) return;
-    const rect = button.getBoundingClientRect();
-    menu.style.left = `${Math.min(rect.left, innerWidth - menu.offsetWidth - 8)}px`;
-    menu.style.top = `${rect.top - menu.offsetHeight - 10}px`;
+    this.#place(menu, button);
   }
 
   update({ hasSelection, hasModel }) {

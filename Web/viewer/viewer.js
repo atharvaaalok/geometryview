@@ -130,7 +130,8 @@ picker.addEventListener("change", () => {
   picker.value = "";
 });
 document.body.append(masthead.element, structure.element, library.element, selection.element,
-                     lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, holdHint.element,
+                     lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, toolbar.moreMenu,
+                     holdHint.element,
                      hoverChip.element, dropZone.element, shortcuts.element, picker);
 
 new ResizeObserver(() => engine.resize()).observe(canvas);
@@ -158,7 +159,14 @@ addEventListener("keydown", (e) => {
 canvas.addEventListener("pointerdown", () => {
   closeCards();
   toolbar.viewsMenu.hidden = true;
+  toolbar.moreMenu.hidden = true;
 });
+// The toolbar folds what doesn't fit into More: worked out when the window's width changes, and
+// once the fonts its labels are measured in are in. Its room is what viewer.css gives it.
+const fitToolbar = () => toolbar.fit(phone || innerWidth <= 900 ? innerWidth - 16 : innerWidth - 336);
+addEventListener("resize", fitToolbar);
+document.fonts.ready.then(fitToolbar);
+fitToolbar();
 chromeReady = true;
 applyLook(look, { remember: false });
 showEmpty();
@@ -451,6 +459,7 @@ async function rememberOpened(name) {
     // Not remembered: the file is open all the same.
   }
   library.setOpen(openKeys());
+  await library.refresh(); // shows it in Recent at once, as the Mac does
 }
 
 async function forgetRecent(key) {
