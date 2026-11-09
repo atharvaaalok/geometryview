@@ -788,9 +788,10 @@ async function runRefineTest() {
     await new Promise(requestAnimationFrame);
   }
   // Refinement starts once the view has been still a moment, and may run several jobs, finest
-  // first; a job's segments can all come at its end. Done when none runs and the count is steady.
+  // first; a job's segments can all come at its end, and count once a frame has drawn them. Done
+  // after 3 s with no job running and the count steady.
   const zoomed = performance.now();
-  let triangles = before, changed = zoomed;
+  let triangles = before, changed = zoomed, quietFrom = zoomed + 3000;
   const patience = Number(params.get("wait") ?? 120000);
   while (performance.now() - zoomed < patience) {
     await sleep(100);
@@ -799,7 +800,8 @@ async function runRefineTest() {
       triangles = now;
       changed = performance.now();
     }
-    if (!refinement && performance.now() - Math.max(changed, zoomed + 3000) >= 3000) break;
+    if (refinement) quietFrom = performance.now();
+    if (performance.now() - Math.max(changed, quietFrom) >= 3000) break;
   }
   await post({ before, after: triangles, refinedMs: triangles === before ? null : Math.round(changed - zoomed),
                workers: importWorkers, refinements });
