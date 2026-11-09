@@ -106,7 +106,7 @@ bool prepareOffscreen(render::Backend& backend,
     }
     render::applySection(section, bounds, out.view.uniforms);
     render::OverlayLayout layout;
-    if (options.look.style == GeoStyleBlueprint) {
+    if (geo_style_on_dark(options.look.style)) {
         layout.ink = render::kOverlayInkOnDark;
     }
     out.overlay = render::makeOverlay(camera, viewport, out.view.uniforms.viewRotation, 2.0f,

@@ -126,3 +126,23 @@ left to M8 with the other performance gates.
   instead sorts every layer by depth.
 - **Ghost outlines while the ghost tool is held**: ghosts then write pick ids, but outlines read
   tags, so they do not change.
+
+## Addendum: Studio, and lines a style can leave out (2026-11-08)
+
+A sixth style, **Studio**, draws polished metal under studio lights on a dark sweep, after a
+product shot the user shared. It is the physical studio with other values, plus three switches the
+renderers lacked (`Docs/measurements/p8/p8-studio.md`):
+- **Lines a style can leave out, and pay nothing for.** A crease width of 0 used to draw every
+  crease as a faint 1 px line, since a segment's quad is half its width plus a pixel. Now the
+  inked bit needs a width, the crease pass runs only while something is selected or hovered, and
+  then the object stage (Metal) or the edge cull (WebGPU) keeps only those occurrences. The
+  composite's outline search and fold are a pipeline variant, left out when a style has
+  neither; at zero width the search adds nothing, so the variant is exact.
+- **The fold, ghost lines and a metal's diffuse share are style values**, where they were
+  constants (0.85, the crease width, 0.4). The five styles carry those constants, and their
+  goldens are unchanged to the pixel.
+- **A dark sheet is a style's property** (`geo_style_on_dark`), which the overlay, the Mac
+  masthead and the web chrome read, rather than each checking for Blueprint.
+
+Studio's frame costs a third to three fifths of Metal's: 2.72 against 4.36 ms on the rack of 100k
+parts and 2.92 against 6.75–7.61 ms on the 10M-triangle STL, on the Mac at 2880×1800.

@@ -83,6 +83,7 @@ typedef enum GeoStyle {
     GeoStyleClay = 2,         // one matte material, soft light
     GeoStyleBlueprint = 3,    // white lines on a blue sheet
     GeoStyleTechnical = 4,    // black linework on white
+    GeoStyleStudio = 5,       // polished metal under studio lights, on a dark backdrop
 } GeoStyle;
 
 /// What decides each body's colour.
@@ -115,6 +116,9 @@ GeoLook geo_default_look(void);
 
 /// Whether a style casts a shadow unless asked not to. Blueprint and Technical do not.
 bool geo_style_casts_shadow(GeoStyle style);
+
+/// Whether a style draws on a dark sheet, where the interface over it reads in light ink.
+bool geo_style_on_dark(GeoStyle style);
 
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {

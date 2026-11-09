@@ -61,6 +61,13 @@ test("it lists its four tools with schemas", async () => {
   }
 });
 
+test("render_view offers every drawing style, studio last", async () => {
+  const { result } = await call("tools/list", {});
+  const render = result.tools.find((tool) => tool.name === "render_view");
+  assert.deepEqual(render.inputSchema.properties.style.enum,
+                   ["illustration", "metal", "clay", "blueprint", "technical", "studio"]);
+});
+
 test("a missing file is a tool error the model can read", async () => {
   const { result } = await call("tools/call", {
     name: "open_model",
@@ -92,6 +99,13 @@ test("it opens a model, lists its parts and pictures one alone", { skip: !exists
   const image = picture.result.content.find((item) => item.type === "image");
   assert.equal(image.mimeType, "image/png");
   assert.equal(Buffer.from(image.data, "base64").subarray(1, 4).toString(), "PNG");
+
+  const studio = await call("tools/call", {
+    name: "render_view",
+    arguments: { path: model, style: "studio", width: 400, height: 300 },
+  });
+  assert.notEqual(studio.result.isError, true, studio.result.content[0].text);
+  assert.match(studio.result.content.find((item) => item.type === "text").text, /studio/);
 
   const nothing = await call("tools/call", {
     name: "render_view",

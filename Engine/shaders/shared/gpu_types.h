@@ -239,7 +239,10 @@ struct StyleUniforms {
     float contrast;
     uint32_t ghostStyle;
     uint32_t shadowOn;
-    float capInk; // 0 hatches caps in the part's own dark tone, 1 in ink
+    float capInk;       // 0 hatches caps in the part's own dark tone, 1 in ink
+    float metalDiffuse; // the share of diffuse light a metal keeps
+    float fold;         // the ink of a body folding in front of itself, 0 for none
+    float ghostLine;    // the width of a ghost's dashed lines, pixels
 };
 
 struct FrameUniforms {

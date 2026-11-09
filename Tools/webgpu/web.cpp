@@ -319,7 +319,7 @@ EMSCRIPTEN_KEEPALIVE int bench_load(const u8* bytes, u32 size, u32 style, u32 sa
     options.width = app.width;
     options.height = app.height;
     options.overlay = false;
-    options.look.style = GeoStyle(std::min(style, 4u));
+    options.look.style = GeoStyle(std::min(style, u32(GeoStyleStudio)));
     options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
     if (!engine::prepareOffscreen(*app.renderer, std::move(segments), options, app.frame, error)) {
         fail(error);

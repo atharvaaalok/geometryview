@@ -1,0 +1,24 @@
+pack run1 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 331520, "gpu": [1.78, 1.87, 2.95]}
+pack run1 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 331520, "wall": [1.94, 2.08, 2.60], "gpu": [1.56, 1.67, 2.18], "timed": 300, "bufferMB": 5.6, "targetMB": 154.5}
+pack run1 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 331520, "gpu": [1.13, 1.22, 5.41]}
+pack run1 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 331520, "wall": [1.50, 1.76, 2.06], "gpu": [1.15, 1.40, 1.66], "timed": 300, "bufferMB": 5.6, "targetMB": 154.5}
+pack run2 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 331520, "gpu": [1.78, 1.86, 5.40]}
+pack run2 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 331520, "wall": [1.90, 1.98, 4.35], "gpu": [1.55, 1.58, 1.60], "timed": 300, "bufferMB": 5.6, "targetMB": 154.5}
+pack run2 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 331520, "gpu": [1.13, 1.21, 5.40]}
+pack run2 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 331520, "wall": [1.48, 1.63, 1.91], "gpu": [1.12, 1.30, 1.59], "timed": 300, "bufferMB": 5.6, "targetMB": 154.5}
+rack100k run1 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 1200000, "gpu": [4.36, 4.99, 8.48]}
+rack100k run1 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 1200000, "wall": [4.38, 4.47, 5.04], "gpu": [3.98, 4.03, 4.51], "timed": 300, "bufferMB": 36.4, "targetMB": 154.5}
+rack100k run1 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 1200000, "gpu": [2.72, 2.80, 7.11]}
+rack100k run1 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 1200000, "wall": [2.44, 2.55, 2.66], "gpu": [2.04, 2.14, 2.17], "timed": 300, "bufferMB": 36.4, "targetMB": 154.5}
+rack100k run2 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 1200000, "gpu": [4.36, 5.01, 8.52]}
+rack100k run2 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 1200000, "wall": [4.39, 4.49, 5.07], "gpu": [3.97, 4.03, 4.66], "timed": 300, "bufferMB": 36.4, "targetMB": 154.5}
+rack100k run2 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 1200000, "gpu": [2.72, 2.84, 7.64]}
+rack100k run2 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 1200000, "wall": [2.43, 2.54, 2.64], "gpu": [2.04, 2.14, 2.18], "timed": 300, "bufferMB": 36.4, "targetMB": 154.5}
+stl10m run1 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 10000006, "gpu": [6.75, 9.04, 10.05]}
+stl10m run1 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 10000006, "wall": [7.74, 8.15, 8.74], "gpu": [7.32, 7.70, 8.02], "timed": 300, "bufferMB": 268.8, "targetMB": 154.5}
+stl10m run1 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 10000006, "gpu": [2.92, 3.06, 6.89]}
+stl10m run1 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 10000006, "wall": [5.34, 6.04, 6.26], "gpu": [4.80, 5.57, 5.78], "timed": 300, "bufferMB": 268.8, "targetMB": 154.5}
+stl10m run2 style1 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 10000006, "gpu": [7.61, 8.59, 9.29]}
+stl10m run2 style1 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 10000006, "wall": [7.59, 7.96, 8.34], "gpu": [7.08, 7.43, 7.65], "timed": 300, "bufferMB": 268.8, "targetMB": 154.5}
+stl10m run2 style5 metal {"renderer": "metal", "frames": 2048, "width": 2880, "height": 1800, "triangles": 10000006, "gpu": [2.92, 3.14, 6.64]}
+stl10m run2 style5 dawn {"frames": 300, "samples": 1, "width": 2880, "height": 1800, "triangles": 10000006, "wall": [5.24, 6.14, 6.31], "gpu": [4.81, 5.66, 5.85], "timed": 300, "bufferMB": 268.8, "targetMB": 154.5}

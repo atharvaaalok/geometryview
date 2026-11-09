@@ -16,6 +16,10 @@ using namespace metal;
 // seen at a grazing angle rough enough for the occlusion to darken them in speckles.
 #pragma METAL fp math_mode(safe)
 
+// Whether the style draws outlines. Without them the search below would find nothing: its nearest
+// samples are half a pixel away, where a line of no width covers nothing.
+constant bool kOutlines [[function_constant(8)]];
+
 constant float2 kDirections[8] = {
     float2(1.0, 0.0),  float2(0.7071, 0.7071),   float2(0.0, 1.0),  float2(-0.7071, 0.7071),
     float2(-1.0, 0.0), float2(-0.7071, -0.7071), float2(0.0, -1.0), float2(0.7071, -0.7071)};
@@ -58,7 +62,7 @@ fragment float4 compositeFragment(float4 position [[position]],
 
     // Search outward for a change of body, solid and ghost alike.
     float solid = 0.0, ghost = 0.0;
-    const float reach = 0.5 * max(style.silhouette, style.partLine) + 1.0;
+    const float reach = kOutlines ? 0.5 * max(style.silhouette, style.partLine) + 1.0 : 0.0;
     for (float r = 1.0; r <= reach; r += 1.0) {
         for (uint k = 0; k < 8; ++k) {
             const int2 o = int2(round(kDirections[k] * r));
@@ -86,7 +90,7 @@ fragment float4 compositeFragment(float4 position [[position]],
     // A body folding in front of itself, such as a boss before its own plate: a step in depth
     // within one body. A step, not a kink: the second difference must be large in world terms and
     // large against the slope, so a curved surface seen edge on does not ink its facets.
-    if (c.r != 0 && (c.r & kTagCap) == 0 && solid < 1.0) {
+    if (kOutlines && style.fold > 0.0 && c.r != 0 && (c.r & kTagCap) == 0 && solid < 1.0) {
         const int s = max(1, int(round(style.pixelsPerPoint)));
         const int2 left = p - int2(s, 0), right = p + int2(s, 0);
         const int2 down = p + int2(0, s), up = p - int2(0, s);
@@ -103,7 +107,7 @@ fragment float4 compositeFragment(float4 position [[position]],
             const bool jumpX = stepX > threshold && stepX > 0.8 * 0.5 * abs(zr - zl);
             const bool jumpY = stepY > threshold && stepY > 0.8 * 0.5 * abs(zu - zd);
             if (jumpX || jumpY) {
-                solid = max(solid, 0.85);
+                solid = max(solid, style.fold);
             }
         }
     }

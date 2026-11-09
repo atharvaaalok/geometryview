@@ -308,7 +308,7 @@ function applyLook(next) {
   look = next;
   look.save();
   engine.setLook(look.engineLook);
-  const dark = Styles[look.style].title === "Blueprint";
+  const dark = Styles[look.style].onDark;
   masthead.setOnDark(dark);
   document.body.classList.toggle("on-dark", dark);
 }

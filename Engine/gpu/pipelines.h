@@ -16,6 +16,7 @@ enum FunctionConstant : NSUInteger {
     kConstantOccurrenceIds = 5,
     kConstantPeel = 6,
     kConstantShellLayer = 7,
+    kConstantOutlines = 8,
 };
 
 struct Pipelines {
@@ -40,7 +41,8 @@ struct Pipelines {
     id<MTLRenderPipelineState> cube, quad;
     // Inks the colour, then copies sample 0 of ids, depth and tags out of tile memory.
     id<MTLRenderPipelineState> resolveTile;
-    id<MTLRenderPipelineState> composite;
+    // By whether the style draws outlines: without, the tag search and the fold are left out.
+    id<MTLRenderPipelineState> composite[2];
     id<MTLComputePipelineState> ambientOcclusion;
 
     id<MTLDepthStencilState> depthWrite;  // reversed depth

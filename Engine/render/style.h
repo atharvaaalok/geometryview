@@ -12,8 +12,8 @@
 
 namespace geo::render {
 
-enum class StyleName : u32 { Illustration, Metal, Clay, Blueprint, Technical };
-inline constexpr usize kStyleCount = 5;
+enum class StyleName : u32 { Illustration, Metal, Clay, Blueprint, Technical, Studio };
+inline constexpr usize kStyleCount = 6;
 
 /// What decides a body's colour.
 enum class ColorMode : u32 {
@@ -66,7 +66,8 @@ struct Studio {
     float sharpness = 0; // 0 soft-edged boxes, 1 crisp ones
     std::array<float, 2> strips{}; // tall strip lights right and left
     float exposure = 1;
-    float contrast = 0; // 0 a gentle shoulder, 1 a filmic curve
+    float contrast = 0;        // 0 a gentle shoulder, 1 a filmic curve
+    float metalDiffuse = 0.4f; // the share of diffuse light a metal keeps; polish lowers it
 };
 
 struct Style {
@@ -75,6 +76,7 @@ struct Style {
     std::string_view note;
     bool physical;   // studio light with metal and roughness, rather than three flat bands
     bool colorModes; // whether colour modes change anything
+    bool dark;       // a dark sheet, which the overlay and the chrome draw on in light ink
     struct {
         Rgb top, bottom;
         float vignette;
@@ -88,6 +90,8 @@ struct Style {
         Rgb color;
         float alpha;
         float silhouette, part, crease, highlight; // widths in points
+        float fold;  // strength of a body folding in front of itself, 0 to 1
+        float ghost; // width of a ghost's dashed lines, points
     } ink;
     float ao;     // ambient occlusion strength
     float capInk; // 0 hatches section caps in the part's own dark tone, 1 in ink
@@ -129,5 +133,10 @@ struct LookSettings {
 /// The style's uniforms for shaders, at a display scale.
 StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
                                 float pixelsPerPoint);
+
+/// Whether a style's composite looks for outlines: silhouettes, part lines or folds.
+inline bool drawsOutlines(const StyleUniforms& style) {
+    return style.silhouette > 0.0f || style.partLine > 0.0f || style.fold > 0.0f;
+}
 
 } // namespace geo::render

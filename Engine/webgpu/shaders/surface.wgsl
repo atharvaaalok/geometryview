@@ -167,8 +167,8 @@ fn lit(n: vec3f, v: vec3f, baseColor: vec3f, metal: f32, rough: f32) -> vec3f {
     let f0 = mix(vec3f(0.04), base, metal);
     let fresnel = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0) * (1.0 - 0.75 * rough);
     let specular = studio(reflect(-v, n), rough) * fresnel;
-    // Metals keep a little body colour, as a satin finish does.
-    let diffuse = base * irradiance(n) * mix(1.0, 0.4, metal);
+    // Metals keep a little body colour, as a satin finish does, and less when polished.
+    let diffuse = base * irradiance(n) * mix(1.0, style.metalDiffuse, metal);
     return tone(diffuse + specular);
 }
 

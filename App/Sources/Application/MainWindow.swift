@@ -211,7 +211,7 @@ final class MainWindow: NSWindow {
         sectionCard.onChange = { [weak self] section in self?.engine.setSection(section) }
         lookCard.onChange = { [weak self] look in self?.apply(look) }
         lookCard.show(look)
-        masthead.setOnDarkSheet(look.style == .blueprint)
+        masthead.setOnDarkSheet(look.style.onDark)
         engine.setLook(look)
         toolBar.pick.onChange = { [weak self] index in
             self?.engine.setSelectionMode(GeoSelectionMode(rawValue: UInt32(index)))
@@ -314,7 +314,7 @@ final class MainWindow: NSWindow {
         look = newLook
         look.save()
         lookCard.show(look)
-        masthead.setOnDarkSheet(look.style == .blueprint)
+        masthead.setOnDarkSheet(look.style.onDark)
         engine.setLook(look)
     }
 

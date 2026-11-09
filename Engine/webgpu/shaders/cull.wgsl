@@ -429,6 +429,15 @@ fn chunkInView(o: Occurrence, d: Definition, chunk: u32) -> bool {
     return radius >= kMinChunkPixels * pixelWorld && sphereInView(center, radius);
 }
 
+// Whether an occurrence has a face highlighted: selected, or under the pointer. A style without
+// creases draws only these occurrences' edges.
+fn highlighted(flags: u32, o: Occurrence, d: Definition) -> bool {
+    let first = o.idBase + 1u;
+    let end = first + d.faceCount;
+    return (flags & (kStateSelected | kStateFaceSelected)) != 0u ||
+           (frame.hoverEnd > frame.hoverFirst && frame.hoverFirst < end && frame.hoverEnd > first);
+}
+
 @compute @workgroup_size(64)
 fn cullEdges(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) group: vec3u,
              @builtin(num_workgroups) groups: vec3u) {
@@ -445,7 +454,9 @@ fn cullEdges(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) g
         let o = occurrences[instance.x];
         let d = definitions[o.definition];
         if ((flags & kStateHidden) == 0u && chunkInView(o, d, instance.y)) {
-            local[0] = atomicAdd(&edgeCount[0], 1u);
+            if (style.crease > 0.0 || highlighted(flags, o, d)) {
+                local[0] = atomicAdd(&edgeCount[0], 1u);
+            }
             if ((style.ghostStyle & kGhostLines) != 0u &&
                 (flags & (kStateGhost | kStateFaceGhost)) != 0u) {
                 local[1] = atomicAdd(&edgeCount[1], 1u);

@@ -8,12 +8,16 @@ import { el, formatNumber, keyCap, pill, segmented, slider } from "./ui.js";
 
 // ---- The look ---------------------------------------------------------------------------------
 
+// As engine.h numbers them. onDark: the sheet is dark, so the chrome drawn on it turns light.
+const row = (title, usesColour, castsShadow, grain, wobble, onDark) =>
+  ({ title, usesColour, castsShadow, grain, wobble, onDark });
 export const Styles = [
-  { title: "Illustration", usesColour: true, castsShadow: true, grain: true, wobble: true },
-  { title: "Metal", usesColour: true, castsShadow: true, grain: false, wobble: false },
-  { title: "Clay", usesColour: true, castsShadow: true, grain: false, wobble: false },
-  { title: "Blueprint", usesColour: false, castsShadow: false, grain: true, wobble: false },
-  { title: "Technical", usesColour: false, castsShadow: false, grain: false, wobble: false },
+  row("Illustration", true, true, true, true, false),
+  row("Metal", true, true, false, false, false),
+  row("Clay", true, true, false, false, false),
+  row("Blueprint", false, false, true, false, true),
+  row("Technical", false, false, false, false, false),
+  row("Studio", true, true, false, false, true),
 ];
 const Colours = [
   { title: "Material", summary: "Colours follow the material each name suggests." },
