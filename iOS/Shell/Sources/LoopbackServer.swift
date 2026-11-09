@@ -8,6 +8,12 @@ import Network
 /// 127.0.0.1 is a secure context, never leaves the device, and needs no network permission.
 /// Each connection answers one GET and closes; files stream in 2 MB chunks. Everything runs on one
 /// serial queue, which is what makes it safe to share.
+///
+/// File bodies are sent chunked, with no Content-Length. WebKit holds back a body whose length it
+/// knows, handing it to the page some 80 ms at a time, so a file the loopback sends within that
+/// time reached the page whole and late: a 256 MB cache file, meant to stream into GPU buffers,
+/// sat in the page's memory first. A chunked body is handed over as it arrives. The size goes in
+/// Geometry-Size instead, for the viewer to bound what a file's header may ask for.
 final class LoopbackServer: @unchecked Sendable {
     private let files: WebFiles
     private let listener: NWListener
@@ -78,11 +84,17 @@ final class LoopbackServer: @unchecked Sendable {
             status = "206 Partial Content"
             headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(size)"
         }
-        headers["Content-Length"] = String(remaining)
+        let chunked = handle != nil
+        if chunked {
+            headers["Transfer-Encoding"] = "chunked"
+            headers["Geometry-Size"] = String(remaining)
+        } else {
+            headers["Content-Length"] = "0"
+        }
         let text = (["HTTP/1.1 \(status)"] + headers.map { "\($0.key): \($0.value)" })
             .joined(separator: "\r\n") + "\r\n\r\n"
-        connection.send(content: Data(text.utf8), completion: .contentProcessed { [self] _ in
-            pump(connection, handle, remaining: remaining)
+        connection.send(content: Data(text.utf8), completion: .contentProcessed { [self, remaining] _ in
+            pump(connection, handle, remaining: remaining, chunked: chunked)
         })
     }
 
@@ -106,22 +118,32 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     // Sends the file a chunk at a time, each after the last is handed to the network stack, until
-    // `remaining` bytes have gone.
-    private func pump(_ connection: NWConnection, _ handle: FileHandle?, remaining: Int) {
+    // `remaining` bytes have gone. A read that fails ends the body short, without its last chunk,
+    // which the page sees as a failed read rather than a shorter file.
+    private func pump(
+        _ connection: NWConnection,
+        _ handle: FileHandle?,
+        remaining: Int,
+        chunked: Bool
+    ) {
         guard let handle, remaining > 0,
             let chunk = try? handle.read(upToCount: min(2 << 20, remaining)), !chunk.isEmpty
         else {
             try? handle?.close()
-            connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+            let last = chunked && remaining == 0 ? Data("0\r\n\r\n".utf8) : nil
+            connection.send(content: last, contentContext: .finalMessage, isComplete: true,
                             completion: .contentProcessed { _ in connection.cancel() })
             return
         }
-        connection.send(content: chunk, completion: .contentProcessed { [self] error in
+        var framed = Data("\(String(chunk.count, radix: 16))\r\n".utf8)
+        framed.append(chunk)
+        framed.append(contentsOf: [13, 10])
+        connection.send(content: framed, completion: .contentProcessed { [self] error in
             if error != nil {
                 try? handle.close()
                 connection.cancel()
             } else {
-                pump(connection, handle, remaining: remaining - chunk.count)
+                pump(connection, handle, remaining: remaining - chunk.count, chunked: chunked)
             }
         })
     }

@@ -82,6 +82,26 @@ A/B, on the same build otherwise (`renderer/iphone-loopback-p7c-*` new, `p7o-*` 
 - The old cull's runs were the warmer ones (thermal state "fair" to "serious", against
   "nominal"), which may account for its pack's extra 0.1–0.5 ms.
 
+**Why the 100k rack costs so much next to the 1M** (2026-11-08, about 6:30 PM): its edges. Native
+Dawn, 2880×1800, GPU ms (p10 / p50 / p90):
+
+| | With edges | `GEOMETRY_NO_EDGES` |
+|---|---|---|
+| Rack of 100k parts | 3.79 / 4.01 / 4.38 | 1.88 / 1.96 / 2.13 |
+| Rack of 1M parts | 5.35 / 5.69 / 6.14 | 5.32 / 5.57 / 6.00 |
+
+- **An edge chunk under 3 pixels of radius on screen is left out** (`cull.wgsl`), since its lines
+  would only blot the part. The 1M rack's boxes are below that, so its 12M edge segments cost
+  nothing. The 100k rack's are just above it, so all its 1.2M segments are drawn.
+- **Instruments' Metal System Trace** puts it in the main pass's vertex stage: 1.94 ms of the
+  frame, nearly the 2.23 ms the 1M rack's 12M triangles take. Each segment is six vertices, and
+  each works the whole segment out again: its faces' states, both ends decoded, moved and
+  projected.
+- **Tried and left out:** four corners as a triangle strip, an instance a segment, rather than six.
+  It made the frame slower, 5.3–5.5 ms: Apple's GPU handles a million instances of four vertices
+  worse than one long list. The Metal renderer's mesh stage works a segment out once; WebGPU has no
+  such stage.
+
 **Segments uploaded from memory** (native tools, tests) now get room made for them all at once. The
 100k rack's buffers had grown to 41.3 MB through the arena's headroom.
 
@@ -219,9 +239,33 @@ iPhone in 4.9 s, with no error:
 - iOS stopped pages at 1.7–2.0 GB in Phase 0, so this leaves 400–700 MB to spare, for the GPU
   process and whatever else the phone is running.
 
+**Packing, a third round** (branch `p7-memory-and-sweep`, 2026-11-08, about 5 PM). The trace under
+Node showed the heap at 879 MB through the sort of triangles, not growing there as thought. It
+grew afterwards, while edges and meshlets are found together, to 1,166 MB, and again as the
+meshlets' outputs are joined.
+- **The units now keep only their triangles' indices.** The sorted triangles carried a 64-bit key
+  beside each index, 160 MB for 10M triangles, until the meshlets were built. Only the split
+  into units reads the key, so once the units are made the list becomes 4-byte indices (40 MB),
+  freed of the keys before the heaviest stage.
+- **Four alternating runs:**
+
+  | 10M STL under Node | Before | After |
+  |---|---|---|
+  | Importer's heap at its peak | 1,218–1,293 MB | 1,101–1,176 MB |
+  | Import | 2.55–2.70 s | 2.44–2.60 s |
+
+  The cache file is byte for byte the same. The machine was busy with other work (load average
+  15–19), so the times are within noise.
+- **Tried and left out:** a sort that writes each item straight into its bucket, so the unsorted
+  list is never held (160 MB less at the sort). The sort was not the peak, and it saved nothing
+  measurable beyond the change above.
+- **The rest of the growth** comes from the edges' working lists (160 MB) and the meshlets'
+  outputs, found together, and from joining the outputs, which holds them and the joined arrays
+  at once. In WebAssembly the space each unit's output frees is scattered, so the joined arrays
+  cannot reuse it.
+
 **Still to do:**
-- The 10M import's heap still grows at packing. The 160 MB sort and its 160 MB radix scratch do
-  not fit the holes the earlier stages leave in a heap that cannot shrink.
+- The joined meshlet arrays and the units' outputs are held at once, for a moment.
 - The native footprint is still two-thirds memory malloc has freed and kept. Native imports run in
   their own helper process, which ends, so this matters less there.
 
@@ -325,6 +369,104 @@ The shell now:
 - **"1 parts · 1 bodies"** in the masthead, in the Mac app too. It now reads "1 part · 1 body".
 - **The import check's report was named after `step/pack.step`.** The slash made the shell write
   the report into a folder that does not exist. Report names now use a dash.
+
+## Large files from the shell's server
+
+Phase 0 found the iPhone shell's loopback server sending a large file's first byte 100–140 ms late,
+and guessed that WebKit was buffering it (`phase0/s3-ios-shell.md`). It is, and it was worse than
+a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
+- **Reproduced on the Mac**, with the shell's own server code compiled for macOS and a WKWebView
+  reading a 256 MB file, as the viewer reads a cache file:
+
+  | 256 MB file | First data | Pieces | Whole file |
+  |---|---|---|---|
+  | The shell's server, as it was | 97–118 ms | 1–2 | 97–118 ms, 2.2–2.6 GB/s |
+  | Node, with Content-Length | 71–97 ms | 3 | 176–222 ms |
+  | Node, chunked | 1.6–1.8 ms | 1,321–2,731 | 133–284 ms |
+  | Node, with Content-Length, sent at 50 MB/s | 77–81 ms | 85 | 5.6 s |
+  | **The shell's server, chunked** | **1.7–6.4 ms** | **214–257** | **73–81 ms, 3.2–3.5 GB/s** |
+
+- **WebKit holds back a body whose length it knows**, handing it to the page some 65–90 ms at a
+  time, however fast it arrives. The shell's server sends a file faster than that, so the page got
+  it in one piece, all at the end. A body without a length, sent chunked, is handed over as it
+  arrives.
+- **So a cache file most likely never streamed on the phone.** The viewer reads a cache file from
+  fetch straight into GPU buffers, a piece at a time, to keep memory down. The phone's server
+  sends at 1.5–2.0 GB/s, so the STL's 151 MB cache file would have come in one or two pieces, each
+  held whole by the page first.
+- **The fix:** the shell's server and the desktop launcher (for Safari) now send file bodies
+  chunked. The size goes in a `Geometry-Size` header, which the viewer reads where there is no
+  Content-Length: it bounds what a file's header may ask to be placed.
+- **Chrome** streams either way. The launcher's tests, its end-to-end test in Chrome, and the
+  harness above pass.
+- **Still to do on the iPhone:** the viewer's memory with the STL's cache file, which should fall
+  by up to the file's size, and the first byte.
+
+## The browser's STEP importer on real files
+
+Until now the browser's importer had been checked against the native one on four files (branch
+`p7-memory-and-sweep`, 2026-11-08, 5–7 PM Pacific Time).
+
+**The sample:** 851 STEP files, 496 of them fetched from the S3 archive (713 MB), the rest local.
+- 324 random CADBench files: the native check's random sample.
+- The 29 that the native check of all 11,957 CADBench files under 8 MB flagged.
+- The 38 CADBench files over 8 MB (up to 52.7 MB), where the browser's limits bite.
+- 460 from the native stress list: assemblies, units, mapped items, surface models, voids, mostly
+  from our own CAD pipelines.
+
+**The tools:**
+- `Web/spike/sweep.html` imports each file in turn through the viewer's own importer worker, its
+  warm OCCT pool and recycling as the viewer has them, and posts each cache file.
+- `Tools/web_step_sweep.py` compares each with OCCT reading the file whole, at the same
+  tolerances, as `step_equivalence.py` does, and with the native import.
+- Runs: headless Chrome 157 with 12 workers, and a WKWebView (WebKit, as Safari 26 and the
+  iPhone) with 6.
+
+**The first run, in Chrome:** 843 s. One file failed, and three lost a face each. OCCT disagreed
+with the native import on 6 files and with the browser's on 8; 2 of those were the browser's
+alone.
+
+**Found and fixed:**
+- **A ring closed on a single vertex was sized as a point** (`Import/step/definitions.cpp`). Its
+  tolerances fell back to those of a body one unit across. A 47 mm seal meshed to 1.87M
+  triangles in 52 s natively, and in the browser its slice ran out of time, so the file failed.
+  - Where the vertices give no extent, circles and ellipses now count whole, and a surface of
+    revolution counts as its curve swept about its axis.
+  - The seal: 36,924 triangles in 0.2 s. One other file of the 851 changed, another such ring.
+- **An OCCT worker that could not start hung the import**, waiting with no CPU. It now reports
+  the failure, and the import ends with the reason.
+- **The sweep page itself stalled after about 30 files**, which is how the hang above came to
+  light. It had asked for the threaded supervisor, which the viewer never uses in its long-lived
+  importer: each one's threads outlive its import.
+
+**Tried and left out:**
+- **A 300 s time limit per slice, rather than the native 120 s.** It saved no face, and the sweep
+  took 6 minutes longer.
+- **Letting the page set each OCCT worker's memory:** 2 GB on a computer, 512 MB on a phone.
+  - It let a face that needs 1.7 GB mesh, which no 512 MB worker can.
+  - In a long sweep it broke what had worked: a worker reused for many slices trapped out of
+    bounds on an ordinary file at 207 MB, and the worker started in its place never came up.
+  - Reverted. Each worker is built with its own 512 MB, as the phone needs.
+
+**The third run, in Chrome:** 851 files in 598 s, none failed. OCCT disagrees with the native
+import on 6 files, all among the 29 flagged, and with the browser's on 7.
+
+| File | Browser | Native |
+|---|---|---|
+| One face of 1.4M triangles, which needs 1.7 GB to mesh | lost: a worker has 512 MB | meshed, 32 s |
+| A 9.4 MB file of two heavy B-spline surfaces | one face lost at the 120 s slice limit | meshed, 48 s for the whole file |
+| A face OCCT itself cannot mesh in this file | lost | lost |
+
+- **In WebKit:** 851 files in 660 s, none failed. 771 cache files are byte for byte Chrome's. The
+  other 80 have the same faces, triangles, area and edges, laid out differently, most likely
+  because WebKit ran 6 workers to Chrome's 12.
+- **Against the native import**, 84 files differ:
+  - 78 only in their triangle count, by a median of 1.4% (−12.7% to +100%, the largest on a mesh
+    of 184 triangles), with the area within 1e-4. OCCT compiled to WebAssembly tessellates a
+    little differently, most likely through floating point at its refinement thresholds.
+  - 6 in a face lost, as above, or in area by up to 0.12%, within OCCT's own 0.2%.
+- **Time:** the browser, one file at a time with 12 workers, took 595 s in all; the native import,
+  8 files at once, 634 s.
 
 ## Linux and Windows
 

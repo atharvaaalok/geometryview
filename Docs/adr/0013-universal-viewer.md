@@ -187,6 +187,12 @@ The plan was, from the spike's indexed path:
   - PLE120 refines within 620 MB, and the hard file to 589,673 triangles in 21 s with the page at 835 MB at its peak;
   - the new cull changes nothing measurable there;
   - the 100k rack, the phone's first, draws in 25 ms in full and holds 60 Hz at reduced detail, as the viewer draws it in motion.
+- A second round, 2026-11-08 evening:
+  - the Mac's 52–54 allocations a frame are all Metal's and Core Animation's; our code makes none, and the count now says which are whose;
+  - the browser importer's peak for the 10M STL is 117 MB lower (1.10–1.18 GB);
+  - WebKit held back any body of known length and handed it over 65–90 ms at a time, so on the iPhone a cache file reached the page whole rather than streamed; the shell and the launcher now send files chunked (measured on the Mac; the phone's run is to do);
+  - half the 100k rack's frame is its edges, which the 1M rack's boxes are too small to draw;
+  - the browser importer, run on 851 real STEP files (CADBench and our own) in Chrome and WebKit, now agrees with OCCT as the native one does, but for one face too large for a worker's 512 MB and one slice past the 120 s limit; a ring closed on one vertex had been meshed some 70 times too finely, natively too.
 
 ## Learned along the way
 

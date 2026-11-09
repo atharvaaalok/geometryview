@@ -19,6 +19,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
 #define GEO_STEP_KINDS(X)                                                                          \
     X(ADVANCED_BREP_SHAPE_REPRESENTATION)                                                          \
     X(ADVANCED_FACE)                                                                               \
+    X(AXIS1_PLACEMENT)                                                                             \
     X(AXIS2_PLACEMENT_3D)                                                                          \
     X(BREP_WITH_VOIDS)                                                                             \
     X(CARTESIAN_POINT)                                                                             \
@@ -81,6 +82,7 @@ inline constexpr u32 kNoRecord = 0xFFFFFFFF;
     X(SI_UNIT)                                                                                     \
     X(SPHERICAL_SURFACE)                                                                           \
     X(STYLED_ITEM)                                                                                 \
+    X(SURFACE_OF_REVOLUTION)                                                                       \
     X(SURFACE_SIDE_STYLE)                                                                          \
     X(SURFACE_STYLE_FILL_AREA)                                                                     \
     X(SURFACE_STYLE_RENDERING)                                                                     \

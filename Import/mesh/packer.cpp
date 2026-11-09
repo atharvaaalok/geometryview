@@ -228,15 +228,13 @@ void packVertex(const PackContext& context, u32 vertex, u32 faceBase, UnitOutput
     }
 }
 
-void packUnit(const PackContext& context, std::span<const SortedTriangle> sortedTriangles,
-              UnitOutput& out) {
+void packUnit(const PackContext& context, std::span<const u32> unitTriangles, UnitOutput& out) {
     const IndexedMesh& mesh = context.mesh;
 
     // meshoptimizer's cost grows with the vertex range, so each unit gets its own compact ids.
     std::vector<u32> indices;
-    indices.reserve(sortedTriangles.size() * 3);
-    for (const SortedTriangle& sorted : sortedTriangles) {
-        const usize t = sorted.triangle;
+    indices.reserve(unitTriangles.size() * 3);
+    for (const usize t : unitTriangles) {
         indices.insert(indices.end(),
                        {mesh.indices[t * 3], mesh.indices[t * 3 + 1], mesh.indices[t * 3 + 2]});
     }
@@ -378,6 +376,15 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
         [](const SortedTriangle& t) { return t.triangle; });
     trace.lap("sort triangles");
     const std::vector<Unit> units = makeUnits(sortedTriangles);
+    // From here on a unit needs only its triangles' indices: a quarter of the size, and the keys
+    // freed before meshlets and edges are found, which is when an import holds the most.
+    std::vector<u32> triangleOrder(sortedTriangles.size());
+    parallelRanges(triangleOrder.size(), 1 << 15, [&](usize first, usize last, usize) {
+        for (usize i = first; i < last; ++i) {
+            triangleOrder[i] = sortedTriangles[i].triangle;
+        }
+    });
+    std::vector<SortedTriangle>().swap(sortedTriangles);
     const PackContext context{mesh,
                               faces,
                               {bounds.lo, 1.0f / scale, scale, gridSteps, wide},
@@ -402,12 +409,12 @@ PackedDefinition packMesh(const IndexedMesh& mesh) {
 
     std::vector<UnitOutput> outputs(units.size());
     parallelFor(units.size(), [&](usize u) {
-        const std::span<const SortedTriangle> range(sortedTriangles.data() + units[u].first,
-                                                    units[u].last - units[u].first);
+        const std::span<const u32> range(triangleOrder.data() + units[u].first,
+                                         units[u].last - units[u].first);
         packUnit(context, range, outputs[u]);
     });
     // Freed before the outputs are gathered, which holds two copies of them for a moment.
-    std::vector<SortedTriangle>().swap(sortedTriangles);
+    std::vector<u32>().swap(triangleOrder);
 
     trace.lap("build meshlets");
     usize vertexCount = 0, triangleCount = 0, meshletCount = 0;

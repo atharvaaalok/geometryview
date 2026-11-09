@@ -234,7 +234,10 @@ export class Engine {
       if (typeof source === "string") {
         const response = await fetch(source);
         body = response.body;
-        size = Number(response.headers.get("content-length") ?? 0);
+        // The launcher and the iPhone shell send files chunked, which WebKit streams, with their
+        // size apart.
+        const length = response.headers.get("content-length") ?? response.headers.get("geometry-size");
+        size = Number(length ?? 0);
       } else if (source instanceof Blob) {
         body = source.stream();
         size = source.size;
