@@ -229,6 +229,54 @@ class VisitFolders {
   pickFiles() { return Promise.resolve(undefined); } // the page's own file input instead
 }
 
+// ---- The iPhone shell ------------------------------------------------------------------------
+
+const encodePath = (path) => path.split("/").map(encodeURIComponent).join("/");
+
+class ShellFolders {
+  kind = "shell";
+  canConnect = true;
+
+  constructor() {
+    // The shell serves the page from the same address each launch, so what it keeps lasts: asked
+    // not to be cleared under storage pressure.
+    navigator.storage?.persist?.().catch(() => {});
+  }
+
+  #ask(op, extra = {}) {
+    return window.webkit.messageHandlers.library.postMessage({ op, ...extra });
+  }
+
+  folders() { return this.#ask("folders"); }
+  async connect() { return (await this.#ask("connectFolder")) ?? null; }
+  async reconnect() { return true; }
+  async disconnect(id) { await this.#ask("disconnect", { id }); }
+
+  async list(id, path) {
+    const response = await fetch(`/list/${id}/${encodePath(path)}`);
+    if (!response.ok) throw new Error("This folder could not be read.");
+    return response.json();
+  }
+
+  async file(id, path) {
+    return this.#fetchFile(`/open/${id}/${encodePath(path)}`, path.split("/").pop());
+  }
+
+  async #fetchFile(url, name) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${name} could not be read.`);
+    const lastModified = Number(response.headers.get("GeometryView-Modified")) || Date.now();
+    return new File([await response.blob()], name, { lastModified });
+  }
+
+  // The system's picker, opening files where they are.
+  async pickFiles() {
+    const picked = await this.#ask("pickFiles");
+    if (!picked) return null;
+    return Promise.all(picked.map(async (p) => ({ file: await this.#fetchFile(p.path, p.name), handle: null })));
+  }
+}
+
 // ---- The store --------------------------------------------------------------------------------
 
 export class LibraryStore {
@@ -236,9 +284,10 @@ export class LibraryStore {
   #recent = null;
 
   // `backend` "visit" uses a folder for this visit even where the browser offers more, for checks.
-  constructor({ shell = null, backend } = {}) {
+  constructor({ backend } = {}) {
+    const shell = window.webkit?.messageHandlers?.library !== undefined;
     const access = typeof showDirectoryPicker === "function" && backend !== "visit";
-    this.folders = shell ?? (access ? new AccessFolders() : new VisitFolders());
+    this.folders = shell ? new ShellFolders() : access ? new AccessFolders() : new VisitFolders();
   }
 
   get kind() { return this.folders.kind; }

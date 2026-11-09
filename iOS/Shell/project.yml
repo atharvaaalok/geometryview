@@ -78,6 +78,13 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.standard-tesselated-geometry-format]
+        # GeometryView's own cache files, which the picker offers too.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.aalok.geometryview.cache
+            UTTypeDescription: GeometryView cache
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [geoblob]
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: org.iso.step
             UTTypeDescription: STEP model

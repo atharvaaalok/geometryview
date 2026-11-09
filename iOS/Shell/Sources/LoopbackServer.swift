@@ -16,24 +16,49 @@ import Network
 /// GeometryView-Size instead, for the viewer to bound what a file's header may ask for.
 final class LoopbackServer: @unchecked Sendable {
     private let files: WebFiles
-    private let listener: NWListener
+    private var listener: NWListener
+    private var onUsualPort = true
     private let queue = DispatchQueue(label: "geo.loopback")
+
+    /// The port the viewer is served on. The same one each launch keeps the page's origin, and so
+    /// what it keeps in the browser's storage, its kept imports and Recent among it; on any port
+    /// it would start each launch with none.
+    static let usualPort: UInt16 = 47701
 
     init(files: WebFiles) throws {
         self.files = files
+        listener = try Self.listener(on: NWEndpoint.Port(rawValue: Self.usualPort) ?? .any)
+    }
+
+    private static func listener(on port: NWEndpoint.Port) throws -> NWListener {
         // Small writes go out at once, rather than waiting on the reader's delayed acknowledgement.
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-        listener = try NWListener(using: parameters)
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port)
+        parameters.allowLocalEndpointReuse = true
+        return try NWListener(using: parameters)
     }
 
-    /// Starts listening and reports the port, once, when it is known.
+    /// Starts listening and reports the port, once, when it is known: the usual one, or if that is
+    /// taken, any.
     func start(ready: @escaping @Sendable (UInt16) -> Void) {
-        listener.stateUpdateHandler = { [listener] state in
-            if case .ready = state, let port = listener.port {
-                ready(port.rawValue)
+        let listener = listener
+        listener.stateUpdateHandler = { [self, listener] state in
+            switch state {
+            case .ready:
+                if let port = listener.port {
+                    ready(port.rawValue)
+                }
+            case .failed:
+                listener.cancel()
+                if onUsualPort, let fallback = try? Self.listener(on: .any) {
+                    onUsualPort = false
+                    self.listener = fallback
+                    start(ready: ready)
+                }
+            default:
+                break
             }
         }
         listener.newConnectionHandler = { [self] connection in
@@ -68,6 +93,18 @@ final class LoopbackServer: @unchecked Sendable {
         if let query = path.firstIndex(of: "?") {
             path = String(path[..<query])
         }
+        if let listing = files.listing(path) {
+            var headers = WebFiles.isolation
+            headers["Content-Type"] = "application/json"
+            headers["Connection"] = "close"
+            headers["Content-Length"] = String(listing.count)
+            let text = (["HTTP/1.1 200 OK"] + headers.map { "\($0.key): \($0.value)" })
+                .joined(separator: "\r\n") + "\r\n\r\n"
+            connection.send(content: Data(text.utf8) + listing, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return
+        }
         let file = files.resolve(path)
         let size = file.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? 0
         let handle = file.flatMap { try? FileHandle(forReadingFrom: $0) }
@@ -75,6 +112,9 @@ final class LoopbackServer: @unchecked Sendable {
         headers["Content-Type"] = file.map(WebFiles.type(of:)) ?? "text/plain"
         headers["Connection"] = "close"
         headers["Accept-Ranges"] = "bytes"
+        if path.hasPrefix("/open/"), let file, let modified = WebFiles.modified(file) {
+            headers["GeometryView-Modified"] = modified
+        }
         var status = handle == nil ? "404 Not Found" : "200 OK"
         var remaining = handle == nil ? 0 : size
         // A range asked for, as "bytes=first-last" or "bytes=first-": only that part is sent.
