@@ -24,6 +24,9 @@ final class Masthead: NSView {
             label.layer?.shadowRadius = 3
             label.layer?.shadowOffset = .zero
         }
+        ChromeLayout.name(title, "masthead.title")
+        ChromeLayout.name(subtitle, "masthead.subtitle")
+        ChromeLayout.name(progress, "masthead.progress")
         stack.setViews([title, subtitle, progress], in: .leading)
         stack.orientation = .vertical
         stack.alignment = .leading

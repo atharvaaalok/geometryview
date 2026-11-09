@@ -1,5 +1,7 @@
-/* The viewer's chrome, after the Mac app's Design folder: paper, ink and sticker cards in IBM Plex
-   Mono, with the same palette, line weight, radii and offset shadows. */
+/* The viewer's chrome, drawn as the Mac app draws its own: paper, ink and sticker cards in IBM
+   Plex Mono, with the same palette, line weight, radii, offset shadows and metrics, which
+   Docs/design/chrome-spec.md lists. A card's border is inside its box, as on the Mac, so a padding
+   here is the Mac's inset less the 1.5px line. Tools/compare_chrome.py checks the two agree. */
 
 @font-face {
   font-family: "Plex Mono";
@@ -31,6 +33,8 @@
   --cobalt: #76a0e2;
   --cobalt-mid: #5a82c6;
   --cobalt-wash: #dde6f4;
+  --mustard: #f4b829;
+  --tomato-wash: #f8ddd3;
   --ink-on-dark: #eef4ff;
   --muted-on-dark: #a9bedf;
   --line: 1.5px;
@@ -44,6 +48,7 @@
   --text-s: 11.5px;
   --text-m: 12.5px;
   --text-l: 13.5px;
+  --text-heading: 15px;
   color-scheme: light;
 }
 
@@ -76,6 +81,10 @@ html, body {
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
 
 /* ---- Cards ------------------------------------------------------------------------------ */
 
@@ -110,39 +119,53 @@ button:disabled { cursor: default; }
   border-radius: calc(var(--pill) / 2);
   background: var(--sheet);
   font-size: var(--text-s);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
-  transition: background 0.16s var(--ease), box-shadow 0.16s var(--ease), transform 0.16s var(--ease);
+  transition: background 0.16s var(--ease);
 }
 .pill.icon { padding: 0; width: var(--pill); }
-.pill:hover:not(:disabled) { background: var(--cream); box-shadow: 0 var(--shadow-chip) 0 var(--ink); transform: translateY(-1px); }
-.pill:active:not(:disabled) { box-shadow: none; transform: translateY(1px); }
-.pill:disabled { opacity: 0.35; }
+.pill:hover:not(:disabled) { background: var(--cream); }
+.pill:active:not(:disabled) { transform: translate(1px, 1px); }
+.pill.on { background: var(--ink); color: var(--paper); }
+.pill:disabled { opacity: 0.4; }
 .pill.ghostly { border-color: transparent; background: transparent; }
 .pill.ghostly:hover { border-color: var(--ink); }
 
 .segmented {
+  position: relative;
   display: inline-flex;
   height: var(--pill);
-  border: var(--line) solid var(--ink);
   border-radius: calc(var(--pill) / 2);
   overflow: hidden;
   background: var(--sheet);
   flex: none;
 }
+.segmented::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: var(--line) solid var(--ink);
+  border-radius: inherit;
+  pointer-events: none;
+}
 .segmented button {
   border: none;
-  border-left: var(--line) solid var(--ink);
+  box-shadow: inset var(--line) 0 0 var(--ink);
   background: transparent;
   padding: 0 11px;
   font-size: var(--text-s);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
+  transition: background 0.16s var(--ease);
 }
-.segmented button:first-child { border-left: none; }
+.segmented button:first-child { box-shadow: none; }
 .segmented button:hover { background: var(--cream-wash); }
-.segmented button.on { background: var(--cream); }
-.segmented.disabled { opacity: 0.35; pointer-events: none; }
+.segmented button.on {
+  font-weight: 600;
+  background: linear-gradient(to top, transparent var(--line), var(--ink) var(--line),
+                              var(--ink) calc(var(--line) + 2px), var(--cream) calc(var(--line) + 2px));
+}
+.segmented.disabled { opacity: 0.4; pointer-events: none; }
 
 .slider {
   -webkit-appearance: none;
@@ -165,12 +188,13 @@ button:disabled { cursor: default; }
 kbd.cap {
   display: inline-block;
   min-width: 20px;
-  padding: 1px 5px;
+  height: 20px;
+  padding: 0 3.75px;
   border: 1.25px solid var(--ink);
   border-radius: 5px;
-  background: var(--sheet);
+  background: var(--paper);
   box-shadow: 1px 1px 0 var(--ink);
-  font: 600 var(--text-xs)/1.4 "Plex Mono", Menlo, monospace;
+  font: 600 var(--text-xs)/17.5px "Plex Mono", Menlo, monospace;
   text-align: center;
 }
 
@@ -178,7 +202,7 @@ kbd.cap {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 3.5px 8.5px;
   background: var(--sheet);
   border: var(--line) solid var(--ink);
   border-radius: var(--radius-chip);
@@ -192,15 +216,33 @@ kbd.cap {
 .masthead {
   position: fixed;
   left: 24px;
-  top: 14px;
+  top: 10px;
   max-width: 50%;
   z-index: 1;
   pointer-events: none;
 }
+.masthead .title, .masthead .subtitle { text-shadow: 0 0 3px var(--paper); }
 .masthead .title { font-size: var(--text-l); font-weight: 600; }
-.masthead .subtitle { margin-top: 3px; font-size: var(--text-s); color: var(--muted); }
-.masthead .progress { margin-top: 6px; width: 180px; height: 3px; border-radius: 1.5px; background: var(--rule); overflow: hidden; }
-.masthead .progress .fill { height: 100%; width: 0; background: var(--ink); transition: width 0.16s var(--ease); }
+.masthead .subtitle { margin-top: 2px; font-size: var(--text-s); color: var(--muted); }
+.masthead .progress {
+  position: relative;
+  margin-top: 10px;
+  width: 240px;
+  height: 6px;
+  border: var(--line) solid var(--ink);
+  border-radius: 3px;
+  background: var(--sheet);
+  overflow: hidden;
+}
+/* Slid in from the left rather than widened, so it moves without layout. */
+.masthead .progress .fill {
+  position: absolute;
+  inset: 0;
+  background: var(--mustard);
+  border-right: var(--line) solid var(--ink);
+  transform: translateX(-100%);
+  transition: transform 0.22s var(--ease);
+}
 .masthead.on-dark .title { color: var(--ink-on-dark); }
 .masthead.on-dark .subtitle { color: var(--muted-on-dark); }
 
@@ -213,7 +255,7 @@ kbd.cap {
   width: 300px;
   display: flex;
   flex-direction: column;
-  padding: 12px 14px 10px;
+  padding: 10.5px 14.5px 6.5px;
   gap: 10px;
 }
 .structure > .segmented { align-self: flex-start; }
@@ -243,6 +285,7 @@ kbd.cap {
   user-select: text;
 }
 .searchbox input::-webkit-search-cancel-button { display: none; }
+.searchbox input::placeholder { color: var(--muted); opacity: 1; }
 .searchbox .match { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
 
 .tree {
@@ -250,61 +293,66 @@ kbd.cap {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  margin: 0 -6px;
+  margin: 0 -10px;
   overscroll-behavior: contain;
 }
 .tree .spacer { width: 1px; }
 .tree .rows { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
 
+/* A row: its chevron at 8 + 14 a level (the padding, set per row), a 16-wide slot for the glyph or
+   swatch 3 after it, the name 7 after that, and at the end the count 14 from the edge. */
 .tree .row {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
+  height: 28px;
   padding-right: 8px;
-  border-radius: 6px;
   font-size: var(--text-m);
   cursor: default;
 }
-.tree .row:hover, .tree .row.highlighted { background: var(--cream-wash); }
-.tree .row.selected { background: var(--cobalt-wash); }
-.tree .row.selected::before {
+body.phone .tree .row { height: 30px; }
+/* The plate behind a row, inset from it: cream under the pointer, and while selected the cobalt
+   wash with a bar down its left edge, clipped to its corners. */
+.tree .row::after {
   content: "";
   position: absolute;
-  left: 0; top: 4px; bottom: 4px;
-  width: 3px;
-  border-radius: 1.5px;
-  background: var(--cobalt-mid);
+  inset: 1px 6px;
+  border-radius: 6px;
+  z-index: -1;
 }
+.tree .row:hover::after, .tree .row.highlighted::after { background: var(--cream); }
+.tree .row.selected::after { background: linear-gradient(to right, var(--cobalt-mid) 3px, var(--cobalt-wash) 3px); }
 .tree .chevron {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--ink-soft);
-  transition: transform 0.16s var(--ease);
+  color: var(--ink);
 }
 .tree .chevron.open { transform: rotate(90deg); }
-.tree .glyph { flex: none; display: inline-flex; color: var(--ink-soft); }
+.tree .glyph { flex: none; display: inline-flex; justify-content: center; width: 16px; margin-left: 3px; color: var(--ink); }
+/* A part's colour as a printed chip: the colour, and below a diagonal across 55% of the way, a
+   shade of it 16% toward ink, both set as one gradient over the whole tile, under its line. */
 .tree .swatch {
   flex: none;
-  width: 13px;
-  height: 13px;
-  margin: 0 0.5px;
+  width: 12px;
+  height: 12px;
+  margin: 0 2px 0 5px;
   border: 1.25px solid var(--ink);
   border-radius: 3px;
-  background: var(--sheet-sunk);
+  background-color: var(--sheet-sunk);
+  background-origin: border-box;
 }
-.tree .swatch.small { width: 11px; height: 11px; margin: 0 1.5px; }
-.tree .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree .count, .tree .mark { flex: none; font-size: var(--text-xs); color: var(--muted); display: inline-flex; }
-.tree .actions { display: none; flex: none; gap: 2px; }
+.tree .swatch.small { width: 9px; height: 9px; margin: 0 3.5px 0 6.5px; border-radius: 2px; }
+.tree .name { flex: 1; min-width: 0; margin-left: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree .count, .tree .mark { flex: none; margin: 0 6px 0 8px; font-size: var(--text-s); color: var(--muted); display: inline-flex; }
+.tree .actions { display: none; flex: none; gap: 1px; margin-left: 4px; }
 .tree .row:hover .actions { display: inline-flex; }
 .tree .row:hover .count, .tree .row:hover .mark { display: none; }
 .tree .rowbutton {
@@ -317,13 +365,13 @@ kbd.cap {
   border: 1.25px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--ink);
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
 }
 .tree .rowbutton:hover { border-color: var(--ink); background: var(--sheet); }
-.tree .rowbutton.on { border-color: var(--ink); background: var(--cream); }
+.tree .rowbutton.on { border-color: var(--ink); background: var(--sheet-sunk); }
 .tree .row.hidden-node .name { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--faint); }
 .tree .row.ghosted-node .name { color: var(--muted); }
-.tree .row.hidden-node .swatch, .tree .row.ghosted-node .swatch { opacity: 0.45; }
 
 .structure .footer {
   display: flex;
@@ -333,7 +381,7 @@ kbd.cap {
   border-top: var(--line) solid var(--rule);
 }
 .structure .footer .counts { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-s); font-weight: 500; }
-.structure .footer .buttons { display: flex; gap: 6px; }
+.structure .footer .buttons { display: flex; gap: 8px; }
 
 .library .note { margin: 0; color: var(--muted); font-size: var(--text-s); }
 .library > .pill { align-self: flex-start; }
@@ -361,7 +409,7 @@ kbd.cap {
   right: 18px;
   top: 172px;
   width: 286px;
-  padding: 14px 16px 16px;
+  padding: 10.5px 12.5px 12.5px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -385,7 +433,7 @@ kbd.cap {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6.5px 8.5px;
   max-width: calc(100% - 336px);
   overflow-x: auto;
   scrollbar-width: none;
@@ -413,7 +461,7 @@ kbd.cap {
   left: calc(318px + (100% - 318px) / 2);
   bottom: 80px;
   transform: translateX(-50%);
-  padding: 14px 16px 16px;
+  padding: 12.5px 14.5px 14.5px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -421,10 +469,11 @@ kbd.cap {
 }
 .popover .row { display: flex; align-items: center; gap: 8px; }
 .look .label { width: 92px; flex: none; font-size: var(--text-s); font-weight: 500; }
-.look .label.disabled { opacity: 0.35; }
+.look .label.disabled { color: var(--faint); }
 .look .note { margin: -4px 0 0 100px; font-size: var(--text-xs); color: var(--muted); }
 .section .row { gap: 10px; }
 .section .axis { width: 14px; font-size: var(--text-s); font-weight: 600; }
+.section { width: 340px; }
 .section .slider { width: 160px; }
 
 /* ---- Overlays --------------------------------------------------------------------------- */
@@ -435,15 +484,17 @@ kbd.cap {
   transform: translate(-50%, -50%);
   width: 360px;
   max-width: calc(100% - 32px);
-  padding: 16px 18px;
+  padding: 18.5px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
 }
-.status h2 { font-size: var(--text-l); font-weight: 600; color: var(--ink); letter-spacing: 0; }
-.status p { margin: 0; color: var(--ink-soft); font-size: var(--text-s); overflow-wrap: anywhere; }
+.status h2 { margin: 0; font-size: var(--text-heading); font-weight: 600; color: var(--ink); letter-spacing: 0; }
+.status p { margin: 0; color: var(--muted); font-size: var(--text-m); overflow-wrap: anywhere; }
+.status .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 
+.hint.hiding { background: var(--tomato-wash); }
 .hint {
   position: fixed;
   left: calc(318px + (100% - 318px) / 2);
@@ -465,13 +516,12 @@ kbd.cap {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px dashed var(--ink);
-  border-radius: 16px;
-  background: rgba(255, 244, 214, 0.35);
+  border-radius: 18px;
+  background: rgba(255, 244, 214, 0.7) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' rx='17' style='width:calc(100%25 - 2px);height:calc(100%25 - 2px)' fill='none' stroke='%23231e16' stroke-width='2' stroke-dasharray='8 6'/%3E%3C/svg%3E");
   z-index: 6;
   pointer-events: none;
 }
-.dropzone .chip { font-weight: 600; }
+.dropzone .words { font-size: var(--text-l); font-weight: 600; }
 
 .sheet {
   position: fixed;
@@ -479,12 +529,12 @@ kbd.cap {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(242, 239, 231, 0.6);
+  background: rgba(242, 239, 231, 0.55);
   z-index: 7;
 }
-.sheet .card { position: relative; padding: 18px 22px 20px; }
+.sheet .card { position: relative; padding: 16.5px 18.5px; }
 .sheet h2 { font-size: var(--text-l); font-weight: 600; color: var(--ink); margin-bottom: 12px; letter-spacing: 0; }
-.sheet .grid { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; font-size: var(--text-s); }
+.sheet .grid { display: grid; grid-template-columns: auto auto; gap: 8px 12px; align-items: center; font-size: var(--text-s); }
 .sheet .keys { display: flex; gap: 4px; justify-content: flex-end; }
 
 /* ---- Phones: the tree and cards give way to the view ------------------------------------ */

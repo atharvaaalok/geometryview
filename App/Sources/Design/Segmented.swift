@@ -43,6 +43,7 @@ final class SegmentedPill: NSView {
         var previous: NSView?
         for (index, option) in options.enumerated() {
             let segment = Segment(title: option, divider: index > 0)
+            ChromeLayout.name(segment, "structure.segment")
             segment.toolTip = tips?[index]
             segment.onPress = { [weak self] in
                 guard let self, self.selected != index else {

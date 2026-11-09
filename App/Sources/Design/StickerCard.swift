@@ -8,17 +8,20 @@ import AppKit
 class StickerCard: NSView {
     private let shadowLayer = CALayer()
     private let sheetLayer = CALayer()
+    private let shadowOffset: CGFloat
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    /// A card, or with the chip's radius and shadow, a smaller thing such as a menu.
+    init(radius: CGFloat = Metrics.radiusCard, shadow: CGFloat = Metrics.shadowCard) {
+        shadowOffset = shadow
+        super.init(frame: .zero)
         wantsLayer = true
         layerContentsRedrawPolicy = .never
         layer?.masksToBounds = false
         shadowLayer.backgroundColor = Palette.ink.cgColor
-        shadowLayer.cornerRadius = Metrics.radiusCard
+        shadowLayer.cornerRadius = radius
         sheetLayer.backgroundColor = Palette.sheet.cgColor
         sheetLayer.borderColor = Palette.ink.cgColor
-        sheetLayer.cornerRadius = Metrics.radiusCard
+        sheetLayer.cornerRadius = radius
         layer?.addSublayer(shadowLayer)
         layer?.addSublayer(sheetLayer)
     }
@@ -36,7 +39,7 @@ class StickerCard: NSView {
         let scale = window?.backingScaleFactor ?? 2
         sheetLayer.borderWidth = (Metrics.line * scale).rounded(.up) / scale
         sheetLayer.frame = bounds
-        shadowLayer.frame = bounds.offsetBy(dx: Metrics.shadowCard, dy: -Metrics.shadowCard)
+        shadowLayer.frame = bounds.offsetBy(dx: shadowOffset, dy: -shadowOffset)
         CATransaction.commit()
     }
 
@@ -64,13 +67,15 @@ final class StatusCard: StickerCard {
     private let body = NSTextField(wrappingLabelWithString: "")
     private var loadingName = ""
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init() {
+        super.init()
         heading.font = Typography.font(Typography.textHeading, .semibold)
         heading.textColor = Palette.ink
         body.font = Typography.font(Typography.textMedium)
         body.textColor = Palette.muted
 
+        ChromeLayout.name(heading, "status.heading")
+        ChromeLayout.name(body, "status.body")
         let stack = NSStackView(views: [heading, body])
         stack.orientation = .vertical
         stack.alignment = .leading

@@ -79,9 +79,9 @@ final class TreeCell: NSTableCellView {
     private let label = NSTextField(labelWithString: "")
     private let count = NSTextField(labelWithString: "")
     private let stateMark = NSImageView()
-    private let ghostButton = RowButton(symbol: "circle.dashed")
-    private let hideButton = RowButton(symbol: "eye")
-    private let isolateButton = RowButton(symbol: "scope")
+    private let ghostButton = RowButton(icon: .ghost)
+    private let hideButton = RowButton(icon: .eye)
+    private let isolateButton = RowButton(icon: .scope)
     private let actions = NSStackView()
     private var labelBeforeCount: NSLayoutConstraint?
     private var labelBeforeActions: NSLayoutConstraint?
@@ -115,6 +115,9 @@ final class TreeCell: NSTableCellView {
         isolateButton.onPress = { [weak self] in self?.onAction?(.isolate) }
         isolateButton.toolTip = "Show only this, framed"
 
+        for (view, name) in [(chevron, "chevron"), (glyph, "glyph"), (swatch, "swatch"), (label, "name"), (count, "count")] as [(NSView, String)] {
+            ChromeLayout.name(view, "tree.\(name)")
+        }
         for view in [chevron, glyph, swatch, label, count, stateMark, actions] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
@@ -224,7 +227,7 @@ final class TreeCell: NSTableCellView {
         ghostButton.isOn = ghosted
         ghostButton.toolTip = ghosted ? "Unghost" : "Ghost"
         hideButton.isOn = hidden
-        hideButton.symbol = hidden ? "eye.slash" : "eye"
+        hideButton.icon = hidden ? .eyeSlash : .eye
         hideButton.toolTip = hidden ? "Show" : "Hide"
 
         let mark: NSImage? =
@@ -251,30 +254,30 @@ final class RowButton: ChromeControl {
     var isOn = false {
         didSet { stateChanged() }
     }
-    var symbol: String {
+    var icon: Icons.Name {
         didSet {
-            if symbol != oldValue {
-                icon.image = Self.image(symbol)
+            if icon != oldValue {
+                iconView.image = Icons.image(icon, size: 13)
             }
         }
     }
-    private let icon = NSImageView()
+    private let iconView = NSImageView()
     static let size: CGFloat = 22
 
-    init(symbol: String) {
-        self.symbol = symbol
+    init(icon: Icons.Name) {
+        self.icon = icon
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
-        icon.image = Self.image(symbol)
-        icon.contentTintColor = Palette.ink
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(icon)
+        iconView.image = Icons.image(icon, size: 13)
+        iconView.contentTintColor = Palette.ink
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconView)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: Self.size),
             heightAnchor.constraint(equalToConstant: Self.size),
-            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         setAccessibilityRole(.button)
         stateChanged()
@@ -287,11 +290,6 @@ final class RowButton: ChromeControl {
 
     override var toolTip: String? {
         didSet { setAccessibilityLabel(toolTip) }
-    }
-
-    private static func image(_ symbol: String) -> NSImage? {
-        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
     }
 
     override func layout() {
@@ -374,69 +372,16 @@ final class SwatchView: NSView {
     }
 }
 
-/// Small line drawings for the tree, as template images so they take the ink colour.
+/// The tree's small drawings, from the shared icons, as template images so they take the ink colour.
 @MainActor
 enum TreeGlyph {
     /// Two linked hexagons: parts joined into an assembly.
-    static let assembly: NSImage = {
-        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: true) { _ in
-            NSColor.black.setStroke()
-            for (cx, cy) in [(5.6, 6.0), (10.4, 10.0)] {
-                let path = NSBezierPath()
-                for corner in 0..<6 {
-                    let angle = Double(corner) * .pi / 3 + .pi / 6
-                    let point = NSPoint(x: cx + 4.2 * cos(angle), y: cy + 4.2 * sin(angle))
-                    corner == 0 ? path.move(to: point) : path.line(to: point)
-                }
-                path.close()
-                path.lineWidth = 1.25
-                path.lineJoinStyle = .round
-                path.stroke()
-            }
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }()
-
-    static let closed = chevron("chevron.right")
-    static let open = chevron("chevron.down")
-
-    private static func chevron(_ name: String) -> NSImage {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold))
-            ?? NSImage()
-    }
-
-    static let hidden = symbol("eye.slash")
-    static let ghosted = symbol("circle.dashed")
-
-    private static func symbol(_ name: String) -> NSImage {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
-            ?? NSImage()
-    }
-
-    /// A small circle, half filled: some of what is under the row is hidden or ghosted.
-    static let mixed: NSImage = {
-        let image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { _ in
-            let circle = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 8, height: 8))
-            NSColor.black.setStroke()
-            circle.lineWidth = 1.25
-            NSGraphicsContext.saveGraphicsState()
-            circle.addClip()
-            NSColor.black.setFill()
-            NSRect(x: 0, y: 0, width: 5, height: 10).fill()
-            NSGraphicsContext.restoreGraphicsState()
-            circle.stroke()
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }()
-
-    static let document: NSImage =
-        NSImage(systemSymbolName: "doc", accessibilityDescription: "File")?
-        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
-        ?? NSImage()
+    static let assembly = Icons.image(.assembly, size: 16)
+    static let closed = Icons.image(.chevron, size: 12)
+    static let open = Icons.image(.chevron, size: 12, turned: true)
+    static let hidden = Icons.image(.eyeSlash, size: 12)
+    static let ghosted = Icons.image(.ghost, size: 12)
+    /// A circle, half filled: some of what is under the row is hidden or ghosted.
+    static let mixed = Icons.image(.seeThrough, size: 12)
+    static let document = Icons.image(.file, size: 14)
 }

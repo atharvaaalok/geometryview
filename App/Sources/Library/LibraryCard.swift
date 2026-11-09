@@ -12,7 +12,7 @@ final class LibraryCard: StickerCard, NSOutlineViewDataSource, NSOutlineViewDele
     private let store: LibraryStore
     private let outline = NSOutlineView()
     private let scroll = NSScrollView()
-    private let connect = PillButton(symbol: "plus", help: "Connect a folder")
+    private let connect = PillButton(icon: .plus, help: "Connect a folder")
     private let empty = NSTextField(
         wrappingLabelWithString: "Connect a folder to browse its STEP and STL files."
     )
@@ -22,7 +22,7 @@ final class LibraryCard: StickerCard, NSOutlineViewDataSource, NSOutlineViewDele
 
     init(store: LibraryStore) {
         self.store = store
-        super.init(frame: .zero)
+        super.init()
 
         let column = NSTableColumn(identifier: .init("name"))
         outline.addTableColumn(column)
@@ -132,10 +132,7 @@ final class LibraryCard: StickerCard, NSOutlineViewDataSource, NSOutlineViewDele
             outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
             ?? makeCell(identifier)
         cell.textField?.stringValue = node.name
-        cell.imageView?.image = NSImage(
-            systemSymbolName: node.isDirectory ? "folder" : "cube",
-            accessibilityDescription: nil
-        )
+        cell.imageView?.image = Icons.image(node.isDirectory ? .folder : .cube, size: 14)
         return cell
     }
 

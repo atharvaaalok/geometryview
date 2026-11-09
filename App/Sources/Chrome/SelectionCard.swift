@@ -13,7 +13,7 @@ final class SelectionCard: StickerCard {
     var onAction: ((GeoAction) -> Void)?
 
     init() {
-        super.init(frame: .zero)
+        super.init()
         kind.font = Typography.font(Typography.textExtraSmall, .medium)
         kind.textColor = Palette.muted
         name.font = Typography.font(Typography.textLarge, .semibold)
