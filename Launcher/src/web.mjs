@@ -55,6 +55,12 @@ export async function startViewer({ port = 0 } = {}) {
     "Cache-Control": "no-cache",
   };
   let address = "";
+  // Bodies go chunked, with their size apart. Safari, like any WebKit, holds back a body whose
+  // length it knows and hands it to the page some 80 ms at a time, so a cache file meant to stream
+  // into GPU buffers arrived in pieces of up to its whole size, late. A HEAD answer has no body to
+  // hold back.
+  const sized = (request, size) =>
+    request.method === "HEAD" ? { "Content-Length": size } : { "Geometry-Size": size };
   const ours = (request) => {
     const host = request.headers.host ?? "";
     return host === `127.0.0.1:${server.address().port}` || host === `localhost:${server.address().port}`;
@@ -79,10 +85,11 @@ export async function startViewer({ port = 0 } = {}) {
       }
       try {
         const info = await stat(path);
-        response.writeHead(200, { ...headers, "Content-Length": info.size,
+        response.writeHead(200, { ...headers, ...sized(request, info.size),
                                   "Content-Type": "application/octet-stream",
                                   "Last-Modified": info.mtime.toUTCString() });
-        createReadStream(path).pipe(response);
+        if (request.method === "HEAD") response.end();
+        else createReadStream(path).pipe(response);
       } catch {
         response.writeHead(404, headers).end();
       }
@@ -98,7 +105,7 @@ export async function startViewer({ port = 0 } = {}) {
     try {
       const info = await stat(file);
       if (!info.isFile()) throw new Error("not a file");
-      response.writeHead(200, { ...headers, "Content-Length": info.size,
+      response.writeHead(200, { ...headers, ...sized(request, info.size),
                                 "Content-Type": kTypes[extname(file)] ?? "application/octet-stream" });
       if (request.method === "HEAD") response.end();
       else createReadStream(file).pipe(response);
