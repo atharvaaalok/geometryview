@@ -171,7 +171,9 @@ function handle(kind, document, node, done, total, message) {
       names[document] = message;
       progress.set(document, 0);
       structure.addDocument(message);
-      showLibrary(false);
+      // The left card stays as the person left it: they may be browsing the Library file by file.
+      // The structure card is made ready for when they switch to it.
+      structure.showNothing(false);
       status.showLoading(message);
       refreshMasthead();
       updateInsets();
@@ -952,6 +954,8 @@ async function runLibraryTest() {
   await ready;
   const firstMs = Math.round(performance.now() - opened);
   const imported = lastImport?.type === "done";
+  // Opening a file leaves the Library showing: the card switches only when the person switches it.
+  const stayedOnLibrary = !library.element.hidden || phone;
   await sleep(300);
   const recent = await libraryStore.recent();
 
@@ -977,6 +981,7 @@ async function runLibraryTest() {
     await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
   }
   await post({ backend: libraryStore.kind, origin: location.origin, keptBefore, listed, firstMs, imported,
+               stayedOnLibrary, stillOnLibrary: !library.element.hidden || phone,
                recentFirst: recent[0]?.key,
                recentWhere: recent[0]?.where, reopenMs, reopenedFromCache,
                idleFrames: idle.frames - settled.frames, looping: idle.looping, rows });

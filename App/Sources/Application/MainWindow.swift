@@ -267,7 +267,9 @@ final class MainWindow: NSWindow {
         libraryCard.openPaths = Set(openURLs.map(\.path))
         watchFiles()
         structure.addDocument(named: url.lastPathComponent)
-        showLibrary(false)
+        // The left card stays as the person left it: they may be browsing the Library file by file.
+        // The structure card is made ready for when they switch to it.
+        structure.showNothing(false)
         status.isHidden = true
         if replacing {
             engine.open(path: url.path)
