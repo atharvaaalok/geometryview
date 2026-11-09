@@ -116,6 +116,46 @@ TEST_CASE("style uniforms are in pixels at the display's scale") {
     CHECK(metal.wobble == 0.0f);
 }
 
+TEST_CASE("studio draws polished metal on a dark sheet, with no lines but highlights") {
+    const Style& studio = styleNamed(StyleName::Studio);
+    CHECK(studio.physical);
+    CHECK(studio.colorModes);
+    CHECK(studio.dark);
+    CHECK(styleNamed(StyleName::Blueprint).dark);
+    CHECK_FALSE(styleNamed(StyleName::Metal).dark);
+    LookSettings settings;
+    settings.wobble = 2.0f;
+    const StyleUniforms u = makeStyleUniforms(studio, settings, 2.0f);
+    CHECK(u.silhouette == 0.0f);
+    CHECK(u.partLine == 0.0f);
+    CHECK(u.crease == 0.0f);
+    CHECK(u.fold == 0.0f);
+    CHECK_FALSE(drawsOutlines(u));
+    CHECK(u.highlight > 0.0f);
+    CHECK(u.ghostLine > 0.0f); // ghosts drawn as lines have no skin to show them otherwise
+    CHECK(u.grain == 0.0f);
+    CHECK(u.wobble == 0.0f);
+    // Polished: less rough than Metal's satin, but never a mirror.
+    const Look steel{Look::Kind::Material, MaterialClass::Steel};
+    const u32 polished = (bodyTexels(studio, steel)[1] >> 8) & 0xFF;
+    const u32 satin = (bodyTexels(styleNamed(StyleName::Metal), steel)[1] >> 8) & 0xFF;
+    CHECK(polished < satin);
+    CHECK(polished >= 38); // 0.15
+    CHECK((bodyTexels(studio, Look{})[1] & 0xFF) == 255); // mono is stainless, a metal
+}
+
+TEST_CASE("the other styles keep their lines and their satin metal") {
+    for (const StyleName name : {StyleName::Illustration, StyleName::Metal, StyleName::Clay,
+                                 StyleName::Blueprint, StyleName::Technical}) {
+        CAPTURE(int(name));
+        const StyleUniforms u = makeStyleUniforms(styleNamed(name), LookSettings{}, 1.0f);
+        CHECK(drawsOutlines(u));
+        CHECK(u.fold == 0.85f);
+        CHECK(u.metalDiffuse == 0.4f);
+        CHECK(u.ghostLine == u.crease); // dashed ghost lines as wide as creases, as before
+    }
+}
+
 TEST_CASE("material mode reads names, then cycles by sub-assembly") {
     const Drive drive;
     const LookAssignment looks = assignLooks(drive.scene, ColorMode::Material);

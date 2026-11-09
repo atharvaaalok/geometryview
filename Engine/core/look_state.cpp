@@ -76,7 +76,17 @@ GeoLook geo_default_look(void) {
     return {GeoStyleIllustration, GeoColorMaterial, GeoGhostShell, true, 1.0f, 0.0f};
 }
 
+namespace {
+const geo::render::Style& styleOf(GeoStyle style) {
+    return geo::render::styleNamed(geo::render::StyleName(
+        std::min<geo::u32>(geo::u32(style), geo::render::kStyleCount - 1)));
+}
+} // namespace
+
 bool geo_style_casts_shadow(GeoStyle style) {
-    return geo::render::styleNamed(geo::render::StyleName(std::min<geo::u32>(geo::u32(style), 4)))
-        .shadow.on;
+    return styleOf(style).shadow.on;
+}
+
+bool geo_style_on_dark(GeoStyle style) {
+    return styleOf(style).dark;
 }

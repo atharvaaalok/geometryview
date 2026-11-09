@@ -967,7 +967,7 @@ void Core::shellViewArrived(u64 generation, const render::OccurrenceIds& ids) {
 
 render::OverlayLayout Core::overlayLayout() const {
     render::OverlayLayout layout;
-    if (look_.settings().style == render::StyleName::Blueprint) {
+    if (render::styleNamed(look_.settings().style).dark) {
         layout.ink = render::kOverlayInkOnDark;
     }
     return layout;

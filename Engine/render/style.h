@@ -12,8 +12,8 @@
 
 namespace geo::render {
 
-enum class StyleName : u32 { Illustration, Metal, Clay, Blueprint, Technical };
-inline constexpr usize kStyleCount = 5;
+enum class StyleName : u32 { Illustration, Metal, Clay, Blueprint, Technical, Studio };
+inline constexpr usize kStyleCount = 6;
 
 /// What decides a body's colour.
 enum class ColorMode : u32 {
@@ -76,6 +76,7 @@ struct Style {
     std::string_view note;
     bool physical;   // studio light with metal and roughness, rather than three flat bands
     bool colorModes; // whether colour modes change anything
+    bool dark;       // a dark sheet, which the overlay and the chrome draw on in light ink
     struct {
         Rgb top, bottom;
         float vignette;

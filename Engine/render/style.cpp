@@ -174,6 +174,20 @@ Finish metalFinish(const Look& look) {
     return metalOf(MaterialClass::Aluminium);
 }
 
+// Polished: a metal's roughness halved, as a part fresh from the lathe and lapped, though never
+// mirror-smooth, which no studio box could light without aliasing. Paints and plastics are as in
+// Metal.
+Finish studioFinish(const Look& look) {
+    if (look.kind == Look::Kind::Neutral) {
+        return {hex(0xC8CBCE), 1.0f, 0.22f}; // stainless
+    }
+    Finish f = metalFinish(look);
+    if (f.metal >= 0.5f) {
+        f.rough = std::max(0.15f, f.rough * 0.5f);
+    }
+    return f;
+}
+
 constexpr Rgb kClay = hex(0xCFC5B7);
 
 Finish clayFinish(const Look& look) {
@@ -233,6 +247,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .note = "flat light, ink and paper",
         .physical = false,
         .colorModes = true,
+        .dark = false,
         .sheet = {kPaper, kPaper, 0.0f, true, none, 0.0f, 0.0f},
         .wobble = true,
         .ink = {kInk, 1.0f, 2.4f, 1.5f, 1.0f, 2.0f, 0.85f, 1.0f},
@@ -253,6 +268,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .note = "studio light on machined parts",
         .physical = true,
         .colorModes = true,
+        .dark = false,
         .sheet = {hex(0xF6F5F3), hex(0xF6F5F3), 0.0f, false, none, 0.0f, 0.0f},
         .wobble = false,
         .ink = {hex(0x45433F), 0.9f, 1.25f, 1.0f, 0.8f, 2.0f, 0.85f, 0.8f},
@@ -281,6 +297,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .note = "one matte material, soft light",
         .physical = true,
         .colorModes = true,
+        .dark = false,
         .sheet = {hex(0xF5F3EF), hex(0xE9E5DE), 0.06f, false, none, 0.0f, 0.0f},
         .wobble = false,
         .ink = {hex(0x3D362D), 0.55f, 1.5f, 0.9f, 0.7f, 2.0f, 0.85f, 0.7f},
@@ -309,6 +326,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .note = "white lines on a blue sheet",
         .physical = false,
         .colorModes = false,
+        .dark = true,
         .sheet = {hex(0x1E4479), hex(0x173765), 0.18f, true, kWhite, 0.06f, 24.0f},
         .wobble = false,
         .ink = {hex(0xEEF4FF), 0.95f, 1.8f, 1.2f, 0.9f, 2.2f, 0.85f, 0.9f},
@@ -329,6 +347,7 @@ std::array<Style, kStyleCount> makeStyles() {
         .note = "black linework on white",
         .physical = false,
         .colorModes = false,
+        .dark = false,
         .sheet = {kWhite, kWhite, 0.0f, false, none, 0.0f, 0.0f},
         .wobble = false,
         .ink = {hex(0x15171A), 1.0f, 2.0f, 1.2f, 1.0f, 2.0f, 0.85f, 1.0f},
@@ -343,7 +362,43 @@ std::array<Style, kStyleCount> makeStyles() {
         .selection = bandTexels(kSelection),
         .studio = {},
     };
-    return {illustration, metal, clay, blueprint, technical};
+    Style studio{
+        .name = StyleName::Studio,
+        .label = "Studio",
+        .note = "polished metal under studio lights",
+        .physical = true,
+        .colorModes = true,
+        .dark = true,
+        // A charcoal sweep, darker above, as a backdrop seen from a little above the floor.
+        .sheet = {hex(0x17181B), hex(0x3A3C40), 0.3f, false, none, 0.0f, 0.0f},
+        .wobble = false,
+        // No lines on the model: only a highlight, in a light ink that reads on dark metal.
+        .ink = {hex(0xE8EEF5), 0.9f, 0.0f, 0.0f, 0.0f, 2.0f, 0.0f, 0.8f},
+        .ao = 0.9f,
+        .capInk = 0.0f,
+        .shadow = {hex(0x000000), 0.5f, 14.0f, true},
+        .ghostAlpha = 0.3f,
+        .ghostLineAlpha = 0.55f,
+        .hover = kWhite,
+        .hoverAmount = 0.18f,
+        .hideTint = kTomato.light,
+        .selection = finishTexels({hex(0x7EA2E0), 0.5f, 0.3f}, 0.25f),
+        // A dark room, so that flat faces turned to the camera mirror darkness and curved ones
+        // sweep through the lights: a soft overhead sky for the tops, a strong key box, a bright
+        // horizon band and faint strips. At a three-quarter view a flat face mirrors a strip
+        // exactly, so the strips stay low.
+        .studio = {Rgb{0.55f, 0.555f, 0.56f},
+                   Rgb{0.08f, 0.08f, 0.085f},
+                   Rgb{1.8f, 1.76f, 1.7f},
+                   Rgb{0.75f, 0.75f, 0.75f},
+                   Rgb{0.06f, 0.062f, 0.065f},
+                   0.45f,
+                   {0.5f, 0.3f},
+                   1.0f,
+                   0.9f,
+                   0.06f},
+    };
+    return {illustration, metal, clay, blueprint, technical, studio};
 }
 
 // ---- Material names --------------------------------------------------------------------------
@@ -451,6 +506,8 @@ std::array<u32, 3> bodyTexels(const Style& style, const Look& look) {
         return bandTexels(kBlueprintFace);
     case StyleName::Technical:
         return bandTexels(kTechnicalFace);
+    case StyleName::Studio:
+        return finishTexels(studioFinish(look), 0.25f);
     }
     return bandTexels(kCeramic);
 }
@@ -467,6 +524,8 @@ u32 swatch(const Style& style, const Look& look) {
         return texel(kBlueprintFace.light);
     case StyleName::Technical:
         return texel(kWhite);
+    case StyleName::Studio:
+        return texel(studioFinish(look).base);
     }
     return texel(kCeramic.light);
 }

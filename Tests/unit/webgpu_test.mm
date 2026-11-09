@@ -12,6 +12,7 @@
 #include "model/face_state.h"
 #include "nav/camera.h"
 #include "render/shell.h"
+#include "render/style.h"
 #include "scene/segment.h"
 #include "webgpu/renderer.h"
 #include "webgpu/wgsl.h"
@@ -165,7 +166,7 @@ TEST_CASE("every WGSL module compiles") {
 TEST_CASE("the WGSL uniforms are laid out as the C++ ones") {
     Dawn dawn = makeDawn();
     const std::string code = std::string(webgpu::wgsl::kCommon) + R"wgsl(
-@group(1) @binding(0) var<storage, read_write> fields: array<f32, 17>;
+@group(1) @binding(0) var<storage, read_write> fields: array<f32, 20>;
 @compute @workgroup_size(1)
 fn readFields() {
     fields[0] = frame.halfWidth;
@@ -185,6 +186,9 @@ fn readFields() {
     fields[14] = style.fillLight.z;
     fields[15] = f32(style.shadowOn);
     fields[16] = frame.sampleOffset.y;
+    fields[17] = style.metalDiffuse;
+    fields[18] = style.fold;
+    fields[19] = style.ghostLine;
 }
 )wgsl";
     FrameUniforms frame{};
@@ -206,8 +210,12 @@ fn readFields() {
     style.capInk = 0.25f;
     style.fill = simd_make_float3(0.0f, 0.0f, 0.125f);
     style.shadowOn = 1;
-    const float expected[17] = {1.5f, 7,    20, 12,   -0.9f, -3.25f, 0.75f, 4.5f,  1,
-                                0.6f, 0.5f, 9,  0.4f, 0.25f, 0.125f, 1,     0.375f};
+    style.metalDiffuse = 0.375f;
+    style.fold = 0.625f;
+    style.ghostLine = 2.5f;
+    const float expected[20] = {1.5f, 7,      20,   12,     -0.9f,  -3.25f, 0.75f,
+                                4.5f, 1,      0.6f, 0.5f,   9,      0.4f,   0.25f,
+                                0.125f, 1,    0.375f, 0.375f, 0.625f, 2.5f};
 
     const wgpu::Device& device = dawn.device;
     const auto makeBuffer = [&](u64 size, wgpu::BufferUsage usage) {
@@ -219,8 +227,8 @@ fn readFields() {
     using U = wgpu::BufferUsage;
     const wgpu::Buffer frameBuffer = makeBuffer(sizeof(frame), U::Uniform | U::CopyDst);
     const wgpu::Buffer styleBuffer = makeBuffer(sizeof(style), U::Uniform | U::CopyDst);
-    const wgpu::Buffer out = makeBuffer(68, U::Storage | U::CopySrc);
-    const wgpu::Buffer readback = makeBuffer(68, U::MapRead | U::CopyDst);
+    const wgpu::Buffer out = makeBuffer(sizeof(expected), U::Storage | U::CopySrc);
+    const wgpu::Buffer readback = makeBuffer(sizeof(expected), U::MapRead | U::CopyDst);
     device.GetQueue().WriteBuffer(frameBuffer, 0, &frame, sizeof(frame));
     device.GetQueue().WriteBuffer(styleBuffer, 0, &style, sizeof(style));
 
@@ -254,15 +262,16 @@ fn readFields() {
     pass.SetBindGroup(1, output);
     pass.DispatchWorkgroups(1);
     pass.End();
-    encoder.CopyBufferToBuffer(out, 0, readback, 0, 68);
+    encoder.CopyBufferToBuffer(out, 0, readback, 0, sizeof(expected));
     const wgpu::CommandBuffer commands = encoder.Finish();
     device.GetQueue().Submit(1, &commands);
-    dawn.instance.WaitAny(readback.MapAsync(wgpu::MapMode::Read, 0, 68,
+    dawn.instance.WaitAny(readback.MapAsync(wgpu::MapMode::Read, 0, sizeof(expected),
                                             wgpu::CallbackMode::WaitAnyOnly,
                                             [](wgpu::MapAsyncStatus, wgpu::StringView) {}),
                           UINT64_MAX);
-    const auto* fields = static_cast<const float*>(readback.GetConstMappedRange(0, 68));
-    for (int i = 0; i < 17; ++i) {
+    const auto* fields =
+        static_cast<const float*>(readback.GetConstMappedRange(0, sizeof(expected)));
+    for (usize i = 0; i < std::size(expected); ++i) {
         CAPTURE(i);
         CHECK(fields[i] == doctest::Approx(expected[i]));
     }
@@ -282,10 +291,12 @@ TEST_CASE("the WebGPU renderer draws every style as Metal does") {
         REQUIRE(metal != nullptr);
         const char* keep = std::getenv("GEOMETRY_WEBGPU_IMAGES");
 
-        const char* styles[] = {"illustration", "metal", "clay", "blueprint", "technical"};
+        const char* styles[] = {"illustration", "metal",     "clay",
+                                "blueprint",    "technical", "studio"};
+        static_assert(std::size(styles) == render::kStyleCount);
         const char* modes[] = {"material", "parts", "mono", "file"};
-        for (u32 style = 0; style < 5; ++style) {
-            const u32 modeCount = style >= 3 ? 1 : 4;
+        for (u32 style = 0; style < render::kStyleCount; ++style) {
+            const u32 modeCount = render::styleNamed(render::StyleName(style)).colorModes ? 4 : 1;
             for (u32 mode = 0; mode < modeCount; ++mode) {
                 const std::string name = std::format("{}-{}", styles[style], modes[mode]);
                 CAPTURE(name);
@@ -408,6 +419,34 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
                  frame.view.uniforms.seeThrough = 0.6f;
              }},
             {"perspective-metal", GeoStyleMetal, true},
+            // Studio draws no creases, but highlights the selected and the hovered.
+            {"studio-selected-hovered",
+             GeoStyleStudio,
+             false,
+             {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 withState([&](model::FaceState& state) {
+                     state.set(whole(4), kStateSelected, true);
+                     state.set({2, 1}, kStateSelected, true);
+                 })(frame, backend);
+                 hover(frame, 5);
+             }},
+            {"studio-ghost-lines",
+             GeoStyleStudio,
+             false,
+             {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 engine::LookState looks;
+                 GeoLook look = geo_default_look();
+                 look.style = GeoStyleStudio;
+                 look.ghost_style = GeoGhostLines;
+                 looks.set(engine::lookSettings(look));
+                 looks.apply(backend, frame.scene);
+                 withState([&](model::FaceState& state) {
+                     state.set(whole(1), kStateGhost, true);
+                     state.set({2, 0}, kStateGhost, true);
+                 })(frame, backend);
+             }},
         };
         for (const Case& c : cases) {
             const std::string caseName = c.name;

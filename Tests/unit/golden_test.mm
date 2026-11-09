@@ -2,6 +2,7 @@
 // one in Tests/golden. Set GEOMETRY_UPDATE_GOLDENS=1 to write the goldens instead, after checking
 // the new images by eye. Needs the OCCT worker, since the assembly is STEP.
 #include "engine.h"
+#include "render/style.h"
 #include "step/step_import.h"
 #include "drive_fixture.h"
 #include "step_fixture.h"
@@ -82,11 +83,13 @@ TEST_CASE("every style and colour mode matches its golden image") {
         const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
         const bool update = std::getenv("GEOMETRY_UPDATE_GOLDENS") != nullptr;
         const fs::path goldens = GEO_TEST_GOLDEN_DIR;
-        const char* styles[] = {"illustration", "metal", "clay", "blueprint", "technical"};
+        const char* styles[] = {"illustration", "metal",     "clay",
+                                "blueprint",    "technical", "studio"};
+        static_assert(std::size(styles) == render::kStyleCount);
         const char* modes[] = {"material", "parts", "mono", "file"};
-        for (u32 style = 0; style < 5; ++style) {
+        for (u32 style = 0; style < render::kStyleCount; ++style) {
             // Blueprint and Technical draw every part alike, so one mode covers them.
-            const u32 modeCount = style >= 3 ? 1 : 4;
+            const u32 modeCount = render::styleNamed(render::StyleName(style)).colorModes ? 4 : 1;
             for (u32 mode = 0; mode < modeCount; ++mode) {
                 const std::string name = std::format("{}-{}.png", styles[style], modes[mode]);
                 CAPTURE(name);
