@@ -195,13 +195,26 @@ iPhone in 4.9 s, with no error:
   - **On the iPhone**, PLE120 refined from 116,024 to 219,720 triangles, complete 2.7 s after the
     view settled, with two workers. The page's process peaked at 515 MB and the GPU process at
     105 MB, well inside the phone's budget.
-  - **The hard file on the iPhone** is still to be measured. The first runs showed no refinement,
-    and the reason was the check, not the viewer: it waited only 6 s for the triangle count to
-    change. The hard file is one part, whose segment comes at the end of its job, and two workers
-    take longer than that. In Chrome with the phone's settings (two workers, level 2) the job
-    takes 12.9 s, from 340,646 to 589,673 triangles. The check now waits while a job runs, and
-    lists each job's level, time and outcome. Its run on the phone was interrupted: the phone was
-    in use.
+  - **The hard file on the iPhone** refined from 340,646 to 589,673 triangles, drawn 21.4 s after
+    the zoom (2026-11-08, 4:23 PM). That was one job, its one definition to level 1, with two
+    workers, no crashed worker and no failed face.
+    - **Memory:** the page's process peaked at 835 MB as the job ended, and settled at 566 MB.
+      The GPU process peaked at 136 MB as the scene loaded, and was at 120 MB as the job ended
+      (`p4/runtime/iphone-p7-refine-hard-memory.json`).
+      - The import alone peaks at 570 MB (P4), so the job takes the page 265 MB higher, for a
+        moment.
+      - That peak is still well inside what the phone allowed the 8.4M-triangle STL (1,271 MB).
+      - The 270 MB that go at the job's end are most likely the job's own importer, which reads
+        the whole file again and is let go when the job ends.
+    - **In Chrome with the phone's settings** (two workers, level 2), the same job takes 12.0 s,
+      so the phone takes 1.8× as long.
+    - **The first runs showed no refinement, and the fault was in the check, not the viewer.**
+      - First, it waited only 6 s for the count to change. It now waits while a job runs.
+      - Then it stopped as soon as the job ended. The count changes only when a frame draws the
+        new segment, so it could stop just before that frame. That run's job was done and
+        reported no new triangles. The check now waits 3 s after a job too.
+      - Each job in the report now says what the importer made (triangles, failed faces, crashed
+        workers), how many segments it sent, and how many the page refused.
   - **Measured** in Chrome with the scripted check, `test=refine` (six wheel steps in on the
     middle):
 
