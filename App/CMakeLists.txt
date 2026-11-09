@@ -19,11 +19,23 @@ target_link_options(GeometryView PRIVATE
 )
 add_dependencies(GeometryView engine_shaders geometryview-import geometryview-occt-worker)
 
+# The icon, made from its 1024 px master.
+set(app_icon "${CMAKE_CURRENT_BINARY_DIR}/AppIcon.icns")
+add_custom_command(OUTPUT "${app_icon}"
+    COMMAND "${CMAKE_SOURCE_DIR}/Tools/make_icons.sh" "${app_icon}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/AppIcon.png" "${CMAKE_SOURCE_DIR}/Tools/make_icons.sh"
+    COMMENT "Making the app icon"
+    VERBATIM
+)
+add_custom_target(app_icon DEPENDS "${app_icon}")
+add_dependencies(GeometryView app_icon)
+
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")
 set(bundle_resources "$<TARGET_BUNDLE_CONTENT_DIR:GeometryView>/Resources")
 add_custom_command(TARGET GeometryView POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle_resources}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GEO_METALLIB}" "${bundle_resources}/default.metallib"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${app_icon}" "${bundle_resources}/AppIcon.icns"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle_resources}/Fonts"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${font_files} "${bundle_resources}/Fonts/"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:geometryview-import>"
@@ -38,5 +50,22 @@ add_custom_command(TARGET GeometryView POST_BUILD
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Resources/GeometryView.entitlements"
             "$<TARGET_BUNDLE_DIR:GeometryView>"
     COMMENT "Bundling resources and signing GeometryView.app"
+    VERBATIM
+)
+
+# cmake --build --preset release --target install-app puts the app in /Applications, where
+# Spotlight, Launchpad, the Dock and Finder's Open With find it, and registers it, so STEP and STL
+# files open in it. A copy already there is mirrored: files a newer build dropped go too.
+set(GEO_APP_INSTALL_DIR "/Applications" CACHE PATH "Where install-app puts GeometryView.app")
+if(GEO_APP_INSTALL_DIR STREQUAL "")
+    message(FATAL_ERROR "GEO_APP_INSTALL_DIR must name a folder")
+endif()
+add_custom_target(install-app
+    COMMAND rsync -a --delete "$<TARGET_BUNDLE_DIR:GeometryView>/"
+            "${GEO_APP_INSTALL_DIR}/GeometryView.app/"
+    COMMAND /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+            -f "${GEO_APP_INSTALL_DIR}/GeometryView.app"
+    COMMAND ${CMAKE_COMMAND} -E echo "Installed ${GEO_APP_INSTALL_DIR}/GeometryView.app"
+    DEPENDS GeometryView
     VERBATIM
 )
