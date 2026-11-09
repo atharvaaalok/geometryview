@@ -402,6 +402,72 @@ a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
 - **Still to do on the iPhone:** the viewer's memory with the STL's cache file, which should fall
   by up to the file's size, and the first byte.
 
+## The browser's STEP importer on real files
+
+Until now the browser's importer had been checked against the native one on four files (branch
+`p7-memory-and-sweep`, 2026-11-08, 5–7 PM Pacific Time).
+
+**The sample:** 851 STEP files, 496 of them fetched from the S3 archive (713 MB), the rest local.
+- 324 random CADBench files: the native check's random sample.
+- The 29 that the native check of all 11,957 CADBench files under 8 MB flagged.
+- The 38 CADBench files over 8 MB (up to 52.7 MB), where the browser's limits bite.
+- 460 from the native stress list: assemblies, units, mapped items, surface models, voids, mostly
+  from our own CAD pipelines.
+
+**The tools:**
+- `Web/spike/sweep.html` imports each file in turn through the viewer's own importer worker, its
+  warm OCCT pool and recycling as the viewer has them, and posts each cache file.
+- `Tools/web_step_sweep.py` compares each with OCCT reading the file whole, at the same
+  tolerances, as `step_equivalence.py` does, and with the native import.
+- Runs: headless Chrome 157 with 12 workers, and a WKWebView (WebKit, as Safari 26 and the
+  iPhone) with 6.
+
+**The first run, in Chrome:** 843 s. One file failed, and three lost a face each. OCCT disagreed
+with the native import on 6 files and with the browser's on 8; 2 of those were the browser's
+alone.
+
+**Found and fixed:**
+- **A ring closed on a single vertex was sized as a point** (`Import/step/definitions.cpp`). Its
+  tolerances fell back to those of a body one unit across. A 47 mm seal meshed to 1.87M
+  triangles in 52 s natively, and in the browser its slice ran out of time, so the file failed.
+  - Where the vertices give no extent, circles and ellipses now count whole, and a surface of
+    revolution counts as its curve swept about its axis.
+  - The seal: 36,924 triangles in 0.2 s. One other file of the 851 changed, another such ring.
+- **An OCCT worker that could not start hung the import**, waiting with no CPU. It now reports
+  the failure, and the import ends with the reason.
+- **The sweep page itself stalled after about 30 files**, which is how the hang above came to
+  light. It had asked for the threaded supervisor, which the viewer never uses in its long-lived
+  importer: each one's threads outlive its import.
+
+**Tried and left out:**
+- **A 300 s time limit per slice, rather than the native 120 s.** It saved no face, and the sweep
+  took 6 minutes longer.
+- **Letting the page set each OCCT worker's memory:** 2 GB on a computer, 512 MB on a phone.
+  - It let a face that needs 1.7 GB mesh, which no 512 MB worker can.
+  - In a long sweep it broke what had worked: a worker reused for many slices trapped out of
+    bounds on an ordinary file at 207 MB, and the worker started in its place never came up.
+  - Reverted. Each worker is built with its own 512 MB, as the phone needs.
+
+**The third run, in Chrome:** 851 files in 598 s, none failed. OCCT disagrees with the native
+import on 6 files, all among the 29 flagged, and with the browser's on 7.
+
+| File | Browser | Native |
+|---|---|---|
+| One face of 1.4M triangles, which needs 1.7 GB to mesh | lost: a worker has 512 MB | meshed, 32 s |
+| A 9.4 MB file of two heavy B-spline surfaces | one face lost at the 120 s slice limit | meshed, 48 s for the whole file |
+| A face OCCT itself cannot mesh in this file | lost | lost |
+
+- **In WebKit:** 851 files in 660 s, none failed. 771 cache files are byte for byte Chrome's. The
+  other 80 have the same faces, triangles, area and edges, laid out differently, most likely
+  because WebKit ran 6 workers to Chrome's 12.
+- **Against the native import**, 84 files differ:
+  - 78 only in their triangle count, by a median of 1.4% (−12.7% to +100%, the largest on a mesh
+    of 184 triangles), with the area within 1e-4. OCCT compiled to WebAssembly tessellates a
+    little differently, most likely through floating point at its refinement thresholds.
+  - 6 in a face lost, as above, or in area by up to 0.12%, within OCCT's own 0.2%.
+- **Time:** the browser, one file at a time with 12 workers, took 595 s in all; the native import,
+  8 files at once, 634 s.
+
 ## Linux and Windows
 
 No physical Linux or Windows machine is at hand. Linux runs first in Docker on this Mac, without a
