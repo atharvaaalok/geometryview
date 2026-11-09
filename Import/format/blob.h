@@ -18,7 +18,8 @@ namespace geo::format {
 
 inline constexpr std::array<char, 8> kMagic = {'G', 'E', 'O', 'B', 'L', 'O', 'B', '\0'};
 inline constexpr std::array<char, 8> kSegmentMagic = {'G', 'E', 'O', 'S', 'E', 'G', 'M', '\0'};
-inline constexpr u32 kVersion = 4;
+// 5: definitions say whether every face is planar (kDefinitionFlat).
+inline constexpr u32 kVersion = 5;
 inline constexpr usize kAlignment = 16384;
 inline constexpr usize kMaxSegments = 512;
 inline constexpr usize kMaxSections = 14;

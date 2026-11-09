@@ -33,6 +33,12 @@ public:
     /// True once every definition has geometry.
     bool isComplete() const { return readyCount_ == definitions_.size(); }
 
+    /// How far a definition's edges move toward the eye, in its own model units: twice the chord
+    /// error of the tessellation drawn for it, the document's coarsest tolerance halved for each
+    /// level of refinement, and nothing for a definition all of whose faces are planar, which
+    /// tessellate exactly. Zero for meshes, which have no chord error.
+    float edgeLift(const format::DefinitionRecord& record) const;
+
     /// The first pick id of an occurrence, counted from zero.
     u32 idBase(u32 occurrence) const { return idBases_[occurrence]; }
     u32 idCount() const { return idCount_; }
@@ -93,9 +99,6 @@ public:
     bool hasGeometry() const;
     /// Bounds of everything placed, using estimates for definitions still importing.
     std::optional<Aabb> bounds() const;
-    /// The largest chord error of any document's coarsest tessellation, in model units. Zero for
-    /// meshes, which have none.
-    double coarsestDeflection() const;
 
 private:
     std::vector<std::unique_ptr<Document>> documents_;

@@ -120,7 +120,7 @@ render::ViewState viewAt(double turn, double zoom) {
     nav::fit(camera, app.bounds, viewport, 1.12);
     nav::zoomAbout(camera, 1.0 / zoom, app.bounds.center(), 0.0, 0.0, viewport);
     render::ViewState view = render::makeView(camera, viewport, app.bounds);
-    view.uniforms.lineOffset = app.frame.view.uniforms.lineOffset;
+    view.uniforms.edgeFloor = app.frame.view.uniforms.edgeFloor;
     view.uniforms.aoRadius = app.frame.view.uniforms.aoRadius;
     view.uniforms.aoSamples = app.frame.view.uniforms.aoSamples;
     return view;

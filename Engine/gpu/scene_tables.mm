@@ -135,6 +135,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
                                                record->boundsScale[2]);
             out.boundsStep = simd_reduce_max(out.boundsScale);
             out.flags = record->flags;
+            out.edgeLift = document.edgeLift(*record);
         }
 
         for (u32 i = 0; i < model.occurrences.size(); ++i) {

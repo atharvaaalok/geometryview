@@ -235,7 +235,7 @@ int benchMetal(const char* library, const char* blob, const GeoRenderOptions& op
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, *bounds, viewport, 1.12);
         render::ViewState view = render::makeView(camera, viewport, *bounds);
-        view.uniforms.lineOffset = frame.view.uniforms.lineOffset;
+        view.uniforms.edgeFloor = frame.view.uniforms.edgeFloor;
         view.uniforms.aoRadius = frame.view.uniforms.aoRadius;
         view.uniforms.aoSamples = frame.view.uniforms.aoSamples;
         (void)metal->renderOffscreen(view);
@@ -324,7 +324,7 @@ int benchCommand(int argc, const char** argv) {
                       simd_make_double3(0.0, 0.0, 1.0));
         nav::fit(camera, *bounds, viewport, 1.12);
         render::ViewState view = render::makeView(camera, viewport, *bounds);
-        view.uniforms.lineOffset = frame.view.uniforms.lineOffset;
+        view.uniforms.edgeFloor = frame.view.uniforms.edgeFloor;
         view.uniforms.aoRadius = frame.view.uniforms.aoRadius;
         view.uniforms.aoSamples = frame.view.uniforms.aoSamples;
         const auto started = std::chrono::steady_clock::now();

@@ -22,6 +22,9 @@ enum DefinitionFlags : uint32_t {
     kDefinitionWide = 1u << 0,
     // The surface is not closed, so both sides can show and back-face culling must stay off.
     kDefinitionOpen = 1u << 1,
+    // Every face is planar, so the tessellation is exact: its edges need no lift toward the eye,
+    // and refining it would give the same triangles.
+    kDefinitionFlat = 1u << 2,
 };
 
 // 12 bytes. Positions are integers on a per-definition grid, so vertices at the same place in

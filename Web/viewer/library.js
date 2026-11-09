@@ -30,22 +30,40 @@ export async function libraryEntries() {
   return entries.sort((a, b) => b.modified - a.modified);
 }
 
+// The cache file version the engine reads, set once it has started: a kept import written in
+// another is as good as none, and is made again.
+let cacheVersion = null;
+export function setCacheVersion(version) { cacheVersion = version; }
+
+// A cache file's version, from its header: 8 bytes of magic, then a little-endian u32.
+async function versionOf(blob) {
+  const header = new DataView(await blob.slice(0, 12).arrayBuffer());
+  return header.byteLength >= 12 ? header.getUint32(8, true) : -1;
+}
+
+// A kept cache file, by the name of the file it came from, or null if there is none or it is in
+// an older format.
+async function current(dir, name) {
+  const blob = await (await dir.getFileHandle(`${name}.geoblob`)).getFile();
+  return cacheVersion === null || (await versionOf(blob)) === cacheVersion ? blob : null;
+}
+
 // The cache file an import of `file` made before, if the file is unchanged since: its size and
-// modification time match the note kept with it.
+// modification time match the note kept with it, and the engine reads its version.
 export async function cachedImport(file) {
   try {
     const dir = await folder();
     const note = JSON.parse(await (await (await dir.getFileHandle(`${file.name}.json`)).getFile()).text());
     if (note.size !== file.size || note.lastModified !== file.lastModified) return null;
-    return (await dir.getFileHandle(`${file.name}.geoblob`)).getFile();
+    return await current(dir, file.name);
   } catch {
     return null;
   }
 }
 
-// A kept cache file, by the name of the file it came from.
+// A kept cache file, by the name of the file it came from; null if it is in an older format.
 export async function keptFile(name) {
-  return (await (await folder()).getFileHandle(`${name}.geoblob`)).getFile();
+  return current(await folder(), name);
 }
 
 // Deletes what was kept for `name`: its cache file, its note and its source.

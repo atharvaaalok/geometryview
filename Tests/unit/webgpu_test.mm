@@ -5,6 +5,7 @@
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
 #include "drive_fixture.h"
+#include "hidden_box_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
 #include "gpu/overlay_atlas.h"
@@ -323,6 +324,31 @@ TEST_CASE("the WebGPU renderer draws every style as Metal does") {
                 CHECK(d.changed < 0.005);
             }
         }
+        unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("the WebGPU renderer keeps hidden edges hidden, as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importHiddenBox(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        const GeoRenderOptions options = test::hiddenBoxView();
+        const std::vector<u8> expected = renderWith(*metal, blob, options);
+        const std::vector<u8> image = renderWith(*web, blob, options);
+        REQUIRE(image.size() == expected.size());
+        test::checkNothingShowsThrough(test::grayOf(image), options.width, options.height);
+        const Difference d = compare(image, expected);
+        CAPTURE(d.mean);
+        CAPTURE(d.changed);
+        CHECK(d.mean < 1.0);
+        CHECK(d.changed < 0.005);
         unlink(blob.c_str());
     }
 }

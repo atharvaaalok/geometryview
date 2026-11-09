@@ -60,8 +60,10 @@ struct GpuDefinitionW {
     u32 flags;
     float boundsScale[3];
     u32 meshletCount;
+    float edgeLift;
+    float pad[3];
 };
-static_assert(sizeof(GpuDefinitionW) == 80);
+static_assert(sizeof(GpuDefinitionW) == 96);
 
 struct GpuState {
     u32 flags, facePage, look, pad;
@@ -959,6 +961,7 @@ struct Renderer::State {
                     }
                     out.boundsStep = std::max(
                         {record->boundsScale[0], record->boundsScale[1], record->boundsScale[2]});
+                    out.edgeLift = document.edgeLift(*record);
                 }
                 gpuDefinitions.push_back(out);
             }

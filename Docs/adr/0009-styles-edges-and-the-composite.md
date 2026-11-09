@@ -146,3 +146,33 @@ renderers lacked (`Docs/measurements/p8/p8-studio.md`):
 
 Studio's frame costs a third to three fifths of Metal's: 2.72 against 4.36 ms on the rack of 100k
 parts and 2.92 against 6.75–7.61 ms on the 10M-triangle STL, on the Mac at 2880×1800.
+
+## Addendum (2026-11-09): how far an edge moves toward the eye
+
+An edge lies on its own faces exactly, but on a curved face the facets beside it can sit in front
+of it, by up to the tessellation's chord error, and a line has width, which a concave crease's
+faces cut into. So every edge moves toward the eye before its depth test. It used to move by
+`max(2 × the scene's coarsest tolerance, 2 points of depth)`. Both were too much:
+
+- The tolerance is 2e-4 of the *whole assembly's* diagonal: 4.8 mm on the 1M rack, whose boxes
+  are 4 mm wide and 2 mm apart. The edges of boxes behind showed through the boxes in front, as
+  lines across their tops and stubs at their feet. It also stayed at the coarsest level after
+  refinement.
+- Two points of depth, zoomed out, is several millimetres: the 100k rack's column turned to ink.
+
+Now an edge moves by `max(its definition's lift, 1 point of depth)`:
+
+- **The lift** is twice the definition's own chord error, the coarsest tolerance halved for each
+  level it has been refined to, so it shrinks as the part gets finer; and nothing for a definition
+  whose faces are all planar (`kDefinitionFlat`, set at import when every face's vertex normals
+  agree), which tessellates exactly. Flat definitions are not refined either: re-meshing them gives
+  the same triangles. The flag made the cache format version 5; older caches import again.
+- **One point** covers most of a crease line's width across a concave crease, and depth
+  precision. On demo_drive, PLE120 and the U8II motor, visible creases keep 97-99.7% of the ink
+  they had at two points; what they lose is a pixel off one side of a concave curved crease.
+
+`edge_leak_test.mm` and the matching case in `webgpu_test.mm` render a small box wholly behind a
+large one in an assembly 20 m across, and require nothing of it to show through. With the old
+offset, 864 pixels did. The definition's lift is one more float in its record, already read for
+each segment; the edge pass costs what it did, and the flatness check costs the importer nothing
+measurable (it stops at the first curved face).

@@ -7,7 +7,8 @@
 import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
 import { ViewportInput } from "./input.js";
 import { StructureCard } from "./structure.js";
-import { LibraryCard, cachedImport, forgetKept, keptFile, keptSource, libraryEntries } from "./library.js";
+import { LibraryCard, cachedImport, forgetKept, keptFile, keptSource, libraryEntries,
+         setCacheVersion } from "./library.js";
 import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
@@ -71,6 +72,7 @@ function webgpuAdvice() {
   return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
 window.geometryView = engine; // for the console and the shell's checks
+setCacheVersion(engine.cacheVersion);
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
 const startupMs = Math.round(performance.now());
 

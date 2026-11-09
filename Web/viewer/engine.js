@@ -142,6 +142,9 @@ export class Engine {
   setLook({ style, colorMode, ghostStyle, castShadow, grain, wobble }) {
     this.#module._geo_web_set_look(style, colorMode, ghostStyle, castShadow ? 1 : 0, grain, wobble);
   }
+  // The cache file version this engine reads.
+  get cacheVersion() { return this.#module._geo_web_cache_version(); }
+
   // The look every app starts with, as setLook takes it: the engine's, so all agree.
   defaultLook() {
     const m = this.#module;

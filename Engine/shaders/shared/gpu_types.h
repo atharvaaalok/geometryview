@@ -99,6 +99,9 @@ struct GpuDefinition {
     uint32_t flags;
     uint32_t vertexCount; // for clamping what a cache file says, which is untrusted
     uint32_t faceCount;
+    // How far its edges move toward the eye, in its own units: twice its tessellation's chord
+    // error, so a line on a curved face is not hidden by the facets beside it. Zero when flat.
+    float edgeLift;
 };
 
 // One placed instance of a definition.
@@ -265,9 +268,10 @@ struct FrameUniforms {
     uint32_t ghostPickable; // ghosts write ids, while the ghost tool is held, so a click restores
     uint32_t hoverHides;    // the hide tool is held, so hover shows what a click would hide
     simd_float2 viewport;   // pixels
-    // How far edges move toward the eye, in world units, so a line on a surface is not hidden by
-    // a neighbour's slightly different tessellation: twice the coarsest chord error.
-    float lineOffset;
+    // How far every edge moves toward the eye at least, in points of depth at its distance: enough
+    // for a line's own width across a concave crease, and for depth precision. Each definition
+    // adds its chord error (GpuDefinition.edgeLift).
+    float edgeFloor;
     float worldPerPixel; // orthographic, or at unit depth in perspective
     float depthNear;     // for turning stored depth back into distance
     float depthFar;

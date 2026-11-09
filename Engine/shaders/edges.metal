@@ -205,16 +205,19 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
         transformPoint(occurrence, decodePosition(definition, min(segment.a, lastVertex)));
     const float3 b =
         transformPoint(occurrence, decodePosition(definition, min(segment.b, lastVertex)));
-    // Toward the eye by the coarsest chord error, or two points if that is more: an edge lies on
-    // its own faces exactly, but a neighbour's differently tessellated face can sit a hair in
-    // front of it, and the line would show in dashes.
+    // Toward the eye by the definition's chord error, or the floor if that is more: an edge lies
+    // on its own faces exactly, but on a curved face the facets beside it can sit a hair in front
+    // of it, and the line would show in dashes; and a line has width, which a concave crease's
+    // faces would cut into. No more than that, or the edges of what is just behind show through.
     const auto pixelWorld = [&](float3 p) {
         return frame.perspective != 0
                    ? frame.worldPerPixel * max(dot(p - frame.eye, frame.forward), 0.0)
                    : frame.worldPerPixel;
     };
+    const float chordLift = definition.edgeLift * metal::length(occurrence.rows[0].xyz);
     const auto lift = [&](float3 p) {
-        const float offset = max(frame.lineOffset, 2.0 * style.pixelsPerPoint * pixelWorld(p));
+        const float offset =
+            max(chordLift, frame.edgeFloor * style.pixelsPerPoint * pixelWorld(p));
         const float3 toward = frame.perspective != 0 ? normalize(frame.eye - p) : -frame.forward;
         return p + toward * offset;
     };

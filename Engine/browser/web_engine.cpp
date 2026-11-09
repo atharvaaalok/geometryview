@@ -400,6 +400,11 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_tool(u32 tool) {
 
 /// The look every app starts with: style, colour mode, ghost style, shadow (0 or 1), grain and
 /// wobble, as six doubles.
+/// The cache file version this engine reads: an older kept import must be made again.
+EMSCRIPTEN_KEEPALIVE u32 geo_web_cache_version() {
+    return format::kVersion;
+}
+
 EMSCRIPTEN_KEEPALIVE void geo_web_default_look(double* out) {
     const GeoLook look = geo_default_look();
     out[0] = double(look.style);

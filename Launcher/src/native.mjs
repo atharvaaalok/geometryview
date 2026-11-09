@@ -5,7 +5,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,21 @@ function binaries() {
 const cacheDirectory = join(homedir(), "Library/Caches/geometryview");
 
 /// Imports `path` unless an import of the same file, unchanged, is cached. Returns the cache file.
+// The cache file version gcli writes and reads, from Import/format/blob.h.
+export const kCacheVersion = 5;
+
+// Whether a cache file is in the current format: 8 bytes of magic, then a little-endian u32.
+async function isCurrent(path) {
+  const file = await open(path, "r");
+  try {
+    const header = Buffer.alloc(12);
+    const { bytesRead } = await file.read(header, 0, 12, 0);
+    return bytesRead === 12 && header.readUInt32LE(8) === kCacheVersion;
+  } finally {
+    await file.close();
+  }
+}
+
 export async function importModel(path) {
   const source = resolve(path);
   const info = await stat(source).catch(() => {
@@ -74,7 +89,9 @@ export async function importModel(path) {
     .slice(0, 32);
   const blob = join(cacheDirectory, `${key}.geoblob`);
   if (existsSync(blob)) {
-    return { blob, source, fromCache: true };
+    // One in an older format is made again: gcli reads only its own.
+    if (await isCurrent(blob)) return { blob, source, fromCache: true };
+    await rm(blob, { force: true });
   }
   await mkdir(cacheDirectory, { recursive: true });
   const { gcli, worker } = binaries();

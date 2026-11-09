@@ -25,7 +25,7 @@ struct Frame {
     ghostPickable: u32,
     hoverHides: u32,
     viewport: vec2f,
-    lineOffset: f32,
+    edgeFloor: f32,
     worldPerPixel: f32,
     depthNear: f32,
     depthFar: f32,
@@ -108,6 +108,10 @@ struct Definition {
     flags: u32,
     boundsScale: vec3f,
     meshletCount: u32,
+    edgeLift: f32, // see GpuDefinition.edgeLift
+    pad0: f32,
+    pad1: f32,
+    pad2: f32,
 }
 
 // GpuOccurrence: a 3x4 transform by rows, its definition and its first pick id.
