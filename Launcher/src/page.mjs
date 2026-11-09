@@ -63,18 +63,20 @@ export function openBrowser(url) {
   return new Promise((done) => execFile(command, args, () => done()));
 }
 
-/// The page, opened in the browser if none is connected.
-async function page() {
+/// The page. If none is connected, the browser is opened at it, unless `launch` is false: then
+/// the first page to connect from the viewer's address, opened anywhere, such as an AI app's own
+/// browser pane.
+async function page({ launch = true } = {}) {
   const server = await viewerServer();
   if (!server.bridge.connected) {
     shownFor = null;
-    await openBrowser(server.url);
+    if (launch) await openBrowser(server.url);
   }
   return server;
 }
 
-/// Opens `path` in the page, unless it is open there already. Returns the scene's description.
-export async function openInPage(path) {
+/// The model file at `path`, checked: its full path and modification time.
+async function modelFile(path) {
   const source = resolve(path);
   const info = await stat(source).catch(() => {
     throw new Error(`There is no file at ${source}.`);
@@ -83,15 +85,52 @@ export async function openInPage(path) {
   if (!/\.(step|stp|stl|geoblob)$/i.test(source)) {
     throw new Error("Only STEP (.step, .stp) and STL (.stl) files can be opened.");
   }
-  const server = await page();
+  return { source, info };
+}
+
+/// Opens `path` in the page, unless it is open there already. Returns the scene's description.
+/// `waitMs` is how long to wait for a page to connect.
+export async function openInPage(path, { launch = true, waitMs = 30_000 } = {}) {
+  const { source, info } = await modelFile(path);
+  const server = await page({ launch });
   if (shownFor === source && server.bridge.connected) {
-    return server.bridge.request("describe");
+    return server.bridge.request("describe", {}, { waitMs });
   }
   const description = await server.bridge.request("open", {
     url: server.grant(source), name: basename(source), lastModified: info.mtimeMs,
-  }, { timeoutMs: 600_000 });
+  }, { timeoutMs: 600_000, waitMs });
   shownFor = source;
   return description;
+}
+
+/// Opens `path` in the page and shows it as asked: `isolate`, names of parts to show alone, and a
+/// `style` and `colour`, as the look card numbers them. Returns the scene's description, with
+/// `isolated`, how many parts and assemblies are shown alone, when some were asked for.
+export async function showInPage(path, show = {}, options = {}) {
+  const description = await openInPage(path, options);
+  if (show.isolate?.length > 0 || show.style !== undefined || show.colour !== undefined) {
+    return (await viewerServer()).bridge.request("show", show, { waitMs: options.waitMs });
+  }
+  return description;
+}
+
+// How long a link waits for its page: the person may open it a while after it is offered.
+const kLinkWaitMs = 30 * 60_000;
+
+/// The viewer's address for an AI app to open in its own browser, with `path` shown in it as
+/// asked: at once in a page already connected, or else in the first page to connect. Opens no
+/// browser itself.
+export async function linkToPage(path, show = {}) {
+  await modelFile(path);
+  const server = await viewerServer();
+  const connected = server.bridge.connected;
+  const showing = showInPage(path, show, { launch: false, waitMs: kLinkWaitMs });
+  if (connected) {
+    await showing;
+  } else {
+    showing.catch((error) => process.stderr.write(`${error.message}\n`));
+  }
+  return { url: server.url, shown: connected };
 }
 
 /// The open model's tree, as gcli tree gives it.

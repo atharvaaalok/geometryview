@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // geometryview [file]      serves the viewer on this machine and opens it in the browser, with the
 //                          file if one is given
+// geometryview --no-open [file]
+//                          serves it and prints its address, to open in any browser, such as an
+//                          AI app's own; the file opens in the first page to load it
 // geometryview --mcp       runs the tool server that AI apps start (Claude, Codex, ChatGPT)
 //
 // The viewer is at http://127.0.0.1:47700, so the browser keeps its library from one run to the
@@ -8,7 +11,7 @@
 // GEOMETRYVIEW_PORT, chooses another port.
 
 import { serve } from "../src/mcp.mjs";
-import { openBrowser, openInPage, preferredPort, viewerServer } from "../src/page.mjs";
+import { linkToPage, openBrowser, openInPage, preferredPort, viewerServer } from "../src/page.mjs";
 import { instructions, tools } from "../src/tools.mjs";
 import { viewerAt } from "../src/web.mjs";
 
@@ -22,9 +25,10 @@ if (at >= 0) {
 if (args.includes("--mcp")) {
   serve(tools, instructions);
 } else if (args.includes("--help") || args.includes("-h")) {
-  process.stdout.write("usage: geometryview [--port N] [file] | --mcp\n");
+  process.stdout.write("usage: geometryview [--port N] [--no-open] [file] | --mcp\n");
 } else {
   const file = args.find((arg) => !arg.startsWith("-"));
+  const launch = !args.includes("--no-open") && !args.includes("--serve");
   const port = preferredPort();
   if (port !== 0 && (await viewerAt(port))) {
     const address = `http://127.0.0.1:${port}/`;
@@ -33,7 +37,18 @@ if (args.includes("--mcp")) {
       process.stdout.write("Open the file there, by dragging it onto the page or with ⌘O, or stop " +
                            "that viewer and run this again.\n");
     }
-    await openBrowser(address);
+    if (launch) await openBrowser(address);
+  } else if (!launch) {
+    const viewer = await viewerServer();
+    process.stdout.write(`GeometryView is at ${viewer.url}\nOpen that address in a browser. ` +
+                         "Press Ctrl-C to stop.\n");
+    if (file) {
+      try {
+        await linkToPage(file);
+      } catch (error) {
+        process.stderr.write(`${error.message}\n`);
+      }
+    }
   } else {
     const viewer = await viewerServer();
     process.stdout.write(`GeometryView is at ${viewer.address}/\nPress Ctrl-C to stop.\n`);
