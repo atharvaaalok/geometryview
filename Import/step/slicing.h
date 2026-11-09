@@ -37,6 +37,7 @@ struct Job {
     u32 faceCount = 0;
     bool wholeBody = false;
     bool retry = false; // a last attempt for faces still missing, at a finer tolerance
+    u8 coarser = 0;     // rungs tried coarser, each four times the tolerances, after crashes
 };
 
 /// What writing a job's text needs, kept between jobs so it allocates rarely. One per driver thread.
@@ -72,9 +73,11 @@ public:
     /// Writes a job's STEP text and the request that goes with it.
     void prepare(const Job& job, SliceWriter& writer, std::string& text,
                  worker::Request& request) const;
-    /// A worker answered. OCCT's own failure sends the job down the failure ladder.
+    /// A worker answered. OCCT's own failure sends the job down the failure ladder, and running
+    /// out of memory goes as a crash does.
     void onReply(const Job& job, const worker::Reply& reply, std::vector<u8> payload);
-    /// A worker crashed or timed out on the job, which goes down the failure ladder.
+    /// A worker crashed or timed out on the job, which goes down the failure ladder. A face alone
+    /// is first tried coarser.
     void onCrash(const Job& job);
     /// No worker could be started for the job, which is given up.
     void abandon(const Job& job, const std::string& error);
@@ -98,6 +101,7 @@ private:
     void finishJob();
     void requeue(std::initializer_list<Job> jobs);
     void retry(const Job& job);
+    void outOfMemory(const Job& job);
     void failJob(const Job& job);
     void complete(const Job& job, std::vector<u8> payload);
     void finishDefinition(u32 d);
@@ -127,6 +131,7 @@ private:
     std::atomic<u32> failedFaces_{0};
     std::atomic<u32> unmappedFaces_{0};
     std::atomic<u32> crashedWorkers_{0};
+    std::atomic<u32> coarserFaces_{0};
     std::atomic<u64> triangles_{0};
     std::atomic<u64> meshlets_{0};
     std::atomic<u64> readMicros_{0};

@@ -3,8 +3,8 @@ if(GEO_TARGET STREQUAL "wasm")
     # thread stay native.
     set(portable_tests
         blob camera core edges face_state flight indexed_mesh interaction name_index overlay packer
-        parallel parallel_sort part21 pointer_controller refinement segment shell spsc_ring step_structure
-        stl_reader style)
+        parallel parallel_sort part21 pointer_controller refinement segment shell slice_ladder spsc_ring
+        step_structure stl_reader style)
     list(TRANSFORM portable_tests PREPEND unit/)
     list(TRANSFORM portable_tests APPEND _test.cpp)
     add_executable(geo_tests unit/main.cpp ${portable_tests})

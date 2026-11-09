@@ -28,6 +28,11 @@ constexpr double kMinAngular = 0.05;
 // Rounding to the vertex grid must stay well inside the tessellation's own error.
 constexpr double kGridStepOfDeflection = 0.5;
 constexpr double kRetryToleranceScale = 0.125;
+// A worker that crashes or runs out of time on one face alone has usually run out of memory or
+// time meshing it this finely, as on a surface fitted to a scan, rippled finer than the tolerance.
+// It is tried at four, then sixteen times the tolerances: four times took one such face from
+// 2.8 GB and 38 s to 480 MB and 5 s.
+constexpr u8 kCoarserRungs = 2;
 // Each level halves the chord error, so four levels are sixteen times finer.
 constexpr u32 kMaxLevel = 4;
 
@@ -332,13 +337,17 @@ void SliceScheduler::prepare(const Job& job, SliceWriter& writer, std::string& t
     request.textBytes = text.size();
     // A face that would not mesh is usually smaller than the minimum edge, so the retry of a whole
     // body works finer. Only the faces still missing are taken from it.
-    const double scale = job.retry ? kRetryToleranceScale : 1.0;
+    const double scale = job.retry ? kRetryToleranceScale : std::ldexp(1.0, 2 * job.coarser);
     request.linearDeflection = tolerances_.linear * scale;
     request.angularDeflection = tolerances_.angular;
     request.minSize = tolerances_.minSize * scale;
 }
 
 void SliceScheduler::onReply(const Job& job, const Reply& reply, std::vector<u8> payload) {
+    if (reply.status == u32(ReplyStatus::OutOfMemory)) {
+        outOfMemory(job);
+        return;
+    }
     if (reply.status != u32(ReplyStatus::Ok)) {
         retry(job);
         return;
@@ -352,6 +361,19 @@ void SliceScheduler::onReply(const Job& job, const Reply& reply, std::vector<u8>
 
 void SliceScheduler::onCrash(const Job& job) {
     crashedWorkers_.fetch_add(1, std::memory_order_relaxed);
+    outOfMemory(job);
+}
+
+// A crash, a timeout or a failed allocation: the slice was too much for its worker, so a face
+// alone is tried coarser before the ladder goes on.
+void SliceScheduler::outOfMemory(const Job& job) {
+    if (job.faceCount == 1 && !job.retry && job.coarser < kCoarserRungs) {
+        Job coarser = job;
+        ++coarser.coarser;
+        requeue({coarser});
+        finishJob();
+        return;
+    }
     retry(job);
 }
 
@@ -388,6 +410,9 @@ void SliceScheduler::failJob(const Job& job) {
 }
 
 void SliceScheduler::complete(const Job& job, std::vector<u8> payload) {
+    if (job.coarser != 0) {
+        coarserFaces_.fetch_add(job.faceCount, std::memory_order_relaxed);
+    }
     DefinitionProgress& state = progress_[job.definition];
     {
         std::lock_guard lock(state.mutex);
@@ -534,6 +559,7 @@ bool SliceScheduler::finish(StepStats& stats, std::string& error) {
     stats.failedFaces = failedFaces_;
     stats.unmappedFaces = unmappedFaces_;
     stats.crashedWorkers = crashedWorkers_;
+    stats.coarserFaces = coarserFaces_;
     stats.triangles = usize(triangles_.load()); // far below 2^32 where usize is 32-bit
     stats.meshlets = usize(meshlets_.load());
     std::lock_guard lock(mutex_);

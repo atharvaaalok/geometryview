@@ -23,6 +23,7 @@
 #include <STEPControl_Reader.hxx>
 #include <ShapeProcess.hxx>
 #include <Standard_Failure.hxx>
+#include <Standard_OutOfMemory.hxx>
 #include <StepData_StepModel.hxx>
 #include <StepRepr_RepresentationItem.hxx>
 #include <StepShape_AdvancedFace.hxx>
@@ -44,6 +45,7 @@
 #include <cmath>
 #include <cstring>
 #include <istream>
+#include <new>
 #include <streambuf>
 #include <unordered_map>
 
@@ -358,6 +360,16 @@ void meshSlice(std::string_view text, const Request& request, Reply& reply,
             appendFace(face, it != ids.end() ? it->second : 0, 0, buffers, reply, payload);
         }
         reply.status = u32(ReplyStatus::Ok);
+    } catch (const Standard_OutOfMemory&) {
+        // OCCT's allocator throws this where malloc fails; a worker without its own allocator
+        // traps instead, and either way the face was too much for the memory there is.
+        payload.clear();
+        reply.faceCount = 0;
+        reply.status = u32(ReplyStatus::OutOfMemory);
+    } catch (const std::bad_alloc&) {
+        payload.clear();
+        reply.faceCount = 0;
+        reply.status = u32(ReplyStatus::OutOfMemory);
     } catch (const Standard_Failure&) {
         payload.clear();
         reply.faceCount = 0;

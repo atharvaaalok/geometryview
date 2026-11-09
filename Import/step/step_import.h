@@ -32,6 +32,7 @@ struct StepStats {
     u32 failedFaces = 0; // faces left without triangles after every retry
     u32 unmappedFaces = 0;
     u32 crashedWorkers = 0;
+    u32 coarserFaces = 0; // faces meshed coarser than asked, as their workers crashed at it
     usize workers = 0;
     double linearDeflection = 0.0;
     double angularDeflection = 0.0;
