@@ -48,3 +48,30 @@ modification time is what macOS keeps reliably.
   so Settings does not repeat it.
 - **A test target for the Swift layer.** The key map's conflict rules have no unit tests. The
   rules are short and were checked by reading.
+
+## Addendum (2026-11-09): Folders and Recent, the same on every platform
+
+The Library was connected folders on the Mac and, in the browser and on the iPhone, the files the
+browser had kept. It is now both, the same everywhere: **Folders**, connected folders as trees read
+a level at a time when they open, and **Recent**, the twelve files opened last. The first page,
+the Library card and the toolbar each have the two ways in, Open files and Connect a folder, and a
+dropped folder connects. `Web/viewer/library-rows.js` and `App/Sources/Library/LibraryRows.swift`
+decide the rows alike; `library-rows.js` has tests.
+
+- **Mac.** Folders and recent files are security-scoped bookmarks. Folders list off the main
+  thread; one whose bookmark fails stays, marked missing, until disconnected. A recent file's
+  bookmark is resolved only when it is chosen. The card is the structure tree's own table, rows
+  and cells, in place of an outline view with system rows.
+- **Browser.** `library-store.js` reaches folders through the File System Access API where there
+  is one (handles kept in IndexedDB; a folder needing permission again shows Reconnect), and
+  otherwise for the visit, from a folder input or a dropped folder. Recent is kept in IndexedDB. A
+  file leaving Recent takes its kept import with it unless it is open, so what the browser keeps is
+  bounded by Recent, where before nothing was ever deleted.
+- **iPhone.** `ShellLibrary.swift` shows the system's pickers for files and folders, keeps folders
+  as bookmarks, and the shell serves a folder's listing and files by a random id, never anything
+  outside it. The loopback server now uses the same port each launch (47701, or any if taken): on
+  a new port each launch the page's storage, its kept imports among it, was a stranger's.
+
+Measured in headless Chrome (`test=library`): a file from a connected folder imports in 475 ms and
+reopens from Recent in 5 ms, from the kept import; with the Library showing, 0 frames are drawn
+while nothing happens, with either way of reaching folders.
