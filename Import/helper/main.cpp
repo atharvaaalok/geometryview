@@ -1,9 +1,9 @@
-// geometry-import: the sandboxed helper that parses source files.
+// geometryview-import: the sandboxed helper that parses source files.
 //
 // Untrusted files are parsed here, in a process of its own, so a malformed file can only crash this
 // process, its memory returns to the system when it exits, and the viewer never links a parser.
 //
-// Usage: geometry-import <source-fd> <output-fd> [--level <n> --definitions <i,j,...>]. The
+// Usage: geometryview-import <source-fd> <output-fd> [--level <n> --definitions <i,j,...>]. The
 // options refine a STEP file: only those definitions, at that level, without the model. Results are
 // framed messages on stdout, in format/helper_messages.h. OCCT runs in a further process, next to
 // this executable.
@@ -131,7 +131,7 @@ int main(int argc, const char** argv) {
     std::vector<std::string> warnings;
     if (import::looksLikeStep(file)) {
         import::StepOptions options;
-        options.workerPath = siblingPath(argv[0], "geometry-occt-worker");
+        options.workerPath = siblingPath(argv[0], "geometryview-occt-worker");
         options.sourceFd = sourceFd;
         options.level = level;
         options.definitions = std::move(definitions);

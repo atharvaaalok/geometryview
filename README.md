@@ -115,7 +115,7 @@ ctest --preset debug              # unit, GPU and layering tests
 `gcli` imports, checks and renders files without the app:
 
 ```sh
-build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometry-occt-worker
+build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometryview-occt-worker
 build/release/Tools/gcli stats part.geoblob
 build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png \
     1600 1000 35 25 ortho 1 0 x0.5 plain   # size, view, projection, style, colour, section

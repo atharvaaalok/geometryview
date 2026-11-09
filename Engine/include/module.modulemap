@@ -1,4 +1,4 @@
-module GeometryEngine {
+module GeometryViewEngine {
     header "engine.h"
     export *
 }

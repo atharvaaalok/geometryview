@@ -1,4 +1,4 @@
-// geometry-occt-worker: reads STEP text with OCCT and returns triangles.
+// geometryview-occt-worker: reads STEP text with OCCT and returns triangles.
 //
 // OCCT uses gigabytes on large inputs and can crash on bad ones, so it runs only here, in small
 // single-threaded processes the supervisor can replace. Each request is one slice of the file.

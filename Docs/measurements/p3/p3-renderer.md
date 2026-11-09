@@ -4,7 +4,7 @@ Measured on 2026-11-07 (evening, Pacific Time) on:
 - the M4 Max, with Chrome 157, Safari 26 and native Dawn;
 - the iPhone 16 Pro, in the S3 shell over loopback HTTP.
 
-The raw browser and iPhone reports are in `renderer/`. Native numbers come from `geometry-webgpu`:
+The raw browser and iPhone reports are in `renderer/`. Native numbers come from `geometryview-webgpu`:
 - `compare` renders the same frame with both renderers;
 - `bench` times a 240-frame orbit, waiting for each frame;
 - `bench --metal` times the same orbit with the Metal renderer.
@@ -31,9 +31,9 @@ It also does picking and shell classification (natively).
 Around it:
 - **`engine::prepareOffscreen`** (`Engine/core/offscreen_view.cpp`) sets up a headless frame for any
   backend. `gcli render`, the tests and the tools share it.
-- **`geometry-webgpu`** (`Tools/webgpu/main.mm`) compares and times the renderer on Dawn against
+- **`geometryview-webgpu`** (`Tools/webgpu/main.mm`) compares and times the renderer on Dawn against
   Metal.
-- **`geometry-webgpu-bench`** (`Tools/webgpu/web.cpp`) is the renderer as WebAssembly.
+- **`geometryview-webgpu-bench`** (`Tools/webgpu/web.cpp`) is the renderer as WebAssembly.
   `Web/spike/renderer.html` drives it in the browsers and on the iPhone.
 - **`Tests/unit/webgpu_test.mm`** draws every golden scene and every state with both renderers. It
   also checks picking, the overlay, shell classification, and that the WGSL uniforms are laid out

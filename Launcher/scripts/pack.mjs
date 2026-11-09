@@ -24,7 +24,7 @@ for (const folder of ["bin", "src", "web"]) {
 if (existsSync(join(build, "Tools/gcli"))) {
   mkdirSync(join(stage, "native"), { recursive: true });
   cpSync(join(build, "Tools/gcli"), join(stage, "native/gcli"));
-  cpSync(join(build, "Import/geometry-occt-worker"), join(stage, "native/geometry-occt-worker"));
+  cpSync(join(build, "Import/geometryview-occt-worker"), join(stage, "native/geometryview-occt-worker"));
   cpSync(join(build, "shaders/default.metallib"), join(stage, "native/default.metallib"));
 }
 execFileSync("zip", ["-qr", bundle, "."], { cwd: stage });

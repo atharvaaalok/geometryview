@@ -1,4 +1,4 @@
-// The OCCT worker for a Web Worker: the same meshing as geometry-occt-worker, called directly
+// The OCCT worker for a Web Worker: the same meshing as geometryview-occt-worker, called directly
 // rather than over pipes. The page's script hands it one slice at a time and reads the reply.
 //
 //   occt_init()

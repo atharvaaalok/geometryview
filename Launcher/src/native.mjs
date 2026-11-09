@@ -49,7 +49,7 @@ function binaries() {
   const flat = existsSync(join(directory, "gcli"));
   return {
     gcli: join(directory, flat ? "gcli" : "Tools/gcli"),
-    worker: join(directory, flat ? "geometry-occt-worker" : "Import/geometry-occt-worker"),
+    worker: join(directory, flat ? "geometryview-occt-worker" : "Import/geometryview-occt-worker"),
     shaders: join(directory, flat ? "default.metallib" : "shaders/default.metallib"),
   };
 }
@@ -127,13 +127,13 @@ export async function render(blob, view) {
   }
 }
 
-/// The native Geometry app, if it is installed or built.
+/// The native GeometryView app, if it is installed or built.
 export function viewerApplication() {
   const candidates = [
     process.env.GEOMETRY_APP,
-    "/Applications/Geometry.app",
-    join(homedir(), "Applications/Geometry.app"),
-    join(here, "../../build/release/App/Geometry.app"),
+    "/Applications/GeometryView.app",
+    join(homedir(), "Applications/GeometryView.app"),
+    join(here, "../../build/release/App/GeometryView.app"),
   ].filter(Boolean);
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -141,7 +141,7 @@ export function viewerApplication() {
 export async function openInViewer(path) {
   const application = viewerApplication();
   if (!application) {
-    throw new Error("The Geometry app was not found on this Mac.");
+    throw new Error("The GeometryView app was not found on this Mac.");
   }
   await run("open", ["-a", application, resolve(path)]);
   return application;

@@ -33,7 +33,7 @@ The reference is a polished stainless bracket on a charcoal sweep. Its tones, on
 
 ## GPU time
 
-`geometry-webgpu bench` at 2880×1800 on the M4 Max, Metal's offscreen frames over 2048 frames of an
+`geometryview-webgpu bench` at 2880×1800 on the M4 Max, Metal's offscreen frames over 2048 frames of an
 orbit and Dawn's over 300, in alternating runs. Median frame, ms; 90th percentile in brackets.
 
 | Fixture | Metal renderer: Metal | Studio | Dawn (WebGPU): Metal | Studio |

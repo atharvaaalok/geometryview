@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Owns the application's one window and its menu bar.
 @MainActor
@@ -105,8 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentUnsupportedHardware() {
         let alert = NSAlert()
-        alert.messageText = "This Mac can't run Geometry"
-        alert.informativeText = "Geometry needs a GPU that supports Metal 4."
+        alert.messageText = "This Mac can't run GeometryView"
+        alert.informativeText = "GeometryView needs a GPU that supports Metal 4."
         alert.runModal()
         NSApp.terminate(nil)
     }

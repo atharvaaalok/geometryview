@@ -19,7 +19,7 @@ The import helper indexes the file itself and never links OCCT:
    bodies become one definition.
 4. Each definition's faces are ordered spatially from the file alone and cut into slices of about
    100 kB. A body that fits in one slice is sent whole, as the real solid.
-5. Single-threaded `geometry-occt-worker` processes read each slice with OCCT, mesh it, and return
+5. Single-threaded `geometryview-occt-worker` processes read each slice with OCCT, mesh it, and return
    triangles keyed by STEP face id. The helper packs each definition when its last slice returns, and
    streams it to the cache as a segment the viewer can show at once.
 

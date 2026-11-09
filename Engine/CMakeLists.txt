@@ -51,14 +51,14 @@ if(GEO_TARGET STREQUAL "wasm")
     # The engine in the browser: the core, the WebGPU renderer and the page's host, as a module
     # the viewer's page loads. See browser/web_engine.cpp.
     if(GEO_WEBGPU)
-        add_executable(geometry-web browser/web_engine.cpp)
-        target_link_libraries(geometry-web PRIVATE engine_webgpu engine_core geo_warnings)
-        set_target_properties(geometry-web PROPERTIES SUFFIX ".mjs")
-        target_link_options(geometry-web PRIVATE
+        add_executable(geometryview-web browser/web_engine.cpp)
+        target_link_libraries(geometryview-web PRIVATE engine_webgpu engine_core geo_warnings)
+        set_target_properties(geometryview-web PROPERTIES SUFFIX ".mjs")
+        target_link_options(geometryview-web PRIVATE
             -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
             -sEXPORTED_FUNCTIONS=_malloc,_free
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,UTF8ToString,stringToUTF8,lengthBytesUTF8
-            -sENVIRONMENT=web -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createGeometry)
+            -sENVIRONMENT=web -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createGeometryView)
     endif()
     return()
 endif()

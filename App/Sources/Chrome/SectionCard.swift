@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Cuts across the model's axes: for each axis, whether it is cut, where, and which side goes.
 @MainActor

@@ -2,7 +2,7 @@
 // it, draws the overlay's text, and wraps its geo_web_* functions. Framework-free; everything runs
 // on the main thread, as the engine does.
 
-import createGeometry from "./build/geometry-web.mjs";
+import createGeometryView from "./build/geometryview-web.mjs";
 
 // GeoEventKind, as engine.h numbers them.
 export const Events = Object.freeze({
@@ -59,7 +59,7 @@ export class Engine {
 
   async #load() {
     const phone = this.phone;
-    const module = await createGeometry();
+    const module = await createGeometryView();
     this.#module = module;
     const ready = new Promise((resolve, reject) => {
       module.geoHost = {

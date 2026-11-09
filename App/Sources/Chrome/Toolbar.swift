@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// The bottom toolbar: what clicks pick, what to do with a selection, history, projection and
 /// framing. Every control here also has a key.

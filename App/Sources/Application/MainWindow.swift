@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 import UniformTypeIdentifiers
 
 /// The single window: a full-bleed viewport with the chrome floating above it.
@@ -66,7 +66,7 @@ final class MainWindow: NSWindow {
             defer: false
         )
 
-        title = "Geometry"
+        title = "GeometryView"
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isMovableByWindowBackground = false

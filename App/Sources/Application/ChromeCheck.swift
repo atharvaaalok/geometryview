@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Clicks the interface's own controls with real events, and checks that none of them reaches the
 /// 3D view.

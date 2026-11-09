@@ -1,4 +1,4 @@
-// The Geometry engine's public interface. This is the only header the Swift app sees.
+// The GeometryView engine's public interface. This is the only header the Swift app sees.
 //
 // Every function here is safe to call from the main thread and never blocks: calls enqueue work for
 // the engine thread, which is the single writer of all view state.

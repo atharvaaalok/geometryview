@@ -424,7 +424,7 @@ Renderer::~Renderer() = default;
 
 std::unique_ptr<Renderer> Renderer::create(id<MTLDevice> device, const char* libraryPath) {
     if (![device supportsFamily:MTLGPUFamilyMetal4]) {
-        std::fprintf(stderr, "Geometry needs a GPU that supports Metal 4.\n");
+        std::fprintf(stderr, "GeometryView needs a GPU that supports Metal 4.\n");
         return nullptr;
     }
     std::unique_ptr<Renderer> renderer(new Renderer);

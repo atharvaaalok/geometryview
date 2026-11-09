@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 MainActor.assumeIsolated {
     geo_trace_memory("main")

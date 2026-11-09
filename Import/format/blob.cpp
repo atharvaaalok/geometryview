@@ -136,7 +136,7 @@ bool parseHeaderPrefix(std::span<const u8> prefix, std::span<const SegmentEntry>
     Header header;
     std::memcpy(&header, prefix.data(), sizeof(header));
     if (header.magic != kMagic) {
-        error = "This is not a Geometry cache file.";
+        error = "This is not a GeometryView cache file.";
         return false;
     }
     if (header.version != kVersion) {

@@ -94,7 +94,7 @@ def check_one(entry: dict, result: dict, gcli: Path, worker: Path, label: str) -
 
 def check(build: Path, label: str, jobs: int, report: Path | None) -> int:
     gcli = build / "Tools" / "gcli"
-    worker = build / "Import" / "geometry-occt-worker"
+    worker = build / "Import" / "geometryview-occt-worker"
     sweep = json.loads((OUT / f"{label}-p7-sweep.json").read_text())
     if "error" in sweep:
         print(f"the sweep failed: {sweep['error']}")

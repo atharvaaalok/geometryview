@@ -11,7 +11,7 @@ Measured 2026-11-07 on the M4 Max (Chrome 157, Safari 26) and the iPhone 16 Pro 
 - the PLE120 gearbox (244);
 - the hard 52.7 MB CADBench file (614 slices, 12,188 faces).
 
-**What runs in the browser.** OCCT 8.0.1 is built with Emscripten by `ThirdParty/build_occt_wasm.sh`. It has WebAssembly's own exceptions and no signal conversion. The same meshing code becomes `geometry-occt-web`, a module for Web Workers.
+**What runs in the browser.** OCCT 8.0.1 is built with Emscripten by `ThirdParty/build_occt_wasm.sh`. It has WebAssembly's own exceptions and no signal conversion. The same meshing code becomes `geometryview-occt-web`, a module for Web Workers.
 
 `Web/spike/import.html` replays the slices. The page compiles the module once and posts it to each worker, then hands slices to whichever worker is free.
 
@@ -21,7 +21,7 @@ Measured 2026-11-07 on the M4 Max (Chrome 157, Safari 26) and the iPhone 16 Pro 
 
 | | Measured | Gate |
 |---|---|---|
-| `geometry-occt-web.wasm` | 9.7 MB | ≤12 MB |
+| `geometryview-occt-web.wasm` | 9.7 MB | ≤12 MB |
 | With brotli | 2.4 MB | ≤4 MB |
 
 A worker starts in 2–30 ms from the shared compiled module. Compiling takes 10–50 ms in Chrome (which caches it) and 45–130 ms in Safari (which compiles lazily).

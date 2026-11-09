@@ -19,11 +19,11 @@
 //               { type: "segment", bytes } as each is written; then { type: "done", ... } or
 //               { type: "failed", message }
 
-import createStepImporter from "./occt/geometry-step-web.mjs";
+import createStepImporter from "./occt/geometryview-step-web.mjs";
 
 async function supervisor(threads) {
   if (!threads) return createStepImporter();
-  const { default: create } = await import("./occt-threads/geometry-step-web.mjs");
+  const { default: create } = await import("./occt-threads/geometryview-step-web.mjs");
   return create();
 }
 
@@ -51,7 +51,7 @@ function spawn() {
 }
 
 async function warm(size) {
-  occtModule ??= await WebAssembly.compileStreaming(fetch(new URL("./occt/geometry-occt-web.wasm", import.meta.url)));
+  occtModule ??= await WebAssembly.compileStreaming(fetch(new URL("./occt/geometryview-occt-web.wasm", import.meta.url)));
   while (pool.length < size) pool.push(await spawn());
 }
 

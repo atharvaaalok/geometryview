@@ -37,7 +37,7 @@ try {
 
   status.textContent = "Compiling OCCT…";
   let started = performance.now();
-  const module = await WebAssembly.compileStreaming(fetch("occt/geometry-occt-web.wasm"));
+  const module = await WebAssembly.compileStreaming(fetch("occt/geometryview-occt-web.wasm"));
   const compileMs = performance.now() - started;
 
   // A worker, ready to mesh: made from the module compiled once above.

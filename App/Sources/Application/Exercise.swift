@@ -1,5 +1,5 @@
 import AppKit
-import GeometryEngine
+import GeometryViewEngine
 
 /// Drives a scripted drag through the live app, for measuring real frame times and latency.
 ///

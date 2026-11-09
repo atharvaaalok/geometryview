@@ -12,14 +12,14 @@ const web = join(launcher, "web");
 
 const copies = [
   [join(root, "Web/viewer"), web],
-  [join(root, "build/wasm-webgpu/Engine/geometry-web.mjs"), join(web, "build/geometry-web.mjs")],
-  [join(root, "build/wasm-webgpu/Engine/geometry-web.wasm"), join(web, "build/geometry-web.wasm")],
-  [join(root, "build/wasm-release/Import/geometry-step-web.mjs"), join(web, "occt/geometry-step-web.mjs")],
-  [join(root, "build/wasm-release/Import/geometry-step-web.wasm"), join(web, "occt/geometry-step-web.wasm")],
-  [join(root, "build/wasm-release/Import/geometry-occt-web.mjs"), join(web, "occt/geometry-occt-web.mjs")],
-  [join(root, "build/wasm-release/Import/geometry-occt-web.wasm"), join(web, "occt/geometry-occt-web.wasm")],
-  [join(root, "build/wasm-threads/Import/geometry-step-web.mjs"), join(web, "occt-threads/geometry-step-web.mjs")],
-  [join(root, "build/wasm-threads/Import/geometry-step-web.wasm"), join(web, "occt-threads/geometry-step-web.wasm")],
+  [join(root, "build/wasm-webgpu/Engine/geometryview-web.mjs"), join(web, "build/geometryview-web.mjs")],
+  [join(root, "build/wasm-webgpu/Engine/geometryview-web.wasm"), join(web, "build/geometryview-web.wasm")],
+  [join(root, "build/wasm-release/Import/geometryview-step-web.mjs"), join(web, "occt/geometryview-step-web.mjs")],
+  [join(root, "build/wasm-release/Import/geometryview-step-web.wasm"), join(web, "occt/geometryview-step-web.wasm")],
+  [join(root, "build/wasm-release/Import/geometryview-occt-web.mjs"), join(web, "occt/geometryview-occt-web.mjs")],
+  [join(root, "build/wasm-release/Import/geometryview-occt-web.wasm"), join(web, "occt/geometryview-occt-web.wasm")],
+  [join(root, "build/wasm-threads/Import/geometryview-step-web.mjs"), join(web, "occt-threads/geometryview-step-web.mjs")],
+  [join(root, "build/wasm-threads/Import/geometryview-step-web.wasm"), join(web, "occt-threads/geometryview-step-web.wasm")],
   ...["Regular", "Medium", "SemiBold"].map((weight) => [
     join(root, `ThirdParty/ibm-plex-mono/IBMPlexMono-${weight}.ttf`),
     join(web, `fonts/IBMPlexMono-${weight}.ttf`)]),

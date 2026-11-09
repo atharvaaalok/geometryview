@@ -1,7 +1,7 @@
 // One OCCT worker: meshes the STEP slices the page sends, one at a time, with the module the page
 // compiled once and shared, and answers with OCCT's own timings and what it made.
 
-import createOcct from "./occt/geometry-occt-web.mjs";
+import createOcct from "./occt/geometryview-occt-web.mjs";
 
 let occt = null;
 

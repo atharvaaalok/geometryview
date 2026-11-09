@@ -50,7 +50,7 @@ LOCAL_COPIES = {
 
 def import_seconds(build: Path, source: Path) -> float:
     gcli = build / "Tools" / "gcli"
-    worker = build / "Import" / "geometry-occt-worker"
+    worker = build / "Import" / "geometryview-occt-worker"
     with tempfile.TemporaryDirectory() as scratch:
         blob = Path(scratch) / "fixture.geoblob"
         result = subprocess.run(

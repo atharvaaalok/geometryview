@@ -6,7 +6,7 @@
 //   capture   also reads one frame back and posts its pixels to the server
 //   reduced   leaves out edges and the shadow, as heavy scenes in motion are drawn
 
-import createBench from "./bench/geometry-webgpu-bench.mjs";
+import createBench from "./bench/geometryview-webgpu-bench.mjs";
 
 const params = new URLSearchParams(location.search);
 const model = params.get("model") ?? "stl10m";

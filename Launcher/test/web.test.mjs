@@ -33,7 +33,7 @@ test("the page is served cross-origin isolated", async () => {
   assert.equal(page.headers["cross-origin-opener-policy"], "same-origin");
   assert.equal(page.headers["cross-origin-embedder-policy"], "require-corp");
   assert.match(page.body.toString(), /viewer\.js/);
-  const engine = await get("/build/geometry-web.wasm");
+  const engine = await get("/build/geometryview-web.wasm");
   assert.equal(engine.status, 200);
   assert.equal(engine.headers["content-type"], "application/wasm");
 });
