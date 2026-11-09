@@ -80,7 +80,7 @@ struct Session {
     double tolerances[3] = {0, 0, 0};
     std::vector<u8> blob;
     std::string error;
-    double values[16] = {};
+    double values[17] = {};
     u32 jobs = 0;
 };
 
@@ -329,17 +329,17 @@ EMSCRIPTEN_KEEPALIVE const char* step_error() {
 
 /// tokenize, structure and definition seconds; OCCT's read, transfer and mesh seconds summed over
 /// jobs; pack seconds; then records, bodies, definitions, faces, triangles, failed faces, unmapped
-/// faces, crashed workers, meshlets.
+/// faces, crashed workers, meshlets, faces meshed coarser.
 EMSCRIPTEN_KEEPALIVE const double* step_stats() {
     Session& s = *session;
     const StepStats& t = s.stats;
-    const double values[16] = {
+    const double values[17] = {
         t.tokenizeSeconds,     t.structureSeconds,      t.definitionSeconds,
         t.readSeconds,         t.transferSeconds,       t.meshSeconds,
         t.packSeconds,         double(t.records),       double(t.bodies),
         double(t.definitions), double(t.faces),         double(t.triangles),
         double(t.failedFaces), double(t.unmappedFaces), double(t.crashedWorkers),
-        double(t.meshlets)};
+        double(t.meshlets),    double(t.coarserFaces)};
     std::copy(std::begin(values), std::end(values), s.values);
     return s.values;
 }

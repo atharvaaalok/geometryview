@@ -28,6 +28,7 @@ async function supervisor(threads) {
 }
 
 const kRecycleMB = 256;
+const kOutOfMemory = 2; // worker::ReplyStatus::OutOfMemory
 const kTimeoutMs = 120_000;
 
 let occtModule = null;
@@ -133,7 +134,8 @@ function mesh(step, slots, progressive) {
           if (progressive) postSegments(step);
           replies += 1;
           slot.heapMB = answer.heapMB;
-          if (slot.heapMB > kRecycleMB) await replace(slot);
+          // A worker whose allocation failed is full, and its memory never shrinks.
+          if (slot.heapMB > kRecycleMB || answer.status === kOutOfMemory) await replace(slot);
           if (replies % 8 === 0) self.postMessage({ type: "progress", done: replies, total });
         }
         idle.push(slot);
@@ -201,9 +203,9 @@ async function refine(data) {
     if (step._step_finish() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
     postSegments(step);
     // What it made, for the page's scripted check: a definition can mesh to nothing at all.
-    const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);
+    const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 17);
     self.postMessage({ type: "done", triangles: stats[11], faces: stats[10], failedFaces: stats[12],
-                       crashedWorkers: stats[14] });
+                       crashedWorkers: stats[14], coarserFaces: stats[16] });
   } catch (error) {
     self.postMessage({ type: "failed", message: String(error.message ?? error) });
   }
@@ -252,8 +254,9 @@ self.onmessage = async ({ data }) => {
       if (data.progressive) postSegments(step);
     }
     const blob = step.HEAPU8.subarray(step._step_blob(), step._step_blob() + step._step_blob_size());
-    const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);
-    const result = { triangles: stats[11], faces: stats[10], failedFaces: stats[12], slices,
+    const stats = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 17);
+    const result = { triangles: stats[11], faces: stats[10], failedFaces: stats[12],
+                     coarserFaces: stats[16], slices,
                      importMs: Math.round(performance.now() - started), cacheBytes: blob.length,
                      supervisorMB: Math.round(step.HEAPU8.length / 2 ** 20) };
     await keep(data.name, blob, { name: data.name, size: data.file.size,

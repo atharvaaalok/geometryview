@@ -156,7 +156,7 @@ async function importOnce(step, file, slots, spawn) {
   const importMs = performance.now() - importStarted;
 
   const blob = step.HEAPU8.slice(step._step_blob(), step._step_blob() + step._step_blob_size());
-  const v = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 16);
+  const v = new Float64Array(step.HEAPF64.buffer, step._step_stats(), 17);
   const report = {
     importMs: ms(importMs), beginMs: ms(beginMs), meshMs: ms(meshMs), finishMs: ms(finishMs),
     seconds: {
@@ -166,6 +166,7 @@ async function importOnce(step, file, slots, spawn) {
     },
     records: v[7], bodies: v[8], definitions: v[9], faces: v[10], triangles: v[11],
     failedFaces: v[12], unmappedFaces: v[13], crashedWorkers: v[14], meshlets: v[15],
+    coarserFaces: v[16],
     slices: replies, recoveries, recycled,
     memoryMB: { supervisor: ms(step.HEAPU8.length / 2 ** 20), peakWorker: ms(peakWorkerMB),
                 peakPool: ms(peakPoolMB) },

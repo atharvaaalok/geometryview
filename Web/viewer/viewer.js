@@ -498,7 +498,7 @@ function refineDocument(token, name, level, definitions) {
       note = result.message ?? "";
       if (ok) {
         made = { triangles: result.triangles, failedFaces: result.failedFaces,
-                 crashedWorkers: result.crashedWorkers };
+                 coarserFaces: result.coarserFaces, crashedWorkers: result.crashedWorkers };
       }
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
       if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);

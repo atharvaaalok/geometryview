@@ -408,8 +408,8 @@ a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
   | The shell's server, as it was | 90–107 ms | 3, 74–80 MB | 212–224 ms | 526–608 MB | 385–460 MB |
   | **Chunked** | **17–26 ms** | **61–104, 22–37 MB** | **172–189 ms** | **442–508 MB** | **384–387 MB** |
 
-  - The file streams now. Its pieces are larger than on the Mac, most likely because the page takes each one
-    as it is free, and the GPU upload of the last keeps it busy.
+  - The file streams now. Its pieces are larger than on the Mac, most likely because the page
+    takes each one as it is free, and the GPU upload of the last keeps it busy.
   - The page process's peak fell by about 90 MB. Instruments samples it about once a second, and
     the first sample comes after the file is read, so these are lower bounds on both peaks. Once
     the pieces are collected, the page settles at the same 385 MB; one earlier run held 460 MB
@@ -468,13 +468,13 @@ import on 6 files, all among the 29 flagged, and with the browser's on 7.
 
 | File | Browser | Native |
 |---|---|---|
-| One face of 1.4M triangles, which needs 1.7 GB to mesh | lost: a worker has 512 MB | meshed, 32 s |
-| A 9.4 MB file of two heavy B-spline surfaces | one face lost at the 120 s slice limit | meshed, 48 s for the whole file |
+| One face of 1.4M triangles, which needs 1.7 GB to mesh | lost: a worker has 512 MB (meshed 4× coarser since; see below) | meshed, 32 s |
+| A 9.4 MB file of two heavy B-spline surfaces | one face lost at the 120 s slice limit | a sliver after 48 s: the same area as the browser's |
 | A face OCCT itself cannot mesh in this file | lost | lost |
 
 - **In WebKit:** 851 files in 660 s, none failed. 771 cache files are byte for byte Chrome's. The
-  other 80 have the same faces, triangles, area and edges, laid out differently, most likely
-  because WebKit ran 6 workers to Chrome's 12.
+  other 80 have the same faces, triangles, area and edges, laid out differently. Two Chrome runs
+  differ the same way on 73 files, so the layout varies from run to run, not with WebKit.
 - **Against the native import**, 84 files differ:
   - 78 only in their triangle count, by a median of 1.4% (−12.7% to +100%, the largest on a mesh
     of 184 triangles), with the area within 1e-4. OCCT compiled to WebAssembly tessellates a
@@ -482,6 +482,40 @@ import on 6 files, all among the 29 flagged, and with the browser's on 7.
   - 6 in a face lost, as above, or in area by up to 0.12%, within OCCT's own 0.2%.
 - **Time:** the browser, one file at a time with 12 workers, took 595 s in all; the native import,
   8 files at once, 634 s.
+
+### A face too heavy for a worker
+
+The browser's one real loss was a fitted B-spline surface (48×123 control points) rippled finer
+than the tolerance: OCCT meshes it nearly at the minimum element size everywhere (branch
+`p7-coarser-rung`, 2026-11-08, 9–11 PM). Natively, through the worker's `--truth` mode:
+
+| Tolerances | Triangles | Time | Peak memory |
+|---|---|---|---|
+| As asked | 1.54M | 38 s | 2.8 GB |
+| 2× coarser | 685k | 14 s | 1.1 GB |
+| 4× coarser | 286k | 5.3 s | 480 MB |
+| 8× coarser | 113k | 1.8 s | 200 MB |
+
+- **A new rung in the failure ladder:** a worker that crashes, runs out of time or out of memory
+  on one face alone tries it again at four, then sixteen times the tolerances, before the face
+  is given up (`SliceScheduler::outOfMemory`, `Import/step/slicing.cpp`). OCCT's own failures still
+  go the other way, finer, with the whole body. The import reports how many faces it meshed
+  coarser, beside those it lost.
+- **Out of memory comes two ways in a worker.** A fresh one traps; one reused for many files
+  throws `Standard_OutOfMemory` from OCCT's allocator, which the worker took for an ordinary OCCT
+  failure. The first full sweep with the rung never used it for that reason. The worker now
+  answers `OutOfMemory`, which the ladder takes as a crash, and the page replaces that worker.
+- **The file:** in Chrome, after 100 other files, it imports in 7.3 s with no face lost, 377k
+  triangles, its bounds native's and its area 0.4% above native's.
+- **The rest of the sample:** a full run with the rung changed no other file's mesh: 851 files,
+  none failed, and every cache file but this one's has the same faces, triangles and area as
+  before. Native imports never reach the rung: a native worker has the memory.
+- **The 9.4 MB file's slow face** is another fitted surface, 128×243 control points, from one of
+  our own pipelines' self-checks. At the asked tolerances OCCT gives up on it in under a second
+  (its whole-file read too); the time goes to the ladder's last step, the whole body at an eighth
+  of the tolerances, which makes a sliver of it in 48 s natively and runs out of time in the
+  browser. That step is not the rung's, so the file is as before: 120.8 s, the face lost. A time
+  limit for that last step would save the 48 s natively; left for now.
 
 ## Linux and Windows
 

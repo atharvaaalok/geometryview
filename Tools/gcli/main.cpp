@@ -76,8 +76,8 @@ int importStepCommand(std::span<const u8> bytes, int sourceFd, int outputFd, con
                  s.workers, s.triangles, s.meshlets);
     std::println("tolerances: linear {} angular {} min {}", s.linearDeflection, s.angularDeflection,
                  s.minSize);
-    std::println("failed {} unmapped {} crashed {}", s.failedFaces, s.unmappedFaces,
-                 s.crashedWorkers);
+    std::println("failed {} unmapped {} crashed {} coarser {}", s.failedFaces, s.unmappedFaces,
+                 s.crashedWorkers, s.coarserFaces);
     std::println("tokenize {:.1f} ms, structure {:.1f} ms, definitions {:.1f} ms, workers {:.3f} s",
                  s.tokenizeSeconds * 1e3, s.structureSeconds * 1e3, s.definitionSeconds * 1e3,
                  s.workerSeconds);

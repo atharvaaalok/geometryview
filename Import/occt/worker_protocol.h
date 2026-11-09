@@ -29,7 +29,8 @@ struct Request {
 
 enum class ReplyStatus : u32 {
     Ok = 0,
-    Failed = 1, // OCCT raised an exception or read nothing
+    Failed = 1,      // OCCT raised an exception or read nothing
+    OutOfMemory = 2, // an allocation failed: the slice may mesh coarser, or in a fresh worker
 };
 
 struct Reply {
