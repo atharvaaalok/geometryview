@@ -399,8 +399,23 @@ a late first byte (branch `p7-memory-and-sweep`, 2026-11-08, about 5:30 PM).
   Content-Length: it bounds what a file's header may ask to be placed.
 - **Chrome** streams either way. The launcher's tests, its end-to-end test in Chrome, and the
   harness above pass.
-- **Still to do on the iPhone:** the viewer's memory with the STL's cache file, which should fall
-  by up to the file's size, and the first byte.
+- **On the iPhone 16 Pro** (branch `p7-phone-streaming`, 2026-11-08, about 8:45 PM): the viewer
+  opened the STL's cache file (151 MB) from the bundle, twice with each server. The viewer now
+  records how a file read arrived (`Engine.lastRead`), and the open check reports it:
+
+  | stl10m.geoblob | First data | Pieces, largest | Whole file | Page process, first sample | Settled |
+  |---|---|---|---|---|---|
+  | The shell's server, as it was | 90–107 ms | 3, 74–80 MB | 212–224 ms | 526–608 MB | 385–460 MB |
+  | **Chunked** | **17–26 ms** | **61–104, 22–37 MB** | **172–189 ms** | **442–508 MB** | **384–387 MB** |
+
+  - The file streams now. Its pieces are larger than on the Mac, most likely because the page takes each one
+    as it is free, and the GPU upload of the last keeps it busy.
+  - The page process's peak fell by about 90 MB. Instruments samples it about once a second, and
+    the first sample comes after the file is read, so these are lower bounds on both peaks. Once
+    the pieces are collected, the page settles at the same 385 MB; one earlier run held 460 MB
+    for its whole 30 s.
+  - The GPU process peaked at 230–231 MB either way.
+  - Reports and memory series: `p7/viewer/iphone-stream-{before,after}-{1,2}-*.json`.
 
 ## The browser's STEP importer on real files
 

@@ -47,6 +47,9 @@ export class Engine {
   #imports = new Map(); // token to its stream's state
   #nextSource = 1;
   #stage = 0;
+  // How the last file read arrived: { bytes, pieces, largest, firstMs, ms }, the times from
+  // asking for it. A file whose length WebKit knows can come in one piece, all at the end.
+  lastRead = null;
 
   constructor(canvas, handlers, phone) {
     this.#canvas = canvas;
@@ -229,6 +232,8 @@ export class Engine {
     let cancelled = false;
     let reader = null;
     this.#imports.set(token, { cancel: () => { cancelled = true; reader?.cancel(); } });
+    const asked = performance.now();
+    const read = { bytes: 0, pieces: 0, largest: 0, firstMs: null, ms: null };
     try {
       let body = source, size = 0;
       if (typeof source === "string") {
@@ -249,6 +254,10 @@ export class Engine {
         const { done, value } = await reader.read();
         if (cancelled) return;
         if (done) break;
+        read.firstMs ??= performance.now() - asked;
+        read.pieces += 1;
+        read.bytes += value.length;
+        read.largest = Math.max(read.largest, value.length);
         for (let at = 0; at < value.length; at += kStage) {
           const piece = value.subarray(at, Math.min(value.length, at + kStage));
           module.HEAPU8.set(piece, this.#stage);
@@ -258,6 +267,8 @@ export class Engine {
           }
         }
       }
+      read.ms = performance.now() - asked;
+      this.lastRead = read;
       module._geo_web_stream_end(token, 0);
     } catch (error) {
       if (!cancelled) {

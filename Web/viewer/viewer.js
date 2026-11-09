@@ -847,6 +847,6 @@ async function runTest() {
     settledAfterDrag: after.settledFrames - dragged.settledFrames,
     loopingAfter: after.looping,
     bufferMB: after.bufferMB, targetMB: after.targetMB, heapMB: after.heapMB,
-    triangles: after.triangles,
+    triangles: after.triangles, read: engine.lastRead,
   });
 }
