@@ -688,7 +688,9 @@ EMSCRIPTEN_KEEPALIVE void geo_web_summary(u32* out) {
 
 /// For tests and measurements: frames drawn moving and settled, GPU milliseconds of the latest
 /// timed frame, GPU buffer and target megabytes, triangles and edge segments in the scene,
-/// whether the frame loop is running, and the hovered pick id.
+/// whether the frame loop is running and why, and the hovered pick id. The loop is 0 when stopped;
+/// running, it is 1, plus 1 while the core wants frames (something moves, or it lingers after), plus
+/// 2 while the still view's samples are yet to be drawn.
 EMSCRIPTEN_KEEPALIVE void geo_web_stats(double* out) {
     const std::array<u64, 2> memory = web.renderer->memoryBytes();
     out[0] = double(web.framesDrawn);
@@ -698,7 +700,7 @@ EMSCRIPTEN_KEEPALIVE void geo_web_stats(double* out) {
     out[4] = double(memory[1]) / 1048576.0;
     out[5] = double(web.renderer->sceneTriangles());
     out[6] = double(web.renderer->sceneEdgeSegments());
-    out[7] = web.looping ? 1.0 : 0.0;
+    out[7] = web.looping ? 1.0 + (web.coreWantsFrames ? 1.0 : 0.0) + (web.settled ? 0.0 : 2.0) : 0.0;
     out[8] = double(web.core->hoveredId());
 }
 
