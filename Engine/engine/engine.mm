@@ -46,6 +46,8 @@ namespace {
 using namespace geo;
 
 constexpr usize kCommandCapacity = 4096;
+// The frame whose allocations GEOMETRY_ALLOCS=stacks prints: one well past startup.
+constexpr u64 kStacksFrame = 300;
 
 // Seconds since this process started, for measuring launch.
 double secondsSinceProcessStart() {
@@ -147,6 +149,7 @@ struct GeoEngine final : engine::Host {
     std::atomic<u64> framesRendered{0};
     std::atomic<double> lastFrameSeconds{0.0};
     std::atomic<u64> frameAllocations{0};
+    std::atomic<u64> frameOwnAllocations{0};
     std::atomic<u32> publishedHover{0};
     std::atomic<u32> selectedCount{0};
     std::atomic<u32> hiddenCount{0};
@@ -419,12 +422,23 @@ struct GeoEngine final : engine::Host {
             latency.track(tick.drawable, frame->inputTime, frame->started, tick.commitDeadline,
                           tick.presentationTime);
         }
+        // GEOMETRY_ALLOCS=stacks prints where a frame well past startup allocates.
+        const bool printStacks = framesRendered.load(std::memory_order_relaxed) == kStacksFrame;
+        if (printStacks) {
+            engine::keepAllocationStacks();
+        }
         const u64 allocationsBefore = engine::allocationCount();
+        const u64 ownBefore = engine::ownAllocationCount();
         renderer->render(tick.drawable, frame->view, &frame->overlay);
         lastFrameSeconds.store(nowSeconds() - frame->started, std::memory_order_relaxed);
         framesRendered.fetch_add(1, std::memory_order_relaxed);
         frameAllocations.store(engine::allocationCount() - allocationsBefore,
                                std::memory_order_relaxed);
+        frameOwnAllocations.store(engine::ownAllocationCount() - ownBefore,
+                                  std::memory_order_relaxed);
+        if (printStacks) {
+            engine::printAllocationStacks(STDERR_FILENO);
+        }
     }
 
     void run() {
@@ -718,6 +732,7 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine) {
     return {engine->framesRendered.load(std::memory_order_relaxed),
             engine->lastFrameSeconds.load(std::memory_order_relaxed),
             engine->frameAllocations.load(std::memory_order_relaxed),
+            engine->frameOwnAllocations.load(std::memory_order_relaxed),
             engine->publishedHover.load(std::memory_order_relaxed),
             engine->selectedCount.load(std::memory_order_relaxed),
             engine->hiddenCount.load(std::memory_order_relaxed),

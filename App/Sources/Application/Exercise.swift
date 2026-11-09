@@ -169,14 +169,16 @@ final class Exercise {
             String(
                 format:
                     "exercise: %llu frames in %.2f s, %.1f fps, last CPU encode %.2f ms, "
-                    + "mean GPU %.2f ms, p99 %.2f ms, %llu allocations in the last frame",
+                    + "mean GPU %.2f ms, p99 %.2f ms, %llu allocations in the last frame "
+                    + "(%llu by our code, the rest inside Metal and Core Animation)",
                 frames,
                 elapsed,
                 Double(frames) / elapsed,
                 stats.last_frame_seconds * 1000,
                 stats.gpu_frame_seconds * 1000,
                 stats.gpu_frame_p99_seconds * 1000,
-                stats.last_frame_allocations
+                stats.last_frame_allocations,
+                stats.last_frame_own_allocations
             )
         )
         let screen = NSApp.windows.first?.screen
