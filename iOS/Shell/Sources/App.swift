@@ -119,6 +119,9 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         if measuring {
             Self.makeStreamFile(in: files.files)
         }
+        if runs.contains(where: { $0.query.contains("test=library") }) {
+            library.connectTestFolder(bundle: Bundle.main.resourceURL!)
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(SchemeHandler(files: files), forURLScheme: SchemeHandler.scheme)
