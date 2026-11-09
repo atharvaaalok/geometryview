@@ -383,9 +383,6 @@ let importer = null;
 let importing = Promise.resolve();
 const stepSources = new Map(); // STEP files imported this visit, by name, for refinement
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
-// How large each OCCT worker may grow. A face of 1.4M triangles needed 1.7 GB; a phone keeps every
-// worker small, so one that runs out loses its face rather than the page.
-const workerMemoryMB = phone ? 512 : 2048;
 
 // What importing an STL file takes at its peak. A binary file, read in pieces, is never held
 // whole, and the importer's heap stays under 300 MB and 115 bytes a triangle: 0.46 GB for 2
@@ -448,7 +445,7 @@ function importFile(file, add) {
       };
       worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
       worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name,
-                           workers: importWorkers, threads: stl, progressive: !stl, workerMemoryMB });
+                           workers: importWorkers, threads: stl, progressive: !stl });
     });
     if (stl) worker.terminate();
     lastImport = result;
@@ -495,8 +492,7 @@ function refineDocument(token, name, level, definitions) {
           }
         };
         importer.onerror = (event) => resolve({ type: "failed", message: event.message });
-        importer.postMessage({ type: "refine", file, level, definitions, workers: importWorkers,
-                               workerMemoryMB });
+        importer.postMessage({ type: "refine", file, level, definitions, workers: importWorkers });
       });
       ok = result.type === "done";
       note = result.message ?? "";
