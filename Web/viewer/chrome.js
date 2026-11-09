@@ -28,12 +28,18 @@ const Colours = [
 const Ghosts = [{ title: "Shell", value: 1 }, { title: "Lines", value: 2 }, { title: "Both", value: 3 }];
 const kWobbleSteps = [0, 1, 3, 5];
 
-// How the model is drawn, as chosen; remembered in this browser between visits.
+// How the model is drawn, as chosen; remembered in this browser between visits. Until the person
+// chooses, it is the engine's default, which every app shares.
 export class Look {
-  style = 0; colour = 0; ghosts = 1; shadow = true; grain = true; wobble = 0;
+  style = 0; colour = 1; ghosts = 1; shadow = true; grain = true; wobble = 0;
 
-  static saved() {
+  // `defaults` is the engine's default look, as Engine.defaultLook gives it.
+  static saved(defaults) {
     const look = new Look();
+    if (defaults) {
+      Object.assign(look, { style: defaults.style, colour: defaults.colorMode, ghosts: defaults.ghostStyle,
+                            shadow: defaults.castShadow, grain: defaults.grain > 0, wobble: defaults.wobble });
+    }
     try {
       Object.assign(look, JSON.parse(localStorage.getItem("look") ?? "{}"));
     } catch {

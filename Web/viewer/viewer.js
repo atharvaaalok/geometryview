@@ -69,7 +69,7 @@ window.geometryView = engine; // for the console and the shell's checks
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
 const startupMs = Math.round(performance.now());
 
-let look = Look.saved();
+let look = Look.saved(engine.defaultLook());
 let perspective = false;
 let names = [];
 const progress = new Map();
@@ -146,7 +146,7 @@ canvas.addEventListener("pointerdown", () => {
   toolbar.viewsMenu.hidden = true;
 });
 chromeReady = true;
-applyLook(look);
+applyLook(look, { remember: false });
 showEmpty();
 
 // ---- Engine events ----------------------------------------------------------------------------
@@ -304,9 +304,11 @@ function closeCards() {
   sectionCard.element.hidden = true;
 }
 
-function applyLook(next) {
+// Shows `next`, and remembers it unless it is the look the page started with: a look saved only
+// once the person changes it keeps following the shared default until then.
+function applyLook(next, { remember = true } = {}) {
   look = next;
-  look.save();
+  if (remember) look.save();
   engine.setLook(look.engineLook);
   const dark = Styles[look.style].onDark;
   masthead.setOnDark(dark);
