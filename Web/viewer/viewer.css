@@ -114,7 +114,7 @@ button:disabled { cursor: default; }
   gap: 6px;
   height: var(--pill);
   min-width: var(--pill);
-  padding: 0 12px;
+  padding: 0 10.5px;
   border: var(--line) solid var(--ink);
   border-radius: calc(var(--pill) / 2);
   background: var(--sheet);
@@ -354,7 +354,7 @@ body.phone .tree .row { height: 30px; }
 .tree .count, .tree .mark { flex: none; margin: 0 6px 0 8px; font-size: var(--text-s); color: var(--muted); display: inline-flex; }
 .tree .actions { display: none; flex: none; gap: 1px; margin-left: 4px; }
 .tree .row:hover .actions { display: inline-flex; }
-.tree .row:hover .count, .tree .row:hover .mark { display: none; }
+.tree .row:hover .actions ~ .count, .tree .row:hover .actions ~ .mark, .tree .row:hover .actions ~ .pill { display: none; }
 .tree .rowbutton {
   display: inline-flex;
   align-items: center;
@@ -383,25 +383,17 @@ body.phone .tree .row { height: 30px; }
 .structure .footer .counts { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-s); font-weight: 500; }
 .structure .footer .buttons { display: flex; gap: 8px; }
 
-.library .note { margin: 0; color: var(--muted); font-size: var(--text-s); }
-.library > .pill { align-self: flex-start; }
-.library .entries { flex: 1; overflow-y: auto; margin: 0 -6px; }
-.library .entry {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  text-align: left;
-}
-.library .entry:hover { background: var(--cream-wash); }
-.library .entry .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.library .entry .size { color: var(--muted); font-size: var(--text-xs); }
-.library .empty { color: var(--faint); font-size: var(--text-s); padding: 0 8px; }
+.structure .nothing { margin: 0; color: var(--muted); font-size: var(--text-s); }
+
+/* The Library: the switcher and the two ways in, then folders and recent files as tree rows. */
+.library .header { display: flex; align-items: center; gap: 8px; }
+.library .header .grow { flex: 1; }
+.library .row.heading .name { font-weight: 600; }
+.library .row.message { color: var(--muted); font-size: var(--text-s); }
+.library .row.missing .name { color: var(--faint); }
+.library .row .pill.small { height: 22px; padding: 0 8px; margin: 0 4px 0 8px; font-size: var(--text-xs); }
+body.phone .library .actions { display: inline-flex; }
+body.phone .library .actions ~ .count { display: none; }
 
 /* ---- The selection card ----------------------------------------------------------------- */
 
@@ -473,7 +465,7 @@ body.phone .tree .row { height: 30px; }
 .look .note { margin: -4px 0 0 100px; font-size: var(--text-xs); color: var(--muted); }
 .section .row { gap: 10px; }
 .section .axis { width: 14px; font-size: var(--text-s); font-weight: 600; }
-.section { width: 340px; }
+.popover.section { width: 340px; }
 .section .slider { width: 160px; }
 
 /* ---- Overlays --------------------------------------------------------------------------- */

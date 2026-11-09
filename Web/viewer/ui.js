@@ -77,3 +77,58 @@ export function slider({ help, onChange }) {
 export const keyCap = (text) => el("kbd.cap", { text });
 
 export const formatNumber = (value) => value.toLocaleString("en-US");
+
+// A scrolling list that makes elements only for the rows in view and a few either side, so a list
+// of a million rows scrolls as one of ten. `count()` and `row(index)` give the rows and
+// `rowHeight()` their height; `render()` after they change, or `schedule()` to render once at the
+// next frame, as scrolling and resizing do.
+export class VirtualList {
+  #spacer = el("div.spacer");
+  #rows;
+  #pending = false;
+  #count;
+  #row;
+  #rowHeight;
+  element;
+
+  constructor({ role, count, row, rowHeight }) {
+    this.#count = count;
+    this.#row = row;
+    this.#rowHeight = rowHeight;
+    this.#rows = el("div.rows", { role });
+    this.element = el("div.tree", {}, [this.#spacer, this.#rows]);
+    this.element.addEventListener("scroll", () => this.schedule());
+    new ResizeObserver(() => this.schedule()).observe(this.element);
+  }
+
+  schedule() {
+    if (this.#pending) return;
+    this.#pending = true;
+    requestAnimationFrame(() => {
+      this.#pending = false;
+      this.render();
+    });
+  }
+
+  render() {
+    const count = this.#count();
+    const height = this.#rowHeight();
+    this.#spacer.style.height = `${count * height}px`;
+    const first = Math.max(0, Math.floor(this.element.scrollTop / height) - 4);
+    const last = Math.min(count, first + Math.ceil(this.element.clientHeight / height) + 8);
+    this.#rows.style.transform = `translateY(${first * height}px)`;
+    const children = [];
+    for (let index = first; index < last; ++index) children.push(this.#row(index));
+    this.#rows.replaceChildren(...children);
+  }
+
+  // Scrolls `index` into view, a third of the way down, if it is out of view.
+  scrollToRow(index) {
+    const height = this.#rowHeight();
+    const top = index * height;
+    const view = this.element.clientHeight;
+    if (top < this.element.scrollTop || top + height > this.element.scrollTop + view) {
+      this.element.scrollTop = Math.max(0, top - view / 3);
+    }
+  }
+}

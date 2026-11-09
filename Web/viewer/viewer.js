@@ -7,7 +7,9 @@
 import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
 import { ViewportInput } from "./input.js";
 import { StructureCard } from "./structure.js";
-import { LibraryCard, cachedImport, keptFile, keptSource } from "./library.js";
+import { LibraryCard, cachedImport, forgetKept, keptFile, keptSource, libraryEntries } from "./library.js";
+import { keyOf } from "./library-rows.js";
+import { LibraryStore } from "./library-store.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
          ShortcutsSheet, StatusCard, Styles, Toolbar } from "./chrome.js";
 import { el } from "./ui.js";
@@ -38,7 +40,10 @@ const waitFor = (kind) => new Promise((resolve) => {
 
 // ---- The engine and the chrome ----------------------------------------------------------------
 
-const status = new StatusCard(() => chooseFile(false));
+// Where the Library's folders and recent files come from.
+const libraryStore = new LibraryStore({ backend: params.get("backend") ?? undefined });
+const status = new StatusCard({ onOpen: () => chooseFile(false), onConnect: () => connectFolder(),
+                                canConnect: libraryStore.canConnect, phone });
 document.body.append(status.element);
 // The engine may speak while it starts, before the chrome below exists to listen.
 let chromeReady = false;
@@ -82,10 +87,13 @@ let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
 const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show) });
-const library = new LibraryCard({
-  onOpen: (file, name, add) => openCache(file, name, add),
-  onChoose: () => chooseFile(false),
-  onSwitch: (show) => showLibrary(show),
+const library = new LibraryCard(libraryStore, {
+  open: (row, add) => openFromFolder(row, add),
+  reopen: (entry, add) => reopenRecent(entry, add),
+  choose: () => chooseFile(false),
+  connect: () => connectFolder(),
+  switch: (show) => showLibrary(show),
+  forget: (key) => forgetRecent(key),
 });
 const selection = new SelectionCard((action) => engine.perform(action));
 const lookCard = new LookCard(look, (next) => applyLook(next));
@@ -103,6 +111,8 @@ const toolbar = new Toolbar({
   onLook: () => toggleCard(lookCard),
   onSection: () => toggleCard(sectionCard),
   onOpen: () => chooseFile(false),
+  onConnect: () => connectFolder(),
+  canConnect: libraryStore.canConnect,
   onParts: () => {
     panelOpen = !panelOpen;
     showLibrary(names.length === 0);
@@ -133,10 +143,12 @@ new ViewportInput(engine, canvas, {
     showHover();
   },
 });
+// ⌘O opens files, ⇧⌘O adds them to what is shown, ⌥⌘O connects a folder: the Mac's keys.
 addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
     e.preventDefault();
-    chooseFile(e.shiftKey);
+    if (e.altKey) connectFolder();
+    else chooseFile(e.shiftKey);
   }
 });
 // A press in the view closes the look and section cards and the views menu, as clicking away
@@ -176,6 +188,7 @@ function handle(kind, document, node, done, total, message) {
       status.hide();
       refreshMasthead();
       toolbar.update({ hasSelection: false, hasModel: true });
+      rememberOpened(names[document]);
       break;
     case Events.SceneReady:
       progress.clear();
@@ -328,31 +341,128 @@ function updateInsets() {
   engine.setInsets(insets.left, insets.top, insets.right, insets.bottom);
 }
 
+// Nothing open: the invitation, and on a desktop the Library beside it.
 function showEmpty() {
   status.showInvitation();
   structure.element.hidden = true;
   library.element.hidden = true;
-  library.refresh().then(() => {
-    if (names.length === 0 && panelOpen && library.element.querySelector(".entry")) showLibrary(true);
+  libraryEntries().then((kept) => library.refresh(kept)).then(() => {
+    if (names.length === 0 && panelOpen) showLibrary(true);
   });
   updateInsets();
   toolbar.update({ hasSelection: false, hasModel: false });
 }
 
+// The Library card, or the structure card; the latter says so when nothing is open.
 function showLibrary(show) {
-  if (show) library.refresh();
   library.element.hidden = !show || !panelOpen;
-  structure.element.hidden = show || names.length === 0 || !panelOpen;
+  structure.element.hidden = show || !panelOpen;
+  structure.showNothing(names.filter(Boolean).length === 0);
   library.switcher.selected = show ? 0 : 1;
   structure.switcher.selected = show ? 0 : 1;
+  if (show) library.refresh();
   updateInsets();
 }
 
 // ---- Files ------------------------------------------------------------------------------------
 
-function chooseFile(adding) {
-  picker.dataset.adding = adding ? "1" : "0";
-  picker.click();
+// Where each file shown came from, by name, for Recent: { handle, root, path, where }.
+const sources = new Map();
+
+// Opens files from the browser's own picker, which gives handles Recent can read again, or else
+// from the page's file input.
+async function chooseFile(adding) {
+  let picked;
+  try {
+    picked = await libraryStore.folders.pickFiles();
+  } catch (error) {
+    status.showFailure(error.message);
+    return;
+  }
+  if (picked === undefined) {
+    picker.dataset.adding = adding ? "1" : "0";
+    picker.click();
+    return;
+  }
+  if (!picked) return;
+  for (const { file, handle } of picked) sources.set(file.name, { handle, where: file.name });
+  await openFiles(picked.map((p) => p.file), adding);
+}
+
+// Asks for a folder and shows it in the Library, open.
+async function connectFolder() {
+  if (!libraryStore.canConnect) return;
+  try {
+    const id = await libraryStore.folders.connect();
+    if (id === null || id === undefined) return;
+    await showConnected([id]);
+  } catch (error) {
+    status.showFailure(`That folder could not be connected. ${error.message}`);
+  }
+}
+
+async function showConnected(ids) {
+  await library.refresh();
+  for (const id of ids) library.expand(id);
+  if (!phone) panelOpen = true;
+  showLibrary(true);
+}
+
+// A file from a connected folder.
+async function openFromFolder(row, add) {
+  try {
+    const file = await libraryStore.folders.file(row.root, row.path);
+    const handle = await libraryStore.folders.fileHandle?.(row.root, row.path).catch(() => null);
+    sources.set(file.name, { handle, root: row.root, path: row.path,
+                             where: `${library.folderName(row.root)}/${row.path}` });
+    await openFiles([file], add);
+  } catch (error) {
+    status.showFailure(`${row.name} could not be read. ${error.message}`);
+  }
+}
+
+// A recent file: from where it was, or as it was kept here.
+async function reopenRecent(entry, add) {
+  const got = await libraryStore.reopen(entry, library.readyFolders).catch(() => null);
+  if (!got) {
+    status.showFailure(`${entry.name} is no longer where it was.`);
+    return;
+  }
+  sources.set(entry.name, { handle: entry.handle, root: entry.root, path: entry.path, where: entry.where });
+  if (got.file) await openFiles([got.file], add);
+  else if (got.cache) openCache(got.cache, entry.name, add);
+}
+
+// Puts what opened at the top of Recent. Kept imports of files that fall off are deleted, unless
+// they are open, so what this browser keeps stays as Recent names.
+async function rememberOpened(name) {
+  if (!name) return;
+  const source = sources.get(name) ?? {};
+  const entry = { key: name, name, where: source.where ?? "Kept in this browser", openedAt: Date.now() };
+  for (const field of ["handle", "root", "path"]) if (source[field]) entry[field] = source[field];
+  try {
+    const dropped = await libraryStore.remember(entry);
+    for (const old of dropped) if (!names.includes(old.key)) await forgetKept(old.key);
+  } catch {
+    // Not remembered: the file is open all the same.
+  }
+  library.setOpen(openKeys());
+}
+
+async function forgetRecent(key) {
+  await libraryStore.forget(key);
+  if (!names.includes(key)) await forgetKept(key);
+}
+
+// The Library's keys of what is shown: names, and paths in connected folders.
+function openKeys() {
+  const keys = [];
+  for (const name of names.filter(Boolean)) {
+    keys.push(name);
+    const source = sources.get(name);
+    if (source?.root) keys.push(keyOf(source.root, source.path));
+  }
+  return keys;
 }
 
 function forget() {
@@ -360,6 +470,7 @@ function forget() {
   progress.clear();
   structure.reset();
   selection.element.hidden = true;
+  library.setOpen([]);
 }
 
 function openCache(source, name, add) {
@@ -528,15 +639,7 @@ let lastImport = null;
 let importStarted = 0;
 
 // Removes a kept import, so the next open imports again.
-async function forgetImport(name) {
-  try {
-    const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("library");
-    await folder.removeEntry(`${name}.geoblob`);
-    await folder.removeEntry(`${name}.json`);
-  } catch {
-    // Nothing kept.
-  }
-}
+const forgetImport = (name) => forgetKept(name);
 
 // Dropping files: holding ⌘ adds them to what is shown.
 let dragDepth = 0;
@@ -551,11 +654,16 @@ addEventListener("dragleave", () => {
   dragDepth = Math.max(0, dragDepth - 1);
   if (dragDepth === 0) dropZone.element.hidden = true;
 });
-addEventListener("drop", (e) => {
+// Files open; folders connect. The drop's items are read at once, as browsers require.
+addEventListener("drop", async (e) => {
   e.preventDefault();
   dragDepth = 0;
   dropZone.element.hidden = true;
-  openFiles([...e.dataTransfer.files], e.metaKey || e.ctrlKey);
+  const add = e.metaKey || e.ctrlKey;
+  const { files, connected } = await libraryStore.adopt(e.dataTransfer);
+  if (connected.length > 0) await showConnected(connected);
+  for (const { file, handle } of files) if (handle) sources.set(file.name, { handle, where: file.name });
+  if (files.length > 0) await openFiles(files.map((f) => f.file), add);
 });
 
 // The fixtures are beside the page when served from the build, and in the spike's folder in the
@@ -599,6 +707,7 @@ if (params.has("token")) {
 }
 
 if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "library") runLibraryTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "refine") runRefineTest().catch((error) => post({ error: error.message }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
@@ -761,7 +870,7 @@ function bridgeHandlers() {
 
 function testLabel() {
   // A report's name is a file's, so an imported fixture's folder joins it with a dash.
-  const name = model.replaceAll("/", "-");
+  const name = (model ?? params.get("file") ?? "none").replaceAll("/", "-");
   return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${name}`;
 }
 
@@ -803,6 +912,62 @@ async function runImportTest() {
   await post({ totalMs: Math.round(totalMs), import: lastImport, cached: lastImport === null,
                workers: importWorkers, triangles: stats.triangles, bufferMB: stats.bufferMB,
                heapMB: stats.heapMB });
+}
+
+// Connects a folder, made in the origin-private file system as a person's would be on a disk,
+// opens a file from it, then the same file from Recent, which should come from the kept import,
+// and counts the frames drawn while nothing happens with the Library showing. Reports each step.
+async function runLibraryTest() {
+  const name = params.get("file") ?? "pack.step";
+  const bytes = await (await fetch(`${fixtures}step/${name}`)).blob();
+  const opfs = await navigator.storage.getDirectory();
+  await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
+  const folder = await opfs.getDirectoryHandle("library-test", { create: true });
+  const inner = await folder.getDirectoryHandle("sub", { create: true });
+  const writable = await (await inner.getFileHandle(name, { create: true })).createWritable();
+  await writable.write(bytes);
+  await writable.close();
+  await (await (await folder.getFileHandle("notes.txt", { create: true })).createWritable()).close();
+  await forgetKept(name);
+
+  const id = libraryStore.kind === "visit"
+    ? libraryStore.folders.adoptFiles("library-test", new Map([
+        [`sub/${name}`, new File([bytes], name, { lastModified: 1 })], ["notes.txt", new File([], "notes.txt")]]))
+    : await libraryStore.folders.adoptHandle(folder);
+  await showConnected([id]);
+  const listed = (await libraryStore.folders.list(id, "")).map((e) => e.name).sort();
+
+  lastImport = null;
+  const opened = performance.now();
+  let ready = waitFor(Events.SceneReady);
+  await openFromFolder({ root: id, path: `sub/${name}`, name }, false);
+  await ready;
+  const firstMs = Math.round(performance.now() - opened);
+  const imported = lastImport?.type === "done";
+  await sleep(300);
+  const recent = await libraryStore.recent();
+
+  lastImport = null;
+  const again = performance.now();
+  ready = waitFor(Events.SceneReady);
+  await reopenRecent(recent[0], false);
+  await ready;
+  const reopenMs = Math.round(performance.now() - again);
+  const reopenedFromCache = lastImport === null;
+
+  showLibrary(true);
+  await sleep(1500);
+  const settled = engine.stats();
+  await sleep(3000);
+  const idle = engine.stats();
+  const rows = [...library.element.querySelectorAll(".row")].map((r) => r.textContent.trim());
+
+  await libraryStore.folders.disconnect(id);
+  await forgetRecent(name);
+  await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
+  await post({ backend: libraryStore.kind, listed, firstMs, imported, recentFirst: recent[0]?.key,
+               recentWhere: recent[0]?.where, reopenMs, reopenedFromCache,
+               idleFrames: idle.frames - settled.frames, looping: idle.looping, rows });
 }
 
 // Waits for an imported file's scene, zooms in on the middle of the view, and reports how many
