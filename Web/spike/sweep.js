@@ -104,7 +104,8 @@ async function run() {
         const blob = await (await (await library()).getFileHandle(`${name}.geoblob`)).getFile();
         await fetch(`/blob?label=${encodeURIComponent(`${label}-${line}`)}`, { method: "POST", body: blob });
         Object.assign(result, { ok: true, triangles: answer.triangles, faces: answer.faces,
-                                failedFaces: answer.failedFaces, slices: answer.slices,
+                                failedFaces: answer.failedFaces, coarserFaces: answer.coarserFaces,
+                                slices: answer.slices,
                                 importMs: answer.importMs, cacheBytes: answer.cacheBytes,
                                 supervisorMB: answer.supervisorMB });
       } else {
