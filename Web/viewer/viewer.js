@@ -807,6 +807,26 @@ async function runRefineTest() {
                workers: importWorkers, refinements });
 }
 
+// The page's calls into the engine while a test watches, each named with its time in ms since
+// the watch began: whatever wakes a view that should be still, short of the engine's own clock.
+function watchEngineCalls() {
+  const calls = [];
+  let since = null;
+  const prototype = Object.getPrototypeOf(engine);
+  for (const name of Object.getOwnPropertyNames(prototype)) {
+    const original = Object.getOwnPropertyDescriptor(prototype, name).value;
+    if (name === "constructor" || name === "stats" || typeof original !== "function") continue;
+    engine[name] = function (...args) {
+      if (since !== null && calls.length < 20) calls.push(`${name}@${Math.round(performance.now() - since)}`);
+      return original.apply(this, args);
+    };
+  }
+  return {
+    start() { calls.length = 0; since = performance.now(); },
+    stop() { since = null; return calls.slice(); },
+  };
+}
+
 // Waits for the scene, then measures: frames submitted while nothing happens, frames while the
 // pointer drags the view, hover picks, and the memory held.
 async function runTest() {
@@ -814,10 +834,13 @@ async function runTest() {
   const ready = await waitFor(Events.SceneReady);
   if (ready.kind === Events.Failed) throw new Error(ready.message);
   const loadMs = performance.now() - opened;
+  const watch = watchEngineCalls();
   await sleep(1500);
   const settled = engine.stats();
+  watch.start();
   await sleep(3000);
   const idle = engine.stats();
+  const idleCalls = watch.stop();
   // A drag across the middle, one move per frame for 2 s.
   const { width, height } = canvas;
   const { Pointer, Buttons } = await import("./engine.js");
@@ -833,19 +856,21 @@ async function runTest() {
   const dragged = engine.stats();
   // Hover over the middle, where the model is.
   engine.pointer(Pointer.Move, Buttons.None, width / 2, height / 2);
+  watch.start();
   await sleep(1000);
   const hover = engine.stats();
   await sleep(2000);
   const after = engine.stats();
+  const afterCalls = watch.stop();
   if (!params.has("nosnapshot")) await postSnapshot();
   await post({
     width, height, startupMs, loadMs: Math.round(loadMs),
     idleFrames: idle.frames - settled.frames, idleSettledFrames: idle.settledFrames - settled.settledFrames,
-    looping: idle.looping,
+    looping: idle.looping, loopCause: idle.loopCause, idleCalls,
     dragFrames: dragged.frames - dragStart.frames, dragMs: Math.round(dragMs),
     gpuMs: dragged.gpuMs, hovered: hover.hovered,
     settledAfterDrag: after.settledFrames - dragged.settledFrames,
-    loopingAfter: after.looping,
+    loopingAfter: after.looping, loopCauseAfter: after.loopCause, afterCalls,
     bufferMB: after.bufferMB, targetMB: after.targetMB, heapMB: after.heapMB,
     triangles: after.triangles, read: engine.lastRead,
   });

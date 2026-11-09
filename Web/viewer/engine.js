@@ -31,6 +31,10 @@ const kAtlasGlyphs = " 0123456789.kmu";
 // Bytes handed to the engine at a time, through one staging buffer it owns.
 const kStage = 1 << 20;
 
+// Why the frame loop runs, from its stat: just started, the core wants frames (something moves, or
+// it lingers after), the still view's samples are yet to be drawn, or both.
+const kLoopCauses = [null, "starting", "moving", "settling", "moving, settling"];
+
 export class Engine {
   // `canvas` is drawn into; `handlers` takes the engine's events: { event(kind, document, node,
   // done, total, message), framesRunning(running) }.
@@ -370,8 +374,8 @@ export class Engine {
     const v = new Float64Array(m.HEAPU8.buffer, out, 9).slice();
     m._free(out);
     return { frames: v[0], settledFrames: v[1], gpuMs: v[2], bufferMB: v[3], targetMB: v[4],
-             triangles: v[5], edgeSegments: v[6], looping: v[7] !== 0, hovered: v[8],
-             heapMB: m.HEAPU8.length / 1048576 };
+             triangles: v[5], edgeSegments: v[6], looping: v[7] !== 0, loopCause: kLoopCauses[v[7]],
+             hovered: v[8], heapMB: m.HEAPU8.length / 1048576 };
   }
 
   // ---- The overlay's text ------------------------------------------------------------------
