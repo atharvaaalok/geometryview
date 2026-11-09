@@ -1,6 +1,8 @@
 # Build output
 /build/
 /out/
+# Every model the tests used, gathered for hand testing (see test-models/README.md there)
+/test-models/
 *.metallib
 *.dSYM/
 
