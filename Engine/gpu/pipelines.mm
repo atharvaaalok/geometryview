@@ -22,6 +22,7 @@ struct Writes {
     bool ids = true;        // pick id and depth copy
     bool ink = false;       // edge coverage, keeping the larger of what is there and what is drawn
     bool clearsInk = false; // takes away ink beneath, by the colour's alpha
+    bool parity = false;    // the section's per-part count of surfaces behind the cut
     MTLColorWriteMask tags = MTLColorWriteMaskNone; // red for solid bodies, green for ghosts
 };
 
@@ -33,6 +34,10 @@ void describeMainPass(MTL4RenderPipelineColorAttachmentDescriptorArray* attachme
     attachments[kAttachmentInk].pixelFormat = kInkFormat;
     attachments[kAttachmentTags].pixelFormat = kTagFormat;
     attachments[kAttachmentTags].writeMask = writes.tags;
+    attachments[kAttachmentParity].pixelFormat = kParityFormat;
+    if (!writes.parity) {
+        attachments[kAttachmentParity].writeMask = MTLColorWriteMaskNone;
+    }
     if (!writes.color) {
         attachments[kAttachmentColor].writeMask = MTLColorWriteMaskNone;
     }
@@ -136,12 +141,13 @@ public:
 
     // Any surface pass in the main pass, or at `samples` for the classification views.
     id<MTLRenderPipelineState> surfaceKind(SurfaceKind kind, Writes writes,
-                                           NSUInteger samples = kSampleCount) {
+                                           NSUInteger samples = kSampleCount,
+                                           NSString* fragment = @"surfaceFragment") {
         MTLFunctionConstantValues* constants = surfaceConstants(kind);
         MTL4MeshRenderPipelineDescriptor* mesh = [MTL4MeshRenderPipelineDescriptor new];
         mesh.objectFunctionDescriptor = function(@"surfaceObject", constants);
         mesh.meshFunctionDescriptor = function(@"surfaceMesh", constants);
-        mesh.fragmentFunctionDescriptor = function(@"surfaceFragment", constants);
+        mesh.fragmentFunctionDescriptor = function(fragment, constants);
         mesh.payloadMemoryLength = kPayloadBytes;
         mesh.maxTotalThreadgroupsPerMeshGrid = kBatchMeshlets;
         mesh.rasterSampleCount = samples;
@@ -236,6 +242,7 @@ public:
         tile.colorAttachments[kAttachmentDepth].pixelFormat = kDepthCopyFormat;
         tile.colorAttachments[kAttachmentInk].pixelFormat = kInkFormat;
         tile.colorAttachments[kAttachmentTags].pixelFormat = kTagFormat;
+        tile.colorAttachments[kAttachmentParity].pixelFormat = kParityFormat;
         return build(tile, what);
     }
 
@@ -292,6 +299,23 @@ bool Pipelines::create(id<MTLDevice> device, id<MTLLibrary> library) {
         if (!shellDepth[section]) {
             return false;
         }
+    }
+    // Caps that touching parts cannot break: each part's count of the surfaces behind the cut,
+    // then its nearest back face drawn on the plane where its count is odd.
+    parity = builder.surfaceKind({.section = true}, {.color = false, .ids = false, .parity = true},
+                                 kSampleCount, @"parityFragment");
+    for (const bool physical : {false, true}) {
+        cap[physical] =
+            builder.surfaceKind({.physical = physical, .section = true},
+                                {.tags = MTLColorWriteMaskRed}, kSampleCount, @"capFragment");
+        if (!cap[physical]) {
+            return false;
+        }
+    }
+    if (!parity) {
+        return false;
+    }
+    for (const bool section : {false, true}) {
         for (const bool ghostLines : {false, true}) {
             edges[ghostLines][section] = builder.edges(ghostLines, section);
             if (!edges[ghostLines][section]) {

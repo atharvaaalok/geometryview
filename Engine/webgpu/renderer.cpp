@@ -2,6 +2,7 @@
 
 #include "base/assert.h"
 #include "render/style.h"
+#include "render/view.h"
 #include "scene/scene.h"
 #include "shaders/shared/gpu_types.h"
 #include "webgpu/wgsl.h"
@@ -49,6 +50,9 @@ constexpr Format kDepthFormat = Format::Depth32Float;
 constexpr Format kShadowFormat = Format::R8Unorm;
 constexpr Format kAccumFormat = Format::RGBA16Float;
 constexpr Format kOcclusionFormat = Format::R32Float;
+// Each part's count of the surfaces behind a section's cut, by bit of its tag: the total and the
+// low three bits, then the high four. Half floats count exactly far past any real model's depth.
+constexpr Format kParityFormat = Format::RGBA16Float;
 
 // The shaders' Definition: where a definition's streams start in the geometry buffer, in words.
 struct GpuDefinitionW {
@@ -116,7 +120,18 @@ constexpr u32 kMaxChunks = 256;
 constexpr u64 kEdgeDrawOffset = offsetof(Counters, edges);
 
 // What each surface list draws with: which kind of pass, and closed or open.
-enum class Kind : u32 { Solid, Ghost, ShellBack, ShellDepth, ShellFront, Shadow, Edges, Classify };
+enum class Kind : u32 {
+    Solid,
+    Ghost,
+    ShellBack,
+    ShellDepth,
+    ShellFront,
+    Shadow,
+    Edges,
+    Classify,
+    Parity, // a section's count of the surfaces behind the cut, in a pass of its own
+    Cap,    // the caps, on the plane, by the part the count finds the plane inside
+};
 
 struct PipelineKey {
     Kind kind = Kind::Solid;
@@ -229,9 +244,10 @@ struct Renderer::State {
 
     wgpu::ShaderModule cullModule, surfaceModule, edgeModule, sheetModule, postModule;
     wgpu::ShaderModule overlayModule;
-    wgpu::BindGroupLayout sceneLayout, cullLayout, surfaceLayout, peelLayout, edgeLayout;
+    wgpu::BindGroupLayout sceneLayout, cullLayout, surfaceLayout, peelLayout, edgeLayout, capLayout;
     wgpu::BindGroupLayout sheetLayout, resolveLayout, occlusionLayout, compositeLayout;
-    wgpu::PipelineLayout cullPipelineLayout, surfacePipelineLayout, peelPipelineLayout;
+    wgpu::PipelineLayout cullPipelineLayout, surfacePipelineLayout, peelPipelineLayout,
+        capPipelineLayout;
     wgpu::PipelineLayout edgePipelineLayout, sheetPipelineLayout, resolvePipelineLayout;
     wgpu::PipelineLayout occlusionPipelineLayout, compositePipelineLayout;
     wgpu::BindGroupLayout overlayLayout;
@@ -367,8 +383,10 @@ struct Renderer::State {
     // Targets for one size.
     u32 width = 0, height = 0;
     wgpu::Texture color, ids, depthCopy, ink, tags, depth, shadowMask, occlusionTexture, accum;
+    wgpu::Texture parityLow, parityHigh;
     wgpu::Texture offscreen;
     wgpu::BindGroup sceneGroup, cullGroup, surfaceGroup, edgeGroup, sheetGroup, resolveGroup;
+    wgpu::BindGroup capGroup; // the surface group's slots, with the section's counts
     wgpu::BindGroup occlusionGroup, compositeGroup;
 
     wgpu::Buffer buffer(u64 size, wgpu::BufferUsage usage, const char* label) {
@@ -429,6 +447,9 @@ struct Renderer::State {
         peelLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage),
                                          textureLayout(1, Stage::Fragment, TS::Uint), frontDepths});
         edgeLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage)});
+        capLayout = makeLayout(device, {bufferLayout(0, Stage::Vertex, B::ReadOnlyStorage),
+                                        textureLayout(3, Stage::Fragment, TS::UnfilterableFloat),
+                                        textureLayout(4, Stage::Fragment, TS::UnfilterableFloat)});
         wgpu::BindGroupLayoutEntry sampler{};
         sampler.binding = 1;
         sampler.visibility = Stage::Fragment;
@@ -458,6 +479,7 @@ struct Renderer::State {
         cullPipelineLayout = makePipelineLayout(device, {sceneLayout, cullLayout});
         surfacePipelineLayout = makePipelineLayout(device, {sceneLayout, surfaceLayout});
         peelPipelineLayout = makePipelineLayout(device, {sceneLayout, peelLayout});
+        capPipelineLayout = makePipelineLayout(device, {sceneLayout, capLayout});
         edgePipelineLayout = makePipelineLayout(device, {sceneLayout, edgeLayout});
         sheetPipelineLayout = makePipelineLayout(device, {sceneLayout, sheetLayout});
         resolvePipelineLayout = makePipelineLayout(device, {sceneLayout, resolveLayout});
@@ -656,7 +678,8 @@ struct Renderer::State {
                                constant("kShadowPass", key.kind == Kind::Shadow),
                                constant("kOccurrenceIds", key.kind == Kind::Classify),
                                constant("kShellLayer", layer)};
-            if (key.kind == Kind::Shadow || key.kind == Kind::ShellDepth) {
+            if (key.kind == Kind::Shadow || key.kind == Kind::ShellDepth ||
+                key.kind == Kind::Parity) {
                 fragmentConstants = {constant("kSection", key.section)};
             } else if (key.kind == Kind::Classify) {
                 fragmentConstants = {constant("kPeel", key.peel)};
@@ -673,6 +696,9 @@ struct Renderer::State {
                             wgpu::BlendFactor::OneMinusSrcAlpha};
         alphaBlend.alpha = {wgpu::BlendOperation::Add, wgpu::BlendFactor::One,
                             wgpu::BlendFactor::OneMinusSrcAlpha};
+        wgpu::BlendState add{};
+        add.color = {wgpu::BlendOperation::Add, wgpu::BlendFactor::One, wgpu::BlendFactor::One};
+        add.alpha = add.color;
         wgpu::BlendState keepLarger{};
         keepLarger.color = {wgpu::BlendOperation::Max, wgpu::BlendFactor::One,
                             wgpu::BlendFactor::One};
@@ -680,6 +706,7 @@ struct Renderer::State {
 
         std::array<wgpu::ColorTargetState, 5> targets = mainTargets();
         std::array<wgpu::ColorTargetState, 3> classifyTargets{};
+        std::array<wgpu::ColorTargetState, 2> parityTargets{};
         wgpu::ColorTargetState shadowTarget{};
         shadowTarget.format = kShadowFormat;
         const char* fragmentEntry = edges ? "edgeFragment" : "surfaceFragment";
@@ -741,6 +768,24 @@ struct Renderer::State {
             depthTest.depthWriteEnabled = wgpu::OptionalBool::False;
             cull = wgpu::CullMode::None;
             break;
+        case Kind::Parity:
+            // Every closed surface behind the cut, whatever its depth, counted by bit of its tag.
+            for (wgpu::ColorTargetState& target : parityTargets) {
+                target.format = kParityFormat;
+                target.blend = &add;
+            }
+            targetList = parityTargets.data();
+            targetCount = 2;
+            fragmentEntry = "parityFragment";
+            depthState = nullptr;
+            cull = wgpu::CullMode::None;
+            break;
+        case Kind::Cap:
+            // Back faces only: a cap is where the view ray leaves the part the cut lies in.
+            targets[4].writeMask = CW::Red;
+            fragmentEntry = "capFragment";
+            cull = wgpu::CullMode::Front;
+            break;
         case Kind::Classify:
             // Ids and the depth copy only, into targets of the classifying views' own.
             classifyTargets[0].format = Format::Undefined;
@@ -762,9 +807,10 @@ struct Renderer::State {
         wgpu::RenderPipelineDescriptor descriptor{};
         // The classifying passes share the peel's layout: its fragment stage names the front's
         // textures, peeling or not.
-        descriptor.layout =
-            edges ? edgePipelineLayout
-                  : (key.kind == Kind::Classify ? peelPipelineLayout : surfacePipelineLayout);
+        descriptor.layout = edges                        ? edgePipelineLayout
+                            : key.kind == Kind::Classify ? peelPipelineLayout
+                            : key.kind == Kind::Cap      ? capPipelineLayout
+                                                         : surfacePipelineLayout;
         descriptor.vertex.module = fragment.module;
         descriptor.vertex.entryPoint = edges ? "edgeVertex" : "surfaceVertex";
         descriptor.vertex.constantCount = vertexConstants.size();
@@ -1128,6 +1174,7 @@ struct Renderer::State {
                 surfaceGroup = nullptr;
                 edgeGroup = nullptr;
                 peelGroup = nullptr;
+                capGroup = nullptr;
             }
         };
         grow(slots, (slotTotal + edgeTotal) * 8, U::Storage, "slots");
@@ -1216,6 +1263,9 @@ struct Renderer::State {
         occlusionTexture = texture(halfWidth, halfHeight, kOcclusionFormat,
                                    Usage::StorageBinding | Usage::TextureBinding, "occlusion");
         accum = texture(width, height, kAccumFormat, attachment, "accumulated colour");
+        parityLow = texture(width, height, kParityFormat, attachment, "section count, low bits");
+        parityHigh = texture(width, height, kParityFormat, attachment, "section count, high bits");
+        capGroup = nullptr;
         offscreen = nullptr; // made by the first offscreen render at this size
         sheetGroup = makeGroup(device, sheetLayout, {textureEntry(0, shadowMask), [&] {
                                                          wgpu::BindGroupEntry entry{};
@@ -1253,6 +1303,7 @@ struct Renderer::State {
                 uniforms.viewProjection.columns[c][1] += dy * uniforms.viewProjection.columns[c][3];
             }
             uniforms.sampleOffset = simd_make_float2(position[0] - 0.5f, position[1] - 0.5f);
+            render::placeSectionDepths(uniforms); // where the planes lie in this sample's view
         }
         queue.WriteBuffer(frames, slot * kUniformStride, &uniforms, sizeof(uniforms));
     }
@@ -1374,11 +1425,44 @@ struct Renderer::State {
         pass.End();
     }
 
+    // With a section open, each part's count of the closed surfaces behind the cut, by bit of
+    // its tag, for the caps of the main pass that follows: the part the plane lies inside is the
+    // only one crossed an odd number of times.
+    void encodeParity(const wgpu::CommandEncoder& encoder, u32 slot) {
+        wgpu::RenderPassColorAttachment attachments[2] = {};
+        const wgpu::Texture* textures[2] = {&parityLow, &parityHigh};
+        for (u32 t = 0; t < 2; ++t) {
+            attachments[t].view = textures[t]->CreateView();
+            attachments[t].loadOp = wgpu::LoadOp::Clear;
+            attachments[t].storeOp = wgpu::StoreOp::Store;
+            attachments[t].clearValue = {0, 0, 0, 0};
+        }
+        wgpu::RenderPassDescriptor descriptor{};
+        descriptor.colorAttachmentCount = 2;
+        descriptor.colorAttachments = attachments;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        const u32 offset = u32(slot * kUniformStride);
+        pass.SetBindGroup(0, sceneGroup, 1, &offset);
+        pass.SetBindGroup(1, surfaceGroup);
+        pass.SetIndexBuffer(indices, indexFormat());
+        pass.SetPipeline(pipeline({.kind = Kind::Parity, .section = true, .closed = true}));
+        drawList(pass, 0);
+        pass.End();
+        if (!capGroup) {
+            capGroup = makeGroup(
+                device, capLayout,
+                {bufferEntry(0, slots), textureEntry(3, parityLow), textureEntry(4, parityHigh)});
+        }
+    }
+
     // The main pass for one sample: opaque surfaces, the sheet behind them, creases and
     // highlights, the see-through shell, ghosts over all of it with their dashed lines.
     void encodeMain(const wgpu::CommandEncoder& encoder, u32 slot, const render::ViewState& view,
                     const render::Overlay* overlay) {
         const bool section = view.uniforms.sectionPlaneCount > 0;
+        if (section && surfaceInstances != 0) {
+            encodeParity(encoder, slot);
+        }
         wgpu::RenderPassColorAttachment attachments[5] = {};
         const wgpu::Texture* textures[5] = {&color, &ids, &depthCopy, &ink, &tags};
         for (u32 t = 0; t < 5; ++t) {
@@ -1405,6 +1489,14 @@ struct Renderer::State {
             pass.SetBindGroup(1, surfaceGroup);
             pass.SetIndexBuffer(indices, indexFormat());
             drawPair(pass, {.kind = Kind::Solid, .physical = physical, .section = section}, 0);
+            if (section) {
+                // The caps again, on the plane, where the count finds the plane inside a part.
+                pass.SetBindGroup(1, capGroup);
+                pass.SetPipeline(pipeline(
+                    {.kind = Kind::Cap, .physical = physical, .section = true, .closed = true}));
+                drawList(pass, 0);
+                pass.SetBindGroup(1, surfaceGroup);
+            }
         }
         const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
         if (seeThrough) {

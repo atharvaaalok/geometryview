@@ -36,6 +36,7 @@ struct Frame {
     ground: f32,
     shadowVisibility: f32,
     sectionPlanes: array<vec4f, 6>,
+    sectionDepths: array<vec4f, 6>,
     sectionPlaneCount: u32,
     seeThrough: f32,
     excludeShells: u32,

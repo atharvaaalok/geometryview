@@ -45,6 +45,32 @@ void applySection(const Section& section, const Aabb& bounds, FrameUniforms& uni
         }
         uniforms.sectionPlanes[uniforms.sectionPlaneCount++] = plane;
     }
+    placeSectionDepths(uniforms);
+}
+
+void placeSectionDepths(FrameUniforms& uniforms) {
+    // A plane through clip space: the world plane carried by the inverse transpose of the view
+    // projection. Divided through by w, it is a plane in (ndc.x, ndc.y, depth), solved for depth.
+    simd_double4x4 viewProjection;
+    for (int c = 0; c < 4; ++c) {
+        const simd_float4 column = uniforms.viewProjection.columns[c];
+        viewProjection.columns[c] = simd_make_double4(column.x, column.y, column.z, column.w);
+    }
+    const simd_double4x4 toClip = simd_transpose(simd_inverse(viewProjection));
+    for (uint32_t k = 0; k < kMaxSectionPlanes; ++k) {
+        uniforms.sectionDepths[k] = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        if (k >= uniforms.sectionPlaneCount) {
+            continue;
+        }
+        const simd_float4 p = uniforms.sectionPlanes[k];
+        const simd_double4 clip = simd_mul(toClip, simd_make_double4(p.x, p.y, p.z, p.w));
+        const double scale = std::max({std::abs(clip.x), std::abs(clip.y), std::abs(clip.w)});
+        if (std::abs(clip.z) <= 1e-9 * std::max(scale, 1e-300)) {
+            continue; // seen edge on: the plane covers no area on screen
+        }
+        uniforms.sectionDepths[k] = simd_make_float4(
+            float(-clip.x / clip.z), float(-clip.y / clip.z), float(-clip.w / clip.z), 1.0f);
+    }
 }
 
 ViewState makeView(const nav::Camera& camera, const nav::Viewport& viewport,

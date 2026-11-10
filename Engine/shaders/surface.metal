@@ -1,7 +1,8 @@
 // The surface pipeline: object-stage culling, wide mesh shading and shading.
 //
 // Rules that keep the Apple GPU's hidden surface removal working: no discard and no depth output on
-// this path, and varyings stay small. See Docs/PLAN.md.
+// the opaque path, and varyings stay small. See Docs/PLAN.md. With a section open, the parity and
+// cap draws come after the opaque surfaces, and the caps write depth.
 #include "geometry.h"
 #include "shared/gpu_types.h"
 #include "sheet.h"
@@ -377,8 +378,8 @@ static inline float hatchLines(float q, float pixelsPerPoint) {
 // Hatch coverage at a pixel, on the plane the view ray entered the kept region through: 45 degree
 // lines about 0.8 points wide. Each body's tag varies their direction and spacing, and crosses
 // some, so cut parts side by side differ.
-static float capHatch(float2 pixel, uint tag, constant FrameUniforms& frame,
-                      constant StyleUniforms& style) {
+// The plane the view ray through a pixel entered the kept region through, and where.
+static uint cutEntry(float2 pixel, constant FrameUniforms& frame, thread float3& world) {
     float3 origin, direction;
     viewRay(pixel, frame, origin, direction);
     uint entry = 0;
@@ -394,9 +395,14 @@ static float capHatch(float2 pixel, uint tag, constant FrameUniforms& frame,
             }
         }
     }
-    const float3 normal = frame.sectionPlanes[entry].xyz;
-    const float t = isfinite(entryT) ? entryT : 0.0;
-    const float3 world = origin + direction * t;
+    world = origin + direction * (isfinite(entryT) ? entryT : 0.0);
+    return entry;
+}
+
+static float capHatch(float2 pixel, uint tag, constant FrameUniforms& frame,
+                      constant StyleUniforms& style) {
+    float3 world;
+    const float3 normal = frame.sectionPlanes[cutEntry(pixel, frame, world)].xyz;
     const float3 u =
         normalize(cross(normal, abs(normal.z) < 0.9 ? float3(0, 0, 1) : float3(1, 0, 0)));
     const float3 v = cross(normal, u);
@@ -411,6 +417,27 @@ static float capHatch(float2 pixel, uint tag, constant FrameUniforms& frame,
     const float crossing = hatchLines((a - sense * b) / spacing, style.pixelsPerPoint);
     return max(lines, tag % 4 == 0 ? crossing : 0.0);
 }
+
+// How much of a cap's own depth it keeps on top of the plane's: enough to order caps among
+// themselves, nearest back face first, and too little to fall behind anything else.
+constant float kCapDepthShare = 1.0 / 1024.0;
+
+// A cap's depth: on the plane the pixel's ray entered the kept region through, nearer than
+// everything behind the cut. Never behind the fragment's own depth, as [[depth(greater)]] promises.
+static inline float capDepth(float4 position, constant FrameUniforms& frame) {
+    float3 world;
+    const float4 plane = frame.sectionDepths[cutEntry(position.xy, frame, world)];
+    if (plane.w == 0.0) {
+        return position.z; // the plane is seen edge on
+    }
+    const float2 ndc = float2(position.x / frame.viewport.x * 2.0 - 1.0,
+                              1.0 - position.y / frame.viewport.y * 2.0);
+    const float onPlane = dot(plane.xyz, float3(ndc, 1.0));
+    return max(position.z, onPlane - (onPlane - position.z) * kCapDepthShare);
+}
+
+static SurfaceOutput shade(SurfaceFragmentIn in, bool frontFacing, constant FrameUniforms& frame,
+                           constant StyleUniforms& style, const device uint* palette);
 
 fragment SurfaceOutput surfaceFragment(SurfaceFragmentIn in [[stage_in]],
                                        bool frontFacing [[front_facing]],
@@ -429,6 +456,49 @@ fragment SurfaceOutput surfaceFragment(SurfaceFragmentIn in [[stage_in]],
             discard_fragment();
         }
     }
+    return shade(in, frontFacing, frame, style, palette);
+}
+
+// Counts the closed surfaces behind the cut at each sample, each part's apart: every surface
+// toggles its body's tag into the low bits and the top bit counts them all. Where the cut plane
+// lies inside one closed part, the top bit ends set and the low bits are that part's tag, since
+// every other part is crossed an even number of times. Reading the attachment orders the
+// fragments, as the Apple GPU's programmable blending does.
+struct ParityOutput {
+    uint code [[color(kAttachmentParity)]];
+};
+
+fragment ParityOutput parityFragment(SurfaceFragmentIn in [[stage_in]],
+                                     uint code [[color(kAttachmentParity)]]) {
+    return {code ^ (0x80u | ((in.flags >> 8) & 0x7Fu))};
+}
+
+struct CapOutput {
+    float4 color [[color(kAttachmentColor)]];
+    uint id [[color(kAttachmentId)]];
+    float depth [[color(kAttachmentDepth)]];
+    uint2 tags [[color(kAttachmentTags)]];
+    float stored [[depth(greater)]];
+};
+
+// The caps, drawn again by the part the cut plane lies inside: its back face, shaded as before,
+// but on the plane, so a part touching it from behind can neither show through nor claim the cut.
+fragment CapOutput capFragment(SurfaceFragmentIn in [[stage_in]],
+                               bool frontFacing [[front_facing]],
+                               uint code [[color(kAttachmentParity)]],
+                               constant FrameUniforms& frame [[buffer(kBufferFrame)]],
+                               constant StyleUniforms& style [[buffer(kBufferStyle)]],
+                               const device uint* palette [[buffer(kBufferPalette)]]) {
+    if ((code & 0x80u) == 0 || (code & 0x7Fu) != ((in.flags >> 8) & 0x7Fu)) {
+        discard_fragment();
+    }
+    const SurfaceOutput s = shade(in, frontFacing, frame, style, palette);
+    const float depth = capDepth(in.position, frame);
+    return {s.color, s.id, depth, s.tags, depth};
+}
+
+static SurfaceOutput shade(SurfaceFragmentIn in, bool frontFacing, constant FrameUniforms& frame,
+                           constant StyleUniforms& style, const device uint* palette) {
     const uint flags = in.flags & 0x77u; // state, without the shell and open bits
     uint tag = (in.flags >> 8) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.

@@ -70,6 +70,8 @@ void Targets::resize(const GpuContext& context, u32 newWidth, u32 newHeight) {
                          target);
     tagsMsaa = makeTarget(device, width, height, kTagFormat, kSampleCount, MTLStorageModeMemoryless,
                           target);
+    parityMsaa = makeTarget(device, width, height, kParityFormat, kSampleCount,
+                            MTLStorageModeMemoryless, target);
     tags = makeTarget(device, width, height, kTagFormat, 1, MTLStorageModePrivate,
                       MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     occlusion =
@@ -134,6 +136,7 @@ MTL4RenderPassDescriptor* Targets::mainPass(id<MTLTexture> resolveTarget) {
     attach(kAttachmentDepth, depthCopyMsaa);
     attach(kAttachmentInk, inkMsaa);
     attach(kAttachmentTags, tagsMsaa);
+    attach(kAttachmentParity, parityMsaa);
     pass.depthAttachment.texture = depthMsaa;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
