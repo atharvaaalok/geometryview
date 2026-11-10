@@ -97,9 +97,9 @@ The app finds `stage2` with get_structure, and render_view returns:
   claude mcp add geometryview -- npx -y geometryview --mcp
   ```
 
-- **Claude Desktop:** download `geometryview.mcpb` from the
+- **Claude Desktop:** download the extension from the
   [latest release](https://github.com/atharvaaalok/geometryview/releases/latest) and double-click
-  it.
+  it: `geometryview-mac.mcpb` on a Mac, `geometryview.mcpb` anywhere else.
 - **Codex**
 
   ```sh
@@ -131,8 +131,9 @@ An app started from the Dock may not find `npx`: give its full path (`which npx`
 </details>
 
 Your AI app's pictures are drawn by the viewer, in your browser, which opens when a tool first
-needs it. You see what the AI sees. On a Mac with the
-[GeometryView app](#mac-app), `open_in_viewer` can show models in the app instead.
+needs it. You see what the AI sees. Claude Desktop's Mac extension draws them itself, with the
+Mac app's engine. On a Mac with the [GeometryView app](#mac-app), `open_in_viewer` can show models
+in the app instead.
 
 ## Browser viewer
 
@@ -156,8 +157,14 @@ connected folder is remembered from one visit to the next.
 The native app opens files from Finder, and keeps your folders and recent files in its Library. It
 draws with Metal 4. It needs macOS 26 or later on Apple silicon.
 
-A signed download is coming. Until then, build it from source (OCCT, which reads STEP files, takes
-about five minutes to build the first time). You need Xcode 27 with its Metal Toolchain:
+**[Download GeometryView for Mac](https://github.com/atharvaaalok/geometryview/releases/latest/download/GeometryView-mac.zip)**,
+unzip it and move GeometryView to Applications. It's signed and notarized by Apple.
+
+<details>
+<summary><b>Build it from source</b></summary>
+
+OCCT, which reads STEP files, takes about five minutes to build the first time. You need Xcode 27
+with its Metal Toolchain:
 
 ```sh
 brew install cmake ninja llvm
@@ -166,6 +173,8 @@ ThirdParty/build_occt.sh
 cmake --preset release && cmake --build --preset release
 cmake --build --preset release --target install-app    # puts GeometryView in /Applications
 ```
+
+</details>
 
 ## iPhone and iPad
 

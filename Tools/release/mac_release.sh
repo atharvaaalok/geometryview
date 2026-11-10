@@ -17,7 +17,6 @@ cd "$(dirname "$0")/../.."
 
 check=false
 [[ "${1:-}" == "--check" ]] && check=true
-version=$(node -p 'require("./Launcher/package.json").version')
 
 if $check; then
   identity=-
@@ -58,17 +57,18 @@ if $check; then
   exit 0
 fi
 
-# Notarize and staple the app, then zip it as people download it.
+# Notarize and staple the app, then zip it as people download it. The names carry no version, so
+# the README can link to the latest release's.
 ditto -c -k --keepParent "$app" build/release-dist/submit-app.zip
 xcrun notarytool submit build/release-dist/submit-app.zip --keychain-profile "$profile" --wait
 xcrun stapler staple "$app"
 spctl --assess --type execute --verbose=2 "$app"
-ditto -c -k --keepParent "$app" "build/release-dist/GeometryView-$version-mac.zip"
+ditto -c -k --keepParent "$app" build/release-dist/GeometryView-mac.zip
 
 # Notarize the engine: bare executables can't be stapled, so Gatekeeper checks them online.
 ditto -c -k "$native" build/release-dist/submit-native.zip
 xcrun notarytool submit build/release-dist/submit-native.zip --keychain-profile "$profile" --wait
 GEOMETRYVIEW_PACK_NATIVE="$PWD/$native" node Launcher/scripts/pack.mjs
-cp Launcher/dist/geometryview.mcpb "build/release-dist/geometryview-$version-mac.mcpb"
+cp Launcher/dist/geometryview.mcpb build/release-dist/geometryview-mac.mcpb
 rm -f build/release-dist/submit-app.zip build/release-dist/submit-native.zip
 ls -la build/release-dist
