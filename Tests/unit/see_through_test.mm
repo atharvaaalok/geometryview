@@ -3,11 +3,14 @@
 // one camera framing them all, must not decide it. Needs the OCCT worker, since the parts are STEP.
 //
 // GEOMETRYVIEW_SHELL_FILES, cache files separated by colons, prints each one's parts and what the
-// test measured of them, for tuning on real models.
+// test measured of them, for tuning on real models. GEOMETRYVIEW_SEQUENCE_FILES, two cache files,
+// runs see-through on and off and a switch between the files, and prints how far each picture is
+// from a fresh open (GEOMETRYVIEW_SEQUENCE_OUT keeps the pictures).
 #if defined(GEO_TEST_WORKER_PATH)
 
 #include "core/core.h"
 #include "core/host.h"
+#include "engine/png.h"
 #include "gpu/renderer.h"
 #include "scene/segment.h"
 #include "step/step_import.h"
@@ -184,6 +187,165 @@ TEST_CASE("each of several housings in a row is found") {
             CHECK(!shellNamed(c, "pin" + std::to_string(i)));
         }
         unlink(blob.c_str());
+    }
+}
+
+// A core with the Metal renderer, opening cache files as the app does, and drawing what it shows.
+struct Viewer {
+    std::unique_ptr<gpu::Renderer> renderer;
+    QuietHost host;
+    std::unique_ptr<engine::Core> core;
+
+    Viewer() {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        const bool hasDevice = device != nil;
+        REQUIRE(hasDevice);
+        renderer = gpu::Renderer::create(device, GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(renderer != nullptr);
+        core = std::make_unique<engine::Core>(*renderer, host);
+        core->resize(640, 480, 2.0f);
+        renderer->resize(640, 480);
+    }
+
+    void open(const std::string& blob, bool add = false) {
+        core->openFile(blob, add);
+        const u64 token = host.imports.back();
+        const int fd = ::open(blob.c_str(), O_RDONLY);
+        REQUIRE(fd >= 0);
+        std::vector<std::shared_ptr<scene::Segment>> segments;
+        std::string error;
+        REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+        close(fd);
+        for (const std::shared_ptr<scene::Segment>& segment : segments) {
+            core->addSegment(token, segment);
+        }
+        core->importFinished(token, {true, true, "", blob});
+    }
+
+    // What the core shows now, as the app's frame would draw it.
+    std::vector<u8> picture() {
+        core->requestFrame();
+        std::optional<engine::Frame> frame;
+        for (int i = 0; i < 4 && !frame; ++i) {
+            frame = core->frame();
+        }
+        REQUIRE(frame.has_value());
+        // A frame or two more, so any fade has finished.
+        for (int i = 0; i < 3; ++i) {
+            core->requestFrame();
+            if (std::optional<engine::Frame> later = core->frame()) {
+                frame = later;
+            }
+        }
+        return renderer->renderOffscreen(frame->view, nullptr);
+    }
+};
+
+// Mean channel difference, and the share of pixels more than 12 levels apart in any channel.
+std::pair<double, double> difference(const std::vector<u8>& a, const std::vector<u8>& b) {
+    REQUIRE(a.size() == b.size());
+    u64 total = 0, changed = 0;
+    for (usize p = 0; p < a.size() / 4; ++p) {
+        int worst = 0;
+        for (usize c = 0; c < 3; ++c) {
+            const int d = std::abs(int(a[p * 4 + c]) - int(b[p * 4 + c]));
+            total += u64(d);
+            worst = std::max(worst, d);
+        }
+        changed += worst > 12 ? 1 : 0;
+    }
+    return {double(total) / double(a.size() / 4 * 3), double(changed) / double(a.size() / 4)};
+}
+
+// A file opened after another shows its own hidden and ghosted parts, never the other's. A new
+// file's face state once started counting its versions again, so when it reached the number the
+// last file's upload had, the renderer took it for unchanged: the new file was drawn with the last
+// one's hidden faces, at the same indices. Whether that happens depends on how many changes the
+// first file had, so the check tries several.
+TEST_CASE("a file opened after another is drawn with its own face state") {
+    @autoreleasepool {
+        test::StepWriter rowWriter;
+        const int row = rowWriter.assembly("row");
+        for (int i = 0; i < 4; ++i) {
+            addHousing(rowWriter, row, std::to_string(i), {50.0 * i, 0, 0}, 40.0);
+        }
+        const std::string a = importBoxes(rowWriter);
+        test::StepWriter pairWriter;
+        const int pair = pairWriter.assembly("pair");
+        for (int i = 0; i < 2; ++i) {
+            addHousing(pairWriter, pair, std::to_string(i), {0, 60.0 * i, 0}, 50.0);
+        }
+        const std::string b = importBoxes(pairWriter);
+
+        Viewer freshB;
+        freshB.open(b);
+        const std::vector<u8> expected = freshB.picture();
+        for (int changes = 0; changes < 8; ++changes) {
+            CAPTURE(changes);
+            Viewer v;
+            v.open(a);
+            v.picture();
+            // Hides and shows in turn, ending with parts hidden for odd counts.
+            for (int c = 0; c < changes; ++c) {
+                v.core->nodeAction(0, 1 + u32(c / 2), c % 2 == 0 ? GeoNodeHide : GeoNodeShow);
+                v.picture();
+            }
+            v.core->nodeAction(0, 1, GeoNodeHide);
+            v.core->nodeAction(0, 2, GeoNodeGhost);
+            v.picture();
+            v.open(b);
+            const auto [mean, changed] = difference(v.picture(), expected);
+            CHECK(changed < 0.002);
+        }
+        unlink(a.c_str());
+        unlink(b.c_str());
+    }
+}
+
+TEST_CASE("the user's sequence on the files in GEOMETRYVIEW_SEQUENCE_FILES") {
+    const char* files = std::getenv("GEOMETRYVIEW_SEQUENCE_FILES");
+    if (files == nullptr) {
+        return;
+    }
+    @autoreleasepool {
+        const std::string list(files);
+        const std::string a = list.substr(0, list.find(':')), b = list.substr(list.find(':') + 1);
+        const char* out = std::getenv("GEOMETRYVIEW_SEQUENCE_OUT");
+        const auto save = [&](const char* name, const std::vector<u8>& pixels) {
+            if (out != nullptr) {
+                engine::writePng((std::string(out) + "/" + name + ".png").c_str(), pixels, 640,
+                                 480);
+            }
+        };
+        Viewer fresh;
+        fresh.open(a);
+        const std::vector<u8> plain = fresh.picture();
+        fresh.core->perform(GeoActionToggleSeeThrough);
+        const std::vector<u8> through = fresh.picture();
+        save("fresh-plain", plain);
+        save("fresh-through", through);
+
+        Viewer v;
+        v.open(a);
+        v.core->perform(GeoActionToggleSeeThrough);
+        save("on", v.picture());
+        v.core->perform(GeoActionToggleSeeThrough);
+        const std::vector<u8> off = v.picture();
+        save("off", off);
+        const auto [offMean, offChanged] = difference(off, plain);
+        std::println("T on then off, against before T: mean {:.2f}, changed {:.4f}", offMean,
+                     offChanged);
+        v.core->perform(GeoActionToggleSeeThrough);
+        v.open(b);
+        save("b", v.picture());
+        v.open(a);
+        const std::vector<u8> back = v.picture();
+        save("back", back);
+        const auto [backMean, backChanged] = difference(back, through);
+        const auto [backPlainMean, backPlainChanged] = difference(back, plain);
+        std::println("back to A: against fresh with T mean {:.2f} changed {:.4f}; against fresh "
+                     "without mean {:.2f} changed {:.4f}",
+                     backMean, backChanged, backPlainMean, backPlainChanged);
     }
 }
 
