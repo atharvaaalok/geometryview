@@ -1,6 +1,7 @@
 #include "render/view.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace geo::render {
@@ -44,6 +45,73 @@ void applySection(const Section& section, const Aabb& bounds, FrameUniforms& uni
             plane = -plane; // the low side is cut away instead
         }
         uniforms.sectionPlanes[uniforms.sectionPlaneCount++] = plane;
+    }
+    placeSectionDepths(uniforms);
+}
+
+namespace {
+
+// Solves a x = b for a 4 by 4 system, by elimination with partial pivoting. False if singular.
+bool solve4(std::array<std::array<double, 4>, 4> a, std::array<double, 4> b,
+            std::array<double, 4>& x) {
+    for (int col = 0; col < 4; ++col) {
+        int pivot = col;
+        for (int row = col + 1; row < 4; ++row) {
+            if (std::abs(a[row][col]) > std::abs(a[pivot][col])) {
+                pivot = row;
+            }
+        }
+        if (std::abs(a[pivot][col]) < 1e-300) {
+            return false;
+        }
+        std::swap(a[col], a[pivot]);
+        std::swap(b[col], b[pivot]);
+        for (int row = col + 1; row < 4; ++row) {
+            const double f = a[row][col] / a[col][col];
+            for (int k = col; k < 4; ++k) {
+                a[row][k] -= f * a[col][k];
+            }
+            b[row] -= f * b[col];
+        }
+    }
+    for (int row = 3; row >= 0; --row) {
+        double sum = b[row];
+        for (int k = row + 1; k < 4; ++k) {
+            sum -= a[row][k] * x[k];
+        }
+        x[row] = sum / a[row][row];
+    }
+    return true;
+}
+
+} // namespace
+
+void placeSectionDepths(FrameUniforms& uniforms) {
+    // A plane through clip space, q, meets every clip-space point the view projection M makes of
+    // the world plane p: q . (M x) = (M^T q) . x, so M^T q = p. Divided through by w, it is a plane
+    // in (ndc.x, ndc.y, depth), solved for depth. Row i of M^T is column i of M.
+    std::array<std::array<double, 4>, 4> transposed{};
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            transposed[c][r] = double(uniforms.viewProjection.columns[c][r]);
+        }
+    }
+    for (uint32_t k = 0; k < kMaxSectionPlanes; ++k) {
+        uniforms.sectionDepths[k] = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        if (k >= uniforms.sectionPlaneCount) {
+            continue;
+        }
+        const simd_float4 p = uniforms.sectionPlanes[k];
+        std::array<double, 4> clip{};
+        if (!solve4(transposed, {double(p.x), double(p.y), double(p.z), double(p.w)}, clip)) {
+            continue;
+        }
+        const double scale = std::max({std::abs(clip[0]), std::abs(clip[1]), std::abs(clip[3])});
+        if (std::abs(clip[2]) <= 1e-9 * std::max(scale, 1e-300)) {
+            continue; // seen edge on: the plane covers no area on screen
+        }
+        uniforms.sectionDepths[k] = simd_make_float4(
+            float(-clip[0] / clip[2]), float(-clip[1] / clip[2]), float(-clip[3] / clip[2]), 1.0f);
     }
 }
 

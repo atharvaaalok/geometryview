@@ -82,6 +82,10 @@ enum AttachmentIndex : unsigned {
     // Which body a pixel shows, as a small tag that differs between neighbours: r for solid
     // surfaces and g for ghosts in front of them. Outlines are drawn where tags change.
     kAttachmentTags = 4,
+    // With a section open, which closed part the cut plane lies inside at each sample: every
+    // surface behind the cut toggles its body's tag into the low seven bits, and the top bit
+    // counts the surfaces. Where the top bit ends set, the low bits are the tag of the part.
+    kAttachmentParity = 5,
 };
 
 // One per definition. Geometry is addressed directly, so a scene can span several mapped files.
@@ -284,6 +288,9 @@ struct FrameUniforms {
     float shadowVisibility;  // full from above, gone from below the ground
     // World planes: where dot(xyz, p) + w > 0 is cut away.
     simd_float4 sectionPlanes[kMaxSectionPlanes];
+    // Each plane's stored depth across the screen, for drawing caps on the plane itself:
+    // depth = x * ndc.x + y * ndc.y + z, where w is 1; w is 0 for a plane seen edge on.
+    simd_float4 sectionDepths[kMaxSectionPlanes];
     uint32_t sectionPlaneCount;
     float seeThrough;       // k: 0 solid, 1 fully see-through
     uint32_t excludeShells; // classifying: leave out parts already found to be shell

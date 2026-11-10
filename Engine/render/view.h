@@ -32,8 +32,12 @@ struct Section {
     bool any() const { return enabled[0] || enabled[1] || enabled[2]; }
 };
 
-/// Writes the section's planes into the frame, in world space.
+/// Writes the section's planes into the frame, in world space, and their depths on screen.
 void applySection(const Section& section, const Aabb& bounds, FrameUniforms& uniforms);
+
+/// Writes each section plane's stored depth across the screen from the frame's view projection,
+/// which must be final: the WebGPU renderer calls it again after jittering a sample.
+void placeSectionDepths(FrameUniforms& uniforms);
 
 /// How far every edge moves toward the eye at least, in points of depth at its distance: enough
 /// for most of a crease line's width to clear a concave crease's faces, and to beat depth

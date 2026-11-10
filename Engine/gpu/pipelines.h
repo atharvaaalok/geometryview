@@ -33,6 +33,10 @@ struct Pipelines {
     id<MTLRenderPipelineState> shellBack[2][2];
     id<MTLRenderPipelineState> shellDepth[2];
     id<MTLRenderPipelineState> shellFront[2][2];
+    // With a section open: each part's count of the surfaces behind the cut, into the parity
+    // attachment, then the caps, by lighting, drawn on the plane by the part the cut lies in.
+    id<MTLRenderPipelineState> parity;
+    id<MTLRenderPipelineState> cap[2];
     // Occurrence ids for classifying the shell: the nearest part, then the nearest behind it.
     id<MTLRenderPipelineState> classify[2];
     id<MTLRenderPipelineState> sheet;

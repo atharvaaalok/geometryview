@@ -8,6 +8,10 @@
 @group(1) @binding(0) var<storage, read> slots: array<vec2u>; // occurrence, meshlet
 @group(1) @binding(1) var frontIds: texture_2d<u32>;          // the peel pass's front surface
 @group(1) @binding(2) var frontDepths: texture_2d<f32>;
+// A section's count of the closed surfaces behind the cut, by bit of each part's tag, from the
+// parity pass: the total and tag bits 0-2, then bits 3-6.
+@group(1) @binding(3) var parityLow: texture_2d<f32>;
+@group(1) @binding(4) var parityHigh: texture_2d<f32>;
 
 // The ghost pass draws only ghosted faces, blended over everything opaque.
 override kGhostPass: bool = false;
@@ -213,7 +217,13 @@ fn hatchLines(q: f32, pixelsPerPoint: f32) -> f32 {
 // Hatch coverage at a pixel, on the plane the view ray entered the kept region through: 45 degree
 // lines about 0.8 points wide. Each body's tag varies their direction and spacing, and crosses
 // some, so cut parts side by side differ.
-fn capHatch(pixel: vec2f, tag: u32) -> f32 {
+struct Entry {
+    plane: u32,
+    world: vec3f,
+}
+
+// The plane the view ray through a pixel entered the kept region through, and where.
+fn cutEntry(pixel: vec2f) -> Entry {
     let ray = viewRay(pixel);
     var entry = 0u;
     var entryT = -3.4e38;
@@ -230,9 +240,13 @@ fn capHatch(pixel: vec2f, tag: u32) -> f32 {
             }
         }
     }
-    let normal = frame.sectionPlanes[entry].xyz;
-    let t = select(0.0, entryT, entered);
-    let world = ray.origin + ray.direction * t;
+    return Entry(entry, ray.origin + ray.direction * select(0.0, entryT, entered));
+}
+
+fn capHatch(pixel: vec2f, tag: u32) -> f32 {
+    let entry = cutEntry(pixel);
+    let normal = frame.sectionPlanes[entry.plane].xyz;
+    let world = entry.world;
     let u = normalize(cross(normal, select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0),
                                            abs(normal.z) < 0.9)));
     let v = cross(normal, u);
@@ -266,12 +280,83 @@ fn centreDepth(position: vec4f) -> f32 {
     return position.z + dpdx(position.z) * toCentre.x + dpdy(position.z) * toCentre.y;
 }
 
+// How much of a cap's own depth it keeps on top of the plane's: enough to order caps among
+// themselves, nearest back face first, and too little to fall behind anything else.
+const kCapDepthShare = 1.0 / 1024.0;
+
+// A cap's depth: on the plane the pixel's ray entered the kept region through, in this sample's
+// view, nearer than everything behind the cut and never behind the fragment's own depth.
+fn capDepth(position: vec4f) -> f32 {
+    let plane = frame.sectionDepths[cutEntry(position.xy).plane];
+    if (plane.w == 0.0) {
+        return position.z; // the plane is seen edge on
+    }
+    let ndc = vec2f(position.x / frame.viewport.x * 2.0 - 1.0,
+                    1.0 - position.y / frame.viewport.y * 2.0);
+    let onPlane = dot(plane.xyz, vec3f(ndc, 1.0));
+    return max(position.z, onPlane - (onPlane - position.z) * kCapDepthShare);
+}
+
 @fragment
 fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) -> SurfaceOutput {
     if (kSection && sectionCuts(in.world)) {
         discard;
     }
-    let depth = centreDepth(in.position);
+    return shade(in, frontFacing, centreDepth(in.position));
+}
+
+// Counts the closed surfaces behind the cut, each part's apart: every surface adds one to the
+// total and one to each bit set in its body's tag. Where the cut plane lies inside one closed
+// part, the total ends odd and the odd bits spell that part's tag, since every other part is
+// crossed an even number of times.
+struct ParityOutput {
+    @location(0) low: vec4f,
+    @location(1) high: vec4f,
+}
+
+@fragment
+fn parityFragment(in: SurfaceVertex) -> ParityOutput {
+    if (kSection && sectionCuts(in.world)) {
+        discard;
+    }
+    let tag = (in.flags >> 8u) & 0x7Fu;
+    let low = (vec3u(tag) >> vec3u(0u, 1u, 2u)) & vec3u(1u);
+    let high = (vec4u(tag) >> vec4u(3u, 4u, 5u, 6u)) & vec4u(1u);
+    return ParityOutput(vec4f(1.0, vec3f(low)), vec4f(high));
+}
+
+struct CapOutput {
+    @location(0) color: vec4f,
+    @location(1) id: u32,
+    @location(2) depth: f32,
+    @location(4) tags: vec2u,
+    @builtin(frag_depth) stored: f32,
+}
+
+// The caps, drawn again by the part the cut plane lies inside: its back face, shaded as before,
+// but on the plane, so a part touching it from behind can neither show through nor claim the cut.
+@fragment
+fn capFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) -> CapOutput {
+    if (sectionCuts(in.world)) {
+        discard;
+    }
+    let p = vec2i(in.position.xy);
+    let low = vec4u(textureLoad(parityLow, p, 0) + 0.5) & vec4u(1u);
+    let high = vec4u(textureLoad(parityHigh, p, 0) + 0.5) & vec4u(1u);
+    let code = low.y | (low.z << 1u) | (low.w << 2u) | (high.x << 3u) | (high.y << 4u) |
+               (high.z << 5u) | (high.w << 6u);
+    if (low.x == 0u || code != ((in.flags >> 8u) & 0x7Fu)) {
+        discard;
+    }
+    let stored = capDepth(in.position);
+    // Its depth copy at the pixel's centre, as every other surface's: the plane is flat on screen.
+    let toCentre = -frame.sampleOffset;
+    let centred = stored + dpdx(stored) * toCentre.x + dpdy(stored) * toCentre.y;
+    let s = shade(in, frontFacing, centred);
+    return CapOutput(s.color, s.id, s.depth, s.tags, stored);
+}
+
+fn shade(in: SurfaceVertex, frontFacing: bool, depth: f32) -> SurfaceOutput {
     let flags = in.flags & 0x77u; // state, without the shell and open bits
     var tag = (in.flags >> 8u) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.

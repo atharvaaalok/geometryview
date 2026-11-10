@@ -20,12 +20,13 @@ inline constexpr MTLPixelFormat kIdFormat = MTLPixelFormatR32Uint;
 inline constexpr MTLPixelFormat kDepthCopyFormat = MTLPixelFormatR32Float;
 inline constexpr MTLPixelFormat kInkFormat = MTLPixelFormatRGBA8Unorm;
 inline constexpr MTLPixelFormat kTagFormat = MTLPixelFormatRG8Uint;
+inline constexpr MTLPixelFormat kParityFormat = MTLPixelFormatR8Uint;
 inline constexpr MTLPixelFormat kShadowFormat = MTLPixelFormatR8Unorm;
 inline constexpr MTLPixelFormat kDepthFormat = MTLPixelFormatDepth32Float_Stencil8;
 
 struct Targets {
     u32 width = 0, height = 0;
-    id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, inkMsaa, tagsMsaa, depthMsaa;
+    id<MTLTexture> colorMsaa, idMsaa, depthCopyMsaa, inkMsaa, tagsMsaa, parityMsaa, depthMsaa;
     id<MTLTexture> tags;           // sample 0 of the tags, for outlines
     id<MTLTexture> occlusion;      // ambient occlusion, at half resolution
     id<MTLTexture> shadowMask;     // where the cast shadow falls, at half resolution

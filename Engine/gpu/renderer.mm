@@ -86,7 +86,8 @@ struct Renderer::State {
     id<MTL4ArgumentTable> classifyTable;
     u32 classifySize = 0;
     id<MTLTexture> classifyFrontIds, classifyBehindIds, classifyFrontDepths;
-    id<MTLTexture> classifyColor, classifyDepthCopy, classifyInk, classifyTags, classifyDepth;
+    id<MTLTexture> classifyColor, classifyDepthCopy, classifyInk, classifyTags, classifyParity,
+        classifyDepth;
 
     // GPU time, from commit feedback while tracing.
     std::atomic<double> gpuSeconds{0.0};
@@ -212,6 +213,21 @@ struct Renderer::State {
         drawBatches(encoder, tables.openBatches());
     }
 
+    // Caps where the cut plane lies inside a closed part, found by counting the closed surfaces
+    // behind it, each part's apart, rather than by which is nearest: a part touching another from
+    // behind then cannot show through its cut, nor claim it. They are drawn on the plane. Where no
+    // part's count is odd, as where two parts overlap, the opaque pass's own caps stay.
+    void drawCaps(id<MTL4RenderCommandEncoder> encoder) {
+        [encoder setRenderPipelineState:pipelines.parity];
+        [encoder setDepthStencilState:pipelines.depthAlways];
+        [encoder setCullMode:MTLCullModeNone];
+        drawBatches(encoder, tables.closedBatches());
+        [encoder setRenderPipelineState:pipelines.cap[physical]];
+        [encoder setDepthStencilState:pipelines.depthWrite];
+        [encoder setCullMode:MTLCullModeFront];
+        drawBatches(encoder, tables.closedBatches());
+    }
+
     // The main pass: opaque surfaces, the sheet behind them, creases and highlights, ghosts over
     // all of it with their dashed lines, then the overlay.
     // It ends by copying sample 0 of the ids and depths out of tile memory for picking.
@@ -274,6 +290,9 @@ struct Renderer::State {
             [encoder setRenderPipelineState:pipelines.surface[physical][section]];
             [encoder setDepthStencilState:pipelines.depthWrite];
             drawSurfaces(encoder);
+            if (section) {
+                drawCaps(encoder);
+            }
         }
         const bool seeThrough = hasScene && hasShells && view.uniforms.seeThrough > 0.0f;
         if (seeThrough) {
@@ -525,6 +544,7 @@ OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 s
         s.classifyDepthCopy = make(kDepthCopyFormat, MTLStorageModeMemoryless, target);
         s.classifyInk = make(kInkFormat, MTLStorageModeMemoryless, target);
         s.classifyTags = make(kTagFormat, MTLStorageModeMemoryless, target);
+        s.classifyParity = make(kParityFormat, MTLStorageModeMemoryless, target);
         s.classifyDepth = make(kDepthFormat, MTLStorageModeMemoryless, target);
         [s.context.residency commit];
         [s.classifyTable setTexture:s.classifyFrontIds.gpuResourceID atIndex:kTexturePickIds];
@@ -548,6 +568,7 @@ OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 s
         attach(kAttachmentDepth, peel ? s.classifyDepthCopy : s.classifyFrontDepths, !peel);
         attach(kAttachmentInk, s.classifyInk, false);
         attach(kAttachmentTags, s.classifyTags, false);
+        attach(kAttachmentParity, s.classifyParity, false);
         pass.depthAttachment.texture = s.classifyDepth;
         pass.depthAttachment.loadAction = MTLLoadActionClear;
         pass.depthAttachment.storeAction = MTLStoreActionDontCare;

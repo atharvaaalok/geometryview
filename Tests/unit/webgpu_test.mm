@@ -4,12 +4,13 @@
 #if defined(GEO_HAS_WEBGPU)
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
+#include "cut_fixture.h"
 #include "drive_fixture.h"
-#include "hidden_box_fixture.h"
 #include "engine.h"
 #include "engine/png.h"
 #include "gpu/overlay_atlas.h"
 #include "gpu/renderer.h"
+#include "hidden_box_fixture.h"
 #include "model/face_state.h"
 #include "nav/camera.h"
 #include "render/shell.h"
@@ -495,6 +496,53 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
                 engine::writePng(std::format("{}/{}-metal.png", keep, c.name).c_str(), expected,
                                  kWidth, kHeight);
                 engine::writePng(std::format("{}/{}-webgpu.png", keep, c.name).c_str(), image,
+                                 kWidth, kHeight);
+            }
+            const Difference d = compare(image, expected);
+            CAPTURE(d.mean);
+            CAPTURE(d.changed);
+            CHECK(d.mean < 1.0);
+            CHECK(d.changed < 0.005);
+        }
+        unlink(blob.c_str());
+    }
+}
+
+// A cut through a part that another reaches into from behind: the cut face is the part's own in
+// both renderers, found by each part's count of the surfaces behind the cut, which WebGPU keeps in
+// a pass of its own where Metal keeps it in tile memory.
+TEST_CASE("the WebGPU renderer cuts parts that reach into each other as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importBoxes(test::reachingBoxes(), GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        for (const GeoStyle style : {GeoStyleIllustration, GeoStyleMetal}) {
+            CAPTURE(int(style));
+            GeoRenderOptions options = geo_default_render_options();
+            options.width = kWidth;
+            options.height = kHeight;
+            options.overlay = false;
+            options.azimuth_degrees = 210.0;
+            options.elevation_degrees = 55.0;
+            options.look.style = style;
+            options.look.cast_shadow = false;
+            options.section.enabled[2] = true;
+            options.section.position[2] = 0.5f;
+            const auto nothing = [](engine::OffscreenView&, render::Backend&) {};
+            const std::vector<u8> expected = renderScenario(*metal, blob, options, nothing);
+            const std::vector<u8> image = renderScenario(*web, blob, options, nothing);
+            REQUIRE(image.size() == expected.size());
+            if (const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES")) {
+                const int n = int(style);
+                engine::writePng(std::format("{}/reaching-{}-metal.png", keep, n).c_str(), expected,
+                                 kWidth, kHeight);
+                engine::writePng(std::format("{}/reaching-{}-webgpu.png", keep, n).c_str(), image,
                                  kWidth, kHeight);
             }
             const Difference d = compare(image, expected);
