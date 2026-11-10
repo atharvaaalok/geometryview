@@ -167,7 +167,7 @@ final class ShortcutsSheet: NSView {
             ([cap(.toggleProjection)], "Orthographic or perspective"),
             ([cap(.seeThrough)], "See through the housing"),
             ([cap(.section)], "Section across X"),
-            ([cap(.clearSelection)], "Clear the selection"),
+            ([cap(.clearSelection)], "Close a card, or clear the selection"),
             ([cap(.shortcuts)], "This sheet"),
         ]
         for (keyLabels, meaning) in entries {

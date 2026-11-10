@@ -527,7 +527,7 @@ export class ShortcutsSheet {
       [["P"], "Orthographic or perspective"],
       [["T"], "See through the housing"],
       [["S"], "Section across X"],
-      [["Esc"], "Clear the selection"],
+      [["Esc"], "Close a card, or clear the selection"],
       [["⌘O"], "Open a file"],
       [["?"], "This sheet"],
     ];

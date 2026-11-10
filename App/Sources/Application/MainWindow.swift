@@ -193,6 +193,7 @@ final class MainWindow: NSWindow {
             self?.receive(urls, adding: adding)
         }
         viewport.onKeyCommand = { [weak self] command in self?.run(command) }
+        viewport.onEscape = { [weak self] in self?.dismissCard() ?? false }
         viewport.onToolChange = { [weak self] tool in self?.toolChanged(tool) }
         viewport.onPointerMoved = { [weak self] point in self?.pointerMoved(point) }
         viewport.onDragging = { [weak self] dragging in self?.dropZone.isHidden = !dragging }
@@ -610,6 +611,11 @@ final class MainWindow: NSWindow {
 
     private func run(_ command: KeyCommand) {
         switch command {
+        case .perform(GeoActionClearSelection):
+            // Esc, by default: what is open closes first, and only then the selection clears.
+            if !dismissCard() {
+                engine.perform(GeoActionClearSelection)
+            }
         case .perform(let action):
             engine.perform(action)
         case .selectionMode(let mode):
@@ -637,11 +643,23 @@ final class MainWindow: NSWindow {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        if !shortcuts.isHidden {
-            shortcuts.isHidden = true
+        dismissCard()
+    }
+
+    /// Closes whatever card, menu or sheet is open: the shortcuts sheet, the views and More menus,
+    /// the look and section cards. Returns whether any was.
+    @discardableResult
+    func dismissCard() -> Bool {
+        var closed = false
+        for card in [shortcuts, lookCard, sectionCard] as [NSView] where !card.isHidden {
+            card.isHidden = true
+            closed = true
         }
-        lookCard.isHidden = true
-        sectionCard.isHidden = true
+        for menu in [toolBar.viewsMenu, toolBar.moreMenu] where menu.isOpen {
+            menu.close()
+            closed = true
+        }
+        return closed
     }
 
     // MARK: Pointer and tools
