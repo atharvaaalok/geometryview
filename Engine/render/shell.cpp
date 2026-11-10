@@ -166,6 +166,37 @@ std::vector<u32> clusterParts(std::span<const Aabb> boxes) {
     return group;
 }
 
+std::vector<u32> nestedGroups(std::span<const AssemblyRow> rows, std::span<const u32> groupOf) {
+    std::vector<u32> size;
+    for (const u32 g : groupOf) {
+        if (g >= size.size()) {
+            size.resize(usize(g) + 1, 0);
+        }
+        ++size[g];
+    }
+    std::vector<u32> out(groupOf.size(), 0);
+    u32 count = 0;
+    for (usize r = 0; r < rows.size();) {
+        const AssemblyRow& row = rows[r];
+        bool take = false;
+        if (row.assembly && row.first + 2 <= row.end && row.end <= groupOf.size()) {
+            const u32 g = groupOf[row.first];
+            take = g != 0 && row.end - row.first < size[g] &&
+                   std::all_of(
+                       groupOf.begin() + row.first, groupOf.begin() + row.end,
+                       [&](u32 other) { return other == g; });
+        }
+        if (!take) {
+            ++r;
+            continue;
+        }
+        ++count;
+        std::fill(out.begin() + row.first, out.begin() + row.end, count);
+        r = std::max<usize>(row.subtreeEnd, r + 1);
+    }
+    return out;
+}
+
 std::vector<Vec3> shellViewDirections() {
     std::vector<Vec3> out;
     for (int axis = 0; axis < 3; ++axis) {

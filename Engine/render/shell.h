@@ -7,7 +7,8 @@
 // inner (parts themselves mostly hidden), it does a real share of that hiding, and it encloses at
 // least one part it hides. Parts named as the working mechanism (coils, magnets, gears...) never
 // fade. The test runs twice: after the first shell is removed, a second layer that hides the
-// remaining inner parts decisively fades too.
+// remaining inner parts decisively fades too. It runs for each separate assembly, then for each
+// level of sub-assemblies inside them, each on its own.
 #pragma once
 
 #include "base/types.h"
@@ -47,6 +48,23 @@ std::vector<Vec3> shellViewDirections();
 /// whose boxes, each grown by 1% of its own diagonal, touch or overlap, directly or through other
 /// parts. Returns each part's group, numbered from 0 in order of first appearance.
 std::vector<u32> clusterParts(std::span<const Aabb> boxes);
+
+/// One row of an assembly tree, as `nestedGroups` reads it. Rows are depth first, so a row's
+/// subtree is the rows from it up to `subtreeEnd`, and its occurrences, in global order, are
+/// [`first`, `end`).
+struct AssemblyRow {
+    u32 first = 0;
+    u32 end = 0;
+    u32 subtreeEnd = 0;
+    bool assembly = false;
+};
+
+/// The assemblies one level inside the groups see-through has classified: under each group, the
+/// largest assemblies of two or more parts that lie wholly in it and are smaller than it. Each is
+/// then classified on its own, as it would be alone, so a motor bolted to a plate is judged as a
+/// motor and not beside the whole machine. `groupOf` and the result give each occurrence's group,
+/// numbered from 1, or 0 for none; the result's are numbered in tree order.
+std::vector<u32> nestedGroups(std::span<const AssemblyRow> rows, std::span<const u32> groupOf);
 
 /// What the test measured of one part, for tracing and tests.
 struct ShellScore {

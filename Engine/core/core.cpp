@@ -877,10 +877,12 @@ void Core::publishState() {
 
 // Finds the shell that see-through fades, from 14 small views of occurrence ids, in two rounds.
 // Each separate assembly is classified on its own, framed alone and with the others left out, so a
-// row of motors or two belt axes side by side each come out as they would alone. Runs once, when
-// see-through is first asked for, and again after the scene changes. The views are read back at
-// once on the Mac, and frames later in the browser, where every group's views are in flight
-// together.
+// row of motors or two belt axes side by side each come out as they would alone. Then, level by
+// level, so is each sub-assembly inside them: a motor bolted to a belt axis's plate is judged as a
+// motor, not beside the whole axis, where the plate and rail do nearly all the hiding. A part is
+// shell if any level finds it so. Runs once, when see-through is first asked for, and again after
+// the scene changes. The views are read back at once on the Mac, and frames later in the browser,
+// where every group's views of a round are in flight together.
 void Core::classifyShells() {
     const std::optional<Aabb> sceneBounds = scene_.bounds();
     if (!sceneBounds || !scene_.hasGeometry()) {
@@ -890,8 +892,9 @@ void Core::classifyShells() {
     c.generation = ++classifyGeneration_;
     c.started = host_.now();
     // Each occurrence's name and world bounds: the geometry's own once it has arrived, else the
-    // estimate the structure gave.
-    std::vector<render::ShellPart> parts;
+    // estimate the structure gave. And each document's tree, its rows and occurrences numbered
+    // after the documents before it.
+    std::vector<render::ShellPart>& parts = c.parts;
     parts.reserve(scene_.occurrenceCount());
     for (u32 d = 0; d < scene_.documentCount(); ++d) {
         const scene::Document& document = scene_.document(d);
@@ -899,8 +902,21 @@ void Core::classifyShells() {
             continue;
         }
         const format::SegmentView& model = document.model();
+        const u32 base = u32(parts.size()), rowBase = u32(c.rows.size());
+        for (const format::NodeRecord& node : model.nodes) {
+            c.rows.push_back({base + node.firstOccurrence, base + node.occurrenceEnd,
+                              rowBase + node.subtreeEnd,
+                              node.kind == u32(format::NodeKind::Assembly)});
+        }
         for (const format::OccurrenceRecord& o : model.occurrences) {
-            const format::NodeRecord& node = model.nodes[o.node];
+            // An unnamed body goes by its part's name: one part of four planet gears is four
+            // bodies, and only the part says they are gears.
+            u32 named = o.node;
+            while (model.nodes[named].nameLength == 0 &&
+                   model.nodes[named].parent != format::kNoParent) {
+                named = model.nodes[named].parent;
+            }
+            const format::NodeRecord& node = model.nodes[named];
             const std::string_view name(model.strings.data() + node.nameOffset, node.nameLength);
             const format::DefinitionInfo& info = model.definitionInfos[o.definition];
             const format::DefinitionRecord* geometry = document.geometry(o.definition);
@@ -950,26 +966,13 @@ void Core::classifyShells() {
     for (usize i = 0; i < order.size(); ++i) {
         groupOfComponent[order[i]] = u32(std::min(i, kMaxShellGroups)) + 1;
     }
-    c.groupOf.assign(parts.size(), 0);
-    c.local.assign(parts.size(), 0);
-    c.groups.resize(std::min(order.size(), kMaxShellGroups + 1));
+    std::vector<u32> groupOf(parts.size(), 0);
     for (usize p = 0; p < parts.size(); ++p) {
-        const u32 group = groupOfComponent[component[p]];
-        c.groupOf[p] = group;
-        if (group == 0) {
-            continue;
-        }
-        ShellGroup& g = c.groups[group - 1];
-        c.local[p] = u32(g.members.size());
-        g.bounds = g.members.empty() ? parts[p].bounds
-                                     : Aabb{simd_min(g.bounds.min, parts[p].bounds.min),
-                                            simd_max(g.bounds.max, parts[p].bounds.max)};
-        g.members.push_back(u32(p));
-        g.parts.push_back(parts[p]);
+        groupOf[p] = groupOfComponent[component[p]];
     }
-    c.first.assign(parts.size(), 0);
-    if (c.groups.empty()) {
-        look_.setShells(c.first); // nothing has anything inside it
+    c.found.assign(parts.size(), 0);
+    if (order.empty()) {
+        look_.setShells(c.found); // nothing has anything inside it
         classifying_.reset();
         requestFrame();
         return;
@@ -980,9 +983,32 @@ void Core::classifyShells() {
         sceneChanged_ = false;
         renderer_.syncScene(scene_);
     }
-    renderer_.setShellGroups(c.groupOf);
     renderer_.syncState(interaction_.state());
     look_.apply(renderer_, scene_);
+    classifyShellLevel(std::move(groupOf));
+}
+
+// Starts one level: its groups, from each occurrence's group numbered from 1, each framed alone.
+void Core::classifyShellLevel(std::vector<u32> groupOf) {
+    ShellClassification& c = *classifying_;
+    const u32 count = groupOf.empty() ? 0 : *std::max_element(groupOf.begin(), groupOf.end());
+    c.groupOf = std::move(groupOf);
+    c.local.assign(c.parts.size(), 0);
+    c.groups.assign(count, ShellGroup{});
+    for (usize p = 0; p < c.parts.size(); ++p) {
+        const u32 group = c.groupOf[p];
+        if (group == 0) {
+            continue;
+        }
+        ShellGroup& g = c.groups[group - 1];
+        c.local[p] = u32(g.members.size());
+        g.bounds = g.members.empty() ? c.parts[p].bounds
+                                     : Aabb{simd_min(g.bounds.min, c.parts[p].bounds.min),
+                                            simd_max(g.bounds.max, c.parts[p].bounds.max)};
+        g.members.push_back(u32(p));
+        g.parts.push_back(c.parts[p]);
+    }
+    renderer_.setShellGroups(c.groupOf);
     requestShellViews(false);
 }
 
@@ -990,6 +1016,7 @@ void Core::requestShellViews(bool excludeShells) {
     ShellClassification& c = *classifying_;
     c.secondRound = excludeShells;
     c.arrived = 0;
+    const u32 round = ++c.round;
     const std::vector<Vec3> directions = render::shellViewDirections();
     c.expected = u32(c.groups.size() * directions.size());
     for (ShellGroup& g : c.groups) {
@@ -1011,23 +1038,25 @@ void Core::requestShellViews(bool excludeShells) {
             state.uniforms.classifyGroup = group + 1;
             renderer_.requestOccurrenceIds(state, kShellViewSize,
                                            [this, alive = std::weak_ptr<int>(alive_), generation,
-                                            group](render::OccurrenceIds ids) {
+                                            round, group](render::OccurrenceIds ids) {
                                                if (alive.lock()) {
-                                                   shellViewArrived(generation, group, ids);
+                                                   shellViewArrived(generation, round, group, ids);
                                                }
                                            });
-            // On the Mac each view arrives within the call, and the last may have ended this round.
+            // On the Mac each view arrives within the call, and the last may have ended this round
+            // and gone on to the next.
             if (!classifying_ || classifying_->generation != generation ||
-                classifying_->secondRound != excludeShells) {
+                classifying_->round != round) {
                 return;
             }
         }
     }
 }
 
-void Core::shellViewArrived(u64 generation, u32 group, const render::OccurrenceIds& ids) {
-    if (!classifying_ || classifying_->generation != generation) {
-        return; // a newer classification, or the scene it measured is gone
+void Core::shellViewArrived(u64 generation, u32 round, u32 group,
+                            const render::OccurrenceIds& ids) {
+    if (!classifying_ || classifying_->generation != generation || classifying_->round != round) {
+        return; // a newer classification or round, or the scene it measured is gone
     }
     ShellClassification& c = *classifying_;
     // Ids name occurrences in global order, plus one: counted by their index in the group.
@@ -1058,33 +1087,35 @@ void Core::shellViewArrived(u64 generation, u32 group, const render::OccurrenceI
             const render::ShellScore& s = scores[p];
             const std::string_view name = c.groups[g].parts[p].name;
             std::fprintf(stderr,
-                         "trace: shell %s group %u %-28.*s exposure %.2f occlusion %.2f "
+                         "trace: shell %u.%s group %u %-28.*s exposure %.2f occlusion %.2f "
                          "share %.3f hiding %.3f wraps %d%s\n",
-                         round, g + 1, int(name.size()), name.data(), s.exposure, s.occlusion,
-                         s.share, s.hiding, int(s.wraps), s.shell ? "  SHELL" : "");
+                         c.level, round, g + 1, int(name.size()), name.data(), s.exposure,
+                         s.occlusion, s.share, s.hiding, int(s.wraps), s.shell ? "  SHELL" : "");
         }
     };
     if (!c.secondRound) {
-        bool any = false;
         for (u32 g = 0; g < u32(c.groups.size()); ++g) {
             const ShellGroup& group_ = c.groups[g];
             const std::vector<u8> first =
                 render::decideShell(group_.counts, group_.parts, 0.3, traced);
             trace("1", g);
             for (usize p = 0; p < first.size(); ++p) {
-                c.first[group_.members[p]] = first[p];
-                any = any || first[p] != 0;
+                c.found[group_.members[p]] |= first[p];
             }
         }
-        look_.setShells(c.first);
+        look_.setShells(c.found);
+        // A second layer, with what is shell so far left out, must hide inner parts decisively,
+        // so the mechanism stays solid.
+        const bool any = std::any_of(c.groups.begin(), c.groups.end(), [&](const ShellGroup& g) {
+            return std::any_of(g.members.begin(), g.members.end(),
+                               [&](u32 o) { return c.found[o] != 0; });
+        });
         if (any) {
-            // The second layer must hide inner parts decisively, so the mechanism stays solid.
             look_.apply(renderer_, scene_);
             requestShellViews(true);
             return;
         }
     } else {
-        std::vector<u8> shell = c.first;
         for (u32 g = 0; g < u32(c.groups.size()); ++g) {
             const ShellGroup& group_ = c.groups[g];
             const std::vector<u8> second =
@@ -1093,20 +1124,39 @@ void Core::shellViewArrived(u64 generation, u32 group, const render::OccurrenceI
             // Something of each assembly stays solid, or its second layer is not taken.
             usize solid = 0;
             for (usize p = 0; p < second.size(); ++p) {
-                solid += (c.first[group_.members[p]] | second[p]) == 0 ? 1 : 0;
+                solid += (c.found[group_.members[p]] | second[p]) == 0 ? 1 : 0;
             }
             if (solid == 0) {
                 continue;
             }
             for (usize p = 0; p < second.size(); ++p) {
-                shell[group_.members[p]] = u8(c.first[group_.members[p]] | second[p]);
+                c.found[group_.members[p]] |= second[p];
             }
         }
-        look_.setShells(shell);
+        look_.setShells(c.found);
+    }
+    shellLevelDone();
+}
+
+// After a level's rounds: the next level inside it, or the end. A level is classified whole or
+// not at all, so copies of one assembly always come out alike.
+void Core::shellLevelDone() {
+    constexpr u32 kMaxNestedLevels = 4;
+    constexpr u32 kMaxNestedGroups = 64;
+    ShellClassification& c = *classifying_;
+    if (c.level < kMaxNestedLevels) {
+        std::vector<u32> next = render::nestedGroups(c.rows, c.groupOf);
+        const u32 count = next.empty() ? 0 : *std::max_element(next.begin(), next.end());
+        if (count > 0 && c.nestedGroups + count <= kMaxNestedGroups) {
+            ++c.level;
+            c.nestedGroups += count;
+            classifyShellLevel(std::move(next));
+            return;
+        }
     }
     if (traceLaunch_) {
-        std::fprintf(stderr, "trace: shell classified in %.1f ms, %zu groups\n",
-                     (host_.now() - c.started) * 1e3, c.groups.size());
+        std::fprintf(stderr, "trace: shell classified in %.1f ms, %u levels, %u sub-assemblies\n",
+                     (host_.now() - c.started) * 1e3, c.level + 1, c.nestedGroups);
     }
     classifying_.reset();
     requestFrame();

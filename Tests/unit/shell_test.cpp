@@ -118,3 +118,65 @@ TEST_CASE("copies of one shape are decided alike") {
     parts[2].definition = 8;
     CHECK(decideShell(counts, parts, 0.3)[2] == 0);
 }
+
+namespace {
+
+AssemblyRow assemblyRow(u32 first, u32 end, u32 subtreeEnd) {
+    return {first, end, subtreeEnd, true};
+}
+AssemblyRow partRow(u32 first, u32 end, u32 subtreeEnd) {
+    return {first, end, subtreeEnd, false};
+}
+
+// A belt axis's shape: a plate, a motor of a stator (flange and cap), a shaft and a two-body
+// bearing, an idler of a wheel and a sleeve, and a screw, all under one root.
+std::vector<AssemblyRow> beltAxis() {
+    return {
+        assemblyRow(0, 9, 12), // 0 axis
+        partRow(0, 1, 2),      // 1 plate
+        assemblyRow(1, 6, 8),  // 2 motor
+        assemblyRow(1, 3, 6),  // 3 stator
+        partRow(1, 2, 5),      // 4 flange
+        partRow(2, 3, 6),      // 5 cap
+        partRow(3, 4, 7),      // 6 shaft
+        partRow(4, 6, 8),      // 7 bearing, one part of two bodies
+        assemblyRow(6, 8, 11), // 8 idler
+        partRow(6, 7, 10),     // 9 wheel
+        partRow(7, 8, 11),     // 10 sleeve
+        partRow(8, 9, 12),     // 11 screw
+    };
+}
+
+} // namespace
+
+TEST_CASE("each level inside an assembly is its largest sub-assemblies, down to none") {
+    const std::vector<AssemblyRow> rows = beltAxis();
+    // The whole axis is one group, so the root, no smaller than it, is looked inside.
+    const std::vector<u32> axis(9, 1);
+    const std::vector<u32> first = nestedGroups(rows, axis);
+    CHECK(first == std::vector<u32>{0, 1, 1, 1, 1, 1, 2, 2, 0});
+    // Inside the motor, the stator; the bearing is one part, however many bodies it has; the
+    // idler's are parts too.
+    const std::vector<u32> second = nestedGroups(rows, first);
+    CHECK(second == std::vector<u32>{0, 1, 1, 0, 0, 0, 0, 0, 0});
+    const std::vector<u32> third = nestedGroups(rows, second);
+    CHECK(third == std::vector<u32>(9, 0));
+}
+
+TEST_CASE("an assembly reaching across two groups is not one, but what lies in one is") {
+    // Two separate groups, 0..4 and 5..8, and an assembly spanning both, holding one of two parts
+    // in each group and a pair wholly in the second.
+    const std::vector<AssemblyRow> rows = {
+        assemblyRow(0, 9, 7), // 0 root
+        partRow(0, 4, 2),     // 1 four parts' worth of a block, in the first group
+        assemblyRow(4, 9, 7), // 2 spans both groups
+        partRow(4, 5, 4),     // 3 in the first group
+        assemblyRow(5, 7, 6), // 4 a pair, wholly in the second
+        partRow(7, 9, 7),     // 5 the rest of the second
+        partRow(9, 9, 7),     // 6 empty
+    };
+    const std::vector<u32> groupOf = {1, 1, 1, 1, 1, 2, 2, 2, 2};
+    CHECK(nestedGroups(rows, groupOf) == std::vector<u32>{0, 0, 0, 0, 0, 1, 1, 0, 0});
+    // Occurrences in no group start none.
+    CHECK(nestedGroups(rows, std::vector<u32>(9, 0)) == std::vector<u32>(9, 0));
+}

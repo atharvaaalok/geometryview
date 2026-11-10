@@ -133,6 +133,35 @@ together. A lone part has nothing inside it and is skipped, so a 100,000-box rac
 `GEOMETRYVIEW_TRACE` prints each part's numbers. `GEOMETRYVIEW_SHELL_FILES` runs the test of
 `Tests/unit/see_through_test.mm` on any cache files.
 
+**Amended (v0.1.2): each sub-assembly on its own, too.** A belt axis's motor stayed solid, though
+the same motor alone fades its flange, rear cap and bearing rings. Bolted to the plate, it is in
+the plate's group, and beside the whole axis its numbers were too small. In round one the plate
+did 61% of all the hiding, and the motor's rear cap covered inner parts with 13% of its area,
+against the 15% its name allows. In round two the rail did 39%.
+
+So after the separate assemblies, each level inside them is classified on its own too, from the
+file's tree (`nestedGroups`). A level holds the largest assemblies of two or more parts that lie
+wholly in one group and are smaller than it: the belt axis's guide, motor and idler, then the
+motor's stator and bearings. Each level runs the same two rounds, reusing the group word and
+uniform. A part is shell if any level finds it so. A level's second round leaves out everything
+found so far.
+
+**Bounds:**
+- A level is classified whole or not at all, so copies of one assembly always come out alike.
+- Descent stops after 4 levels inside the groups, or before the sub-assemblies classified would
+  pass 64.
+
+**Names:** an unnamed body now goes by its part's name. One part of four planet gears is four
+unnamed bodies, and only the part's name says they are gears. Judged alone in its stage, each
+planet wrapped its bearing and would have faded.
+
+**Results, after the change:**
+- the belt axes: the motor's flange, rear cap and bearing outer rings, and the idler's wheel, as
+  well as before;
+- the motor row and the drive: unchanged;
+- the gearbox: also its clamp ring, one inner ring and two cages, with gears, carriers, pins and
+  balls solid.
+
 ## Deferred
 
 - **Per-part override.** The plan has a per-part override of the shell, with a tree action or G

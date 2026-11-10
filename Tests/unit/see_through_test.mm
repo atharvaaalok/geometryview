@@ -123,8 +123,8 @@ bool shellNamed(const Classified& c, std::string_view name) {
 // Places a hollow box at `lo` of size `size`, holding a block a little smaller than its void (the
 // middle half on each axis), with a pin on top that hides nothing, so something stays solid. The
 // box's name says nothing of what it is, so only what it hides can make it shell.
-void addHousing(test::StepWriter& writer, int root, const std::string& suffix, std::array<double, 3> lo,
-                double size) {
+void addHousing(test::StepWriter& writer, int root, const std::string& suffix,
+                std::array<double, 3> lo, double size) {
     const auto place = [&](const std::string& name, std::array<double, 3> a,
                            std::array<double, 3> b, bool cavity) {
         const int shape = writer.box(a, b, cavity);
@@ -152,8 +152,8 @@ TEST_CASE("a small assembly beside a large one is found, as it would be alone") 
             const int shape = writer.box(a, b, cavity);
             writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
         };
-        place("outer0", {0, 0, 0}, {100, 100, 100}, true);   // its void: 25..75
-        place("inner0", {27, 27, 27}, {73, 73, 73}, true);   // its void: 38.5..61.5
+        place("outer0", {0, 0, 0}, {100, 100, 100}, true); // its void: 25..75
+        place("inner0", {27, 27, 27}, {73, 73, 73}, true); // its void: 38.5..61.5
         place("block0", {40, 40, 40}, {60, 60, 60}, false);
         place("pin0", {45, 45, 100}, {55, 55, 115}, false);
         addHousing(writer, root, "1", {200, 0, 0}, 10.0);
@@ -185,6 +185,75 @@ TEST_CASE("each of several housings in a row is found") {
             CHECK(shellNamed(c, "outer" + std::to_string(i)));
             CHECK(!shellNamed(c, "block" + std::to_string(i)));
             CHECK(!shellNamed(c, "pin" + std::to_string(i)));
+        }
+        unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("a housing in a sub-assembly bolted to a larger machine is found, as it would be alone") {
+    @autoreleasepool {
+        // A belt axis's shape: a plate around a rail around a bar, which between them do nearly
+        // all the hiding, and a motor of its own, hanging under the plate and touching it: a
+        // stator around a rotor, with a shaft below. Judged beside the whole axis, the stator's
+        // share of the hiding was too small in both rounds: the plate's in the first, the rail's
+        // in the second. No name here says what anything is.
+        test::StepWriter writer;
+        const int root = writer.assembly("axis");
+        const auto place = [&](int parent, const std::string& name, std::array<double, 3> a,
+                               std::array<double, 3> b, bool cavity) {
+            const int shape = writer.box(a, b, cavity);
+            writer.place(parent, writer.part(name, shape), shape, {0, 0, 0});
+        };
+        // Each void is the middle half of its box: the plate's 150..450, 50..150, 30..90.
+        place(root, "plate", {0, 0, 0}, {600, 200, 120}, true);
+        place(root, "rail", {155, 55, 35}, {445, 145, 85}, true);
+        place(root, "bar", {230, 80, 50}, {370, 120, 70}, false);
+        const int motor = writer.assembly("motor");
+        writer.place(root, motor, writer.representationOf(motor), {0, 0, 0});
+        place(motor, "stator", {275, 75, -50}, {325, 125, 0}, true);
+        place(motor, "rotor", {289, 89, -36}, {311, 111, -14}, false);
+        place(motor, "spindle", {297, 97, -70}, {303, 103, -50}, false);
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        CHECK(shellNamed(c, "plate"));
+        CHECK(shellNamed(c, "stator"));
+        for (const char* solid : {"bar", "rotor", "spindle"}) {
+            CAPTURE(solid);
+            CHECK(!shellNamed(c, solid));
+        }
+        unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("unnamed bodies go by their part's name, so planet gears never fade") {
+    @autoreleasepool {
+        // Two gears, touching, as the unnamed bodies of one part, each around a pin: by what
+        // they hide they are shell, as a housing would be. Only the part's name says they are
+        // the mechanism. A housing apart from them is found, so something is.
+        test::StepWriter writer;
+        const int root = writer.assembly("stage");
+        const auto put = [&](const std::string& name, std::vector<test::StepWriter::Solid> solids) {
+            const int shape = writer.boxes(solids);
+            writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
+        };
+        put("planet_gears",
+            {{{0, 0, 0}, {40, 40, 40}, true, ""}, {{40, 0, 0}, {80, 40, 40}, true, ""}});
+        put("pins",
+            {{{12, 12, 12}, {28, 28, 28}, false, ""}, {{52, 12, 12}, {68, 28, 28}, false, ""}});
+        put("hub", {{{30, 15, 40}, {50, 25, 50}, false}});
+        addHousing(writer, root, "1", {300, 0, 0}, 40.0);
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        CHECK(shellNamed(c, "outer1"));
+        for (usize i = 0; i < c.names.size(); ++i) {
+            CAPTURE(i);
+            CAPTURE(c.names[i]);
+            // The gears' and pins' bodies are the unnamed ones.
+            if (c.names[i].empty()) {
+                CHECK(c.shells[i] == 0);
+            }
         }
         unlink(blob.c_str());
     }
