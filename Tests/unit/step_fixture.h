@@ -4,6 +4,7 @@
 
 #include <array>
 #include <format>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -17,24 +18,24 @@ public:
     /// A box from `lo` to `hi`, wound outward. With `cavity`, a smaller box inside is a void,
     /// written the standard way: an outward shell that the oriented shell reverses.
     int box(std::array<double, 3> lo, std::array<double, 3> hi, bool withCavity = false) {
+        return boxes({{lo, hi, withCavity}});
+    }
+
+    struct Solid {
+        std::array<double, 3> lo, hi;
+        bool withCavity = false;
+        std::string name = "box"; // the body's own name
+    };
+
+    /// Several boxes as the bodies of one shape, as `box` writes each.
+    int boxes(const std::vector<Solid>& solids) {
         const int context = ensureContext();
-        const int outer = shell(lo, hi);
-        int body = 0;
-        if (withCavity) {
-            std::array<double, 3> innerLo{}, innerHi{};
-            for (int axis = 0; axis < 3; ++axis) {
-                const double quarter = (hi[axis] - lo[axis]) * 0.25;
-                innerLo[axis] = lo[axis] + quarter;
-                innerHi[axis] = hi[axis] - quarter;
-            }
-            const int inner = shell(innerLo, innerHi);
-            const int oriented = add(std::format("ORIENTED_CLOSED_SHELL('',*,#{},.F.)", inner));
-            body = add(std::format("BREP_WITH_VOIDS('box',#{},(#{}))", outer, oriented));
-        } else {
-            body = add(std::format("MANIFOLD_SOLID_BREP('box',#{})", outer));
+        std::string list;
+        for (const Solid& solid : solids) {
+            list += std::format("#{},", brep(solid.lo, solid.hi, solid.withCavity, solid.name));
         }
         const int origin = placement({0, 0, 0});
-        return add(std::format("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{},#{}),#{})", body, origin,
+        return add(std::format("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}#{}),#{})", list, origin,
                                context));
     }
 
@@ -52,11 +53,16 @@ public:
         const int origin = placement({0, 0, 0});
         const int representation =
             add(std::format("SHAPE_REPRESENTATION('',(#{}),#{})", origin, context));
-        assemblyRepresentation_ = representation;
-        return part(name, representation);
+        const int definition = part(name, representation);
+        assemblyRepresentations_[definition] = representation;
+        return definition;
     }
 
-    /// Places `child` (with representation `childRepresentation`) in `parent` at `offset`.
+    /// An assembly's shape representation, for placing it in another as `childRepresentation`.
+    int representationOf(int assembly) const { return assemblyRepresentations_.at(assembly); }
+
+    /// Places `child` (with representation `childRepresentation`) in the assembly `parent` at
+    /// `offset`.
     void place(int parent, int child, int childRepresentation, std::array<double, 3> offset) {
         const int usage =
             add(std::format("NEXT_ASSEMBLY_USAGE_OCCURRENCE('','','',#{},#{},$)", parent, child));
@@ -68,7 +74,7 @@ public:
             add(std::format("( REPRESENTATION_RELATIONSHIP('','',#{},#{}) "
                             "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#{}) "
                             "SHAPE_REPRESENTATION_RELATIONSHIP() )",
-                            childRepresentation, assemblyRepresentation_, transform));
+                            childRepresentation, representationOf(parent), transform));
         const int shape = add(std::format("PRODUCT_DEFINITION_SHAPE('','',#{})", usage));
         add(std::format("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#{},#{})", relation, shape));
     }
@@ -149,6 +155,27 @@ private:
     }
 
     // A closed shell of six planar faces with outward normals.
+    // One solid, named `name`: a box, with a void if `withCavity`.
+    int brep(std::array<double, 3> lo, std::array<double, 3> hi, bool withCavity,
+             const std::string& name) {
+        const int outer = shell(lo, hi);
+        int body = 0;
+        if (withCavity) {
+            std::array<double, 3> innerLo{}, innerHi{};
+            for (int axis = 0; axis < 3; ++axis) {
+                const double quarter = (hi[axis] - lo[axis]) * 0.25;
+                innerLo[axis] = lo[axis] + quarter;
+                innerHi[axis] = hi[axis] - quarter;
+            }
+            const int inner = shell(innerLo, innerHi);
+            const int oriented = add(std::format("ORIENTED_CLOSED_SHELL('',*,#{},.F.)", inner));
+            body = add(std::format("BREP_WITH_VOIDS('{}',#{},(#{}))", name, outer, oriented));
+        } else {
+            body = add(std::format("MANIFOLD_SOLID_BREP('{}',#{})", name, outer));
+        }
+        return body;
+    }
+
     int shell(std::array<double, 3> lo, std::array<double, 3> hi) {
         std::array<int, 8> vertices{};
         std::array<std::array<double, 3>, 8> corners{};
@@ -216,7 +243,7 @@ private:
     std::vector<std::string> records_;
     int context_ = 0;
     int applicationContext_ = 0;
-    int assemblyRepresentation_ = 0;
+    std::map<int, int> assemblyRepresentations_; // assembly definition to its representation
 };
 
 } // namespace geo::test
