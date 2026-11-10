@@ -11,8 +11,9 @@
 //   { "key": "t" }                             press and release a key
 //   { "eval": expression, "as": name }         evaluate, and keep the value in the report as name
 //   { "shot": file.png }                       screenshot
-//   { "shots": prefix, "every": ms, "until": expression, "timeout": s }
-//                                              screenshots every ms until the expression is true
+//   { "shots": prefix, "every": ms, "until": expression, "timeout": s, "jpeg": true }
+//                                              screenshots every ms until the expression is true;
+//                                              JPEG ones are quicker to take, so come closer together
 //
 // Prints the report as JSON: the kept values, timings and any page errors. Chrome is
 // GEOMETRYVIEW_CHROME, or Google Chrome's usual place on a Mac.
@@ -75,7 +76,8 @@ try {
   const evaluate = async (expression) =>
     (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result?.result?.value;
   const shoot = async (file) => {
-    const shot = await send("Page.captureScreenshot", { format: "png" });
+    const jpeg = file.endsWith(".jpg");
+    const shot = await send("Page.captureScreenshot", jpeg ? { format: "jpeg", quality: 92 } : { format: "png" });
     writeFileSync(file, Buffer.from(shot.result.data, "base64"));
   };
 
@@ -92,7 +94,7 @@ try {
       const deadline = performance.now() + (step.timeout ?? 120) * 1000;
       for (;;) {
         const t = performance.now();
-        await shoot(`${step.shots}${String(count++).padStart(4, "0")}.png`);
+        await shoot(`${step.shots}${String(count++).padStart(4, "0")}.${step.jpeg ? "jpg" : "png"}`);
         if (await evaluate(step.until) || performance.now() > deadline) break;
         await sleep(Math.max(0, step.every - (performance.now() - t)));
       }
