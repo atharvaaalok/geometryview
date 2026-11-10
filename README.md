@@ -193,7 +193,8 @@ from [`iOS/Shell`](Docs/BUILDING.md#the-iphone-and-ipad-shell).
 | 1, 2, 3 | Select faces, bodies or parts |
 | Hold H and click | Hide what you click. Repeated clicks peel away layers |
 | Hold G and click | Ghost what you click. Click a ghost with G held to bring it back |
-| ⇧H, ⇧G | Show everything hidden, unghost everything |
+| ⇧H | Show everything, hidden and ghosted alike |
+| ⇧G | Unghost everything |
 | I | Isolate the selection. When everything is shown again, the view returns |
 | ⌘Z, ⇧⌘Z | Undo and redo hiding and ghosting |
 | Drag | Rotate |

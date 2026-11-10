@@ -51,6 +51,7 @@ public:
     void clearSelection();
     void hideSelection();
     void ghostSelection();
+    /// Shows and unghosts everything, in one step to undo.
     void showAll();
     void unghostAll();
     /// Shows only what has anything selected: it is shown and unghosted, everything else

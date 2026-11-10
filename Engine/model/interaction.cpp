@@ -186,9 +186,10 @@ void Interaction::ghostSelection() {
     apply(scratch_, kStateGhost, true, true);
 }
 
+// Everything comes back, hidden and ghosted alike, in one step to undo.
 void Interaction::showAll() {
     std::vector<Change> changes;
-    state_.clear(kStateHidden, &changes);
+    state_.clear(kStateHidden | kStateGhost, &changes);
     history_.record(std::move(changes));
 }
 

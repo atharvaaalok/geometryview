@@ -9,7 +9,7 @@ final class VisibilityFooter: NSView {
 
     private let rule = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let showAll = PillButton(title: "Show all", help: "Show everything hidden (⇧H)")
+    private let showAll = PillButton(title: "Show all", help: "Show everything, ghosts included (⇧H)")
     private let unghost = PillButton(title: "Unghost", help: "Unghost everything (⇧G)")
 
     override init(frame: NSRect) {

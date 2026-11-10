@@ -25,7 +25,7 @@ enum KeyAction: String, CaseIterable {
         case .toggleProjection: "Switch projection"
         case .clearSelection: "Clear the selection"
         case .isolate: "Isolate the selection"
-        case .showAll: "Show everything hidden"
+        case .showAll: "Show everything"
         case .unghostAll: "Unghost everything"
         case .faceMode: "Pick faces"
         case .bodyMode: "Pick bodies"
