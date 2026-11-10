@@ -523,7 +523,7 @@ export class ShortcutsSheet {
       [["1", "2", "3"], "Clicks select faces, bodies or parts"],
       [["H", "Click"], "Hide what you click"],
       [["G", "Click"], "Ghost, or bring back a ghost"],
-      [["⇧H"], "Show everything"],
+      [["⇧H"], "Show everything, ghosts included"],
       [["⇧G"], "Unghost everything"],
       [["I"], "Isolate the selection"],
       [["⌘", "Z"], "Undo, with ⇧ to redo"],

@@ -111,6 +111,31 @@ TEST_CASE("hiding a part hides all its bodies and can be undone") {
     CHECK((rig.flags(1) & kStateHidden) == 0);
 }
 
+TEST_CASE("showing everything brings back hidden and ghosted faces in one step to undo") {
+    Rig rig;
+    rig.interaction.setMode(SelectionMode::Part);
+    rig.interaction.click(2, Tool::Hide, false);  // part 0: occurrences 0 and 1
+    rig.interaction.click(9, Tool::Ghost, false); // occurrence 2
+    REQUIRE((rig.flags(1) & kStateHidden) != 0);
+    REQUIRE((rig.flags(2, 0) & kStateGhost) != 0);
+    rig.interaction.showAll();
+    CHECK((rig.flags(1) & kStateHidden) == 0);
+    CHECK((rig.flags(2, 0) & kStateGhost) == 0);
+    REQUIRE(rig.interaction.undo());
+    CHECK((rig.flags(1) & kStateHidden) != 0);
+    CHECK((rig.flags(2, 0) & kStateGhost) != 0);
+}
+
+TEST_CASE("unghosting everything leaves hidden faces hidden") {
+    Rig rig;
+    rig.interaction.setMode(SelectionMode::Part);
+    rig.interaction.click(2, Tool::Hide, false);
+    rig.interaction.click(9, Tool::Ghost, false);
+    rig.interaction.unghostAll();
+    CHECK((rig.flags(2, 0) & kStateGhost) == 0);
+    CHECK((rig.flags(1) & kStateHidden) != 0);
+}
+
 TEST_CASE("clicking a ghost with the ghost tool brings it back") {
     Rig rig;
     rig.interaction.click(9, Tool::Ghost, false);

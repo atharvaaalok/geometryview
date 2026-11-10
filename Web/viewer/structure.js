@@ -202,7 +202,8 @@ export class StructureCard {
     this.#list.element.addEventListener("pointerleave", () => this.#hoverRow(-1));
     this.#hiddenLabel = el("span");
     this.#ghostedLabel = el("span");
-    this.#showAll = pill({ title: "Show all", onPress: () => engine.perform(Actions.ShowAll) });
+    this.#showAll = pill({ title: "Show all", help: "Show everything, ghosts included (⇧H)",
+                          onPress: () => engine.perform(Actions.ShowAll) });
     this.#unghostAll = pill({ title: "Unghost all", onPress: () => engine.perform(Actions.UnghostAll) });
     this.#footer = el("div.footer", { hidden: true }, [
       el("div.counts", {}, [this.#hiddenLabel, this.#ghostedLabel]),

@@ -159,7 +159,7 @@ final class ShortcutsSheet: NSView {
             ),
             ([cap(.holdHide), "Click"], "Hide what you click"),
             ([cap(.holdGhost), "Click"], "Ghost, or bring back a ghost"),
-            ([cap(.showAll)], "Show everything"),
+            ([cap(.showAll)], "Show everything, ghosts included"),
             ([cap(.unghostAll)], "Unghost everything"),
             ([cap(.isolate)], "Isolate the selection"),
             (["⌘", "Z"], "Undo, with ⇧ to redo"),
