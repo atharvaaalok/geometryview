@@ -514,6 +514,11 @@ function forget() {
   structure.reset();
   selection.element.hidden = true;
   library.setOpen([]);
+  // The next file starts without a cut, as the engine does: the cuts go off, keeping where they
+  // were placed.
+  sectionCard.cuts.forEach((cut) => { cut.enabled = false; });
+  sectionCard.show();
+  sectionCard.element.hidden = true;
 }
 
 // Closes everything open: back to the Library and the invitation to open something.
