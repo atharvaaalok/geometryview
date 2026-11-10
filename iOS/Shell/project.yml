@@ -37,21 +37,25 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           spike="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/spike"
-          mkdir -p "$spike/build" "$spike/fixtures"
-          cp "${SRCROOT}/../../build/wasm-webgpu/Tools/spikes/webgpu/spike_webgpu."{mjs,wasm} "$spike/build/"
-          cp "${SRCROOT}/../../build/fixtures/"*.geoblob "$spike/fixtures/"
-          # The import spike: OCCT for Web Workers, and STEP slices saved from the native importer.
-          mkdir -p "$spike/occt"
-          cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-occt-web."{mjs,wasm} "$spike/occt/"
-          rm -rf "$spike/fixtures/slices"
-          cp -R "${SRCROOT}/../../build/fixtures/slices" "$spike/fixtures/slices"
-          # The viewer's WebGPU renderer, timed.
-          mkdir -p "$spike/bench"
-          cp "${SRCROOT}/../../build/wasm-webgpu/Tools/geometryview-webgpu-bench."{mjs,wasm} "$spike/bench/"
-          # Whole STEP imports: the supervisor, and the files it reads.
-          cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-step-web."{mjs,wasm} "$spike/occt/"
-          rm -rf "$spike/fixtures/step"
-          cp -R "${SRCROOT}/../../build/fixtures/step" "$spike/fixtures/step"
+          # The spikes and their fixtures, where this checkout has them: test data, not needed to
+          # build the viewer.
+          if [ -d "${SRCROOT}/../../build/fixtures/slices" ]; then
+            mkdir -p "$spike/build" "$spike/fixtures"
+            cp "${SRCROOT}/../../build/wasm-webgpu/Tools/spikes/webgpu/spike_webgpu."{mjs,wasm} "$spike/build/"
+            cp "${SRCROOT}/../../build/fixtures/"*.geoblob "$spike/fixtures/"
+            # The import spike: OCCT for Web Workers, and STEP slices saved from the native importer.
+            mkdir -p "$spike/occt"
+            cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-occt-web."{mjs,wasm} "$spike/occt/"
+            rm -rf "$spike/fixtures/slices"
+            cp -R "${SRCROOT}/../../build/fixtures/slices" "$spike/fixtures/slices"
+            # The viewer's WebGPU renderer, timed.
+            mkdir -p "$spike/bench"
+            cp "${SRCROOT}/../../build/wasm-webgpu/Tools/geometryview-webgpu-bench."{mjs,wasm} "$spike/bench/"
+            # Whole STEP imports: the supervisor, and the files it reads.
+            cp "${SRCROOT}/../../build/wasm-release/Import/geometryview-step-web."{mjs,wasm} "$spike/occt/"
+            rm -rf "$spike/fixtures/step"
+            cp -R "${SRCROOT}/../../build/fixtures/step" "$spike/fixtures/step"
+          fi
           # The viewer: its engine and fonts. It opens fixtures from the spike's folder.
           viewer="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/viewer"
           mkdir -p "$viewer/build" "$viewer/fonts"
