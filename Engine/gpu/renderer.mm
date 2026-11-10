@@ -497,6 +497,8 @@ void Renderer::attachLayer(CAMetalLayer* layer) {
 
 void Renderer::syncScene(const scene::Scene& scene) {
     state_->tables.sync(state_->context, state_->retirement, scene);
+    // The state uploaded next is the new scene's, whatever its version, as WebGPU's is.
+    state_->stateVersion = ~u64(0);
 }
 
 void Renderer::setStyle(const StyleUniforms& style, bool physical) {

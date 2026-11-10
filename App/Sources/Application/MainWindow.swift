@@ -272,7 +272,17 @@ final class MainWindow: NSWindow {
         progress = [:]
         structure.reset()
         selection.isHidden = true
+        clearSection()
         add(url, replacing: true)
+    }
+
+    /// The next file starts without a cut, as the engine does: the card's cuts go off, keeping
+    /// where they were placed.
+    private func clearSection() {
+        var section = sectionCard.section
+        section.enabled = (false, false, false)
+        sectionCard.show(section)
+        sectionCard.isHidden = true
     }
 
     /// Whether anything is open, for File ▸ Close.
@@ -292,7 +302,7 @@ final class MainWindow: NSWindow {
         structure.reset()
         selection.isHidden = true
         lookCard.isHidden = true
-        sectionCard.isHidden = true
+        clearSection()
         engine.close()
         refreshMasthead()
         showLibrary(true)

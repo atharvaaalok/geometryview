@@ -377,17 +377,68 @@ TEST_CASE("the shell is classified from views read back later, and stale ones ar
     CHECK(rig.renderer.pendingIds.empty());
     CHECK(rig.host.framesRunning);
 
-    // With see-through on, new files are classified when they finish importing. Views of the
-    // files they replaced, still in flight, change nothing when they arrive.
-    rig.openTwoMeshes();
+    // With see-through on, a file added to the view is classified when it finishes importing.
+    // Views of files closed since, still in flight, change nothing when they arrive.
+    rig.openMesh(true);
     REQUIRE(rig.renderer.pendingIds.size() == 14);
-    rig.openTwoMeshes();
-    REQUIRE(rig.renderer.pendingIds.size() == 28);
+    rig.core.close();
     rig.host.framesRunning = false;
-    rig.renderer.deliverIds(14);
-    CHECK(!rig.host.framesRunning);
     rig.renderer.deliverIds();
-    CHECK(rig.host.framesRunning);
+    CHECK(!rig.host.framesRunning);
+}
+
+namespace {
+
+// The see-through and section the next frame draws with.
+std::pair<float, u32> seeThroughAndCuts(Rig& rig) {
+    rig.core.requestFrame();
+    const std::optional<engine::Frame> frame = rig.core.frame();
+    REQUIRE(frame.has_value());
+    return {frame->view.uniforms.seeThrough, frame->view.uniforms.sectionPlaneCount};
+}
+
+GeoSection cutAcrossX() {
+    GeoSection section{};
+    section.enabled[0] = true;
+    section.position[0] = 0.5f;
+    return section;
+}
+
+} // namespace
+
+TEST_CASE("see-through and section are a file's own: the next file opened starts without them") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.openTwoMeshes();
+    rig.core.perform(GeoActionToggleSeeThrough);
+    rig.core.setSection(cutAcrossX());
+    CHECK(seeThroughAndCuts(rig) == std::pair<float, u32>{1.0f, 1});
+    const usize views = rig.renderer.pendingIds.size();
+    // Another file in its place: no see-through, no cut, and nothing classified at its end.
+    rig.openTwoMeshes();
+    CHECK(seeThroughAndCuts(rig) == std::pair<float, u32>{0.0f, 0});
+    CHECK(rig.renderer.pendingIds.size() == views);
+    // Closing does the same.
+    rig.core.perform(GeoActionToggleSeeThrough);
+    rig.core.setSection(cutAcrossX());
+    rig.core.close();
+    rig.openTwoMeshes();
+    CHECK(seeThroughAndCuts(rig) == std::pair<float, u32>{0.0f, 0});
+}
+
+TEST_CASE("a file added to the view keeps the see-through and section of what is open") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.renderer.deferIds = true;
+    rig.openMesh();
+    rig.core.perform(GeoActionToggleSeeThrough);
+    rig.core.setSection(cutAcrossX());
+    rig.renderer.deliverIds();
+    // The added file is classified at its import's end, as the two touch.
+    rig.openMesh(true);
+    CHECK(rig.renderer.pendingIds.size() == 14);
+    rig.renderer.deliverIds();
+    CHECK(seeThroughAndCuts(rig) == std::pair<float, u32>{1.0f, 1});
 }
 
 TEST_CASE("the shell is classified at once by a renderer that can wait for the GPU") {

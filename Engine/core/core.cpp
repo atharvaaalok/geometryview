@@ -622,6 +622,9 @@ void Core::closeAll() {
     hoveredId_ = 0;
     hoveredNode_.reset();
     hover_ = {0, 0};
+    // See-through and section belong to the file they were set on: the next starts without.
+    seeThrough_ = seeThroughTarget_ = seeThroughFrom_ = 0.0f;
+    section_ = {};
 }
 
 void Core::close() {

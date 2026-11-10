@@ -143,3 +143,19 @@ TEST_CASE("hiding a part of a million faces and undoing it takes well under a mi
 #endif
     CHECK(state.flags({999, 999}) == 0);
 }
+
+// A renderer uploads the state only when its version changes. A file opened after another starts a
+// new state, so its versions must never repeat one an earlier state used: when they did, a new
+// file's state could be taken for the last one's, and drawn with its hidden faces.
+TEST_CASE("a new face state never repeats a version an earlier one had") {
+    const std::vector<u32> faces = {4, 4};
+    FaceState first;
+    first.resize(faces);
+    first.set({0, 1}, kStateHidden, true);
+    FaceState second;
+    CHECK(second.version() != first.version());
+    second.resize(faces);
+    second.set({1, 2}, kStateGhost, true);
+    CHECK(second.version() != first.version());
+    CHECK(second.version() > first.version());
+}
