@@ -2,6 +2,7 @@
 // out as the Mac app lays out its window.
 //
 // viewer/?model=<fixture>        opens <fixtures>/<fixture>.geoblob (fixtures= moves the folder)
+// viewer/?sample=<id>            opens a sample from samples/index.json, where the copy has them
 // viewer/?test=idle&label=...    runs a scripted check and posts its report (see runTest)
 
 import { Actions, Engine, Events, NodeKinds, Tools } from "./engine.js";
@@ -20,6 +21,24 @@ const params = new URLSearchParams(location.search);
 const errors = [];
 addEventListener("error", (e) => errors.push(`${e.message} at ${e.filename}:${e.lineno}`));
 addEventListener("unhandledrejection", (e) => errors.push(String(e.reason?.stack ?? e.reason)));
+// Served without the headers threads need, as GitHub Pages serves the page, a service worker of
+// the page's own adds them. The page reloads once, to be served through it, before starting.
+async function isolate() {
+  if (self.crossOriginIsolated || !self.isSecureContext || !("serviceWorker" in navigator)) return;
+  if (params.has("token") || window.webkit?.messageHandlers?.shell) return;
+  try {
+    await navigator.serviceWorker.register("isolation-worker.js");
+    // Served through it already, but not isolated: this browser can't be, so go on without threads.
+    if (navigator.serviceWorker.controller || sessionStorage.getItem("isolation-reload")) return;
+    sessionStorage.setItem("isolation-reload", "1");
+    await navigator.serviceWorker.ready;
+  } catch {
+    return;
+  }
+  location.reload();
+  await new Promise(() => {});
+}
+await isolate();
 const canvas = document.getElementById("viewport");
 const phone = /iPhone|iPad|Android/.test(navigator.userAgent) ||
               (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
@@ -693,6 +712,45 @@ if (params.has("import")) {
   importFile(file, false);
 } else if (model) {
   openCache(`${fixtures}${model}.geoblob`, `${model}.geoblob`, false);
+}
+
+// ---- Samples ---------------------------------------------------------------------------------
+
+// A hosted copy carries models to try, listed in samples/index.json beside the page. Served by the
+// launcher or the iOS shell there are none, and nothing is offered.
+const samples = fetch("samples/index.json")
+  .then((response) => (response.ok ? response.json() : { samples: [] }))
+  .then((index) => index.samples ?? [], () => []);
+samples.then((list) => status.setSamples(list, (sample) => openSample(sample)));
+
+// Downloads a sample, saying how far it has got, then opens it as a file the person chose.
+async function openSample(sample) {
+  try {
+    const response = await fetch(`samples/${sample.file}`);
+    if (!response.ok) throw new Error(`the server answered ${response.status}`);
+    // The index's size, since a compressed response's length is not the file's.
+    const total = sample.size || Number(response.headers.get("Content-Length"));
+    const chunks = [];
+    let done = 0, shown = 0;
+    for (const reader = response.body.getReader(); ;) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      chunks.push(value);
+      done += value.byteLength;
+      if (performance.now() - shown > 100) {
+        status.showDownloading(sample.file, done, total);
+        shown = performance.now();
+      }
+    }
+    await importFile(new File(chunks, sample.file, { lastModified: 1 }), false);
+  } catch (error) {
+    status.showFailure(`${sample.name} could not be downloaded: ${error.message}.`);
+  }
+}
+
+if (params.has("sample")) {
+  const sample = (await samples).find((each) => each.id === params.get("sample"));
+  if (sample) openSample(sample);
 }
 
 // In the iOS shell: documents the person opens from Files or the share sheet arrive here.
