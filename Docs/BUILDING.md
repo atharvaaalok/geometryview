@@ -140,8 +140,8 @@ sample models (after `site.mjs`), and `Tools/media/mac_window.sh` pictures the M
 
 ## Releasing
 
-1. `node Launcher/scripts/site.mjs` and `node Launcher/scripts/pack.mjs --portable`, for
-   `geometryview-web.zip` and `geometryview.mcpb`.
+1. `node Launcher/scripts/pack.mjs --portable`, then `node Launcher/scripts/site.mjs` (packing
+   empties `Launcher/dist`), for `geometryview.mcpb` and `geometryview-web.zip`.
 2. A GitHub release with those two files as assets. Publishing it runs the Pages workflow
    (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer.
 3. `cd Launcher && npm publish`, after bumping the version in `package.json` and

@@ -27,7 +27,7 @@
 
 ## Six looks, one click apart
 
-<img src="Docs/media/styles.jpg" alt="The same drive in six styles: Illustration, Metal, Clay, Blueprint, Technical and Studio">
+<img src="Docs/media/styles.jpg" width="840" alt="The same drive in six styles: Illustration, Metal, Clay, Blueprint, Technical and Studio">
 
 Colour parts by their material (read from their names), one colour per part, one colour
 throughout, or the file's own colours. Add a cast shadow, paper grain or a hand-drawn wobble.
@@ -36,8 +36,8 @@ throughout, or the file's own colours. Add a cast shadow, paper grain or a hand-
 
 <table>
   <tr>
-    <td width="50%"><img src="Docs/media/section.webp" alt="A cut glides down a planetary gearbox, pausing at each of its three stages of gears"></td>
-    <td width="50%"><img src="Docs/media/see-through.webp" alt="A drive's case fades to glass, showing the rotor and magnets inside, then returns"></td>
+    <td width="50%"><img src="Docs/media/section.webp" width="400" alt="A cut glides down a planetary gearbox, pausing at each of its three stages of gears"></td>
+    <td width="50%"><img src="Docs/media/see-through.webp" width="400" alt="A drive's case fades to glass, showing the rotor and magnets inside, then returns"></td>
   </tr>
   <tr>
     <td><b>Section</b> (S): slide cuts along X, Y and Z, with hatched caps where they cut.</td>
@@ -62,7 +62,7 @@ finely once the view settles.
 
 ## One viewer, everywhere
 
-<img src="Docs/media/everywhere.webp" alt="The Mac app showing a gearbox and its parts tree, with the same viewer on a phone in front">
+<img src="Docs/media/everywhere.webp" width="880" alt="The Mac app showing a gearbox and its parts tree, with the same viewer on a phone in front">
 
 The Mac app draws with Metal; browsers and phones with WebGPU, from the same C++ engine. All of
 them have the same looks, controls and Library: connect a folder to browse every model in it, and
@@ -136,7 +136,7 @@ needs it. You see what the AI sees. On a Mac with the
 
 ## Browser viewer
 
-<a href="https://atharvaaalok.github.io/geometryview/"><img src="Docs/media/browser.jpg" alt="The browser viewer's first page, offering to open files, connect a folder or try a sample"></a>
+<a href="https://atharvaaalok.github.io/geometryview/"><img src="Docs/media/browser.jpg" width="880" alt="The browser viewer's first page, offering to open files, connect a folder or try a sample"></a>
 
 **[atharvaaalok.github.io/geometryview](https://atharvaaalok.github.io/geometryview/)**: drop in
 STEP or STL files, connect a folder, or try one of six sample models. The page has no server
