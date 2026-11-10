@@ -125,7 +125,10 @@ The app has switches for measuring and checking it:
 - `--exercise` runs a scripted drag, hover and click on the opened file, then checks that changing
   only the interface draws no 3D frame.
 - `--chrome-check` clicks every segment and card label with real events, and checks none reaches
-  the 3D view.
+  the 3D view; then that the tree's buttons work, Esc closes cards and the masthead's button closes
+  the file. Give it `--card structure`, so the tree is showing, and launch it through `open`, which
+  lets the sandboxed app read the file: `open -n -W --stdout out.txt -a
+  build/release/App/GeometryView.app part.step --args --chrome-check --card structure`.
 - `--snapshot` writes the window to `chrome.png` in the app's temporary directory; `--window WxH`
   sizes the window, `--card structure` shows the opened file's structure, and `--plain` leaves out
   the view cube and scale bar. In the browser viewer, `?plain` does the same.

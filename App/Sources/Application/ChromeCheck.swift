@@ -11,8 +11,9 @@ import GeometryViewEngine
 /// corner of the view go to the engine, as the view forwards them. Had the click left the engine
 /// holding a press, those moves would turn the camera and draw frames. Last, it checks that the
 /// pointer leaving the view clears the hover, that a tree row's hide and isolate buttons and the
-/// footer's Show all work, and that presses at the top of the window reach what moves it. Prints
-/// the result and quits.
+/// footer's Show all work, that Esc closes the section card and the shortcuts sheet, that the
+/// masthead's close button returns to the invitation, and that presses at the top of the window
+/// reach what moves it. Prints the result and quits.
 @MainActor
 final class ChromeCheck {
     static var isRequested: Bool { CommandLine.arguments.contains("--chrome-check") }
@@ -179,7 +180,7 @@ final class ChromeCheck {
         ]
         func run(_ index: Int) {
             guard index < steps.count else {
-                finish()
+                checkEscapeAndClose()
                 return
             }
             let (name, find, hides) = steps[index]
@@ -199,6 +200,87 @@ final class ChromeCheck {
             }
         }
         run(0)
+    }
+
+    // Esc closes the open card, whichever it is, before anything else; then the masthead's close
+    // button closes the file, back to the Library and the invitation. Real key and mouse events,
+    // through the window as live input.
+    private func checkEscapeAndClose() {
+        guard let root = window.contentView,
+            let viewport = Self.views(ViewportView.self, in: root).first
+        else {
+            finish()
+            return
+        }
+        window.makeFirstResponder(viewport)
+        let opens: [(String, () -> Void)] = [
+            ("the section card", { [self] in
+                Self.views(PillButton.self, in: root).first { $0.toolTip == "Section (S)" }
+                    .map { click($0) }
+            }),
+            ("the shortcuts sheet", { [self] in
+                Self.views(PillButton.self, in: root).first { $0.toolTip == "Shortcuts (?)" }
+                    .map { click($0) }
+            }),
+        ]
+        func step(_ index: Int) {
+            guard index < opens.count else {
+                closeFile()
+                return
+            }
+            let (name, open) = opens[index]
+            open()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [self] in
+                guard window.hasOpenCard else {
+                    leaks.append("\(name) did not open")
+                    step(index + 1)
+                    return
+                }
+                pressEscape()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [self] in
+                    if window.hasOpenCard {
+                        leaks.append("Esc did not close \(name)")
+                        _ = window.dismissCard()
+                    }
+                    step(index + 1)
+                }
+            }
+        }
+        func closeFile() {
+            guard let close = Self.views(PillButton.self, in: root).first(where: { $0.toolTip == "Close (⌘W)" })
+            else {
+                leaks.append("the masthead's close button is not there")
+                finish()
+                return
+            }
+            click(close)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+                if window.hasFiles {
+                    leaks.append("the masthead's close button left the file open")
+                }
+                finish()
+            }
+        }
+        step(0)
+    }
+
+    private func click(_ view: NSView) {
+        let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        send(.leftMouseDown, at: point)
+        send(.leftMouseUp, at: point)
+    }
+
+    private func pressEscape() {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
+                isARepeat: false, keyCode: 53)
+            {
+                window.sendEvent(event)
+            }
+        }
     }
 
     private static func views<View: NSView>(_ type: View.Type, in view: NSView) -> [View] {
@@ -227,7 +309,8 @@ final class ChromeCheck {
         if leaks.isEmpty {
             print(
                 "chrome-check: PASS, no click reached the 3D view, hover left with the pointer, "
-                    + "the top of the window moves it, and the tree's buttons work"
+                    + "the top of the window moves it, the tree's buttons work, Esc closes cards "
+                    + "and the masthead's button closes the file"
             )
         } else {
             print("chrome-check: FAIL, \(leaks.count) problem\(leaks.count == 1 ? "" : "s"):")
