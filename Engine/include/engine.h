@@ -346,6 +346,10 @@ GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float right,
                                 float bottom);
 
+/// Whether the view cube and scale bar are drawn; they are unless this turns them off, as the app's
+/// `--plain` does for pictures.
+void geo_engine_set_overlay_shown(GeoEngine* engine, bool shown);
+
 /// Writes the current view, as drawn, to a PNG at `path`, on the engine thread. The file appears
 /// once it is complete.
 void geo_engine_write_snapshot(GeoEngine* engine, const char* path);

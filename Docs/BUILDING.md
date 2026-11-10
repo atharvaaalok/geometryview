@@ -127,7 +127,8 @@ The app has switches for measuring and checking it:
 - `--chrome-check` clicks every segment and card label with real events, and checks none reaches
   the 3D view.
 - `--snapshot` writes the window to `chrome.png` in the app's temporary directory; `--window WxH`
-  sizes the window, and `--card structure` shows the opened file's structure.
+  sizes the window, `--card structure` shows the opened file's structure, and `--plain` leaves out
+  the view cube and scale bar. In the browser viewer, `?plain` does the same.
 
 `Tools/make_icons.sh --web` remakes the web viewer's icons from the app icon's master,
 `App/Resources/AppIcon.png`.

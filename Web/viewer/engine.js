@@ -132,6 +132,11 @@ export class Engine {
     this.#module._geo_web_set_insets(left, top, right, bottom);
   }
 
+  /** Whether the view cube and scale bar are drawn. */
+  setOverlayShown(shown) {
+    this.#module._geo_web_set_overlay_shown(shown ? 1 : 0);
+  }
+
   pointer(kind, button, x, y, delta = 0, modifiers = 0, timestamp = performance.now() / 1000) {
     this.#module._geo_web_pointer(kind, button, x, y, delta, modifiers, timestamp);
   }

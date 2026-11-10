@@ -139,6 +139,10 @@ final class EngineHandle {
         geo_engine_select_node(engine, document, node, extend)
     }
 
+    func setOverlayShown(_ shown: Bool) {
+        geo_engine_set_overlay_shown(engine, shown)
+    }
+
     func setViewInsets(left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
         geo_engine_set_view_insets(engine, Float(left), Float(top), Float(right), Float(bottom))
     }
