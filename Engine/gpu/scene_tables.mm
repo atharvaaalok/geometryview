@@ -148,6 +148,8 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
             out.rows[2] = simd_make_float4(t[2], t[5], t[8], t[11]);
             out.definition = definitionBase + record.definition;
             out.idBase = idBase + document.idBase(i);
+            out.shellGroup = 0;
+            out.pad = 0;
 
             const format::DefinitionRecord* geometry = document.geometry(record.definition);
             if (geometry == nullptr) {

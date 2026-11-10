@@ -78,7 +78,9 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     let fading = frame.seeThrough > 0.0;
     var dropped = (flags & kStateHidden) != 0u || ghost != kGhostPass;
     if (kOccurrenceIds) {
-        dropped = dropped || (shell && frame.excludeShells != 0u);
+        // Classifying draws one separate assembly at a time, without the shells already found.
+        dropped = dropped || (shell && frame.excludeShells != 0u) ||
+                  (frame.classifyGroup != 0u && o.shellGroup != frame.classifyGroup);
     } else if (kShellLayer == 0u) {
         dropped = dropped || (shell && fading && !kGhostPass && !kShadowPass);
     } else {

@@ -40,6 +40,7 @@ struct Frame {
     sectionPlaneCount: u32,
     seeThrough: f32,
     excludeShells: u32,
+    classifyGroup: u32,
     sampleOffset: vec2f,
 }
 
@@ -122,8 +123,8 @@ struct Occurrence {
     row2: vec4f,
     definition: u32,
     idBase: u32,
-    pad0: u32,
-    pad1: u32,
+    shellGroup: u32,
+    pad: u32,
 }
 
 // An occurrence's OccurrenceState with its look: flags, where its face bytes start, the look.

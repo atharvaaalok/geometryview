@@ -46,6 +46,11 @@ public:
     /// Sets each occurrence's look, in global order, and the palette: three texels per look.
     virtual void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) = 0;
 
+    /// Sets which separate assembly each occurrence is classified with for see-through, in global
+    /// order, 0 for none. Views with FrameUniforms.classifyGroup set draw only that group. Syncing
+    /// the scene sets every occurrence back to 0.
+    virtual void setShellGroups(std::span<const u32> groupOfOccurrence) = 0;
+
     /// While set, frames leave out feature edges and the cast shadow, for heavy scenes in motion.
     virtual void setReducedDetail(bool reduced) = 0;
 

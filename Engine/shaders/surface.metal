@@ -202,7 +202,9 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     const bool fading = frame.seeThrough > 0.0;
     bool dropped = (flags & kStateHidden) != 0 || ghost != kGhostPass;
     if (kOccurrenceIds) {
-        dropped = dropped || (shell && frame.excludeShells != 0);
+        // Classifying draws one separate assembly at a time, without the shells already found.
+        dropped = dropped || (shell && frame.excludeShells != 0) ||
+                  (frame.classifyGroup != 0 && occurrence.shellGroup != frame.classifyGroup);
     } else if (kShellLayer == kShellNone) {
         dropped = dropped || (shell && fading && !kGhostPass && !kShadowPass);
     } else {
