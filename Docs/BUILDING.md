@@ -127,7 +127,8 @@ The app has switches for measuring and checking it:
 - `--chrome-check` clicks every segment and card label with real events, and checks none reaches
   the 3D view.
 - `--snapshot` writes the window to `chrome.png` in the app's temporary directory; `--window WxH`
-  sizes the window, and `--card structure` shows the opened file's structure.
+  sizes the window, `--card structure` shows the opened file's structure, and `--plain` leaves out
+  the view cube and scale bar. In the browser viewer, `?plain` does the same.
 
 `Tools/make_icons.sh --web` remakes the web viewer's icons from the app icon's master,
 `App/Resources/AppIcon.png`.
@@ -139,8 +140,8 @@ sample models (after `site.mjs`), and `Tools/media/mac_window.sh` pictures the M
 
 ## Releasing
 
-1. `node Launcher/scripts/site.mjs` and `node Launcher/scripts/pack.mjs --portable`, for
-   `geometryview-web.zip` and `geometryview.mcpb`.
+1. `node Launcher/scripts/pack.mjs --portable`, then `node Launcher/scripts/site.mjs` (packing
+   empties `Launcher/dist`), for `geometryview.mcpb` and `geometryview-web.zip`.
 2. A GitHub release with those two files as assets. Publishing it runs the Pages workflow
    (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer.
 3. `cd Launcher && npm publish`, after bumping the version in `package.json` and

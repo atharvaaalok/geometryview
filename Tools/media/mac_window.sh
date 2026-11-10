@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Pictures the Mac app's window with a model open and its structure showing, for the README:
+# Pictures the Mac app's window with a model open and its structure showing, without the view cube
+# and scale bar, for the README:
 #   Tools/media/mac_window.sh <model> <out.png> [WxH]
 # The app's saved settings are exported first and imported after, so its look, its Recent list
 # and its folders are as they were. Uses the release build.
@@ -11,7 +12,7 @@ picture=$HOME/Library/Containers/com.aalok.geometryview/Data/tmp/chrome.png
 saved=$(mktemp -t geometryview-prefs).plist
 defaults export $prefs $saved
 rm -f $picture
-open -n -a $app ${1:A} --args --snapshot --card structure --window ${3:-1440x900}
+open -n -a $app ${1:A} --args --snapshot --plain --card structure --window ${3:-1440x900}
 for i in {1..60}; do [[ -f $picture ]] && break; sleep 0.5; done
 sleep 3
 pkill -f "$app/Contents/MacOS/GeometryView" 2>/dev/null || true

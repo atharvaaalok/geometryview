@@ -93,8 +93,21 @@ void Core::requestFrame() {
     host_.runFrames(true);
 }
 
+void Core::setOverlayShown(bool shown) {
+    if (shown == overlayShown_) {
+        return;
+    }
+    overlayShown_ = shown;
+    cubeHover_ = 0;
+    cubePressed_ = 0;
+    requestFrame();
+}
+
 // The view cube's face under a pixel, plus one, or zero.
 u32 Core::cubeFaceAt(double x, double y) const {
+    if (!overlayShown_) {
+        return 0;
+    }
     const std::optional<render::PixelHit> pixel =
         renderer_.readPixel(int(x), int(y), depthDecoder_);
     return pixel && pixel->id >= kCubeIdBase ? pixel->id - kCubeIdBase + 1 : 0;
@@ -1043,7 +1056,7 @@ std::optional<Frame> Core::frame() {
     frame.inputTime = pendingInputTime_;
     pendingInputTime_ = 0.0;
     depthDecoder_ = frame.view.depth;
-    if (scene_.hasGeometry()) {
+    if (scene_.hasGeometry() && overlayShown_) {
         frame.overlay = render::makeOverlay(camera_, viewport_, frame.view.uniforms.viewRotation,
                                             pixelsPerPoint_, renderer_.glyphAdvance(), cubeHover_,
                                             overlayLayout());
@@ -1056,7 +1069,7 @@ std::vector<u8> Core::snapshot() {
     look_.apply(renderer_, scene_);
     const render::ViewState view = frameView();
     render::Overlay overlay;
-    if (scene_.hasGeometry()) {
+    if (scene_.hasGeometry() && overlayShown_) {
         overlay =
             render::makeOverlay(camera_, viewport_, view.uniforms.viewRotation, pixelsPerPoint_,
                                 renderer_.glyphAdvance(), cubeHover_, overlayLayout());

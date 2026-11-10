@@ -380,6 +380,10 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_insets(float left, float top, float right,
     web.core->setInsets({left, top, right, bottom});
 }
 
+EMSCRIPTEN_KEEPALIVE void geo_web_set_overlay_shown(u32 shown) {
+    web.core->setOverlayShown(shown != 0);
+}
+
 EMSCRIPTEN_KEEPALIVE void geo_web_pointer(u32 kind, u32 button, float x, float y, float delta,
                                           u32 modifiers, double timestamp) {
     web.core->pointer(

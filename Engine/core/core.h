@@ -44,6 +44,8 @@ public:
 
     void resize(u32 width, u32 height, float pixelsPerPoint);
     void setInsets(const nav::Insets& points);
+    /// Whether the view cube and scale bar are drawn. Left out, the cube takes no hover or click.
+    void setOverlayShown(bool shown);
     void pointer(const GeoPointerEvent& event);
     /// After a batch of pointer events: what is under the pointer is checked once, not per event.
     void pointerSettled();
@@ -182,6 +184,7 @@ private:
     float seeThroughFrom_ = 0.0f;
     float seeThroughTarget_ = 0.0f;
     double seeThroughStart_ = 0.0;
+    bool overlayShown_ = true;
     u32 cubeHover_ = 0;   // face index plus one, or zero
     u32 cubePressed_ = 0; // the face a press began on, plus one
     nav::OrbitPolicy orbit_;

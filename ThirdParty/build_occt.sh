@@ -12,6 +12,8 @@ work="$root/.occt"
 source="$work/src"
 build="$work/build"
 install="$work/install"
+# __FILE__, which OCCT's asserts print, names files from OCCT's root, not this machine's folders.
+prefix_map="-fmacro-prefix-map=$source/=occt/"
 
 if [[ ! -d "$source" ]]; then
     git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" \
@@ -27,8 +29,8 @@ cmake -S "$source" -B "$build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DCMAKE_C_FLAGS="-mcpu=apple-m1" \
-    -DCMAKE_CXX_FLAGS="-mcpu=apple-m1" \
+    -DCMAKE_C_FLAGS="-mcpu=apple-m1 $prefix_map" \
+    -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 $prefix_map" \
     -DCMAKE_INSTALL_PREFIX="$install" \
     -DBUILD_LIBRARY_TYPE="$library_type" \
     -DBUILD_MODULE_FoundationClasses=OFF \

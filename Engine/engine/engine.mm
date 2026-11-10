@@ -86,6 +86,7 @@ struct Command {
         HoverNode,
         NodeAction,
         SetInsets,
+        SetOverlay,
         SetLook,
         SetSection,
         SetMouse,
@@ -104,6 +105,7 @@ struct Command {
         GeoTool tool;
         NodeCommand node;
         nav::Insets insets;
+        bool shown;
         GeoLook look;
         GeoSection section;
         GeoMouseSettings mouse;
@@ -367,6 +369,9 @@ struct GeoEngine final : engine::Host {
                 break;
             case Command::Kind::SetInsets:
                 core->setInsets(command->insets);
+                break;
+            case Command::Kind::SetOverlay:
+                core->setOverlayShown(command->shown);
                 break;
             case Command::Kind::Snapshot:
                 writeSnapshot(command->path);
@@ -654,6 +659,13 @@ void geo_engine_set_view_insets(GeoEngine* engine, float left, float top, float 
     Command command{};
     command.kind = Command::Kind::SetInsets;
     command.insets = {left, top, right, bottom};
+    engine->post(command);
+}
+
+void geo_engine_set_overlay_shown(GeoEngine* engine, bool shown) {
+    Command command{};
+    command.kind = Command::Kind::SetOverlay;
+    command.shown = shown;
     engine->post(command);
 }
 

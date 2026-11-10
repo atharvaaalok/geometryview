@@ -226,6 +226,10 @@ final class MainWindow: NSWindow {
         lookCard.show(look)
         masthead.setOnDarkSheet(look.style.onDark)
         engine.setLook(look)
+        // --plain leaves out the view cube and scale bar, for pictures.
+        if CommandLine.arguments.contains("--plain") {
+            engine.setOverlayShown(false)
+        }
         toolBar.pick.onChange = { [weak self] index in
             self?.engine.setSelectionMode(GeoSelectionMode(rawValue: UInt32(index)))
             self?.refreshSelection()

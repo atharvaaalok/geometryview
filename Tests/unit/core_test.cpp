@@ -62,13 +62,15 @@ public:
     }
     bool deferIds = false;
     std::vector<std::function<void()>> pendingIds;
-    std::vector<u8> renderOffscreen(const render::ViewState&, const render::Overlay*) override {
+    std::vector<u8> renderOffscreen(const render::ViewState&, const render::Overlay* overlay) override {
         ++offscreenRenders;
+        offscreenOverlay = overlay != nullptr && overlay->visible;
         return std::vector<u8>(usize(width) * height * 4);
     }
 
     u32 sceneSyncs = 0, offscreenRenders = 0, width = 0, height = 0;
     bool reducedDetail = false;
+    bool offscreenOverlay = false; // whether the last offscreen render had a visible overlay
 };
 
 class FakeHost final : public engine::Host {
@@ -285,6 +287,29 @@ TEST_CASE("a snapshot draws the view offscreen through the backend") {
     const std::vector<u8> pixels = rig.core.snapshot();
     CHECK(rig.renderer.offscreenRenders == 1);
     CHECK(pixels.size() == usize(64) * 48 * 4);
+}
+
+TEST_CASE("the view cube and scale bar can be left out, of frames and snapshots") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.open();
+    const std::optional<engine::Frame> shown = rig.core.frame();
+    REQUIRE(shown.has_value());
+    CHECK(shown->overlay.visible);
+    rig.core.snapshot();
+    CHECK(rig.renderer.offscreenOverlay);
+
+    rig.core.setOverlayShown(false);
+    const std::optional<engine::Frame> plain = rig.core.frame(); // leaving it out draws a frame
+    REQUIRE(plain.has_value());
+    CHECK(!plain->overlay.visible);
+    rig.core.snapshot();
+    CHECK(!rig.renderer.offscreenOverlay);
+
+    rig.core.setOverlayShown(true);
+    const std::optional<engine::Frame> again = rig.core.frame();
+    REQUIRE(again.has_value());
+    CHECK(again->overlay.visible);
 }
 
 TEST_CASE("the view moving reschedules refinement, which then draws in full") {

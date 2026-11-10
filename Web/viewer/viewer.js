@@ -91,6 +91,8 @@ function webgpuAdvice() {
   return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
 window.geometryView = engine; // for the console and the shell's checks
+// ?plain leaves out the view cube and scale bar, for pictures.
+if (params.has("plain")) engine.setOverlayShown(false);
 setCacheVersion(engine.cacheVersion);
 // From navigation to an engine ready to draw: the page, the module, the GPU and the overlay's text.
 const startupMs = Math.round(performance.now());
