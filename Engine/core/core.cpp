@@ -909,7 +909,14 @@ void Core::classifyShells() {
                               node.kind == u32(format::NodeKind::Assembly)});
         }
         for (const format::OccurrenceRecord& o : model.occurrences) {
-            const format::NodeRecord& node = model.nodes[o.node];
+            // An unnamed body goes by its part's name: one part of four planet gears is four
+            // bodies, and only the part says they are gears.
+            u32 named = o.node;
+            while (model.nodes[named].nameLength == 0 &&
+                   model.nodes[named].parent != format::kNoParent) {
+                named = model.nodes[named].parent;
+            }
+            const format::NodeRecord& node = model.nodes[named];
             const std::string_view name(model.strings.data() + node.nameOffset, node.nameLength);
             const format::DefinitionInfo& info = model.definitionInfos[o.definition];
             const format::DefinitionRecord* geometry = document.geometry(o.definition);

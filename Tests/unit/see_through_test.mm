@@ -226,6 +226,39 @@ TEST_CASE("a housing in a sub-assembly bolted to a larger machine is found, as i
     }
 }
 
+TEST_CASE("unnamed bodies go by their part's name, so planet gears never fade") {
+    @autoreleasepool {
+        // Two gears, touching, as the unnamed bodies of one part, each around a pin: by what
+        // they hide they are shell, as a housing would be. Only the part's name says they are
+        // the mechanism. A housing apart from them is found, so something is.
+        test::StepWriter writer;
+        const int root = writer.assembly("stage");
+        const auto put = [&](const std::string& name, std::vector<test::StepWriter::Solid> solids) {
+            const int shape = writer.boxes(solids);
+            writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
+        };
+        put("planet_gears",
+            {{{0, 0, 0}, {40, 40, 40}, true, ""}, {{40, 0, 0}, {80, 40, 40}, true, ""}});
+        put("pins",
+            {{{12, 12, 12}, {28, 28, 28}, false, ""}, {{52, 12, 12}, {68, 28, 28}, false, ""}});
+        put("hub", {{{30, 15, 40}, {50, 25, 50}, false}});
+        addHousing(writer, root, "1", {300, 0, 0}, 40.0);
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        CHECK(shellNamed(c, "outer1"));
+        for (usize i = 0; i < c.names.size(); ++i) {
+            CAPTURE(i);
+            CAPTURE(c.names[i]);
+            // The gears' and pins' bodies are the unnamed ones.
+            if (c.names[i].empty()) {
+                CHECK(c.shells[i] == 0);
+            }
+        }
+        unlink(blob.c_str());
+    }
+}
+
 // A core with the Metal renderer, opening cache files as the app does, and drawing what it shows.
 struct Viewer {
     std::unique_ptr<gpu::Renderer> renderer;

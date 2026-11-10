@@ -151,6 +151,10 @@ found so far.
 - Descent stops after 4 levels inside the groups, or before the sub-assemblies classified would
   pass 64.
 
+**Names:** an unnamed body now goes by its part's name. One part of four planet gears is four
+unnamed bodies, and only the part's name says they are gears. Judged alone in its stage, each
+planet wrapped its bearing and would have faded.
+
 **Results, after the change:**
 - the belt axes: the motor's flange, rear cap and bearing outer rings, and the idler's wheel, as
   well as before;
