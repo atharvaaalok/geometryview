@@ -453,6 +453,11 @@ EMSCRIPTEN_KEEPALIVE void geo_web_open(const char* path, int add) {
     web.core->openFile(path, add != 0);
 }
 
+/// Closes everything open, stopping its imports, and draws the empty view.
+EMSCRIPTEN_KEEPALIVE void geo_web_close() {
+    web.core->close();
+}
+
 /// Where the page copies a file's bytes before handing them over: at least `size` bytes, reused.
 EMSCRIPTEN_KEEPALIVE u8* geo_web_staging(u32 size) {
     if (web.staging.size() < size) {

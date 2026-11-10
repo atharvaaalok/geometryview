@@ -70,6 +70,8 @@ public:
     u64 sceneTriangles() const;
     /// Opens a file, replacing what is open, or adding to it.
     void openFile(const std::string& path, bool add);
+    /// Closes everything open, its imports included, and draws the empty view.
+    void close();
     void requestFrame();
 
     // ---- From the platform

@@ -79,6 +79,7 @@ struct Command {
         Pointer,
         OpenFile,
         AddFile,
+        Close,
         Action,
         SetMode,
         SetTool,
@@ -340,6 +341,9 @@ struct GeoEngine final : engine::Host {
                 core->openFile(command->path, command->kind == Command::Kind::AddFile);
                 std::free(command->path);
                 break;
+            case Command::Kind::Close:
+                core->close();
+                break;
             case Command::Kind::Action:
                 core->perform(command->action);
                 break;
@@ -558,6 +562,12 @@ void geo_engine_add_file(GeoEngine* engine, const char* path) {
     Command command{};
     command.kind = Command::Kind::AddFile;
     command.path = strdup(path);
+    engine->post(command);
+}
+
+void geo_engine_close(GeoEngine* engine) {
+    Command command{};
+    command.kind = Command::Kind::Close;
     engine->post(command);
 }
 
