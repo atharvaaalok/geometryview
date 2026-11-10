@@ -143,9 +143,11 @@ sample models (after `site.mjs`), and `Tools/media/mac_window.sh` pictures the M
 1. `node Launcher/scripts/pack.mjs --portable`, then `node Launcher/scripts/site.mjs` (packing
    empties `Launcher/dist`), for `geometryview.mcpb` and `geometryview-web.zip`.
 2. A GitHub release with those two files as assets. Publishing it runs the Pages workflow
-   (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer.
+   (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer. The
+   `github-pages` environment allows the `main` branch and `v*` tags, the release's.
 3. `cd Launcher && npm publish`, after bumping the version in `package.json` and
-   `mcpb/manifest.json`.
+   `mcpb/manifest.json`. Run it in a terminal of your own: npm asks for two-factor approval there.
 4. With a Developer ID: `Tools/release/mac_release.sh` signs, notarizes and zips the Mac app and a
-   native `.mcpb`, for the same release. Its header says how to set it up; `--check` tries
-   everything but notarizing.
+   native `.mcpb`, for the same release, as `GeometryView-mac.zip` and `geometryview-mac.mcpb`
+   (the README links to the latest release's by name). Its header says how to set it up; `--check`
+   tries everything but notarizing. The first signing asks for the login keychain's password.
