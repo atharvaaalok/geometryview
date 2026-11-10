@@ -109,6 +109,7 @@ let insets = { left: 0, top: 0, right: 0, bottom: 0 };
 let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
+masthead.onClose = () => closeFiles();
 const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show) });
 const library = new LibraryCard(libraryStore, {
   open: (row, add) => openFromFolder(row, add),
@@ -505,6 +506,15 @@ function forget() {
   structure.reset();
   selection.element.hidden = true;
   library.setOpen([]);
+}
+
+// Closes everything open: back to the Library and the invitation to open something.
+function closeFiles() {
+  forget();
+  closeCards();
+  engine.close();
+  refreshMasthead();
+  showEmpty();
 }
 
 function openCache(source, name, add) {

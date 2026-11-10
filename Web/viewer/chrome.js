@@ -384,11 +384,15 @@ export class Toolbar {
 
 // ---- The masthead -----------------------------------------------------------------------------
 
+// What is open, with a button that closes it, a line about it, and import progress.
 export class Masthead {
   #title = el("div.title");
+  #close = pill({ icon: icons.close, help: "Close", style: "ghostly", onPress: () => this.onClose?.() });
   #subtitle = el("div.subtitle");
   #bar = el("div.progress", { hidden: true }, [el("div.fill")]);
-  element = el("header.masthead", { hidden: true }, [this.#title, this.#subtitle, this.#bar]);
+  element = el("header.masthead", { hidden: true },
+               [el("div.title-row", {}, [this.#title, this.#close]), this.#subtitle, this.#bar]);
+  onClose = null;
 
   show(title, subtitle) {
     this.#title.textContent = title;

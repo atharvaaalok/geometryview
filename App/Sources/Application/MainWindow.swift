@@ -198,6 +198,7 @@ final class MainWindow: NSWindow {
         viewport.onDragging = { [weak self] dragging in self?.dropZone.isHidden = !dragging }
 
         toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
+        masthead.onClose = { [weak self] in self?.closeFiles(nil) }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
         toolBar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
         structure.switcher.onChange = { [weak self] index in self?.showLibrary(index == 0) }
@@ -271,6 +272,30 @@ final class MainWindow: NSWindow {
         structure.reset()
         selection.isHidden = true
         add(url, replacing: true)
+    }
+
+    /// Whether anything is open, for File ▸ Close.
+    var hasFiles: Bool { !names.isEmpty }
+
+    /// Closes everything open, and returns to the Library and the invitation to open something.
+    @objc func closeFiles(_ sender: Any?) {
+        for accessed in accessedURLs {
+            accessed.stopAccessingSecurityScopedResource()
+        }
+        accessedURLs = []
+        openURLs = []
+        libraryCard.openPaths = []
+        names = []
+        progress = [:]
+        watchFiles()
+        structure.reset()
+        selection.isHidden = true
+        lookCard.isHidden = true
+        sectionCard.isHidden = true
+        engine.close()
+        refreshMasthead()
+        showLibrary(true)
+        showEmpty()
     }
 
     /// Opens a file alongside what is shown.
@@ -696,6 +721,15 @@ final class MainWindow: NSWindow {
     // MARK: Engine events
 
     private func handle(_ event: EngineEvent) {
+        // Events already on their way for files that were closed arrive after them.
+        if names.isEmpty {
+            switch event {
+            case .loading, .progress, .modelReady, .sceneReady, .failed:
+                return
+            default:
+                break
+            }
+        }
         switch event {
         case .loading(let document, _):
             progress[document] = 0

@@ -168,6 +168,7 @@ final class ShortcutsSheet: NSView {
             ([cap(.seeThrough)], "See through the housing"),
             ([cap(.section)], "Section across X"),
             ([cap(.clearSelection)], "Clear the selection"),
+            (["⌘", "W"], "Close the file"),
             ([cap(.shortcuts)], "This sheet"),
         ]
         for (keyLabels, meaning) in entries {

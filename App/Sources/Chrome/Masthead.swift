@@ -1,14 +1,21 @@
 import AppKit
 
-/// The title over the top left of the view: what is open, a line about it, and import progress.
-/// It sits on the figure itself, not in a card, so text gets a paper halo to stay readable. Like a
-/// window's title, dragging it moves the window.
+/// The title over the top left of the view: what is open, with a button that closes it, a line
+/// about it, and import progress. It sits on the figure itself, not in a card, so text gets a paper
+/// halo to stay readable. Like a window's title, dragging it moves the window.
 @MainActor
 final class Masthead: NSView {
     private let title = NSTextField(labelWithString: "")
+    private let close = PillButton(icon: .close, style: .ghostly, help: "Close (⌘W)")
     private let subtitle = NSTextField(labelWithString: "")
     private let progress = ProgressPill()
     private let stack = NSStackView()
+
+    /// Closes what is open.
+    var onClose: (() -> Void)? {
+        get { close.onPress }
+        set { close.onPress = newValue }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -27,7 +34,12 @@ final class Masthead: NSView {
         ChromeLayout.name(title, "masthead.title")
         ChromeLayout.name(subtitle, "masthead.subtitle")
         ChromeLayout.name(progress, "masthead.progress")
-        stack.setViews([title, subtitle, progress], in: .leading)
+        ChromeLayout.name(close, "masthead.close")
+        let titleRow = NSStackView(views: [title, close])
+        titleRow.orientation = .horizontal
+        titleRow.alignment = .centerY
+        titleRow.spacing = 4
+        stack.setViews([titleRow, subtitle, progress], in: .leading)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 2
@@ -49,10 +61,13 @@ final class Masthead: NSView {
         fatalError("Masthead is not used from Interface Builder")
     }
 
-    // Only the text itself, and its labels take no clicks of their own.
+    // Only the text itself, whose labels take no clicks of their own, and the close button.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, stack.frame.contains(convert(point, from: superview)) else {
             return nil
+        }
+        if let hit = super.hitTest(point), hit.isDescendant(of: close) {
+            return hit
         }
         return self
     }
