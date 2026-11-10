@@ -1,6 +1,7 @@
 #include "model/face_state.h"
 
 #include <algorithm>
+#include <atomic>
 
 namespace geo::model {
 namespace {
@@ -15,6 +16,11 @@ u32 summaryOf(u32 bit) {
 }
 
 } // namespace
+
+u64 FaceState::nextVersion() {
+    static std::atomic<u64> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
 
 void FaceState::resize(std::span<const u32> faceCounts) {
     const usize previous = words_.size();
@@ -35,7 +41,7 @@ void FaceState::resize(std::span<const u32> faceCounts) {
     words_.resize(faceCounts.size(), OccurrenceState{0, zeroPage_});
     faceCounts_.assign(faceCounts.begin(), faceCounts.end());
     marks_.resize(faceCounts.size() * kFlagCount, 0);
-    ++version_;
+    version_ = nextVersion();
 }
 
 u32 FaceState::alignedEnd() const {
@@ -83,7 +89,7 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
                 changes->push_back({target, before});
             }
             word.flags = (word.flags & ~u32(kFaceFlags)) | after;
-            ++version_;
+            version_ = nextVersion();
             visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
             selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
         }
@@ -112,7 +118,7 @@ void FaceState::set(Target target, u8 mask, bool value, std::vector<Change>* cha
         updated.flags =
             marks != 0 ? updated.flags | summaryOf(bit) : updated.flags & ~summaryOf(bit);
     }
-    ++version_;
+    version_ = nextVersion();
     visibilityVersion_ += ((before ^ after) & kVisibilityFlags) != 0 ? 1 : 0;
     selectionVersion_ += ((before ^ after) & kStateSelected) != 0 ? 1 : 0;
 }

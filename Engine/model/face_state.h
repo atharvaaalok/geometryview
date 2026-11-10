@@ -55,7 +55,9 @@ public:
     bool anyFace(u32 occurrence, u8 mask) const;
 
     /// The GPU's view: a word per occurrence, then per-face bytes. Both change in place, and
-    /// `version` counts changes so the renderer knows when to upload.
+    /// `version` changes with them so the renderer knows when to upload. Versions come from one
+    /// counter for every face state, so a new one, as a file opened after another starts, never
+    /// repeats a version an earlier one had and is never taken for it.
     std::span<const OccurrenceState> occurrenceWords() const { return words_; }
     std::span<const u8> faceBytes() const { return faceBytes_; }
     u64 version() const { return version_; }
@@ -65,6 +67,7 @@ public:
     u64 selectionVersion() const { return selectionVersion_; }
 
 private:
+    static u64 nextVersion();
     u32 pageFor(u32 occurrence); // allocates one if needed
     u32 alignedEnd() const;
 
@@ -74,7 +77,7 @@ private:
     std::vector<u32> marks_;    // per occurrence and flag, how many faces have it themselves
     u32 zeroPage_ = 0;
     u32 zeroPageSize_ = 0;
-    u64 version_ = 0;
+    u64 version_ = nextVersion();
     u64 visibilityVersion_ = 0;
     u64 selectionVersion_ = 0;
 };
