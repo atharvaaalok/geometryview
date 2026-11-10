@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir, release, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -31,13 +31,20 @@ function nativeDirectory() {
                   "release`, or set GEOMETRYVIEW_NATIVE_DIR.");
 }
 
-/// Whether this machine has the native engine (a Mac with gcli built or bundled), unless
-/// GEOMETRYVIEW_ENGINE=page asks for the browser's.
+/// Whether this machine can run the native engine, which needs Metal 4: Apple silicon and macOS 26
+/// or later, whose kernel is Darwin 25.
+export function canRunNative(platform = process.platform, arch = process.arch, kernel = release()) {
+  return platform === "darwin" && arch === "arm64" && Number(kernel.split(".")[0]) >= 25;
+}
+
+/// Whether this machine has the native engine (gcli built or bundled) and can run it, unless
+/// GEOMETRYVIEW_ENGINE=page asks for the browser's. Other machines, older Macs with the Mac
+/// extension among them, use the browser's.
 export function nativeAvailable() {
-  if (process.env.GEOMETRYVIEW_ENGINE === "page") return false;
+  if (process.env.GEOMETRYVIEW_ENGINE === "page" || !canRunNative()) return false;
   try {
     nativeDirectory();
-    return process.platform === "darwin";
+    return true;
   } catch {
     return false;
   }
