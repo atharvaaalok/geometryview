@@ -288,6 +288,12 @@ final class MainWindow: NSWindow {
         // The left card stays as the person left it: they may be browsing the Library file by file.
         // The structure card is made ready for when they switch to it.
         structure.showNothing(false)
+        // `--card structure` turns to the structure on opening, for pictures and checks.
+        if let at = CommandLine.arguments.firstIndex(of: "--card"),
+            CommandLine.arguments.dropFirst(at + 1).first == "structure"
+        {
+            showLibrary(false)
+        }
         status.isHidden = true
         if replacing {
             engine.open(path: url.path)
