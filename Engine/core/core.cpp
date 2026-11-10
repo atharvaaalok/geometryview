@@ -972,7 +972,9 @@ void Core::classifyShells() {
     }
     c.found.assign(parts.size(), 0);
     if (order.empty()) {
-        look_.setShells(c.found); // nothing has anything inside it
+        // No part touches another, so none has anything inside it: the whole file turns to glass.
+        c.found.assign(parts.size(), 1);
+        look_.setShells(c.found);
         classifying_.reset();
         requestFrame();
         return;
@@ -1153,6 +1155,12 @@ void Core::shellLevelDone() {
             classifyShellLevel(std::move(next));
             return;
         }
+    }
+    // Nothing anywhere covers anything, as in a row of nuts: rather than T doing nothing, the
+    // whole file turns to glass, its front faces faint over its far walls, bores and pockets.
+    if (std::none_of(c.found.begin(), c.found.end(), [](u8 shell) { return shell != 0; })) {
+        c.found.assign(c.found.size(), 1);
+        look_.setShells(c.found);
     }
     if (traceLaunch_) {
         std::fprintf(stderr, "trace: shell classified in %.1f ms, %u levels, %u sub-assemblies\n",

@@ -41,7 +41,7 @@ throughout, or the file's own colours. Add a cast shadow, paper grain or a hand-
   </tr>
   <tr>
     <td><b>Section</b> (S): slide cuts along X, Y and Z, with hatched caps where they cut.</td>
-    <td><b>See-through</b> (T): the housing turns to glass and the mechanism stays solid.</td>
+    <td><b>See-through</b> (T): the housing turns to glass and the mechanism stays solid. Where nothing is inside anything, as in a row of nuts, every part turns to glass.</td>
   </tr>
 </table>
 

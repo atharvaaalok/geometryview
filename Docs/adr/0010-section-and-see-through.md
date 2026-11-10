@@ -162,6 +162,14 @@ planet wrapped its bearing and would have faded.
 - the gearbox: also its clamp ring, one inner ring and two cages, with gears, carriers, pins and
   balls solid.
 
+**Amended (v0.1.2): glass where nothing covers anything.** In a file of parts that cover
+nothing, such as a row of nuts, T found no shell and did nothing, which read as broken. Now, when
+classification finds no shell anywhere in the file, every part is marked shell, and the whole file
+fades as a housing does: faint front faces over far walls, bores and pockets. This is all or
+nothing for the file. A loose bolt beside a motor stays solid, since the motor's case is found.
+The three layers draw an empty opaque pass correctly, on the Mac and in the browser, with or
+without a cut.
+
 ## Deferred
 
 - **Per-part override.** The plan has a per-part override of the shell, with a tree action or G
