@@ -210,6 +210,11 @@ export class Engine {
     });
   }
 
+  // Closes everything open, stopping its imports, and draws the empty view.
+  close() {
+    this.#module._geo_web_close();
+  }
+
   // One whole segment, for the import of `token`. False if the engine refused it or the import
   // was cancelled.
   importSegment(token, bytes) {

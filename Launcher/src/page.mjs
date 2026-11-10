@@ -94,7 +94,12 @@ export async function openInPage(path, { launch = true, waitMs = 30_000 } = {}) 
   const { source, info } = await modelFile(path);
   const server = await page({ launch });
   if (shownFor === source && server.bridge.connected) {
-    return server.bridge.request("describe", {}, { waitMs });
+    try {
+      return await server.bridge.request("describe", {}, { waitMs });
+    } catch (error) {
+      // The person closed it in the viewer since: it opens again below.
+      if (!/Nothing is open/.test(error.message)) throw error;
+    }
   }
   const description = await server.bridge.request("open", {
     url: server.grant(source), name: basename(source), lastModified: info.mtimeMs,

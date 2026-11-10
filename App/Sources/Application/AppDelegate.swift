@@ -86,6 +86,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window?.chooseFile(adding: true)
     }
 
+    /// File ▸ Close: closes what the main window shows, returning to the Library, or, with nothing
+    /// open there or another window in front, that window, as ⌘W always does.
+    @objc func closeDocument(_ sender: Any?) {
+        let key = NSApp.keyWindow
+        if let window, key === window, window.hasFiles {
+            window.closeFiles(sender)
+        } else {
+            key?.performClose(sender)
+        }
+    }
+
     /// Files to open, and geometryview://show requests from AI apps' tools, in the order sent.
     func application(_ application: NSApplication, open urls: [URL]) {
         let files = urls.filter(\.isFileURL)

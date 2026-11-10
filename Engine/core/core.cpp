@@ -624,6 +624,12 @@ void Core::closeAll() {
     hover_ = {0, 0};
 }
 
+void Core::close() {
+    closeAll();
+    sceneChanged_ = true;
+    requestFrame();
+}
+
 void Core::openFile(const std::string& path, bool add) {
     if (!add) {
         closeAll();

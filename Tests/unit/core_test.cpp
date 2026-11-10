@@ -245,6 +245,36 @@ TEST_CASE("results for a document that was replaced are ignored") {
     CHECK(rig.host.events.size() == events);
 }
 
+TEST_CASE("closing empties the scene, stops the import, and a file opens normally after") {
+    Rig rig;
+    rig.core.resize(800, 600, 2.0f);
+    rig.open();
+    REQUIRE(rig.core.sceneFaces() > 0);
+    // A second file, still importing when everything is closed.
+    rig.core.openFile("/models/second.step", true);
+    const u64 second = rig.host.imports.back().first;
+    rig.core.close();
+    CHECK(rig.core.sceneFaces() == 0);
+    CHECK(!rig.core.sceneBounds().has_value());
+    CHECK(rig.host.models.empty());
+    CHECK(std::find(rig.host.cancelled.begin(), rig.host.cancelled.end(), second) !=
+          rig.host.cancelled.end());
+    CHECK(rig.host.framesRunning); // the empty view is drawn
+    // What the closed import still sends changes nothing.
+    const usize events = rig.host.events.size();
+    for (const auto& segment : rigSegments()) {
+        rig.core.addSegment(second, segment);
+    }
+    rig.core.importFinished(second, {true, false, "", "/cache/second.geoblob"});
+    CHECK(rig.host.events.size() == events);
+    CHECK(rig.core.sceneFaces() == 0);
+    // Opening again works as it did the first time.
+    rig.open();
+    CHECK(rig.core.sceneFaces() > 0);
+    REQUIRE(rig.host.models.size() == 1);
+    CHECK(rig.host.models[0] != nullptr);
+}
+
 TEST_CASE("tree actions change visibility, publish it, and undo") {
     Rig rig;
     rig.core.resize(800, 600, 2.0f);

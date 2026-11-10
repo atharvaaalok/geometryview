@@ -241,6 +241,9 @@ void geo_engine_open_file(GeoEngine* engine, const char* path);
 /// Opens a file alongside what is shown, as another document.
 void geo_engine_add_file(GeoEngine* engine, const char* path);
 
+/// Closes everything shown, stopping its imports, and draws the empty view.
+void geo_engine_close(GeoEngine* engine);
+
 void geo_engine_perform(GeoEngine* engine, GeoAction action);
 
 void geo_engine_set_selection_mode(GeoEngine* engine, GeoSelectionMode mode);

@@ -108,6 +108,11 @@ final class EngineHandle {
         geo_engine_add_file(engine, path)
     }
 
+    /// Closes everything open, stopping its imports.
+    func close() {
+        geo_engine_close(engine)
+    }
+
     func perform(_ action: GeoAction) {
         geo_engine_perform(engine, action)
     }

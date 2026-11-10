@@ -182,6 +182,12 @@ enum MainMenu {
         )
         connect.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(connect)
+        menu.addItem(.separator())
+        menu.addItem(
+            withTitle: "Close",
+            action: #selector(AppDelegate.closeDocument(_:)),
+            keyEquivalent: "w"
+        )
         let item = NSMenuItem()
         item.submenu = menu
         return item
