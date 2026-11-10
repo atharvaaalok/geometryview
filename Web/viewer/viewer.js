@@ -305,9 +305,8 @@ function run(name) {
       toolbar.projection.selected = perspective ? 1 : 0;
       return engine.perform(Actions.ToggleProjection);
     case "clear":
-      if (!shortcuts.element.hidden) shortcuts.element.hidden = true;
-      else if (!lookCard.element.hidden || !sectionCard.element.hidden) closeCards();
-      else engine.perform(Actions.ClearSelection);
+      // Esc closes what is open first, and only then clears the selection.
+      if (!dismissCard()) engine.perform(Actions.ClearSelection);
       return undefined;
     case "isolate": return engine.perform(Actions.Isolate);
     case "showAll": return engine.perform(Actions.ShowAll);
@@ -352,6 +351,15 @@ function toggleCard(card) {
 function closeCards() {
   lookCard.element.hidden = true;
   sectionCard.element.hidden = true;
+}
+
+// Closes whatever card, menu or sheet is open: the shortcuts sheet, the views and More menus, the
+// look and section cards. Returns whether any was.
+function dismissCard() {
+  const open = [shortcuts.element, toolbar.viewsMenu, toolbar.moreMenu, lookCard.element,
+                sectionCard.element].filter((element) => !element.hidden);
+  for (const element of open) element.hidden = true;
+  return open.length > 0;
 }
 
 // Shows `next`, and remembers it unless it is the look the page started with: a look saved only

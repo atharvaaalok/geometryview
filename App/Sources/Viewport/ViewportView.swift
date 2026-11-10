@@ -271,10 +271,17 @@ final class ViewportView: NSView {
     // MARK: Keyboard
 
     private static let spaceKeyCode: UInt16 = 49
+    private static let escapeKeyCode: UInt16 = 53
+    /// Esc closes an open card before anything else, whatever key clears the selection. Returns
+    /// whether a card was open.
+    var onEscape: (() -> Bool)?
     // The key holding a tool, remembered by code so its release is caught whatever is typed since.
     private var heldKeyCode: UInt16?
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == Self.escapeKeyCode, onEscape?() == true {
+            return
+        }
         if event.keyCode == Self.spaceKeyCode {
             spaceHeld = true
             return

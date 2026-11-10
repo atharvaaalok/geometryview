@@ -208,6 +208,7 @@ from [`iOS/Shell`](Docs/BUILDING.md#the-iphone-and-ipad-shell).
 | ⇧⌘L | The look: style, colours, ghosts, shadow, grain and wobble |
 | Click the view cube | Turn to that face's view |
 | ⌘O, ⌥⌘O | Open files, connect a folder |
+| Esc | Close an open card or menu; with none open, clear the selection |
 | ? | Show every shortcut |
 
 On a phone, drag with one finger to rotate, pinch to zoom and drag with two fingers to pan. The
