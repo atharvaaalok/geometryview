@@ -77,6 +77,9 @@ something like:
 > *Open planetary-gearbox.step. Show me the second stage on its own, from below, then cut the
 > whole gearbox in half, in metal.*
 
+([Download the gearbox](https://github.com/atharvaaalok/geometryview/releases/latest/download/planetary-gearbox.step)
+to try it; the other samples are in the [latest release](https://github.com/atharvaaalok/geometryview/releases/latest).)
+
 The app finds `stage2` with get_structure, and render_view returns:
 
 <table>
