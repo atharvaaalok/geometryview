@@ -2,15 +2,16 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 
-const fixtures = process.env.GEOMETRYVIEW_FIXTURES ?? join(homedir(), "Desktop/Godela");
-const model = join(fixtures, "exploration/claude/motor_cad/outrunner_tmotor_u/U8II-KV100/" +
-                             "detailed/part.step");
+// The models are in the repository's test-models folder, which git ignores (see test-models/README.md
+// there), or under GEOMETRYVIEW_FIXTURES. A test whose model is missing is skipped.
+const fixtures = process.env.GEOMETRYVIEW_FIXTURES ??
+                 fileURLToPath(new URL("../../test-models/", import.meta.url));
+const model = join(fixtures, "models/u8ii_kv100_motor.step");
 
 let server;
 let nextId = 1;

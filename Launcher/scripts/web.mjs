@@ -1,5 +1,5 @@
 // Gathers the viewer's files into Launcher/web, as the launcher serves them when packed: the page,
-// its engine, its importers and its fonts. Run after the wasm-webgpu, wasm-release and
+// its engine, its importers, its fonts and the licenses. Run after the wasm-webgpu, wasm-release and
 // wasm-threads presets are built.
 
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
@@ -24,6 +24,8 @@ const copies = [
     join(root, `ThirdParty/ibm-plex-mono/IBMPlexMono-${weight}.ttf`),
     join(web, `fonts/IBMPlexMono-${weight}.ttf`)]),
   [join(root, "ThirdParty/ibm-plex-mono/LICENSE.txt"), join(web, "fonts/LICENSE.txt")],
+  [join(root, "LICENSE"), join(web, "LICENSE")],
+  [join(root, "NOTICES.md"), join(web, "NOTICES.md")],
 ];
 
 const missing = copies.filter(([from]) => !existsSync(from)).map(([from]) => from);

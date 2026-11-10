@@ -1,19 +1,44 @@
 {
   "name": "geometryview",
   "version": "0.1.0",
-  "description": "A STEP and STL viewer for this machine, in the browser, that AI apps can open, inspect and picture models with.",
+  "description": "View STEP and STL models in your browser, and let AI apps open, inspect and picture them (MCP).",
+  "keywords": [
+    "step",
+    "stl",
+    "cad",
+    "3d",
+    "viewer",
+    "webgpu",
+    "wasm",
+    "opencascade",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "homepage": "https://github.com/atharvaaalok/geometryview#readme",
+  "bugs": {
+    "url": "https://github.com/atharvaaalok/geometryview/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atharvaaalok/geometryview.git",
+    "directory": "Launcher"
+  },
+  "license": "MIT",
+  "author": "Atharva Aalok",
   "type": "module",
   "bin": {
     "geometryview": "bin/geometryview.mjs"
   },
-  "files": ["bin", "src", "web"],
+  "files": [
+    "bin",
+    "src",
+    "web"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "prepack": "node scripts/web.mjs"
-  },
-  "license": "UNLICENSED",
-  "private": true
+  }
 }
