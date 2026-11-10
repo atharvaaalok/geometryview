@@ -112,7 +112,7 @@ Cache blob         Append-only, written by the helper, mapped read-only by the v
 
 All scene attachments are 4× MSAA memoryless. Above 200 Mtri in a frame, or on the "too much geometry" error, depth switches to stored.
 
-**HSR rules:** no `discard` or depth output in the opaque path; any discard PSO draws after opaque; no depth pre-pass; clip planes apply only to parts crossing a plane (AABB test); keep varyings small.
+**HSR rules:** no `discard` or depth output in the opaque path; any discard or depth-writing PSO (a section's caps) draws after opaque; no depth pre-pass; clip planes apply only to parts crossing a plane (AABB test); keep varyings small.
 
 **Geometry:** object + mesh shaders with thread-per-primitive threadgroups, in batches of 4096 or fewer (one direct dispatch of 120k silently drew nothing). Depth-only mesh PSOs need a stub fragment function. Per-meshlet frustum and cone culling. A background thread keeps a coarse front-to-back order, worth up to 6× on sub-pixel scenes. Hide a face by collapsing its vertices, since faces never share vertices. LOD and HZB occlusion are deferred unless spike 5 fails.
 
@@ -128,7 +128,7 @@ All scene attachments are 4× MSAA memoryless. Above 200 Mtri in a frame, or on 
 | Ghost shell/lines/both | Simple alpha with depth write off (+0.32 ms). Order error is at most about 8/255 at α=.24. WBOIT is the fallback at +0.40 ms |
 | See-through | One pass with viewport depth ranges, bit-identical to 3 passes and about 35% cheaper. Layers: far walls `.5k`, opaque inner, shell `1-.8k`, hull ink `.6k`. Alpha via `setBlendColor` over 0.7 s |
 | Shell vs inner | Automatic exposure/occlusion classification, cached in the blob, with per-part override (G can serve as the override) |
-| Section | Up to 6 planes with `clip_distance`; back faces shaded as caps; hatching in plane space, per-part variants; `open` flag for non-watertight parts. Union cuts use discard, drawn last |
+| Section | Up to 6 planes with `clip_distance`; back faces shaded as caps, chosen by each part's count of the surfaces behind the cut and drawn on the plane (ADR 0010); hatching in plane space, per-part variants; `open` flag for non-watertight parts. Union cuts use discard, drawn last |
 | AO, shadow, grain, grid, wobble | All kept: they are part of step_viewer's schemes. AO uses 8 samples in motion, 12 at idle. Wobble maps the cursor through the same noise |
 
 **Colour:** BGRA8 unorm, composited in encoded space, so reference hex values match. Only the physical path applies gamma.

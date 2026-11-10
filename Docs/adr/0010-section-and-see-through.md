@@ -27,6 +27,39 @@ other side. Every cut showed a hatched cap, with no stray caps or holes. A cap k
 the back face it is drawn on, not of the plane. Anything really in front of the cut still hides
 it, and parts inside a cut housing show in front of its far wall.
 
+**Amended (v0.1.1): caps by count, on the plane.** In assemblies the nearest back face is not
+always the cut. Where part A's far wall touches part B, A's back face and B's front face lie at
+the same depth. Flat contacts, such as a cover in a housing, z-fight. Round ones, such as a shaft
+in a bearing, where two faceted cylinders interleave by a facet's sag, show B in stripes that turn
+with the view. Where B's faceted face reaches a hair into A, B's back face can even be the nearest.
+A depth bias cannot fix the round case without breaking thin walls. Drawing every back face on the
+plane is wrong too: a far wall behind its own near wall is no cut.
+
+So, after the opaque surfaces, two more draws of the closed parts:
+- **Count.** Every closed surface behind the cut, whatever its depth, toggles its body's 7-bit
+  tag into a per-sample code, and the top bit counts them all. The plane at a pixel lies inside a
+  part exactly when that part is crossed an odd number of times, and every other part an even
+  number. So where the top bit ends set, the code is that part's tag. Counting doesn't care which
+  of two touching surfaces comes first. Closed definitions are watertight by construction: every
+  edge is used by two triangles, and shared positions decode alike (ADR 0004).
+- **Caps.** Back faces only, drawn where the count is odd and the code is their own part's tag.
+  Each writes its depth on the plane the ray entered through, less 1/1024 of the way back to its
+  own depth, so the nearest of a part's back faces wins and nothing behind the cut can. The planes'
+  depths across the screen are uniforms (`sectionDepths`), solved from the frame's own view
+  projection. A pick on a cut face therefore lands on the plane.
+
+Metal keeps the code in an R8Uint tile attachment, read and written by programmable blending; the
+caps read it too, and write `[[depth(greater)]]`. WebGPU has neither, so a pass of its own counts
+into two RGBA16Float targets by additive blending, one channel per bit, and the caps read them as
+textures. Both draws come after the opaque path, so its hidden-surface removal is untouched.
+
+**Known limits:**
+- Where two closed parts overlap at the plane, as in an interference fit, both counts are odd and
+  no part's code results. There the opaque pass's own caps stay, as before.
+- Two parts whose tags are equal, that is whose indices differ by a multiple of 127, cannot be told
+  apart by the code.
+- A closed part with a face hidden or ghosted alone counts wrongly behind that face.
+
 ## See-through
 
 **Decision.** T fades the outer shell over 0.7 seconds, after Colorfigures' layers, in one pass:
