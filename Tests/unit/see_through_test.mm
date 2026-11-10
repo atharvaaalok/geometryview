@@ -16,6 +16,7 @@
 #include "step/step_import.h"
 #include "step_fixture.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <doctest/doctest.h>
 #include <fcntl.h>
@@ -259,6 +260,61 @@ TEST_CASE("unnamed bodies go by their part's name, so planet gears never fade") 
     }
 }
 
+TEST_CASE("where nothing covers anything, the whole file turns to glass") {
+    @autoreleasepool {
+        // A row of nuts, as lone parts: no group at all.
+        {
+            test::StepWriter writer;
+            const int root = writer.assembly("row");
+            for (int i = 0; i < 3; ++i) {
+                const int shape = writer.box({50.0 * i, 0, 0}, {50.0 * i + 20, 20, 10}, i == 1);
+                writer.place(root, writer.part("nut" + std::to_string(i), shape), shape, {0, 0, 0});
+            }
+            const std::string blob = importBoxes(writer);
+            const Classified c = classify(blob);
+            REQUIRE(c.shells.size() == 3);
+            CHECK(std::all_of(c.shells.begin(), c.shells.end(), [](u8 s) { return s != 0; }));
+            unlink(blob.c_str());
+        }
+        // Two blocks stacked, which touch but hide nothing inside each other, and one apart: a
+        // group, classified, in which nothing is found.
+        {
+            test::StepWriter writer;
+            const int root = writer.assembly("stack");
+            const auto place = [&](const std::string& name, std::array<double, 3> a,
+                                   std::array<double, 3> b) {
+                const int shape = writer.box(a, b);
+                writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
+            };
+            place("lower", {0, 0, 0}, {40, 40, 10});
+            place("upper", {10, 10, 10}, {30, 30, 20});
+            place("apart", {100, 0, 0}, {110, 10, 10});
+            const std::string blob = importBoxes(writer);
+            const Classified c = classify(blob);
+            REQUIRE(c.shells.size() == 3);
+            CHECK(std::all_of(c.shells.begin(), c.shells.end(), [](u8 s) { return s != 0; }));
+            unlink(blob.c_str());
+        }
+    }
+}
+
+TEST_CASE("where anything covers something, a loose part beside it stays solid") {
+    @autoreleasepool {
+        test::StepWriter writer;
+        const int root = writer.assembly("bench");
+        addHousing(writer, root, "0", {0, 0, 0}, 40.0);
+        const int shape = writer.box({100, 0, 0}, {110, 10, 10});
+        writer.place(root, writer.part("loose", shape), shape, {0, 0, 0});
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        CHECK(shellNamed(c, "outer0"));
+        CHECK(!shellNamed(c, "loose"));
+        CHECK(!shellNamed(c, "block0"));
+        unlink(blob.c_str());
+    }
+}
+
 // A core with the Metal renderer, opening cache files as the app does, and drawing what it shows.
 struct Viewer {
     std::unique_ptr<gpu::Renderer> renderer;
@@ -324,6 +380,30 @@ std::pair<double, double> difference(const std::vector<u8>& a, const std::vector
         changed += worst > 12 ? 1 : 0;
     }
     return {double(total) / double(a.size() / 4 * 3), double(changed) / double(a.size() / 4)};
+}
+
+TEST_CASE("glass is drawn, and goes again with T") {
+    @autoreleasepool {
+        // A lone nut-like part: hollow, with nothing else in the file.
+        test::StepWriter writer;
+        const int root = writer.assembly("nut");
+        const int shape = writer.box({0, 0, 0}, {40, 40, 20}, true);
+        writer.place(root, writer.part("nut", shape), shape, {0, 0, 0});
+        const std::string blob = importBoxes(writer);
+        Viewer v;
+        v.open(blob);
+        const std::vector<u8> solid = v.picture();
+        v.core->perform(GeoActionToggleSeeThrough);
+        const std::vector<u8> glass = v.picture();
+        v.core->perform(GeoActionToggleSeeThrough);
+        const std::vector<u8> again = v.picture();
+        const auto [glassMean, glassChanged] = difference(glass, solid);
+        CAPTURE(glassMean);
+        CHECK(glassChanged > 0.02); // the part's faces, a fair share of the view, turned faint
+        const auto [againMean, againChanged] = difference(again, solid);
+        CHECK(againChanged == 0.0);
+        unlink(blob.c_str());
+    }
 }
 
 // A file opened after another shows its own hidden and ghosted parts, never the other's. A new
