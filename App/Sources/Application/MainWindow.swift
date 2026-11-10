@@ -671,6 +671,12 @@ final class MainWindow: NSWindow {
         dismissCard()
     }
 
+    /// Whether any card, menu or sheet is open, for the chrome check.
+    var hasOpenCard: Bool {
+        [shortcuts, lookCard, sectionCard].contains { !$0.isHidden } || toolBar.viewsMenu.isOpen
+            || toolBar.moreMenu.isOpen
+    }
+
     /// Closes whatever card, menu or sheet is open: the shortcuts sheet, the views and More menus,
     /// the look and section cards. Returns whether any was.
     @discardableResult
