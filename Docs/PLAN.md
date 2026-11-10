@@ -2,7 +2,7 @@
 
 ## Context
 
-`/Users/atharvaaalok/Desktop/geometry/geometryview` (then `~/Desktop/geometry`) held only `notes.md`, the full requirements. We are building a standalone viewer for STEP, STL and similar files, from scratch. Priorities in order: speed, memory, leanness. It must also be beautiful and highly maintainable, with small atomic commits. Users open their own files or connect whole directories. The earlier projects (step_viewer, proto Godela, main_platform, colorfigures) are references for behaviour and look, and no code is copied.
+The repository began with only the requirements brief. We are building a standalone viewer for STEP, STL and similar files, from scratch. Priorities in order: speed, memory, leanness. It must also be beautiful and highly maintainable, with small atomic commits. Users open their own files or connect whole directories. The author's earlier viewers and prototypes (step_viewer among them) and Colorfigures are references for behaviour and look, and no code is copied.
 
 **User decisions:** macOS only with native Metal. OCCT in a separate helper with our own fast paths. Wheel zooms toward the cursor by default (about-target stays in Settings). Clicking a file opens it alone, and Cmd-click adds it to the same viewport.
 
@@ -280,13 +280,14 @@ Viewer memory target: about 134 MB render targets at 3456×2234 plus under 150 M
 
 ## Key references (ideas only)
 
-- Requirements: `/Users/atharvaaalok/Desktop/geometry/geometryview/notes.md`
-- Rotation: `/Users/atharvaaalok/Desktop/Godela/platform/godela-web/src/viewer/{navigation.ts,geometryOrbit.ts}`, `tests/e2e/rotation.spec.ts` (test vector: 2-unit cube, fov 90, z=2.2 no, 1.6 yes, 1.75 stays, 2.0 exits)
-- Styles and constants: `/Users/atharvaaalok/Desktop/Godela/exploration/claude/step_viewer/web/src/core/render/{styles.ts,pipeline.ts,glsl/surface.ts,glsl/composite.ts,glsl/ao.ts,glsl/lines.ts,shadowLight.ts}`, `core/palette.ts`, `core/seethrough/classify.ts`
-- Tokens: `step_viewer/web/src/styles/{tokens.css,app.css}`
-- See-through: `/Users/atharvaaalok/Desktop/Godela/interesting_finds/colorfigures/assets/core.js`, `assets/examples/toaster.html`
-- Ghost choices: proto `src/viewer/faceGhost.ts`, `src/inspection/InspectionViewer.tsx`; held keys `src/workspace/useHeldKey.ts`
-- **Do not copy:** step_viewer's dash code (`lines.ts:93` shadows `along`, confirmed by reading), its flat per-occurrence face numbering, or colorfigures' `claw.html` see-through path.
+The author's earlier, private prototypes informed these choices. None of their code is copied.
+
+- Rotation: an earlier prototype's adaptive orbit about the point under the pointer (test vector: 2-unit cube, fov 90, z=2.2 no, 1.6 yes, 1.75 stays, 2.0 exits)
+- Styles and constants: step_viewer's render pipeline (styles, surface, composite, occlusion, lines, shadow light), its palette and its see-through classification
+- Tokens: step_viewer's design tokens
+- See-through: Colorfigures' layered see-through
+- Ghost choices: an earlier prototype's face ghosting and inspection viewer, and its held keys
+- **Do not copy:** step_viewer's dash code (it shadows `along`, confirmed by reading), its flat per-occurrence face numbering, or Colorfigures' alternative see-through path.
 
 ## Verification
 

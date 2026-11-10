@@ -20,7 +20,10 @@ const chromePath = process.env.GEOMETRYVIEW_CHROME ?? {
   linux: "/usr/bin/google-chrome",
 }[process.platform];
 const chromeFlags = (process.env.GEOMETRYVIEW_CHROME_FLAGS ?? "").split(" ").filter(Boolean);
-const model = fileURLToPath(new URL("../../build/fixtures/step/ple120.step", import.meta.url));
+// The gearbox, from the repository's test-models folder (see mcp.test.mjs) or GEOMETRYVIEW_FIXTURES.
+const fixtures = process.env.GEOMETRYVIEW_FIXTURES ??
+                 fileURLToPath(new URL("../../test-models/", import.meta.url));
+const model = join(fixtures, "models/ple120_gearbox.step");
 const enabled = process.env.GEOMETRYVIEW_E2E === "1" && existsSync(chromePath) && existsSync(model);
 
 let viewer, chrome, profile;

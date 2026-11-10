@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { startViewer } from "../src/web.mjs";
+import { existsSync } from "node:fs";
+import { startViewer, viewerMounts } from "../src/web.mjs";
 
 let viewer;
 before(async () => { viewer = await startViewer(); });
@@ -33,6 +34,13 @@ test("the page is served cross-origin isolated", async () => {
   assert.equal(page.headers["cross-origin-opener-policy"], "same-origin");
   assert.equal(page.headers["cross-origin-embedder-policy"], "require-corp");
   assert.match(page.body.toString(), /viewer\.js/);
+});
+
+// The engine is a build output: a checkout without the wasm-webgpu preset built has none to serve.
+const engineBuilt = viewerMounts().some(([prefix, folder]) =>
+  existsSync(join(folder, prefix === "/build/" ? "geometryview-web.wasm" : "build/geometryview-web.wasm")));
+
+test("the engine is served as WebAssembly", { skip: !engineBuilt && "the engine is not built" }, async () => {
   const engine = await get("/build/geometryview-web.wasm");
   assert.equal(engine.status, 200);
   assert.equal(engine.headers["content-type"], "application/wasm");

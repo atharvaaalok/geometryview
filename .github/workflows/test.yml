@@ -1,0 +1,25 @@
+# The launcher's tests, on a Mac and on Linux: the tool server, the viewer's pure logic and the
+# file formats it shares. Tests that need a build or the test models skip.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm test
+        working-directory: Launcher

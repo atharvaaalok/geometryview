@@ -8,9 +8,8 @@ for the multi-process STEP imports, which a 5% gate cannot tell from a regressio
 than 5% over its baseline fails, unless it is within 10 ms, below which timer noise dominates.
 Run it on AC power with nothing else busy.
 
-Fixtures live outside the repository, under $GEOMETRYVIEW_FIXTURES, which defaults to the folder
-they were measured from. Those since archived out of that folder are also looked for in
-build/fixtures, where the spikes keep their copies.
+The fixtures are in the repository's test-models folder, which git ignores, or under
+$GEOMETRYVIEW_FIXTURES, laid out the same way. A missing fixture is skipped.
 
 Usage: perf_gate.py <build-dir> [--update] [--runs N]
 """
@@ -28,23 +27,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE = ROOT / "Tools" / "perf_baseline.json"
-DEFAULT_FIXTURES = Path.home() / "Desktop" / "Godela"
+DEFAULT_FIXTURES = ROOT / "test-models"
 TOLERANCE = 0.05
 NOISE_SECONDS = 0.010
 
 FIXTURES = {
-    "demo_drive": "exploration/claude/step_viewer/samples/demo_drive/detailed/demo_drive.step",
-    "pack_13S4P": "exploration/claude/motor_cad/pack_cylindrical_molicel/13S4P-P50B/detailed/part.step",
-    "ple120": "exploration/claude/motor_cad/planetary_neugart_ple/PLE120-080/detailed/part.step",
-    "hard_52mb": "geometry_testing/CADBench/benchmark_data/browse/benchA/step/hard/"
-    "00754277_fb235be6d980a9a5ae0d340f_step_000.step",
-    "stl_10m": "geometry_testing/CADBench/benchmark_data/browse/benchO/stl/"
-    "d2e68f88b6e34e61874a0c2709704309.stl",
-}
-# Local copies of the fixtures whose folder was archived to S3.
-LOCAL_COPIES = {
-    "hard_52mb": ROOT / "build" / "fixtures" / "hard_52mb.step",
-    "stl_10m": ROOT / "build" / "fixtures" / "stl10m.stl",
+    "demo_drive": "models/demo_drive.step",
+    "pack_13S4P": "models/pack_13S4P.step",
+    "ple120": "models/ple120_gearbox.step",
+    "hard_52mb": "models/hard_52mb.step",
+    "stl_10m": "large/stl10m.stl",
 }
 
 
@@ -75,8 +67,6 @@ def main() -> int:
     failed = False
     for name, relative in FIXTURES.items():
         source = root / relative
-        if not source.exists() and name in LOCAL_COPIES:
-            source = LOCAL_COPIES[name]
         if not source.exists():
             print(f"{name:12} skipped: {source} not found")
             continue

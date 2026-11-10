@@ -408,10 +408,18 @@ export class Masthead {
 
 // ---- The status card --------------------------------------------------------------------------
 
+// A size as people read it: 57 KB, 8.1 MB, 25 MB.
+function formatBytes(bytes) {
+  const [value, unit] = bytes >= 1e6 ? [bytes / 1e6, "MB"] : [Math.max(1, bytes / 1e3), "KB"];
+  return `${value < 10 ? value.toFixed(1).replace(/\.0$/, "") : Math.round(value)} ${unit}`;
+}
+
 export class StatusCard {
   #heading = el("h2");
   #body = el("p");
   #buttons;
+  #samples = el("div.samples", { hidden: true });
+  #offering = false;
   #invitation;
   element;
 
@@ -425,13 +433,26 @@ export class StatusCard {
     this.#invitation = phone ? (canConnect ? "Open STEP or STL files, or connect a folder." : "Open STEP or STL files.")
                              : (canConnect ? "Drop STEP or STL files to open them, or a folder to connect it."
                                            : "Drop STEP or STL files here to open them.");
-    this.element = el("section.card.status", { hidden: true, role: "status" }, [this.#heading, this.#body, this.#buttons]);
+    this.element = el("section.card.status", { hidden: true, role: "status" },
+                      [this.#heading, this.#body, this.#buttons, this.#samples]);
+  }
+
+  // Models to try, offered beside the two ways in: [{ name, size, about }], and what picking one does.
+  setSamples(samples, onPick) {
+    this.#samples.replaceChildren(el("p.heading", { text: "Or try a sample" }), ...samples.map((sample) =>
+      el("button.sample", { type: "button", title: sample.about, onclick: () => onPick(sample) },
+         [el("span.name", { text: sample.name }), el("span.size", { text: formatBytes(sample.size) })])));
+    this.#samples.dataset.count = samples.length;
+    this.#samples.hidden = !this.#offering || samples.length === 0;
   }
 
   showInvitation() {
     this.#show("Nothing open yet", this.#invitation, true);
   }
   showLoading(name) { this.#show(`Opening ${name}`, "This only takes a moment."); }
+  showDownloading(name, done, total) {
+    this.#show(`Downloading ${name}`, `${formatBytes(done)} of ${formatBytes(total)}.`);
+  }
   showImporting(name, done, total) {
     this.#show(`Importing ${name}`, total > 0 ? `${done} of ${total} pieces meshed.`
                                               : "Reading its structure…");
@@ -443,6 +464,8 @@ export class StatusCard {
     this.#heading.textContent = heading;
     this.#body.textContent = body;
     this.#buttons.hidden = !offerOpen;
+    this.#offering = offerOpen;
+    this.#samples.hidden = !offerOpen || !Number(this.#samples.dataset.count);
     this.element.hidden = false;
   }
 }

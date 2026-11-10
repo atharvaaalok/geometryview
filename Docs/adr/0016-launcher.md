@@ -82,8 +82,8 @@ P4 made a viewer that runs in any browser. P5 had three aims:
 
 The product was called just "Geometry", after the folder it was built in, which is meant to hold
 other geometry projects too. It is now **GeometryView**: plain about what it does, and not tied to
-CAD or to one format, since IGES, OBJ, PLY, 3MF and glTF are planned. The repository moves to
-`~/Desktop/geometry/geometryview/`.
+CAD or to one format, since IGES, OBJ, PLY, 3MF and glTF are planned. The repository moves into
+a `geometryview` folder of its own.
 - **Renamed:** the app (`GeometryView.app`, bundle ID `com.aalok.geometryview` on the Mac and the
   iPhone), its helpers and build outputs (`geometryview-*`), the Swift module, the `geometryview`
   command, npm package, MCP server and `.mcpb`, the `GEOMETRYVIEW_*` switches, the page's title,
