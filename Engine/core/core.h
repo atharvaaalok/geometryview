@@ -137,8 +137,10 @@ private:
     bool refineDocument(u32 index);
     void publishState();
     void classifyShells();
+    void classifyShellLevel(std::vector<u32> groupOf);
     void requestShellViews(bool excludeShells);
-    void shellViewArrived(u64 generation, u32 group, const render::OccurrenceIds& ids);
+    void shellViewArrived(u64 generation, u32 round, u32 group, const render::OccurrenceIds& ids);
+    void shellLevelDone();
     render::OverlayLayout overlayLayout() const;
     render::ViewState frameView() const;
     bool validNode(u32 document, u32 node) const;
@@ -205,9 +207,10 @@ private:
     GeoTool tool_ = GeoToolSelect;
     u64 publishedStateVersion_ = ~u64(0);
 
-    // Classifying the shell: two rounds of views, whose ids may arrive frames later. A newer
+    // Classifying the shell: level by level, the separate assemblies and then the sub-assemblies
+    // inside them, each level in two rounds of views, whose ids may arrive frames later. A newer
     // classification, or closing everything, makes the one in flight stale.
-    // A separate assembly, classified on its own as it would be alone.
+    // An assembly, classified on its own as it would be alone.
     struct ShellGroup {
         std::vector<u32> members;             // global occurrence indices
         std::vector<render::ShellPart> parts; // the members', in that order
@@ -216,13 +219,18 @@ private:
     };
     struct ShellClassification {
         u64 generation = 0;
+        u32 level = 0; // 0 for the separate assemblies, then each level inside them
+        u32 round = 0; // counts every round of views, so a stale view is known
         bool secondRound = false;
         u32 arrived = 0;
         u32 expected = 0;
-        std::vector<ShellGroup> groups; // group g is g + 1 on the GPU
-        std::vector<u32> groupOf;       // each occurrence's group on the GPU, 0 for none
-        std::vector<u32> local;         // each occurrence's index within its group
-        std::vector<u8> first;          // in global order
+        u32 nestedGroups = 0;                  // sub-assemblies classified so far, against a budget
+        std::vector<render::ShellPart> parts;  // every occurrence's, in global order
+        std::vector<render::AssemblyRow> rows; // every document's tree, in global order
+        std::vector<ShellGroup> groups;        // group g is g + 1 on the GPU
+        std::vector<u32> groupOf;              // each occurrence's group on the GPU, 0 for none
+        std::vector<u32> local;                // each occurrence's index within its group
+        std::vector<u8> found; // the shell found so far, at any level, in global order
         double started = 0.0;
     };
     std::optional<ShellClassification> classifying_;
