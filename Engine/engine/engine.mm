@@ -483,7 +483,7 @@ struct GeoEngine final : engine::Host {
     }
 };
 
-const char* geo_engine_version(void) { return "0.1.0"; }
+const char* geo_engine_version(void) { return "0.1.1"; }
 
 GeoEngine* geo_engine_create(const GeoEngineDescriptor* descriptor) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
