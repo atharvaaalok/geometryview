@@ -19,6 +19,11 @@ target_link_options(geo_options INTERFACE
     $<$<AND:$<CONFIG:Release>,$<LINK_LANGUAGE:C,CXX,OBJCXX>>:-flto=thin>
 )
 
+# __FILE__, which asserts print, names files from the repository's root, so the binaries carry no
+# builder's folders. Debug information keeps full paths, for debuggers.
+target_compile_options(geo_options INTERFACE
+    $<$<COMPILE_LANGUAGE:C,CXX,OBJCXX>:-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=>)
+
 # The WebGPU renderer spike of Phase 0, natively on Dawn or as WebAssembly. Off by default, so
 # the app never depends on Dawn.
 option(GEO_WEBGPU_SPIKE "Build the WebGPU renderer spike" OFF)

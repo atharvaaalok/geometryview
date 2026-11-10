@@ -19,7 +19,8 @@ if [[ ! -d "$source" ]]; then
     exit 1
 fi
 
-flags="-O3 -msimd128 -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -UOCC_CONVERT_SIGNALS"
+# __FILE__, which OCCT's asserts print, names files from OCCT's root, not this machine's folders.
+flags="-O3 -msimd128 -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -UOCC_CONVERT_SIGNALS -fmacro-prefix-map=$source/=occt/"
 # OCCT 8.0.1 uses std::lock_guard without including <mutex>, which Apple's libc++ includes on its
 # behalf and Emscripten's does not.
 emcmake cmake -S "$source" -B "$build" -G Ninja \
