@@ -384,6 +384,7 @@ struct Renderer::State {
     u32 width = 0, height = 0;
     wgpu::Texture color, ids, depthCopy, ink, tags, depth, shadowMask, occlusionTexture, accum;
     wgpu::Texture parityLow, parityHigh;
+    std::vector<u32> shellGroups; // as last written into the occurrence table
     wgpu::Texture offscreen;
     wgpu::BindGroup sceneGroup, cullGroup, surfaceGroup, edgeGroup, sheetGroup, resolveGroup;
     wgpu::BindGroup capGroup; // the surface group's slots, with the section's counts
@@ -1051,6 +1052,7 @@ struct Renderer::State {
                           gpuDefinitions.size() * sizeof(GpuDefinitionW));
         occurrences = buffer(gpuOccurrences.size() * sizeof(GpuOccurrence), U::Storage | U::CopyDst,
                              "occurrences");
+        shellGroups.assign(gpuOccurrences.size(), 0);
         queue.WriteBuffer(occurrences, 0, gpuOccurrences.data(),
                           gpuOccurrences.size() * sizeof(GpuOccurrence));
         surfaceInstances = u32(surfaceList.size());
@@ -2053,6 +2055,20 @@ void Renderer::setStyle(const StyleUniforms& style, bool physical) {
     s.physical = physical;
     if (shadowChanged) {
         s.planLists();
+    }
+}
+
+// Only the groups that changed are written, four bytes each, into the occurrence table.
+void Renderer::setShellGroups(std::span<const u32> groupOfOccurrence) {
+    State& s = *state_;
+    const usize count = std::min(s.shellGroups.size(), groupOfOccurrence.size());
+    for (usize i = 0; i < count; ++i) {
+        if (s.shellGroups[i] != groupOfOccurrence[i]) {
+            s.shellGroups[i] = groupOfOccurrence[i];
+            s.queue.WriteBuffer(s.occurrences,
+                                i * sizeof(GpuOccurrence) + offsetof(GpuOccurrence, shellGroup),
+                                &s.shellGroups[i], sizeof(u32));
+        }
     }
 }
 

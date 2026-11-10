@@ -1,0 +1,212 @@
+// Which parts see-through fades, found by the core on the real GPU. Separate assemblies side by
+// side must each have their housings found, as one would alone: neighbours hiding each other, or
+// one camera framing them all, must not decide it. Needs the OCCT worker, since the parts are STEP.
+//
+// GEOMETRYVIEW_SHELL_FILES, cache files separated by colons, prints each one's parts and what the
+// test measured of them, for tuning on real models.
+#if defined(GEO_TEST_WORKER_PATH)
+
+#include "core/core.h"
+#include "core/host.h"
+#include "gpu/renderer.h"
+#include "scene/segment.h"
+#include "step/step_import.h"
+#include "step_fixture.h"
+
+#include <cstdlib>
+#include <doctest/doctest.h>
+#include <fcntl.h>
+#include <print>
+#include <string>
+#include <string_view>
+#include <unistd.h>
+#include <vector>
+
+using namespace geo;
+
+namespace {
+
+// A host that imports nothing itself: the test hands the core a cache file's segments.
+class QuietHost final : public engine::Host {
+public:
+    double now() const override { return clock += 0.001; }
+    bool reduceMotion() const override { return true; }
+    void runFrames(bool) override {}
+    void scheduleRefinement(double) override {}
+    void startImport(u64 token, const std::string&) override { imports.push_back(token); }
+    void startRefinement(u64, const std::string&, u32, std::vector<u32>) override {}
+    void cancelImport(u64) override {}
+    void cancelRefinement() override {}
+    void evictCache(std::vector<std::string>) override {}
+    void emit(const GeoEvent&) override {}
+    void publishModel(u32, std::shared_ptr<scene::Segment>) override {}
+    void clearModels() override {}
+    void publishSwatches(std::vector<u32>, std::vector<u32>) override {}
+    void publishNodeStates(std::vector<std::vector<model::NodeVisibility>>) override {}
+    void publishSummary(const engine::Summary&) override {}
+
+    std::vector<u64> imports;
+    mutable double clock = 0.0;
+};
+
+struct Classified {
+    std::vector<std::string> names; // each occurrence's, in global order
+    std::vector<u8> shells;
+};
+
+// Opens a cache file in a core with the Metal renderer, turns see-through on, and returns which
+// occurrences it found to be the shell.
+Classified classify(const std::string& blob) {
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    const bool hasDevice = device != nil;
+    REQUIRE(hasDevice);
+    std::unique_ptr<gpu::Renderer> renderer =
+        gpu::Renderer::create(device, GEO_TEST_SHADER_LIBRARY);
+    REQUIRE(renderer != nullptr);
+    QuietHost host;
+    engine::Core core(*renderer, host);
+    core.resize(800, 600, 2.0f);
+    core.openFile(blob, false);
+    REQUIRE(host.imports.size() == 1);
+    const int fd = open(blob.c_str(), O_RDONLY);
+    REQUIRE(fd >= 0);
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    std::string error;
+    REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+    close(fd);
+    Classified out;
+    for (const std::shared_ptr<scene::Segment>& segment : segments) {
+        if (segment->view().hasModel()) {
+            const format::SegmentView& model = segment->view();
+            for (const format::OccurrenceRecord& o : model.occurrences) {
+                const format::NodeRecord& node = model.nodes[o.node];
+                out.names.emplace_back(model.strings.data() + node.nameOffset, node.nameLength);
+            }
+        }
+        core.addSegment(host.imports[0], segment);
+    }
+    core.importFinished(host.imports[0], {true, true, "", blob});
+    core.perform(GeoActionToggleSeeThrough);
+    out.shells = core.shells();
+    return out;
+}
+
+std::string importBoxes(test::StepWriter& writer) {
+    const std::string text = writer.text();
+    char path[] = "/tmp/geoshellXXXXXX";
+    const int fd = mkstemp(path);
+    REQUIRE(fd >= 0);
+    import::StepOptions options;
+    options.workerPath = GEO_TEST_WORKER_PATH;
+    import::StepStats stats;
+    std::string error;
+    const bool ok = import::importStep({reinterpret_cast<const u8*>(text.data()), text.size()}, fd,
+                                       nullptr, options, stats, error);
+    close(fd);
+    REQUIRE_MESSAGE(ok, error);
+    return path;
+}
+
+bool shellNamed(const Classified& c, std::string_view name) {
+    for (usize i = 0; i < c.names.size(); ++i) {
+        if (c.names[i] == name) {
+            return i < c.shells.size() && c.shells[i] != 0;
+        }
+    }
+    FAIL("no part named " << name);
+    return false;
+}
+
+// Places a hollow box at `lo` of size `size`, holding a block a little smaller than its void (the
+// middle half on each axis), with a pin on top that hides nothing, so something stays solid. The
+// box's name says nothing of what it is, so only what it hides can make it shell.
+void addHousing(test::StepWriter& writer, int root, const std::string& suffix, std::array<double, 3> lo,
+                double size) {
+    const auto place = [&](const std::string& name, std::array<double, 3> a,
+                           std::array<double, 3> b, bool cavity) {
+        const int shape = writer.box(a, b, cavity);
+        writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
+    };
+    const auto at = [&](double x, double y, double z) {
+        return std::array<double, 3>{lo[0] + x * size, lo[1] + y * size, lo[2] + z * size};
+    };
+    place("outer" + suffix, at(0, 0, 0), at(1, 1, 1), true);
+    place("block" + suffix, at(0.27, 0.27, 0.27), at(0.73, 0.73, 0.73), false);
+    place("pin" + suffix, at(0.45, 0.45, 1), at(0.55, 0.55, 1.15), false);
+}
+
+} // namespace
+
+TEST_CASE("a small assembly beside a large one is found, as it would be alone") {
+    @autoreleasepool {
+        // The large one is two housings, one inside the other, around a block. Classified with
+        // it, the small one's few pixels and small share of the hiding left it solid in the first
+        // round, and the large one's inner housing outweighed it in the second.
+        test::StepWriter writer;
+        const int root = writer.assembly("pair");
+        const auto place = [&](const std::string& name, std::array<double, 3> a,
+                               std::array<double, 3> b, bool cavity) {
+            const int shape = writer.box(a, b, cavity);
+            writer.place(root, writer.part(name, shape), shape, {0, 0, 0});
+        };
+        place("outer0", {0, 0, 0}, {100, 100, 100}, true);   // its void: 25..75
+        place("inner0", {27, 27, 27}, {73, 73, 73}, true);   // its void: 38.5..61.5
+        place("block0", {40, 40, 40}, {60, 60, 60}, false);
+        place("pin0", {45, 45, 100}, {55, 55, 115}, false);
+        addHousing(writer, root, "1", {200, 0, 0}, 10.0);
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        CHECK(shellNamed(c, "outer0"));
+        CHECK(shellNamed(c, "outer1"));
+        for (const char* solid : {"block0", "pin0", "block1", "pin1"}) {
+            CAPTURE(solid);
+            CHECK(!shellNamed(c, solid));
+        }
+        unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("each of several housings in a row is found") {
+    @autoreleasepool {
+        test::StepWriter writer;
+        const int root = writer.assembly("row");
+        for (int i = 0; i < 3; ++i) {
+            addHousing(writer, root, std::to_string(i), {50.0 * i, 0, 0}, 40.0);
+        }
+        const std::string blob = importBoxes(writer);
+        const Classified c = classify(blob);
+        REQUIRE(c.shells.size() == c.names.size());
+        for (int i = 0; i < 3; ++i) {
+            CAPTURE(i);
+            CHECK(shellNamed(c, "outer" + std::to_string(i)));
+            CHECK(!shellNamed(c, "block" + std::to_string(i)));
+            CHECK(!shellNamed(c, "pin" + std::to_string(i)));
+        }
+        unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("the shells of the files in GEOMETRYVIEW_SHELL_FILES") {
+    const char* files = std::getenv("GEOMETRYVIEW_SHELL_FILES");
+    if (files == nullptr) {
+        return;
+    }
+    @autoreleasepool {
+        std::string_view rest(files);
+        while (!rest.empty()) {
+            const usize colon = rest.find(':');
+            const std::string blob(rest.substr(0, colon));
+            rest = colon == std::string_view::npos ? std::string_view{} : rest.substr(colon + 1);
+            const Classified c = classify(blob);
+            std::println("{}: {} parts", blob, c.names.size());
+            for (usize i = 0; i < c.names.size(); ++i) {
+                if (i < c.shells.size() && c.shells[i] != 0) {
+                    std::println("  shell {}", c.names[i]);
+                }
+            }
+        }
+    }
+}
+
+#endif

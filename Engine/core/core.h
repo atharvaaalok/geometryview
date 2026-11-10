@@ -72,6 +72,9 @@ public:
     void openFile(const std::string& path, bool add);
     /// Closes everything open, its imports included, and draws the empty view.
     void close();
+    /// Which occurrences see-through fades, one flag each in global order; empty until it has been
+    /// asked for. For tests and tools.
+    const std::vector<u8>& shells() const { return look_.shells(); }
     void requestFrame();
 
     // ---- From the platform
@@ -135,7 +138,7 @@ private:
     void publishState();
     void classifyShells();
     void requestShellViews(bool excludeShells);
-    void shellViewArrived(u64 generation, const render::OccurrenceIds& ids);
+    void shellViewArrived(u64 generation, u32 group, const render::OccurrenceIds& ids);
     render::OverlayLayout overlayLayout() const;
     render::ViewState frameView() const;
     bool validNode(u32 document, u32 node) const;
@@ -204,13 +207,22 @@ private:
 
     // Classifying the shell: two rounds of views, whose ids may arrive frames later. A newer
     // classification, or closing everything, makes the one in flight stale.
+    // A separate assembly, classified on its own as it would be alone.
+    struct ShellGroup {
+        std::vector<u32> members;             // global occurrence indices
+        std::vector<render::ShellPart> parts; // the members', in that order
+        Aabb bounds{};
+        render::ShellCounts counts{0};
+    };
     struct ShellClassification {
         u64 generation = 0;
         bool secondRound = false;
         u32 arrived = 0;
-        std::vector<render::ShellPart> parts;
-        render::ShellCounts counts{0};
-        std::vector<u8> first;
+        u32 expected = 0;
+        std::vector<ShellGroup> groups; // group g is g + 1 on the GPU
+        std::vector<u32> groupOf;       // each occurrence's group on the GPU, 0 for none
+        std::vector<u32> local;         // each occurrence's index within its group
+        std::vector<u8> first;          // in global order
         double started = 0.0;
     };
     std::optional<ShellClassification> classifying_;

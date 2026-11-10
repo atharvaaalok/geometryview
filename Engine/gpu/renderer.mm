@@ -504,6 +504,20 @@ void Renderer::setStyle(const StyleUniforms& style, bool physical) {
     state_->physical = physical;
 }
 
+// The occurrence table is shared memory: the groups are written into it where it lies.
+void Renderer::setShellGroups(std::span<const u32> groupOfOccurrence) {
+    id<MTLBuffer> table = state_->tables.occurrences();
+    if (table == nil) {
+        return;
+    }
+    auto* records = static_cast<GpuOccurrence*>(table.contents);
+    const usize count =
+        std::min<usize>(table.length / sizeof(GpuOccurrence), groupOfOccurrence.size());
+    for (usize i = 0; i < count; ++i) {
+        records[i].shellGroup = groupOfOccurrence[i];
+    }
+}
+
 void Renderer::syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) {
     State& s = *state_;
     s.replace(s.looks, lookOfOccurrence.data(), lookOfOccurrence.size_bytes());

@@ -36,16 +36,32 @@ struct ShellCounts {
 
 struct ShellPart {
     std::string_view name;
-    Aabb bounds; // in world space
+    Aabb bounds;              // in world space
+    u64 definition = ~u64(0); // which shape it is an instance of; copies are decided alike
 };
 
 /// The unit directions the views look along: the six axes and the eight diagonals.
 std::vector<Vec3> shellViewDirections();
 
+/// Separate assemblies, which see-through classifies each on its own, as it would alone: the parts
+/// whose boxes, each grown by 1% of its own diagonal, touch or overlap, directly or through other
+/// parts. Returns each part's group, numbered from 0 in order of first appearance.
+std::vector<u32> clusterParts(std::span<const Aabb> boxes);
+
+/// What the test measured of one part, for tracing and tests.
+struct ShellScore {
+    double exposure = 0.0;  // of its pixels, the share seen from outside
+    double occlusion = 0.0; // of its visible pixels, the share in front of inner parts
+    double share = 0.0;     // its share of all visible pixels
+    double hiding = 0.0;    // its share of all hiding of inner parts
+    bool wraps = false;     // it hides an inner part its bounds enclose
+    bool shell = false;
+};
+
 /// Decides which parts are shell from one round's counts. `minOcclusion` is how much of a part's
-/// visible area must hide inner parts. Returns one flag per part.
+/// visible area must hide inner parts. Returns one flag per part, and fills `scores` if given.
 std::vector<u8> decideShell(const ShellCounts& counts, std::span<const ShellPart> parts,
-                            double minOcclusion);
+                            double minOcclusion, std::vector<ShellScore>* scores = nullptr);
 
 /// Whether a name says a part is the working mechanism, which see-through never fades.
 bool isMechanismName(std::string_view name);

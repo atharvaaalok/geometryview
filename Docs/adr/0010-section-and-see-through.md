@@ -96,6 +96,43 @@ result is the top bit of each occurrence's look index, so it costs no new buffer
 gearbox it takes 25 ms, once, when see-through is first asked for, and again when geometry
 finishes arriving.
 
+**Amended (v0.1.2): each separate assembly on its own.** Several assemblies side by side came out
+unlike each one alone:
+- Of five stepper motors in a row, the fifth's flange stayed solid.
+- Of two belt axes, one plate faded and the other did not.
+
+Everything was pooled over the whole scene: one camera framed all of it, neighbours in a row hid
+each other in most views, and the share and hiding tests were fractions of the whole.
+
+Now the parts are grouped first: those whose boxes, each grown by 1% of its own diagonal, touch or
+overlap, directly or through others (`clusterParts`, a grid hash). Each group of two or more parts
+is classified on its own, with views framed on it and every other group left out. That costs no
+new buffer either: the group rides in a spare word of each occurrence's GPU record, and a frame
+uniform names the group a view draws. The largest 16 groups are classified apart, any more
+together. A lone part has nothing inside it and is skipped, so a 100,000-box rack costs nothing.
+
+**Three rule changes, found by measuring:**
+- **A third way to be shell.** A part qualifies if it is mostly seen from outside, wraps what it
+  hides, and does at least a fifth of all the hiding, even when the inner parts are small beside
+  it. The floor is a sixth of the round's occlusion threshold. A long motor's flange and cap
+  around a shaft and two bearings cover inner parts with only 13-15% of their area, as does a belt
+  axis's base plate, under its motor and pulleys.
+- **Copies agree.** Copies of one shape in a group get one decision, by majority, with a tie
+  fading them. Otherwise two identical bearings could differ by a pixel's worth of the threshold.
+- **Exact bounds.** The `encloses` test uses each part's exact bounds once its geometry has
+  arrived, not the structure's estimates, and the views draw geometry that arrived since the last
+  frame.
+
+**Results, after the change, the same alone as beside others:**
+- every motor of the row: flange, rear cap and both bearing rings;
+- both belt axes: base plate, rail and carriage plate;
+- the drive: unchanged;
+- the PLE120 gearbox: its input flange too, and a third bearing ring, while its carrier now stays
+  solid.
+
+`GEOMETRYVIEW_TRACE` prints each part's numbers. `GEOMETRYVIEW_SHELL_FILES` runs the test of
+`Tests/unit/see_through_test.mm` on any cache files.
+
 ## Deferred
 
 - **Per-part override.** The plan has a per-part override of the shell, with a tree action or G

@@ -112,8 +112,9 @@ struct GpuDefinition {
 struct GpuOccurrence {
     simd_float4 rows[3]; // a 3x4 transform by rows
     uint32_t definition;
-    uint32_t idBase; // pick ids of this occurrence start here
-    uint32_t pad[2];
+    uint32_t idBase;     // pick ids of this occurrence start here
+    uint32_t shellGroup; // which separate assembly see-through classifies it with, 0 for none
+    uint32_t pad;
 };
 
 // Flags shared by occurrences and faces. A face shows its own flags combined with its occurrence's.
@@ -294,6 +295,7 @@ struct FrameUniforms {
     uint32_t sectionPlaneCount;
     float seeThrough;       // k: 0 solid, 1 fully see-through
     uint32_t excludeShells; // classifying: leave out parts already found to be shell
+    uint32_t classifyGroup; // classifying: draw only the occurrences of this group, or all for 0
     // Where this frame samples each pixel, from its centre, in pixels with y down. Zero but in
     // the WebGPU renderer's jittered samples, whose shaders move what Metal evaluates once per
     // pixel back to the centre.

@@ -41,6 +41,7 @@ public:
 
     /// Sets each occurrence's look, in global order, and the palette: three texels per look.
     void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) override;
+    void setShellGroups(std::span<const u32> groupOfOccurrence) override;
 
     /// Renders the occurrence ids of a square view, `size` pixels wide, and waits for them.
     OccurrenceIds renderOccurrenceIds(const render::ViewState& view, u32 size) override;

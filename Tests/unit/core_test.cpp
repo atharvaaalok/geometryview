@@ -24,6 +24,7 @@ public:
     void syncState(const model::FaceState&) override {}
     void setStyle(const StyleUniforms&, bool) override {}
     void syncLooks(std::span<const u16>, std::span<const u32>) override {}
+    void setShellGroups(std::span<const u32>) override {}
     void setReducedDetail(bool reduced) override { reducedDetail = reduced; }
     u64 sceneTriangles() const override { return 0; }
     u64 sceneEdgeSegments() const override { return 0; }
@@ -189,8 +190,15 @@ struct Rig {
         return token;
     }
 
-    u64 openMesh() {
-        core.openFile("/models/mesh.stl", false);
+    // The mesh, and a second copy of it added in the same place: two parts that touch, which
+    // see-through classifies as one assembly.
+    void openTwoMeshes() {
+        openMesh();
+        openMesh(true);
+    }
+
+    u64 openMesh(bool add = false) {
+        core.openFile("/models/mesh.stl", add);
         const u64 token = host.imports.back().first;
         for (const auto& segment : meshSegments()) {
             core.addSegment(token, segment);
@@ -359,7 +367,7 @@ TEST_CASE("the shell is classified from views read back later, and stale ones ar
     Rig rig;
     rig.core.resize(800, 600, 2.0f);
     rig.renderer.deferIds = true;
-    rig.openMesh();
+    rig.openTwoMeshes();
     rig.core.perform(GeoActionToggleSeeThrough);
     // Fourteen views are asked for at once, and nothing is decided until they are all back.
     CHECK(rig.renderer.pendingIds.size() == 14);
@@ -369,11 +377,11 @@ TEST_CASE("the shell is classified from views read back later, and stale ones ar
     CHECK(rig.renderer.pendingIds.empty());
     CHECK(rig.host.framesRunning);
 
-    // With see-through on, a new file is classified when it finishes importing. Views of the
-    // file it replaced, still in flight, change nothing when they arrive.
-    rig.openMesh();
+    // With see-through on, new files are classified when they finish importing. Views of the
+    // files they replaced, still in flight, change nothing when they arrive.
+    rig.openTwoMeshes();
     REQUIRE(rig.renderer.pendingIds.size() == 14);
-    rig.openMesh();
+    rig.openTwoMeshes();
     REQUIRE(rig.renderer.pendingIds.size() == 28);
     rig.host.framesRunning = false;
     rig.renderer.deliverIds(14);

@@ -873,8 +873,11 @@ void Core::publishState() {
 }
 
 // Finds the shell that see-through fades, from 14 small views of occurrence ids, in two rounds.
-// Runs once, when see-through is first asked for, and again after the scene changes. The views are
-// read back at once on the Mac, and frames later in the browser.
+// Each separate assembly is classified on its own, framed alone and with the others left out, so a
+// row of motors or two belt axes side by side each come out as they would alone. Runs once, when
+// see-through is first asked for, and again after the scene changes. The views are read back at
+// once on the Mac, and frames later in the browser, where every group's views are in flight
+// together.
 void Core::classifyShells() {
     const std::optional<Aabb> sceneBounds = scene_.bounds();
     if (!sceneBounds || !scene_.hasGeometry()) {
@@ -883,8 +886,10 @@ void Core::classifyShells() {
     ShellClassification& c = classifying_.emplace();
     c.generation = ++classifyGeneration_;
     c.started = host_.now();
-    // Each occurrence's name and world bounds.
-    c.parts.reserve(scene_.occurrenceCount());
+    // Each occurrence's name and world bounds: the geometry's own once it has arrived, else the
+    // estimate the structure gave.
+    std::vector<render::ShellPart> parts;
+    parts.reserve(scene_.occurrenceCount());
     for (u32 d = 0; d < scene_.documentCount(); ++d) {
         const scene::Document& document = scene_.document(d);
         if (!document.hasModel()) {
@@ -895,12 +900,17 @@ void Core::classifyShells() {
             const format::NodeRecord& node = model.nodes[o.node];
             const std::string_view name(model.strings.data() + node.nameOffset, node.nameLength);
             const format::DefinitionInfo& info = model.definitionInfos[o.definition];
+            const format::DefinitionRecord* geometry = document.geometry(o.definition);
+            const std::array<float, 3>& lo =
+                geometry != nullptr ? geometry->boundsMin : info.boundsMin;
+            const std::array<float, 3>& hi =
+                geometry != nullptr ? geometry->boundsMax : info.boundsMax;
             Aabb box{simd_make_double3(INFINITY, INFINITY, INFINITY),
                      simd_make_double3(-INFINITY, -INFINITY, -INFINITY)};
             for (int corner = 0; corner < 8; ++corner) {
-                const double x = (corner & 1) ? info.boundsMax[0] : info.boundsMin[0];
-                const double y = (corner & 2) ? info.boundsMax[1] : info.boundsMin[1];
-                const double z = (corner & 4) ? info.boundsMax[2] : info.boundsMin[2];
+                const double x = (corner & 1) ? hi[0] : lo[0];
+                const double y = (corner & 2) ? hi[1] : lo[1];
+                const double z = (corner & 4) ? hi[2] : lo[2];
                 const std::array<float, 12>& t = o.transform;
                 const Vec3 p = simd_make_double3(t[0] * x + t[3] * y + t[6] * z + t[9],
                                                  t[1] * x + t[4] * y + t[7] * z + t[10],
@@ -908,9 +918,66 @@ void Core::classifyShells() {
                 box.min = simd_min(box.min, p);
                 box.max = simd_max(box.max, p);
             }
-            c.parts.push_back({name, box});
+            parts.push_back({name, box, u64(d) << 32 | o.definition});
         }
     }
+
+    // The groups: each assembly of two or more parts, the largest first; past kMaxShellGroups the
+    // rest are classified together. A part alone has nothing inside it to show.
+    constexpr usize kMaxShellGroups = 16;
+    std::vector<Aabb> boxes(parts.size());
+    for (usize p = 0; p < parts.size(); ++p) {
+        boxes[p] = parts[p].bounds;
+    }
+    const std::vector<u32> component = render::clusterParts(boxes);
+    const u32 componentCount =
+        component.empty() ? 0 : *std::max_element(component.begin(), component.end()) + 1;
+    std::vector<u32> size(componentCount, 0);
+    for (const u32 k : component) {
+        ++size[k];
+    }
+    std::vector<u32> order;
+    for (u32 k = 0; k < componentCount; ++k) {
+        if (size[k] >= 2) {
+            order.push_back(k);
+        }
+    }
+    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) { return size[a] > size[b]; });
+    std::vector<u32> groupOfComponent(componentCount, 0);
+    for (usize i = 0; i < order.size(); ++i) {
+        groupOfComponent[order[i]] = u32(std::min(i, kMaxShellGroups)) + 1;
+    }
+    c.groupOf.assign(parts.size(), 0);
+    c.local.assign(parts.size(), 0);
+    c.groups.resize(std::min(order.size(), kMaxShellGroups + 1));
+    for (usize p = 0; p < parts.size(); ++p) {
+        const u32 group = groupOfComponent[component[p]];
+        c.groupOf[p] = group;
+        if (group == 0) {
+            continue;
+        }
+        ShellGroup& g = c.groups[group - 1];
+        c.local[p] = u32(g.members.size());
+        g.bounds = g.members.empty() ? parts[p].bounds
+                                     : Aabb{simd_min(g.bounds.min, parts[p].bounds.min),
+                                            simd_max(g.bounds.max, parts[p].bounds.max)};
+        g.members.push_back(u32(p));
+        g.parts.push_back(parts[p]);
+    }
+    c.first.assign(parts.size(), 0);
+    if (c.groups.empty()) {
+        look_.setShells(c.first); // nothing has anything inside it
+        classifying_.reset();
+        requestFrame();
+        return;
+    }
+
+    // The views draw what the renderer has: geometry that arrived since the last frame included.
+    if (sceneChanged_) {
+        sceneChanged_ = false;
+        renderer_.syncScene(scene_);
+    }
+    renderer_.setShellGroups(c.groupOf);
     renderer_.syncState(interaction_.state());
     look_.apply(renderer_, scene_);
     requestShellViews(false);
@@ -920,66 +987,123 @@ void Core::requestShellViews(bool excludeShells) {
     ShellClassification& c = *classifying_;
     c.secondRound = excludeShells;
     c.arrived = 0;
-    c.counts = render::ShellCounts(u32(c.parts.size()));
-    const Aabb all = *scene_.bounds();
-    const double radius = std::max(all.radius(), 1e-9);
+    const std::vector<Vec3> directions = render::shellViewDirections();
+    c.expected = u32(c.groups.size() * directions.size());
+    for (ShellGroup& g : c.groups) {
+        g.counts = render::ShellCounts(u32(g.parts.size()));
+    }
     const nav::Viewport square{double(kShellViewSize), double(kShellViewSize)};
     const u64 generation = c.generation;
-    for (const Vec3 direction : render::shellViewDirections()) {
-        nav::Camera view;
-        const Vec3 up =
-            std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0) : simd_make_double3(0, 0, 1);
-        view.lookAt(all.center() - direction * (2.0 * radius), all.center(), up);
-        view.orthoHalfHeight = radius;
-        render::ViewState state = render::makeView(view, square, all);
-        state.uniforms.excludeShells = excludeShells ? 1 : 0;
-        renderer_.requestOccurrenceIds(
-            state, kShellViewSize,
-            [this, alive = std::weak_ptr<int>(alive_), generation](render::OccurrenceIds ids) {
-                if (alive.lock()) {
-                    shellViewArrived(generation, ids);
-                }
-            });
-        // On the Mac each view arrives within the call, and the last may have ended this round.
-        if (!classifying_ || classifying_->generation != generation ||
-            classifying_->secondRound != excludeShells) {
-            return;
+    for (u32 group = 0; group < u32(c.groups.size()); ++group) {
+        const Aabb bounds = c.groups[group].bounds;
+        const double radius = std::max(bounds.radius(), 1e-9);
+        for (const Vec3 direction : directions) {
+            nav::Camera view;
+            const Vec3 up = std::abs(direction.z) > 0.9 ? simd_make_double3(0, 1, 0)
+                                                        : simd_make_double3(0, 0, 1);
+            view.lookAt(bounds.center() - direction * (2.0 * radius), bounds.center(), up);
+            view.orthoHalfHeight = radius;
+            render::ViewState state = render::makeView(view, square, bounds);
+            state.uniforms.excludeShells = excludeShells ? 1 : 0;
+            state.uniforms.classifyGroup = group + 1;
+            renderer_.requestOccurrenceIds(state, kShellViewSize,
+                                           [this, alive = std::weak_ptr<int>(alive_), generation,
+                                            group](render::OccurrenceIds ids) {
+                                               if (alive.lock()) {
+                                                   shellViewArrived(generation, group, ids);
+                                               }
+                                           });
+            // On the Mac each view arrives within the call, and the last may have ended this round.
+            if (!classifying_ || classifying_->generation != generation ||
+                classifying_->secondRound != excludeShells) {
+                return;
+            }
         }
     }
 }
 
-void Core::shellViewArrived(u64 generation, const render::OccurrenceIds& ids) {
+void Core::shellViewArrived(u64 generation, u32 group, const render::OccurrenceIds& ids) {
     if (!classifying_ || classifying_->generation != generation) {
         return; // a newer classification, or the scene it measured is gone
     }
     ShellClassification& c = *classifying_;
-    c.counts.accumulate(ids.front, ids.behind);
-    if (++c.arrived < render::shellViewDirections().size()) {
+    // Ids name occurrences in global order, plus one: counted by their index in the group.
+    const auto toLocal = [&](std::span<const u32> in) {
+        std::vector<u32> out(in.size(), 0);
+        for (usize i = 0; i < in.size(); ++i) {
+            const u32 id = in[i];
+            if (id != 0 && id <= c.groupOf.size() && c.groupOf[id - 1] == group + 1) {
+                out[i] = c.local[id - 1] + 1;
+            }
+        }
+        return out;
+    };
+    if (group < c.groups.size()) {
+        c.groups[group].counts.accumulate(toLocal(ids.front), toLocal(ids.behind));
+    }
+    if (++c.arrived < c.expected) {
         return;
     }
+
+    std::vector<render::ShellScore> scores;
+    std::vector<render::ShellScore>* traced = traceLaunch_ ? &scores : nullptr;
+    const auto trace = [&](const char* round, u32 g) {
+        if (traced == nullptr) {
+            return;
+        }
+        for (usize p = 0; p < scores.size(); ++p) {
+            const render::ShellScore& s = scores[p];
+            const std::string_view name = c.groups[g].parts[p].name;
+            std::fprintf(stderr,
+                         "trace: shell %s group %u %-28.*s exposure %.2f occlusion %.2f "
+                         "share %.3f hiding %.3f wraps %d%s\n",
+                         round, g + 1, int(name.size()), name.data(), s.exposure, s.occlusion,
+                         s.share, s.hiding, int(s.wraps), s.shell ? "  SHELL" : "");
+        }
+    };
     if (!c.secondRound) {
-        c.first = render::decideShell(c.counts, c.parts, 0.3);
-        if (std::any_of(c.first.begin(), c.first.end(), [](u8 s) { return s != 0; })) {
+        bool any = false;
+        for (u32 g = 0; g < u32(c.groups.size()); ++g) {
+            const ShellGroup& group_ = c.groups[g];
+            const std::vector<u8> first =
+                render::decideShell(group_.counts, group_.parts, 0.3, traced);
+            trace("1", g);
+            for (usize p = 0; p < first.size(); ++p) {
+                c.first[group_.members[p]] = first[p];
+                any = any || first[p] != 0;
+            }
+        }
+        look_.setShells(c.first);
+        if (any) {
             // The second layer must hide inner parts decisively, so the mechanism stays solid.
-            look_.setShells(c.first);
             look_.apply(renderer_, scene_);
             requestShellViews(true);
             return;
         }
-        look_.setShells(c.first);
     } else {
-        const std::vector<u8> second = render::decideShell(c.counts, c.parts, 0.5);
         std::vector<u8> shell = c.first;
-        usize visibleSolid = 0;
-        for (usize p = 0; p < shell.size(); ++p) {
-            shell[p] = u8(c.first[p] | second[p]);
-            visibleSolid += shell[p] == 0 ? 1 : 0;
+        for (u32 g = 0; g < u32(c.groups.size()); ++g) {
+            const ShellGroup& group_ = c.groups[g];
+            const std::vector<u8> second =
+                render::decideShell(group_.counts, group_.parts, 0.5, traced);
+            trace("2", g);
+            // Something of each assembly stays solid, or its second layer is not taken.
+            usize solid = 0;
+            for (usize p = 0; p < second.size(); ++p) {
+                solid += (c.first[group_.members[p]] | second[p]) == 0 ? 1 : 0;
+            }
+            if (solid == 0) {
+                continue;
+            }
+            for (usize p = 0; p < second.size(); ++p) {
+                shell[group_.members[p]] = u8(c.first[group_.members[p]] | second[p]);
+            }
         }
-        look_.setShells(visibleSolid == 0 ? c.first : shell);
+        look_.setShells(shell);
     }
     if (traceLaunch_) {
-        std::fprintf(stderr, "trace: shell classified in %.1f ms\n",
-                     (host_.now() - c.started) * 1e3);
+        std::fprintf(stderr, "trace: shell classified in %.1f ms, %zu groups\n",
+                     (host_.now() - c.started) * 1e3, c.groups.size());
     }
     classifying_.reset();
     requestFrame();

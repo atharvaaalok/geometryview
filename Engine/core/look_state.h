@@ -32,6 +32,8 @@ public:
         paletteDirty_ = true;
     }
     bool hasShells() const { return !shells_.empty(); }
+    /// Which occurrences are the shell, one flag each in global order; empty until classified.
+    const std::vector<u8>& shells() const { return shells_; }
 
     /// Uploads whatever changed since the last call, which is nothing on most frames.
     void apply(render::Backend& renderer, const scene::Scene& scene);

@@ -34,6 +34,7 @@ public:
     void syncState(const model::FaceState& state) override;
     void setStyle(const StyleUniforms& style, bool physical) override;
     void syncLooks(std::span<const u16> lookOfOccurrence, std::span<const u32> palette) override;
+    void setShellGroups(std::span<const u32> groupOfOccurrence) override;
     void setReducedDetail(bool reduced) override;
     u64 sceneTriangles() const override;
     u64 sceneEdgeSegments() const override;
