@@ -1,189 +1,218 @@
-# GeometryView
+<h1 align="center">GeometryView</h1>
 
-A viewer for 3D geometry, built for extreme speed and low memory use: STEP and STL files today,
-more formats to come. It is a native Mac app, a viewer in any browser, and a set of tools AI apps
-use to open, inspect and picture models. Open your own files or connect a whole directory, then
-browse, inspect, section and see through them. Everything runs on your computer.
+<p align="center">
+  <b>See inside your CAD models, fast.</b><br>
+  STEP and STL files open in a blink, drawn like the pages of a technical manual:<br>
+  on a Mac, in your browser, on your phone, and from your AI apps.
+</p>
 
-Status: early development. See [Docs/PLAN.md](Docs/PLAN.md) for the design and milestones, and
-[Docs/adr](Docs/adr) for recorded decisions.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/media/hero-dark.webp">
+    <img src="Docs/media/hero-light.webp" width="560" alt="A geared drive, cut open to show its rotor, windings and bearings, as the view swings around it">
+  </picture>
+</p>
 
-## Requirements
+<p align="center">
+  <a href="https://atharvaaalok.github.io/geometryview/"><b>Try it in your browser</b></a> ·
+  <a href="#use-it-from-your-ai-app"><b>Add it to your AI app</b></a> ·
+  <a href="#mac-app"><b>Get the Mac app</b></a>
+</p>
 
-- macOS 26 or later on Apple silicon
-- Xcode 27 with the Metal Toolchain component
-- CMake, Ninja and LLVM (`brew install cmake ninja llvm`)
-- OCCT, for STEP files: run `ThirdParty/build_occt.sh` once, which builds the pinned version in
-  about five minutes. Without it everything else still builds, and STEP files will not open.
+- **Fast.** A 100,000-part assembly opens in under a second, in a browser. Big STEP files appear
+  while they import.
+- **Beautiful.** Six drawing styles, from ink on paper to polished studio metal.
+- **Revealing.** Cut sections, see through housings, hide, ghost and isolate parts.
+- **Private.** Your files never leave your computer. No account, no upload.
 
-## Build, install and run
+## Six looks, one click apart
+
+<img src="Docs/media/styles.jpg" alt="The same drive in six styles: Illustration, Metal, Clay, Blueprint, Technical and Studio">
+
+Colour parts by their material (read from their names), one colour per part, one colour
+throughout, or the file's own colours. Add a cast shadow, paper grain or a hand-drawn wobble.
+
+## Cut it open, see through it
+
+<table>
+  <tr>
+    <td width="50%"><img src="Docs/media/section.webp" alt="A cut glides down a planetary gearbox, pausing at each of its three stages of gears"></td>
+    <td width="50%"><img src="Docs/media/see-through.webp" alt="A drive's case fades to glass, showing the rotor and magnets inside, then returns"></td>
+  </tr>
+  <tr>
+    <td><b>Section</b> (S): slide cuts along X, Y and Z, with hatched caps where they cut.</td>
+    <td><b>See-through</b> (T): the housing turns to glass and the mechanism stays solid.</td>
+  </tr>
+</table>
+
+Hold H and click to hide what you click, peeling layers; hold G to ghost it. I isolates the
+selection, as if it alone were open.
+
+## Fast, measured
+
+| Opening… | Mac app | Chrome |
+|---|---|---|
+| a planetary gearbox: 25 MB STEP, 37 parts | 0.2 s | 0.7 s |
+| a rack of 100,000 parts: 75 MB STEP | 0.1 s | 0.6 s |
+| a 10-million-triangle STL: 477 MB | 1.3 s | |
+
+On an M4 Max. The Mac app's times are the import alone; Chrome's run from the click to the last
+part drawn, with the file served from the same computer. Parts you zoom into are meshed again more
+finely once the view settles.
+
+## One viewer, everywhere
+
+<img src="Docs/media/everywhere.webp" alt="The Mac app showing a gearbox and its parts tree, with the same viewer on a phone in front">
+
+The Mac app draws with Metal; browsers and phones with WebGPU, from the same C++ engine. All of
+them have the same looks, controls and Library: connect a folder to browse every model in it, and
+reopen recent files at once.
+
+## Use it from your AI app
+
+GeometryView gives AI apps four tools: **open_model**, **get_structure**, **render_view** (any
+view, style, section or part alone) and **open_in_viewer**, which shows you the model live. Ask
+something like:
+
+> *Open planetary-gearbox.step. Show me the second stage on its own, from below, then cut the
+> whole gearbox in half, in metal.*
+
+The app finds `stage2` with get_structure, and render_view returns:
+
+<table>
+  <tr>
+    <td><img src="Docs/media/agent-stage2.jpg" width="380" alt="The gearbox's second stage alone, from below: four planet gears around a sun gear"></td>
+    <td><img src="Docs/media/agent-cut.jpg" width="300" alt="The whole gearbox cut in half, in the Metal style"></td>
+  </tr>
+</table>
+
+**Set it up.** You need [Node.js](https://nodejs.org) 20 or later.
+
+- **Claude Code**
+
+  ```sh
+  claude mcp add geometryview -- npx -y geometryview --mcp
+  ```
+
+- **Claude Desktop:** download `geometryview.mcpb` from the
+  [latest release](https://github.com/atharvaaalok/geometryview/releases/latest) and double-click
+  it.
+- **Codex**
+
+  ```sh
+  codex mcp add geometryview -- npx -y geometryview --mcp
+  ```
+
+- **VS Code**
+
+  ```sh
+  code --add-mcp '{"name":"geometryview","type":"stdio","command":"npx","args":["-y","geometryview","--mcp"]}'
+  ```
+
+<details>
+<summary><b>Cursor, Gemini CLI, Windsurf and others</b></summary>
+
+Add GeometryView to the app's MCP settings: `~/.cursor/mcp.json` for Cursor,
+`~/.gemini/settings.json` for Gemini CLI, `~/.codeium/windsurf/mcp_config.json` for Windsurf.
+
+```json
+{
+  "mcpServers": {
+    "geometryview": { "command": "npx", "args": ["-y", "geometryview", "--mcp"] }
+  }
+}
+```
+
+An app started from the Dock may not find `npx`: give its full path (`which npx` prints it).
+
+</details>
+
+Your AI app's pictures are drawn by the viewer, in your browser, which opens when a tool first
+needs it. You see what the AI sees. On a Mac with the
+[GeometryView app](#mac-app), `open_in_viewer` can show models in the app instead.
+
+## Browser viewer
+
+<a href="https://atharvaaalok.github.io/geometryview/"><img src="Docs/media/browser.jpg" alt="The browser viewer's first page, offering to open files, connect a folder or try a sample"></a>
+
+**[atharvaaalok.github.io/geometryview](https://atharvaaalok.github.io/geometryview/)**: drop in
+STEP or STL files, connect a folder, or try one of six sample models. The page has no server
+behind it, so the files you open never leave your computer.
+
+To run it from your own computer instead, with a file open:
 
 ```sh
-cmake --preset release
-cmake --build --preset release
+npx geometryview part.step
+```
+
+It needs a browser with WebGPU: Chrome or Edge, or Safari 26 or later. In Chrome and Edge, a
+connected folder is remembered from one visit to the next.
+
+## Mac app
+
+The native app opens files from Finder, and keeps your folders and recent files in its Library. It
+draws with Metal 4. It needs macOS 26 or later on Apple silicon.
+
+A signed download is coming. Until then, build it from source (OCCT, which reads STEP files, takes
+about five minutes to build the first time). You need Xcode 27 with its Metal Toolchain:
+
+```sh
+brew install cmake ninja llvm
+git clone https://github.com/atharvaaalok/geometryview && cd geometryview
+ThirdParty/build_occt.sh
+cmake --preset release && cmake --build --preset release
 cmake --build --preset release --target install-app    # puts GeometryView in /Applications
 ```
 
-`install-app` copies the app to `/Applications` and registers it, so it opens from Spotlight,
-Launchpad or the Dock, and double-clicking a STEP or STL file opens it in GeometryView (unless you
-chose another app for those files). Run it again after a build to update the installed copy. From
-a terminal, `open -a GeometryView part.step` opens a file in it.
+## iPhone and iPad
 
-Drop a STEP or STL file on the window, or press ⌘O. Large STEP files appear while they import, and
-parts you zoom into are retessellated more finely once the view settles.
+Open **[atharvaaalok.github.io/geometryview](https://atharvaaalok.github.io/geometryview/)** in
+Safari, then tap Share ▸ Add to Home Screen. It opens files from the Files app, and needs iOS 26
+or later. A native shell, which works offline and opens files from the share sheet too, builds
+from [`iOS/Shell`](Docs/BUILDING.md#the-iphone-and-ipad-shell).
+
+<details>
+<summary><b>Controls</b></summary>
 
 | Input | Action |
 |---|---|
 | Hover | Highlight the face, body or part under the pointer |
-| Left click | Select it. Click empty space to clear. Shift or ⌘ adds to the selection |
-| 1, 2, 3, or Face, Body, Part in the toolbar | What a click selects: one face, a whole body or a whole part |
+| Click | Select it. Click empty space to clear. Shift or ⌘ adds to the selection |
+| 1, 2, 3 | Select faces, bodies or parts |
 | Hold H and click | Hide what you click. Repeated clicks peel away layers |
-| Hold G and click | Ghost what you click. Clicking a ghost with G held brings it back |
+| Hold G and click | Ghost what you click. Click a ghost with G held to bring it back |
 | ⇧H, ⇧G | Show everything hidden, unghost everything |
-| I | Isolate the selection: everything else hides and the view frames it, as if it alone were open. Rotation turns about it. When everything is shown again, the view returns to where it was |
+| I | Isolate the selection. When everything is shown again, the view returns |
 | ⌘Z, ⇧⌘Z | Undo and redo hiding and ghosting |
-| Left drag | Rotate |
+| Drag | Rotate |
 | Scroll, pinch | Zoom toward the pointer |
-| Middle drag, or Shift or Space with left drag | Pan |
+| Middle drag, or Shift or Space with drag | Pan |
 | Right drag | Dolly |
 | F | Fit to view |
 | P | Switch between orthographic and perspective |
-| Esc | Clear the selection |
-| T | See through the housing to the mechanism inside |
+| T | See through the housing |
 | S | Cut a section across X; the scissors button opens all three axes |
-| Click the view cube | Turn to that face's view. Standard views are also in the View menu |
+| ⇧⌘L | The look: style, colours, ghosts, shadow, grain and wobble |
+| Click the view cube | Turn to that face's view |
+| ⌘O, ⌥⌘O | Open files, connect a folder |
 | ? | Show every shortcut |
-| Drag the top edge or the file's name | Move the window. Double-click to zoom it, as with a title bar |
 
-The palette button in the toolbar, or ⇧⌘L, opens the look: six drawing styles (Illustration,
-Metal, Clay, Blueprint, Technical, and Studio, polished metal on a dark backdrop), what decides each part's colour (its material, read from
-its name, one colour per part, one throughout, or the file's colours), how ghosts look (a faint
-shell, dashed lines or both), the cast shadow, paper grain and a hand-drawn wobble. The same
-choices are in the View menu, and the look is remembered.
+On a phone, drag with one finger to rotate, pinch to zoom and drag with two fingers to pan. The
+Mac app's Settings (⌘,) rebinds every key and what each mouse button drags.
 
-The toolbar at the bottom switches the selection mode and holds the hide and ghost tools, and the
-card on the right shows what is selected, with buttons to hide, ghost, isolate or fit to it.
+</details>
 
-The first page, the Library card and the start of the toolbar each have **+ Open files** (⌘O) and
-**Connect a folder** (⌥⌘O); dropping files opens them and dropping a folder connects it. The left
-card switches between Library and Structure. The Library lists the connected folders as trees of
-their STEP and STL files, read as they are opened, then **Recent**, the twelve files opened last,
-which reopen at once; both are remembered across launches. Open files that change on disk reload.
-Settings (⌘,) rebinds every key and what each mouse button drags.
+## How it's built
 
-The browser viewer and the iPhone app have the same Library and buttons. In Chrome and Edge a
-connected folder is remembered between visits (the browser may ask once more for permission, with
-a Reconnect button); Safari and Firefox keep it for the visit. On the iPhone the system's pickers
-choose files and folders, and folders are remembered.
+One C++ engine keeps models in a compact cache, about 12 to 23 bytes a triangle, which the Mac maps
+straight from disk. It draws them with mesh shaders on Metal 4, and with WebGPU in browsers. STEP files are
+sliced and meshed by [OCCT](https://github.com/Open-Cascade-SAS/OCCT) in parallel workers, so big
+assemblies fill in as they import. The priorities, in order: speed, memory, leanness.
 
-The Structure card lists each open file's assembly tree. Each part shows a swatch of the colour it
-is drawn in, each assembly how many parts it holds, and a part of several bodies how many it has.
-Click a row to select it, hover a row to highlight it, and type in the search field to find parts
-by name. A row under the pointer has buttons to ghost, hide and isolate it, and hidden or ghosted
-rows say so. While anything is hidden or ghosted, the foot of the card counts it and offers Show all
-and Unghost. Fit and rotation always follow what is shown. ⇧⌘O adds a file to what
-is shown, and ⌘-dropping files does the same.
+[Docs/PLAN.md](Docs/PLAN.md) is the design, [Docs/adr](Docs/adr) records each decision, and
+[Docs/BUILDING.md](Docs/BUILDING.md) covers building every part, testing and releasing.
 
-## The universal viewer, and AI apps
+## License
 
-`Launcher/` runs the viewer on any computer with Node 20 or later: it serves the page, its
-WebAssembly engine and its importers on 127.0.0.1 only, and opens it in the browser. Nothing leaves
-the machine; there is no account or hosted site.
-
-```sh
-cmake --build --preset wasm-webgpu && cmake --build --preset wasm-release && \
-    cmake --build --preset wasm-threads
-cd Launcher && npm link && cd ..    # once: puts the geometryview command on your PATH
-geometryview                        # serves the viewer and opens it in the browser
-geometryview part.step              # the same, with a file open
-geometryview --no-open [part.step]  # serves it and prints its address, for any browser to open
-```
-
-The viewer is always at http://127.0.0.1:47700, so the browser keeps its library and look from one
-run to the next. Running `geometryview` while it is already running just opens the browser there.
-It stops with Ctrl-C. While it runs, the browser can also install the page as an app window
-(Chrome's Install button in the address bar, or Safari's File ▸ Add to Dock). `--no-open` suits a
-browser built into another app, such as Claude Desktop's: open the printed address there, and the
-file given, if any, appears in the first page to load.
-
-The same launcher is a tool server for AI apps (MCP). It lets Claude, Codex or ChatGPT open a
-STEP or STL file on this computer, list its assemblies and parts, render pictures of it (any view
-or style, parts alone, sections), and show it to the person. On a Mac with the release preset
-built, it uses the native engine (`gcli`) and the GeometryView app; anywhere else it opens the viewer
-in the browser and works through it, so the person sees what the AI looks at. `open_in_viewer`
-shows a model live in the app, in the browser, or as a link the AI app opens in its own browser
-(`where: link`), with some parts alone and a style and colours if asked.
-
-- **Claude Desktop:** `node Launcher/scripts/pack.mjs`, then double-click
-  `Launcher/dist/geometryview.mcpb`. It carries the viewer, and on a Mac the native engine. To show
-  you a model in the app rather than the browser, it needs GeometryView in `/Applications`
-  (`install-app`).
-- **Codex or ChatGPT desktop:** add to `~/.codex/config.toml`, with the full path to `node`, since
-  an app started from the Dock does not see your shell's PATH (`which node` prints it):
-
-  ```toml
-  [mcp_servers.geometryview]
-  command = "/path/to/node"
-  args = ["<repo>/Launcher/bin/geometryview.mjs", "--mcp"]
-  ```
-
-  Or, from a packed copy (`cd Launcher && npm pack`), `command = "npx"` with
-  `args = ["-y", "--package=<path>/geometryview-0.1.0.tgz", "geometryview", "--mcp"]`.
-- **Claude Code:** `claude mcp add geometryview -- node <repo>/Launcher/bin/geometryview.mjs --mcp`.
-
-`GEOMETRYVIEW_ENGINE=page` makes a Mac use the browser's viewer too, and `--port N` chooses another
-port.
-`cd Launcher && npm test` checks the server and drives the tools as an AI app does.
-
-## Development
-
-```sh
-cmake --preset debug && cmake --build --preset debug
-ctest --preset debug              # unit, GPU and layering tests
-```
-
-`gcli` imports, checks and renders files without the app:
-
-```sh
-build/release/Tools/gcli import part.step part.geoblob build/release/Import/geometryview-occt-worker
-build/release/Tools/gcli stats part.geoblob
-build/release/Tools/gcli render build/release/shaders/default.metallib part.geoblob part.png \
-    1600 1000 35 25 ortho 1 0 x0.5 plain   # size, view, projection, style, colour, section
-```
-
-A section can be added as `x0.5` or `x0.6,y-0.4` (a minus removes the low side), and `plain`
-leaves out the view cube and scale bar.
-
-`Tests/golden` holds an image of every style and colour mode. After a deliberate change to how
-things look, `GEOMETRYVIEW_UPDATE_GOLDENS=1 build/debug/Tests/geo_tests -tc="*golden*"` rewrites
-them, to be checked by eye before committing.
-
-`Tools/step_equivalence.py` compares STEP imports with OCCT reading each file whole, on face count,
-area, volume and bounds:
-
-```sh
-Tools/step_equivalence.py build/release files.txt --jobs 6
-```
-
-The `asan` and `tsan` presets run the same tests under sanitizers.
-
-`Tools/perf_gate.py build/release` imports the fixtures and fails if any got more than 5% slower
-than `Tools/perf_baseline.json`; `--update` records a new baseline. `Tools/fuzz.sh 600` fuzzes the
-STEP tokenizer, the STL reader and the cache reader for ten minutes each.
-
-Setting `GEOMETRYVIEW_TRACE=1` prints stage timings, memory use and GPU time per frame,
-`GEOMETRYVIEW_LATENCY=1` measures input-to-present latency, and `GEOMETRYVIEW_ALLOCS=1` counts
-per-frame heap allocations. Launching with `--exercise` runs a scripted drag, hover and click on
-the opened file, then checks that changing only the interface draws no 3D frame. `--chrome-check`
-clicks every segment and card label with real events and checks that none of them reaches the 3D
-view. `--snapshot` writes the window, engine output and interface together, to `chrome.png` in the
-app's temporary directory. `Tools/make_icons.sh --web` remakes the web viewer's icons from the
-app icon's master, `App/Resources/AppIcon.png`.
-
-## Project goals, in order
-
-1. Speed
-2. Memory
-3. Leanness
-
-Where speed and memory conflict, speed wins.
+[MIT](LICENSE). GeometryView builds on OCCT, meshoptimizer, xxHash, IBM Plex Mono and others: see
+[NOTICES.md](NOTICES.md).
