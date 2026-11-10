@@ -26,12 +26,17 @@ cpSync(join(launcher, "web/LICENSE"), join(stage, "LICENSE"));
 for (const folder of ["bin", "src", "web"]) {
   cpSync(join(launcher, folder), join(stage, folder), { recursive: true });
 }
-// The native engine, where it was built: a Mac's pictures then need no browser.
-if (!portable && existsSync(join(build, "Tools/gcli"))) {
+// The native engine, where it was built, or the signed copies in GEOMETRYVIEW_PACK_NATIVE (a flat
+// folder, as Tools/release/mac_release.sh leaves them): a Mac's pictures then need no browser.
+const signed = process.env.GEOMETRYVIEW_PACK_NATIVE;
+const engine = signed
+  ? [join(signed, "gcli"), join(signed, "geometryview-occt-worker"), join(signed, "default.metallib")]
+  : [join(build, "Tools/gcli"), join(build, "Import/geometryview-occt-worker"), join(build, "shaders/default.metallib")];
+if (!portable && existsSync(engine[0])) {
   mkdirSync(join(stage, "native"), { recursive: true });
-  cpSync(join(build, "Tools/gcli"), join(stage, "native/gcli"));
-  cpSync(join(build, "Import/geometryview-occt-worker"), join(stage, "native/geometryview-occt-worker"));
-  cpSync(join(build, "shaders/default.metallib"), join(stage, "native/default.metallib"));
+  cpSync(engine[0], join(stage, "native/gcli"));
+  cpSync(engine[1], join(stage, "native/geometryview-occt-worker"));
+  cpSync(engine[2], join(stage, "native/default.metallib"));
 }
 execFileSync("zip", ["-qr", bundle, "."], { cwd: stage });
 rmSync(stage, { recursive: true });
