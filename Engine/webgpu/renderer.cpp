@@ -1263,8 +1263,8 @@ struct Renderer::State {
         occlusionTexture = texture(halfWidth, halfHeight, kOcclusionFormat,
                                    Usage::StorageBinding | Usage::TextureBinding, "occlusion");
         accum = texture(width, height, kAccumFormat, attachment, "accumulated colour");
-        parityLow = texture(width, height, kParityFormat, attachment, "section count, low bits");
-        parityHigh = texture(width, height, kParityFormat, attachment, "section count, high bits");
+        parityLow = nullptr; // made by the first section drawn at this size
+        parityHigh = nullptr;
         capGroup = nullptr;
         offscreen = nullptr; // made by the first offscreen render at this size
         sheetGroup = makeGroup(device, sheetLayout, {textureEntry(0, shadowMask), [&] {
@@ -1429,6 +1429,12 @@ struct Renderer::State {
     // its tag, for the caps of the main pass that follows: the part the plane lies inside is the
     // only one crossed an odd number of times.
     void encodeParity(const wgpu::CommandEncoder& encoder, u32 slot) {
+        if (!parityLow) {
+            const Usage usage = Usage::RenderAttachment | Usage::TextureBinding;
+            parityLow = texture(width, height, kParityFormat, usage, "section count, low bits");
+            parityHigh = texture(width, height, kParityFormat, usage, "section count, high bits");
+            capGroup = nullptr;
+        }
         wgpu::RenderPassColorAttachment attachments[2] = {};
         const wgpu::Texture* textures[2] = {&parityLow, &parityHigh};
         for (u32 t = 0; t < 2; ++t) {
