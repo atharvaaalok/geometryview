@@ -14,6 +14,7 @@
 #include "gpu/renderer.h"
 #include "ipc/cache_eviction.h"
 #include "ipc/import_job.h"
+#include "library/gate.h"
 #include "model/name_index.h"
 #include "model/visibility.h"
 #include "nav/pointer_controller.h"
@@ -234,6 +235,8 @@ struct GeoEngine final : engine::Host {
         const ipc::ImportPaths paths = importPaths;
         const std::string file = path; // by value: the block outlives the caller's string
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            // Granted at once; gallery imports start nothing more until it is done.
+            const library::ImportGate::Ticket ticket = library::ImportGate::shared().open();
             ImportBridge bridge(this, token);
             const ipc::ImportOutcome outcome = ipc::importFile(file, paths, bridge, cancel.get());
             onEngineThread([=, this] {
@@ -252,6 +255,7 @@ struct GeoEngine final : engine::Host {
         const double started = nowSeconds();
         const u32 count = u32(definitions.size());
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            const library::ImportGate::Ticket ticket = library::ImportGate::shared().open();
             ImportBridge bridge(this, token);
             const ipc::ImportOutcome outcome =
                 ipc::refineFile(file, paths, level, definitions, bridge, cancel.get());
