@@ -32,6 +32,7 @@ namespace {
 
 constexpr int kSourceFd = 3;
 constexpr int kOutputFd = 4;
+constexpr int kFirstHighFd = 10; // above every number the helper's descriptors take
 
 // Closes a file descriptor when it goes out of scope.
 class ScopedFd {
@@ -72,11 +73,21 @@ bool readExactly(int fd, void* data, usize size) {
 // process has open.
 bool spawnHelper(const std::string& helper, const std::vector<std::string>& options, int sourceFd,
                  int outputFd, int resultFd, pid_t& pid, std::string& error) {
+    // The descriptors are duplicated above the numbers they become first: if one were already 3
+    // or 4, an earlier dup2 would overwrite it before it was moved, and the helper would write its
+    // cache file into the source.
+    const ScopedFd highSource(fcntl(sourceFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    const ScopedFd highOutput(fcntl(outputFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    const ScopedFd highResult(fcntl(resultFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    if (highSource.get() < 0 || highOutput.get() < 0 || highResult.get() < 0) {
+        error = std::format("The import helper could not start: {}.", std::strerror(errno));
+        return false;
+    }
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, sourceFd, kSourceFd);
-    posix_spawn_file_actions_adddup2(&actions, outputFd, kOutputFd);
-    posix_spawn_file_actions_adddup2(&actions, resultFd, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, highSource.get(), kSourceFd);
+    posix_spawn_file_actions_adddup2(&actions, highOutput.get(), kOutputFd);
+    posix_spawn_file_actions_adddup2(&actions, highResult.get(), STDOUT_FILENO);
     posix_spawn_file_actions_addinherit_np(&actions, STDERR_FILENO);
 
     posix_spawnattr_t attributes;
