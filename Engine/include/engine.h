@@ -417,6 +417,44 @@ GeoRenderOptions geo_default_render_options(void);
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, const GeoRenderOptions* options);
 
+/// Renders cache files to pictures with one renderer kept for all of them, for the gallery: far
+/// cheaper per picture than geo_render_blob_to_png, which sets a renderer up for each. Holds at
+/// most the last file it drew. Use from one thread at a time.
+typedef struct GeoThumbnailer GeoThumbnailer;
+
+/// A rendered picture.
+typedef struct GeoThumbnail {
+    uint8_t* bgra; // BGRA pixels, premultiplied when drawn on a clear sheet
+    uint32_t width, height;
+    bool premultiplied;
+    double world_per_pixel; // the scale drawn at, model units per pixel
+    // The pixels holding the part itself, as x, y, width and height: without its cast shadow or
+    // the outer half of its outline, so pictures stand on a baseline by it. Zero if none.
+    uint32_t part_rect[4];
+    // Every pixel drawn, the shadow included; the whole frame on an opaque sheet.
+    uint32_t ink_rect[4];
+} GeoThumbnail;
+
+/// Returns null if the device cannot run the renderer, printing why.
+GeoThumbnailer* geo_thumbnailer_create(const char* shader_library_path);
+
+/// Renders a finished cache file as `options` say. On failure returns false with the reason in
+/// `error`, and `out` is left empty.
+bool geo_thumbnailer_render(GeoThumbnailer* thumbnailer, const char* blob_path,
+                            const GeoRenderOptions* options, GeoThumbnail* out, char* error,
+                            uint32_t error_capacity);
+
+/// Lets go of the last file drawn, so an idle thumbnailer holds no geometry.
+void geo_thumbnailer_trim(GeoThumbnailer* thumbnailer);
+
+void geo_thumbnailer_destroy(GeoThumbnailer* thumbnailer);
+
+/// Writes a picture to a PNG, with its alpha if it has one.
+bool geo_thumbnail_write_png(const GeoThumbnail* thumbnail, const char* path);
+
+/// Frees a picture's pixels and empties it.
+void geo_thumbnail_free(GeoThumbnail* thumbnail);
+
 #ifdef __cplusplus
 }
 #endif
