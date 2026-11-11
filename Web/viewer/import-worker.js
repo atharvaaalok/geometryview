@@ -13,13 +13,25 @@
 // A STEP file's source is kept beside its cache, so its definitions can be imported again, finer,
 // when the view comes close: a refinement, whose segments the page adds to the open document.
 //
-// Messages in:  { type: "import", file, kind: "step" | "stl", name, workers, threads, progressive }
+// A cache file is kept under its key (kept.js); a file the page can read again from a connected
+// folder keeps no source.
+//
+// Messages in:  { type: "import", file, kind: "step" | "stl", name, key, keepSource, workers,
+//                 threads, progressive }
 //               { type: "refine", file, level, definitions, workers }
-// Messages out: { type: "progress", done, total } and, if progressive or refining,
-//               { type: "segment", bytes } as each is written; then { type: "done", ... } or
-//               { type: "failed", message }
+//               { type: "structure", file }: a STEP file's model alone, as one segment, for an
+//                 estimated box while it waits to import; nothing is kept
+//               { type: "cancel" }: the import or refinement running stops after the slices out
+// Messages out: { type: "progress", done, total } and, if progressive, refining or reading
+//               structure, { type: "segment", bytes } as each is written; then
+//               { type: "done", ... } or { type: "failed", message, cancelled }
 
 import createStepImporter from "./occt/geometryview-step-web.mjs";
+import { keepImport, keepSource as keepSourceByKey } from "./kept.js";
+
+// Set by a cancel message, which arrives while an import awaits its slices.
+let cancelled = false;
+const kCancelled = "The import was cancelled.";
 
 // Some browsers refuse a worker that starts another worker by URL. Claude Desktop's built-in
 // browser is one: the nested worker fails at once, with no message and no request sent. A module
@@ -130,6 +142,14 @@ function mesh(step, slots, progressive) {
     let closed = false;
 
     const pump = () => {
+      if (cancelled && !closed) {
+        // No more slices: once those out are answered, the import stops.
+        if (busy === 0) {
+          closed = true;
+          Promise.all(replacing).then(() => reject(new Error(kCancelled)));
+        }
+        return;
+      }
       while (!closed && idle.length > 0) {
         const id = step._step_next();
         if (id === -2) {
@@ -255,6 +275,7 @@ async function readInto(step, file) {
 // Imports some of a STEP file's definitions again at a finer level, posting each segment as it is
 // written; they hold geometry only, for the page to add to the document already open.
 async function refine(data) {
+  cancelled = false;
   try {
     const step = await supervisor(false);
     await readInto(step, data.file);
@@ -271,7 +292,27 @@ async function refine(data) {
     self.postMessage({ type: "done", triangles: stats[11], faces: stats[10], failedFaces: stats[12],
                        crashedWorkers: stats[14], coarserFaces: stats[16] });
   } catch (error) {
-    self.postMessage({ type: "failed", message: String(error.message ?? error) });
+    failed(error);
+  }
+}
+
+function failed(error) {
+  const message = String(error.message ?? error);
+  self.postMessage({ type: "failed", message, cancelled: message === kCancelled });
+}
+
+// Reads a STEP file's structure alone and posts its model, with each body's box estimated, as one
+// segment: what a gallery lays a file out from while it waits to import. Nothing is kept, and no
+// OCCT worker is needed.
+async function structure(data) {
+  try {
+    const step = await supervisor(false);
+    await readInto(step, data.file);
+    if (step._step_begin() !== 0) throw new Error(step.UTF8ToString(step._step_error()));
+    postSegments(step);
+    self.postMessage({ type: "done", structure: true });
+  } catch (error) {
+    failed(error);
   }
 }
 
@@ -289,11 +330,20 @@ async function readPieces(step, file) {
 }
 
 self.onmessage = async ({ data }) => {
+  if (data.type === "cancel") {
+    cancelled = true;
+    return;
+  }
   if (data.type === "refine") {
     await refine(data);
     return;
   }
+  if (data.type === "structure") {
+    await structure(data);
+    return;
+  }
   if (data.type !== "import") return;
+  cancelled = false;
   const started = performance.now();
   try {
     const step = await supervisor(data.threads && self.crossOriginIsolated);
@@ -319,11 +369,15 @@ self.onmessage = async ({ data }) => {
                      coarserFaces: stats[16], slices,
                      importMs: Math.round(performance.now() - started), cacheBytes: blob.length,
                      supervisorMB: Math.round(step.HEAPU8.length / 2 ** 20) };
-    await keep(data.name, blob, { name: data.name, size: data.file.size,
-                                  lastModified: data.file.lastModified, importedAt: Date.now(), ...result });
+    const note = { name: data.name, size: data.file.size, lastModified: data.file.lastModified,
+                   importedAt: Date.now(), ...result };
+    if (data.key) await keepImport(data.key, blob, note);
+    else await keep(data.name, blob, note);
     self.postMessage({ type: "done", ...result });
-    if (data.kind === "step") await keepSource(data.name, data.file).catch(() => {});
+    if (data.kind === "step" && data.keepSource !== false) {
+      await (data.key ? keepSourceByKey(data.key, data.file) : keepSource(data.name, data.file)).catch(() => {});
+    }
   } catch (error) {
-    self.postMessage({ type: "failed", message: String(error.message ?? error) });
+    failed(error);
   }
 };

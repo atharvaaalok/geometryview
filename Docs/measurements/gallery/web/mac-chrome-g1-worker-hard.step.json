@@ -1,0 +1,16 @@
+{
+  "label": "mac-chrome-g1-worker-hard.step",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "file": "hard.step",
+  "structure": "done",
+  "structureMs": 334,
+  "structureSegments": [
+    16384
+  ],
+  "cancelOutcome": "failed",
+  "cancelled": true,
+  "cancelMs": 563,
+  "message": "The import was cancelled."
+}
