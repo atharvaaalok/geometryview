@@ -17,6 +17,8 @@ enum LibraryEvent: Sendable {
     case picture(path: String, png: String, picture: GeoGalleryPicture)
     case progress(path: String, done: UInt32, total: UInt32)
     case failed(path: String, message: String)
+    /// A file's detail picture, twice the pixels, for where it is drawn large.
+    case detail(path: String, png: String, picture: GeoGalleryPicture)
     /// A frame of Peek's turntable: `frame` of `frames`.
     case turnFrame(path: String, frame: Int, frames: Int, png: String, picture: GeoGalleryPicture)
 }
@@ -100,13 +102,31 @@ final class LibraryHandle {
             color_mode: colorMode,
             pixels: pixels,
             pixels_per_point: 2,
-            line_scale: lineScale
+            line_scale: lineScale,
+            supersample: 2  // drawn twice as large and averaged down: smooth edges
         )
         geo_library_set_picture(library, &spec)
     }
 
+    /// The files drawn large: each gets a detail picture, twice the pixels.
+    func detail(paths: [String]) {
+        let copies = paths.map { strdup($0) }
+        defer {
+            for copy in copies {
+                free(copy)
+            }
+        }
+        var pointers = copies.map { UnsafePointer<CChar>($0) }
+        geo_library_detail(library, &pointers, UInt32(pointers.count))
+    }
+
     func setPrefetch(_ allowed: Bool) {
         geo_library_set_prefetch(library, allowed)
+    }
+
+    /// Forgets what it has told: files wanted next are told again, from the caches.
+    func reset() {
+        geo_library_reset(library)
     }
 
     /// Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly
@@ -212,7 +232,7 @@ private func receiveLibraryEvent(
                 )
             )
         )
-    case GeoLibraryPicture, GeoLibraryTurnFrame:
+    case GeoLibraryPicture, GeoLibraryTurnFrame, GeoLibraryDetail:
         let p = event.picture
         let picture = GeoGalleryPicture(
             width: p.width,
@@ -227,7 +247,9 @@ private func receiveLibraryEvent(
             )
         )
         let png = String(cString: p.png_path)
-        if event.kind == GeoLibraryTurnFrame {
+        if event.kind == GeoLibraryDetail {
+            box.deliver(.detail(path: path, png: png, picture: picture))
+        } else if event.kind == GeoLibraryTurnFrame {
             box.deliver(
                 .turnFrame(
                     path: path,
