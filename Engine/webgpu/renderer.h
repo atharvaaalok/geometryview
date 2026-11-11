@@ -69,6 +69,13 @@ public:
     std::vector<u8> renderOffscreen(const render::ViewState& view, const render::Overlay* overlay,
                                     bool inSteps);
 
+    /// Renders as renderOffscreen does but hands the pixels to `done` once the GPU has drawn
+    /// them, rather than waiting: the browser cannot wait. `done` gets no pixels if the readback
+    /// failed, and is never called once the renderer is gone. Natively it runs from
+    /// Instance::ProcessEvents.
+    void renderOffscreenAsync(const render::ViewState& view, const render::Overlay* overlay,
+                              std::function<void(std::vector<u8>)> done);
+
     /// The overlay's text: coverage, one byte per pixel, kAtlasWidth by kAtlasHeight, as the
     /// host draws it, and a glyph's advance in atlas pixels. Until it is given, no overlay draws.
     void setOverlayAtlas(std::span<const u8> pixels, float glyphAdvance);

@@ -371,6 +371,53 @@ TEST_CASE("the WebGPU renderer draws small pictures on a clear sheet as Metal do
     }
 }
 
+// The browser cannot wait for the GPU, so pictures come back through a callback; natively the
+// callback runs when events are processed.
+TEST_CASE("an offscreen picture handed back later is the one drawn at once") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = 256;
+        options.height = 256;
+        options.overlay = false;
+        options.line_scale = 0.5f;
+        options.transparent = true;
+        const std::vector<u8> expected = renderWith(*web, blob, options);
+
+        engine::OffscreenView frame;
+        REQUIRE_MESSAGE(engine::prepareOffscreen(*web, openBlob(blob), options, frame, error),
+                        error);
+        std::optional<std::vector<u8>> later;
+        web->renderOffscreenAsync(frame.view, nullptr,
+                                  [&](std::vector<u8> pixels) { later = std::move(pixels); });
+        CHECK_FALSE(later.has_value()); // not before the GPU has drawn it
+        for (int i = 0; i < 10000 && !later; ++i) {
+            dawn.instance.ProcessEvents();
+            usleep(100);
+        }
+        REQUIRE(later.has_value());
+        REQUIRE(later->size() == expected.size());
+        const Difference d = compare(*later, expected, 4);
+        CHECK(d.mean < 0.01);
+
+        // A renderer gone before its picture arrives never calls back.
+        bool called = false;
+        web->renderOffscreenAsync(frame.view, nullptr, [&](std::vector<u8>) { called = true; });
+        web.reset();
+        for (int i = 0; i < 200; ++i) {
+            dawn.instance.ProcessEvents();
+            usleep(100);
+        }
+        CHECK_FALSE(called);
+        unlink(blob.c_str());
+    }
+}
+
 TEST_CASE("the WebGPU renderer keeps hidden edges hidden, as Metal does") {
     @autoreleasepool {
         const std::string blob = test::importHiddenBox(GEO_TEST_WORKER_PATH);
