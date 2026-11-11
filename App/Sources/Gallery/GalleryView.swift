@@ -116,6 +116,12 @@ final class GalleryView: NSView {
     private var sticky: [(layer: CALayer, top: CGFloat, until: CGFloat)] = []
     /// Each painted item's main layer, by index, for its track in a move.
     private var layerOf: [Int: CALayer] = [:]
+    /// Lanes, which scroll sideways on their own: each a box clipped to it, whose bounds' origin is
+    /// its scroll, so its items keep their content points; with its layers.
+    private var lanes: [UInt32: GeoGalleryLane] = [:]
+    private var laneScroll: [UInt32: CGFloat] = [:]
+    private var laneLayers: [UInt32: (box: CALayer, pool: LayerPool)] = [:]
+    private var laneDrag: (lane: UInt32, x: CGFloat, from: CGFloat)?
     /// The style's sheet drawn at a size, for rectangles filled with it (Peek's picture).
     private var sheetImages: [String: CGImage] = [:]
     /// Where each item was painted, by index: the frame of its layer, for the checks.
@@ -222,8 +228,12 @@ final class GalleryView: NSView {
         paint()
     }
 
-    /// Back to the top, as a new folder opens.
+    /// Back to the top, as a new folder opens; its lanes at their beginnings.
     func scrollToTop() {
+        for id in laneScroll.keys {
+            gallery.setLaneScroll(id, 0)
+        }
+        laneScroll.removeAll()
         scrollY = 0
         gallery.setScroll(0)
         painted = nil
@@ -377,6 +387,10 @@ final class GalleryView: NSView {
         let scale = self.window?.backingScaleFactor ?? 2
         contentPool.begin()
         fixedPool.begin()
+        lanes = Dictionary(gallery.lanes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for (_, layer) in laneLayers {
+            layer.pool.begin()
+        }
         sticky.removeAll(keepingCapacity: true)
         layerOf.removeAll(keepingCapacity: true)
         paintedFrames.removeAll(keepingCapacity: true)
@@ -394,7 +408,21 @@ final class GalleryView: NSView {
                     continue
                 }
             }
-            let pool = isFixed ? fixedPool : contentPool
+            var pool = isFixed ? fixedPool : contentPool
+            if item.lane != 0 {
+                // In a lane: painted a lane's width either side of what shows.
+                guard let lane = lanes[item.lane] else {
+                    continue
+                }
+                let scroll = laneScroll[item.lane] ?? 0
+                let (lx, lw) = (CGFloat(lane.rect.0), CGFloat(lane.rect.2))
+                let left = CGFloat(min(item.x, item.x + item.width))
+                let right = CGFloat(max(item.x, item.x + item.width))
+                if right < lx + scroll - lw || left > lx + scroll + 2 * lw {
+                    continue
+                }
+                pool = laneLayer(lane, z: CGFloat(index)).pool
+            }
             // Headings stay above what scrolls under them.
             let z = CGFloat(isSticky ? items.count + index : index)
             // What a search did not find, at 22%; a picture being drawn again, at 45%.
@@ -484,7 +512,65 @@ final class GalleryView: NSView {
         }
         contentPool.finish()
         fixedPool.finish()
+        for (id, layer) in laneLayers {
+            layer.pool.finish()
+            layer.box.isHidden = lanes[id] == nil
+        }
         placeSticky()
+    }
+
+    /// A lane's box, clipped to it, its bounds' origin the lane's scroll, stacked where its first
+    /// item is.
+    private func laneLayer(_ lane: GeoGalleryLane, z: CGFloat) -> (box: CALayer, pool: LayerPool) {
+        let layer: (box: CALayer, pool: LayerPool)
+        if let existing = laneLayers[lane.id] {
+            layer = existing
+        } else {
+            let box = CALayer()
+            box.anchorPoint = .zero
+            box.masksToBounds = true
+            content.addSublayer(box)
+            layer = (box, LayerPool(parent: box))
+            laneLayers[lane.id] = layer
+        }
+        if layer.pool.usedRects + layer.pool.usedTexts + layer.pool.usedPictures
+            + layer.pool.usedLines == 0
+        {
+            let (x, y) = (CGFloat(lane.rect.0), CGFloat(lane.rect.1))
+            let (w, h) = (CGFloat(lane.rect.2), CGFloat(lane.rect.3))
+            layer.box.position = CGPoint(x: x, y: y)
+            layer.box.bounds = CGRect(x: x + (laneScroll[lane.id] ?? 0), y: y, width: w, height: h)
+            layer.box.zPosition = z
+            layer.box.isHidden = false
+        }
+        return layer
+    }
+
+    private func lane(at point: CGPoint) -> GeoGalleryLane? {
+        lanes.values.first { lane in
+            point.x >= CGFloat(lane.rect.0) && point.x <= CGFloat(lane.rect.0 + lane.rect.2)
+                && point.y >= CGFloat(lane.rect.1) && point.y <= CGFloat(lane.rect.1 + lane.rect.3)
+        }
+    }
+
+    /// Scrolls a lane sideways, within its content, painting further along it as it goes.
+    private func scrollLane(_ lane: GeoGalleryLane, to x: CGFloat) {
+        let most = max(0, CGFloat(lane.content_width - lane.rect.2))
+        let to = min(max(0, x), most)
+        guard to != (laneScroll[lane.id] ?? 0) else {
+            return
+        }
+        laneScroll[lane.id] = to
+        gallery.setLaneScroll(lane.id, to)
+        if let box = laneLayers[lane.id]?.box {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            box.bounds.origin.x = CGFloat(lane.rect.0) + to
+            CATransaction.commit()
+        }
+        painted = nil
+        reload()
+        onViewChanged?()
     }
 
     /// Moves each heading down by how far the view has scrolled past it, until the next takes over.
@@ -508,7 +594,39 @@ final class GalleryView: NSView {
         layer.borderColor = item.stroke != 0 ? Self.color(item.stroke) : nil
         layer.contents = nil
         layer.masksToBounds = false
-        if item.flags & GeoItemHatched.rawValue != 0 {
+        if item.flags & GeoItemRuler.rawValue != 0 {
+            // A ruler: its line on top, minor ticks every `radius` points, major every `tracking`.
+            layer.borderWidth = 0
+            layer.cornerRadius = 0
+            layer.backgroundColor = nil
+            layer.opacity = 1
+            let w = CGFloat(item.width)
+            let ink = Self.color(item.stroke)
+            let shapes = [
+                (CGFloat(item.radius), 0.75, 3.5, Float(0.5)),
+                (CGFloat(item.tracking), 1.1, 6.5, Float(1)),
+            ]
+            .map { pitch, tickW, tickH, alpha -> CAShapeLayer in
+                let path = CGMutablePath()
+                if pitch > 0.5 {
+                    var x: CGFloat = 0
+                    while x < w {
+                        path.addRect(CGRect(x: x, y: 1, width: tickW, height: tickH))
+                        x += pitch
+                    }
+                }
+                let shape = CAShapeLayer()
+                shape.path = path
+                shape.fillColor = ink
+                shape.opacity = alpha
+                return shape
+            }
+            let line = CALayer()
+            line.frame = CGRect(x: 0, y: 0, width: w, height: CGFloat(item.line_width))
+            line.backgroundColor = ink
+            layer.sublayers = shapes + [line]
+            return
+        } else if item.flags & GeoItemHatched.rawValue != 0 {
             layer.backgroundColor = Self.hatch(Self.color(item.stroke), scale: scale)
             layer.opacity = 0.8
         } else if item.flags & GeoItemSheet.rawValue != 0 {
@@ -592,6 +710,7 @@ final class GalleryView: NSView {
         clip.addSublayer(content)
         contentPool = LayerPool(parent: content)
         sticky.removeAll()
+        laneLayers.removeAll()  // the old lanes' boxes went with the old view
         return oldPool
     }
 
@@ -758,6 +877,8 @@ final class GalleryView: NSView {
                 lines[index] = Float(frame.minY) + fraction * Float(frame.height)
             case GeoItemLine.rawValue:
                 lines[index] = Float(frame.minY)
+            case GeoItemRect.rawValue where item.flags & GeoItemRuler.rawValue != 0:
+                lines[index] = Float(frame.minY) + item.line_width / 2  // a ruler's line, its top
             default:
                 lines[index] = Float(frame.maxY)
             }
@@ -949,11 +1070,35 @@ final class GalleryView: NSView {
         guard !gallery.poster, let point = contentPoint(event) else {
             return
         }
+        laneDrag = lane(at: point).map { ($0.id, point.x, laneScroll[$0.id] ?? 0) }
         let hit = gallery.hit(point)
         act(gallery.click(kind: hit.target_kind, target: hit.target, twice: event.clickCount >= 2))
     }
 
+    /// A drag along a lane scrolls it.
+    override func mouseDragged(with event: NSEvent) {
+        guard let drag = laneDrag, let point = contentPoint(event), let lane = lanes[drag.lane]
+        else {
+            return
+        }
+        scrollLane(lane, to: drag.from - (point.x - drag.x))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        laneDrag = nil
+    }
+
     override func scrollWheel(with event: NSEvent) {
+        // Sideways, or shifted, over a lane: the lane scrolls.
+        let sideways =
+            abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
+            || event.modifierFlags.contains(.shift)
+        if sideways, let point = contentPoint(event), let lane = lane(at: point) {
+            let raw = abs(event.scrollingDeltaX) > 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+            let delta = event.hasPreciseScrollingDeltas ? raw : raw * 12
+            scrollLane(lane, to: (laneScroll[lane.id] ?? 0) - delta)
+            return
+        }
         let step =
             event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 12
         scrollY -= step

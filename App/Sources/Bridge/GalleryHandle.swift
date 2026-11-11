@@ -72,6 +72,23 @@ final class GalleryHandle {
         geo_gallery_set_failure(gallery, file, message)
     }
 
+    /// The last layout's lanes, which scroll sideways.
+    var lanes: [GeoGalleryLane] {
+        let count = geo_gallery_lanes(gallery, nil, 0)
+        var out = [GeoGalleryLane](repeating: GeoGalleryLane(), count: Int(count))
+        _ = geo_gallery_lanes(gallery, &out, count)
+        return out
+    }
+
+    func setLaneScroll(_ lane: UInt32, _ x: CGFloat) {
+        geo_gallery_set_lane_scroll(gallery, lane, Float(x))
+    }
+
+    /// Ladders' scale: each strip its own, or one shared.
+    func setLadders(shared: Bool) {
+        geo_gallery_set_ladders(gallery, shared)
+    }
+
     /// The view as a poster, printed with `date` in its foot.
     func setPoster(_ poster: Bool, date: String) {
         geo_gallery_set_poster(gallery, poster, date)

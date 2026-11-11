@@ -282,6 +282,9 @@ final class MainWindow: NSWindow {
         }
         galleryToolbar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
         galleryToolbar.onPoster = { [weak self] in self?.togglePoster(nil) }
+        galleryToolbar.onLadders = { [weak self] shared in
+            self?.galleryController.setLadders(shared: shared)
+        }
         libraryCard.onSearch = { [weak self] query in self?.galleryController.search(query) }
         libraryCard.onSearchDone = { [weak self] in
             guard let self, inGallery else {
@@ -814,7 +817,8 @@ final class MainWindow: NSWindow {
         galleryToolbar.show(
             view: galleryController.gallery.view,
             sheet: galleryController.sheet,
-            style: look.style.title
+            style: look.style.title,
+            laddersShared: galleryController.laddersShared
         )
     }
 
