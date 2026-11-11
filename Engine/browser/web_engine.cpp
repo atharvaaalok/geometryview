@@ -75,6 +75,7 @@ struct Web {
     // The frame clock: the core's wish, and whether the loop is running.
     bool coreWantsFrames = false;
     bool looping = false;
+    bool covered = false; // the gallery covers the canvas: no frames until uncovered
     // The latest frame, kept to draw again with all its samples once the view is still.
     std::optional<engine::Frame> last;
     double lastDrawn = 0.0;
@@ -228,6 +229,11 @@ void draw(const engine::Frame& frame, std::optional<u32> step = std::nullopt) {
 // moment, its four samples are drawn, one a frame, and then nothing is submitted until something
 // changes again.
 bool tick(double, void*) {
+    if (web.covered) {
+        web.looping = false;
+        jsRunFrames(0);
+        return false;
+    }
     if (web.pointerMoved) {
         web.pointerMoved = false;
         web.core->pointerSettled();
@@ -256,7 +262,7 @@ bool tick(double, void*) {
 }
 
 void startLoop() {
-    if (!web.looping && web.core) {
+    if (!web.looping && web.core && !web.covered) {
         web.looping = true;
         jsRunFrames(1);
         emscripten_request_animation_frame_loop(tick, nullptr);
@@ -715,8 +721,18 @@ EMSCRIPTEN_KEEPALIVE void geo_web_summary(u32* out) {
 /// For tests and measurements: frames drawn moving and settled, GPU milliseconds of the latest
 /// timed frame, GPU buffer and target megabytes, triangles and edge segments in the scene,
 /// whether the frame loop is running and why, and the hovered pick id. The loop is 0 when stopped;
-/// running, it is 1, plus 1 while the core wants frames (something moves, or it lingers after), plus
-/// 2 while the still view's samples are yet to be drawn.
+/// running, it is 1, plus 1 while the core wants frames (something moves, or it lingers after),
+/// plus 2 while the still view's samples are yet to be drawn. The gallery covers the canvas: no
+/// frames are drawn until it is uncovered, when one is.
+EMSCRIPTEN_KEEPALIVE void geo_web_set_covered(int covered) {
+    web.covered = covered != 0;
+    if (!web.covered && web.core) {
+        web.settled = false;
+        web.core->requestFrame();
+        startLoop();
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE void geo_web_stats(double* out) {
     const std::array<u64, 2> memory = web.renderer->memoryBytes();
     out[0] = double(web.framesDrawn);

@@ -51,7 +51,7 @@ if(GEO_TARGET STREQUAL "wasm")
     # The engine in the browser: the core, the WebGPU renderer and the page's host, as a module
     # the viewer's page loads. See browser/web_engine.cpp.
     if(GEO_WEBGPU)
-        add_executable(geometryview-web browser/web_engine.cpp)
+        add_executable(geometryview-web browser/web_engine.cpp browser/web_gallery.cpp)
         target_link_libraries(geometryview-web PRIVATE engine_webgpu engine_core geo_warnings)
         set_target_properties(geometryview-web PROPERTIES SUFFIX ".mjs")
         target_link_options(geometryview-web PRIVATE

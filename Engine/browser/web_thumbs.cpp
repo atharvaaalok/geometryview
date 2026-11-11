@@ -12,6 +12,7 @@
 // never shrinks, so the worker that loads this module is replaced once its heap grows past a
 // limit, as the import worker's OCCT workers are.
 #include "core/offscreen_view.h"
+#include "scene/facts.h"
 #include "scene/segment.h"
 #include "webgpu/renderer.h"
 
@@ -214,6 +215,29 @@ EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, floa
                     jsDrawn(bgra.data(), side, side, thumbs.frame->worldPerPixel, rects.data(), "");
                 });
         });
+}
+
+/// Measures the staged cache file: its facts as JSON (scene::Facts), to call before thumbs_draw,
+/// which lets go of the staged bytes. Empty if the file cannot be read.
+EMSCRIPTEN_KEEPALIVE const char* thumbs_facts() {
+    static std::string json;
+    json.clear();
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    std::string error;
+    if (!scene::readCacheFile(thumbs.staging, segments, error)) {
+        return json.c_str();
+    }
+    scene::Facts facts = scene::measure(segments);
+    // The source's hash, from the header: after its magic, version, count and size.
+    if (thumbs.staging.size() >= 40) {
+        static constexpr char kHex[] = "0123456789abcdef";
+        for (usize i = 24; i < 40; ++i) {
+            facts.hash += kHex[thumbs.staging[i] >> 4];
+            facts.hash += kHex[thumbs.staging[i] & 15];
+        }
+    }
+    json = facts.toJson().write();
+    return json.c_str();
 }
 
 /// Lets go of the last file drawn, so an idle worker holds no geometry.
