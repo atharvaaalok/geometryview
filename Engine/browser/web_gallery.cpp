@@ -265,6 +265,12 @@ EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_wanted(GeoGallery* gallery, double* out
     return n;
 }
 
+/// The files drawn large in view, whose detail pictures are wanted: at most `capacity`.
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_details(GeoGallery* gallery, uint32_t* out,
+                                                 uint32_t capacity) {
+    return geo_gallery_details(gallery, out, capacity);
+}
+
 /// The alignment check of what the page painted: lines and columns per item, NaN where not painted.
 /// Writes group, column, spread and members as doubles, four a group over `tolerance`, at most
 /// `capacity`; returns how many are over, and the groups measured in out_checked[0].

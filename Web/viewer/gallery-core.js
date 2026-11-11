@@ -4,7 +4,7 @@
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
 export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128,
-                                     Ruler: 256, Turn: 512 });
+                                     Ruler: 256, Turn: 512, Detail: 1024 });
 export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5, Page: 6 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5,
                                        Reconnect: 6, Turn: 7 });
@@ -302,6 +302,16 @@ export class GalleryCore {
                     delay: v[o + 6], duration: v[o + 7] };
     }
     return tracks;
+  }
+
+  /** The files drawn large in view, nearest the middle first: those whose detail pictures are wanted. */
+  details() {
+    const m = this.#m;
+    const out = m._malloc(32 * 4);
+    const n = Math.min(32, m._gv_gallery_details(this.#g, out, 32));
+    const files = [...new Uint32Array(m.HEAPU8.buffer, out, n)];
+    m._free(out);
+    return files;
   }
 
   /** The files to draw, in the library's bands: [{ file, band, order, folderColor }]. */

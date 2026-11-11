@@ -147,10 +147,11 @@ EMSCRIPTEN_KEEPALIVE u8* thumbs_staging(u32 size) {
 /// and above, in a style and colour mode as engine.h numbers them. Answers through
 /// thumbsHost.drawn, once the GPU has drawn it. One picture at a time. For Peek's turntable,
 /// `turn` degrees about the upright are added to the view, and `worldPerPixel` holds its scale
-/// (millimetres a pixel); both 0 for the gallery's pictures.
+/// (millimetres a pixel); both 0 for the gallery's pictures. With `supersample` n > 1 it is drawn
+/// n times as large, lines and all, and each n × n square averaged: smooth edges.
 EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, float pixelsPerPoint,
                                       float lineScale, int firstColor, float turn,
-                                      double worldPerPixel) {
+                                      double worldPerPixel, u32 supersample) {
     if (!thumbs.renderer || thumbs.busy) {
         drawnNothing(thumbs.busy ? "A picture is being drawn." : "The renderer is not ready.");
         return;
@@ -165,15 +166,17 @@ EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, floa
         return;
     }
     GeoRenderOptions options = geo_default_render_options();
-    options.width = options.height = std::clamp(pixels, 16u, 2048u);
+    const u32 n = std::clamp(supersample, 1u, 2u);
+    const u32 kept = std::clamp(pixels, 16u, 2048u);
+    options.width = options.height = kept * n;
     options.overlay = false;
     options.azimuth_degrees = 35.0 + double(turn);
     options.elevation_degrees = 30.0;
-    options.world_per_pixel = worldPerPixel > 0.0 ? worldPerPixel : 0.0;
+    options.world_per_pixel = worldPerPixel > 0.0 ? worldPerPixel / double(n) : 0.0;
     options.look.style = GeoStyle(std::min(style, u32(GeoStyleStudio)));
     options.look.color_mode = GeoColorMode(std::min(colorMode, u32(GeoColorFile)));
     options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
-    options.pixels_per_point = pixelsPerPoint > 0.0f ? pixelsPerPoint : 2.0f;
+    options.pixels_per_point = (pixelsPerPoint > 0.0f ? pixelsPerPoint : 2.0f) * float(n);
     options.line_scale = lineScale;
     options.first_color = firstColor;
     options.transparent = true;
@@ -187,17 +190,44 @@ EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, floa
     // The part's own pixels, from its ids, then the picture; each answer comes a frame or more
     // later.
     thumbs.renderer->requestOccurrenceIds(
-        thumbs.frame->view, side, [side](render::OccurrenceIds ids) {
-            const std::array<u32, 4> part =
+        thumbs.frame->view, side, [side, n, kept](render::OccurrenceIds ids) {
+            std::array<u32, 4> part =
                 ids.front.size() == usize(side) * side
                     ? boundsOf(side, side,
                                [&](u32 x, u32 y) { return ids.front[usize(y) * side + x] != 0; })
                     : std::array<u32, 4>{};
+            if (n > 1 && part[2] > 0) {
+                // At the size kept: every pixel any of the part's drawn pixels falls in.
+                const u32 x0 = part[0] / n, y0 = part[1] / n;
+                const u32 x1 = (part[0] + part[2] + n - 1) / n,
+                          y1 = (part[1] + part[3] + n - 1) / n;
+                part = {x0, y0, x1 - x0, y1 - y0};
+            }
             thumbs.renderer->renderOffscreenAsync(
-                thumbs.frame->view, nullptr, [side, part](std::vector<u8> bgra) {
+                thumbs.frame->view, nullptr, [side, n, kept, part](std::vector<u8> bgra) {
                     if (bgra.size() != usize(side) * side * 4) {
                         drawnNothing("The picture could not be read back.");
                         return;
+                    }
+                    if (n > 1) {
+                        // Each n × n square of premultiplied pixels averaged into one.
+                        std::vector<u8> small(usize(kept) * kept * 4);
+                        for (u32 y = 0; y < kept; ++y) {
+                            for (u32 x = 0; x < kept; ++x) {
+                                u32 sum[4] = {};
+                                for (u32 dy = 0; dy < n; ++dy) {
+                                    const u8* row = &bgra[(usize(y * n + dy) * side + x * n) * 4];
+                                    for (u32 dx = 0; dx < n * 4; ++dx) {
+                                        sum[dx % 4] += row[dx];
+                                    }
+                                }
+                                for (u32 c = 0; c < 4; ++c) {
+                                    small[(usize(y) * kept + x) * 4 + c] =
+                                        u8((sum[c] + n * n / 2) / (n * n));
+                                }
+                            }
+                        }
+                        bgra = std::move(small);
                     }
                     // Premultiplied BGRA to the straight RGBA a canvas's ImageData holds.
                     for (usize p = 0; p < bgra.size(); p += 4) {
@@ -210,13 +240,14 @@ EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, floa
                         bgra[p + 1] = straight(g);
                         bgra[p + 2] = straight(b);
                     }
-                    const std::array<u32, 4> ink = boundsOf(side, side, [&](u32 x, u32 y) {
-                        return bgra[(usize(y) * side + x) * 4 + 3] != 0;
+                    const std::array<u32, 4> ink = boundsOf(kept, kept, [&](u32 x, u32 y) {
+                        return bgra[(usize(y) * kept + x) * 4 + 3] != 0;
                     });
                     const std::array<u32, 8> rects{part[0], part[1], part[2], part[3],
                                                    ink[0],  ink[1],  ink[2],  ink[3]};
                     thumbs.busy = false;
-                    jsDrawn(bgra.data(), side, side, thumbs.frame->worldPerPixel, rects.data(), "");
+                    jsDrawn(bgra.data(), kept, kept, thumbs.frame->worldPerPixel * double(n),
+                            rects.data(), "");
                 });
         });
 }

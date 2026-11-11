@@ -126,6 +126,32 @@ export class GalleryLibrary {
   }
 
   /**
+   * A file's detail picture, for where it is drawn large: the same picture at twice the pixels and
+   * twice the pixels a point, kept like the gallery's and read back if kept. The file is imported
+   * first if its import was not kept. Resolves to { png, note }, or null when it cannot be drawn.
+   */
+  async detail(path, folderColor, signal) {
+    const root = this.#root, spec = this.#spec;
+    if (!root || !spec) return null;
+    const detail = { ...spec, pixels: spec.pixels * 2, pixelsPerPoint: spec.pixelsPerPoint * 2, supersample: 1 };
+    const file = await this.#folders.file(root.id, path);
+    if (!file) return null;
+    const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
+                              version: this.#version });
+    const picture = await pictureKeyOf({ ...detail, folderColor, version: this.#version });
+    const kept = await keptPicture(key, picture);
+    if (kept?.png && kept.note) return { png: kept.png, note: kept.note };
+    if (signal.aborted) return null;
+    let blob = (await keptImport(key, this.#version))?.blob;
+    if (!blob) blob = await this.#import(file, key, signal);
+    if (signal.aborted) return null;
+    const drawn = await this.#thumbnailer.draw(blob, detail, -1, { folderColor, keep: { key, picture } });
+    drawn.bitmap?.close();
+    return { png: drawn.png, note: { width: drawn.width, height: drawn.height, mmPerPixel: drawn.worldPerPixel,
+                                     part: drawn.partRect, ink: drawn.inkRect } };
+  }
+
+  /**
    * Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly about
    * the upright at one scale (its box's diagonal, from `size` in millimetres, fits whichever way it
    * faces), each handed to `onFrame(frame, bitmap, note)` as it is drawn. The file is imported first
@@ -146,8 +172,10 @@ export class GalleryLibrary {
     const worldPerPixel = size ? Math.hypot(...size) * 1.1 / pixels : 0;
     for (let frame = 0; frame < frames; frame++) {
       if (signal.aborted) return false;
-      const drawn = await this.#thumbnailer.draw(blob, { ...spec, pixels, turn: (360 * frame) / frames, worldPerPixel },
-                                                 -1, { folderColor });
+      // Drawn as a detail is: lines as thick for its size as a picture's, and not supersampled.
+      const drawn = await this.#thumbnailer.draw(blob, { ...spec, pixels, turn: (360 * frame) / frames, worldPerPixel,
+                                                         pixelsPerPoint: spec.pixelsPerPoint * pixels / spec.pixels,
+                                                         supersample: 1 }, -1, { folderColor });
       onFrame(frame, drawn.bitmap, { width: drawn.width, height: drawn.height, ink: drawn.inkRect });
     }
     return !signal.aborted;

@@ -34,6 +34,7 @@ export class GalleryView {
   #sheetBackground = "";
   #sheetSpec = null;
   #images = new Map(); // file -> object URL
+  #details = new Map(); // file -> object URL of its detail picture, for where it is drawn large
   #painted = null; // { top, bottom } of what is painted
   #shownTop = 0; // the scroll last painted, where a copy of the old view is taken from
   #layers;
@@ -189,8 +190,9 @@ export class GalleryView {
   }
 
   clearImages() {
-    for (const url of this.#images.values()) URL.revokeObjectURL(url);
+    for (const url of [...this.#images.values(), ...this.#details.values()]) URL.revokeObjectURL(url);
     this.#images.clear();
+    this.#details.clear();
   }
 
   scrollToTop() {
@@ -328,7 +330,8 @@ export class GalleryView {
             break;
           }
           node = this.#reuse(layer, "picture", "g-picture", "img");
-          node.src = this.#images.get(item.file) ?? "";
+          // Drawn large: its detail picture, framed as the picture, once it has come.
+          node.src = (item.flags & Flags.Detail ? this.#details.get(item.file) : null) ?? this.#images.get(item.file) ?? "";
           node.style.visibility = this.#images.has(item.file) ? "" : "hidden";
           node.dataset.file = String(item.file);
           setBox(node, item.x, item.y, item.width, item.height);
@@ -892,6 +895,29 @@ export class GalleryView {
     this.act(this.#core.click(hit.kind, hit.target, twice));
   }
 
+  // ---- Detail pictures ----
+
+  /** A file's detail picture (a PNG blob), for where it is drawn large. */
+  setDetail(file, png) {
+    const old = this.#details.get(file);
+    if (old) URL.revokeObjectURL(old);
+    this.#details.set(file, URL.createObjectURL(png));
+    this.repaint();
+  }
+
+  /** Detail pictures held, for the checks. */
+  get detailCount() { return this.#details.size; }
+
+  /** Lets go of the detail pictures of files no longer drawn large. */
+  keepDetails(files) {
+    for (const [file, url] of this.#details) {
+      if (!files.has(file)) {
+        URL.revokeObjectURL(url);
+        this.#details.delete(file);
+      }
+    }
+  }
+
   // ---- Peek's turntable ----
 
   /** The turntable's frames for the file in Peek, or null: its still picture shows meanwhile. */
@@ -931,7 +957,8 @@ export class GalleryView {
     g.setTransform(ratio, 0, 0, ratio, 0, 0);
     g.clearRect(0, 0, w, h);
     const [ix, iy, iw, ih] = t.ink;
-    const k = Math.min(w / (iw + 24), h / (ih + 24));
+    // As large as the area allows, but never past half a point a pixel: sharp on a 2× screen.
+    const k = Math.min(w / (iw + 24), h / (ih + 24), 0.5);
     g.imageSmoothingQuality = "high";
     g.drawImage(frame, w / 2 - (ix + iw / 2) * k, h / 2 - (iy + ih / 2) * k, frame.width * k, frame.height * k);
   }
