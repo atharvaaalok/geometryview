@@ -220,6 +220,21 @@ Each is a vertical slice. All budgets are targets. **Visual review pauses:** M1,
 | **M7** | Connected directories, FSEvents, bookmarks, eviction, settings, key and mouse rebinding | 97k-file tree loads on demand with no file reads; access survives relaunch; edited file reloads; all bindings editable; conflicts caught |
 | **M8** | Tier 0 tessellator, FixShape experiment, spikes 2, 5, fuzz, sandbox review, perf gates | 792 MB file ≤0.5 s; 24 h fuzz clean; perf gate active |
 
+**The gallery** (ADR 0017, 0018): whole folders of files in five views, built on the core above.
+Plates and Sheet ship in 0.2.0, the rest in 0.3.0. **Review pauses:** G0, G2, G3, G4, and each
+of G6 to G8.
+
+| # | Slice | Exit criteria | State |
+|---|---|---|---|
+| **G0** | Pictures: render options, a clear sheet, folder colour, the thumbnailer, `gcli sheet`, async offscreen pictures in the browser | 20 goldens unchanged; six RGBA goldens; ≤6 ms a picture warm at 256 px; small pictures read as their parts | Done (2026-11-11) |
+| **G1** | Foundation: facts, helper flags, the gate, the queue, the library service and its caches, scans, the browser's import queue, OPFS v2 and picture worker, the shell's `/scan`, ADR 0017 | S × W from a 500-file sweep; a file opened never waits behind gallery work; a second service starts no helper; prefetching does not evict Recent; node tests in CI | In progress |
+| **G2** | Plates on the Mac and the web: the layout core, painters, checks, ADR 0018 | 0 alignment groups over 0.5 pt; Mac and web within 1 pt; no 3D frames under the gallery; no web long task over 50 ms | |
+| **G3** | Sheet, the view switch, shared state, flights, Peek, keys, menus | The selection survives every switch; motion matches the spec; G2's criteria still hold | |
+| **G4** | States, FSEvents, phones, a poster PNG, MCP `view_folder` | iPhone ≤600 MB on test-models; no horizontal scroll at 390 px; a changed file re-inks alone; five tools | |
+| **G5** | Release 0.2.0: Plates and Sheet | | |
+| **G6–G8** | Ladders, Atlas, Catalogue | Each reviewed | |
+| **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | |
+
 **Spikes** (pass/fail, recorded in ADRs):
 
 | # | Spike | Pass | On failure |

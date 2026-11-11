@@ -90,3 +90,15 @@ engine where we leave 2 faces unmeshed and OCCT leaves 8.
   any face id. Refinement re-runs the same pipeline for chosen definitions at a finer level, and its
   results are cached beside the base file.
 - The worker binary is 16 MB, linked statically against the pinned OCCT.
+
+
+## Addendum: the gallery's imports (2026-11-11, ADR 0017)
+
+- The helper's options are flags in any order: `--level` and `--definitions` refine, `--workers N`
+  caps the OCCT workers, and `--structure` writes a STEP file's model alone, each body's box
+  estimated, for a gallery to lay a file out by before it imports. A mesh, or a file only a whole
+  read can open, is refused a structure pass.
+- The helper's descriptors are moved above 10 before they are placed at 3, 4 and 1. A cache file
+  at descriptor 3 was overwritten by the source, and the helper wrote into the read-only source.
+- A process's imports share its performance cores through `library::ImportGate`: a file opened
+  is admitted at once, and a gallery's imports hold at most the cores between them.
