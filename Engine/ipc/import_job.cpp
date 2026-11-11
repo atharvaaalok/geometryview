@@ -286,7 +286,8 @@ ImportOutcome runHelper(const std::string& sourcePath, const std::string& blobPa
 } // namespace
 
 ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
-                         ImportListener& listener, ImportCancel* cancel) {
+                         ImportListener& listener, ImportCancel* cancel,
+                         const ImportOptions& options) {
     ImportOutcome outcome;
     const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
     if (blobPath.empty()) {
@@ -311,7 +312,37 @@ ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths
     for (const std::string& refinement : refinementsOf(blobPath)) {
         unlink(refinement.c_str());
     }
-    return runHelper(sourcePath, blobPath, paths, {}, listener, cancel);
+    std::vector<std::string> flags;
+    if (options.workers != 0) {
+        flags = {"--workers", std::to_string(options.workers)};
+    }
+    return runHelper(sourcePath, blobPath, paths, flags, listener, cancel);
+}
+
+bool isCached(const std::string& sourcePath, const ImportPaths& paths) {
+    std::string error;
+    const std::string blobPath = cachePathFor(sourcePath, paths, error);
+    struct stat info{};
+    return !blobPath.empty() && stat(blobPath.c_str(), &info) == 0;
+}
+
+ImportOutcome readStructure(const std::string& sourcePath, const ImportPaths& paths,
+                            ImportListener& listener, ImportCancel* cancel) {
+    ImportOutcome outcome;
+    const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
+    if (blobPath.empty()) {
+        return outcome;
+    }
+    // Beside the file's own entry, so eviction counts it with it, and removed once read: its
+    // segments stay mapped.
+    const std::string stem =
+        blobPath.substr(0, blobPath.size() - std::string_view(".geoblob").size());
+    const std::string structurePath = stem + ".structure.geoblob";
+    outcome = runHelper(sourcePath, structurePath, paths, {"--structure", "--workers", "1"},
+                        listener, cancel);
+    unlink(structurePath.c_str());
+    outcome.blobPath.clear();
+    return outcome;
 }
 
 ImportOutcome refineFile(const std::string& sourcePath, const ImportPaths& paths, u32 level,
