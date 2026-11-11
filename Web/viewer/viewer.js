@@ -15,6 +15,7 @@ import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
 import { Gallery } from "./gallery.js";
 import { GalleryToolbar } from "./gallery-toolbar.js";
+import { kContentInsets as kGalleryInsets } from "./gallery-view.js";
 import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
          keyOf as keptKeyOf, persistOnce } from "./kept.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
@@ -157,6 +158,8 @@ const galleryToolbar = new GalleryToolbar({
   view: (view) => gallery?.setView(view),
   sheet: (change) => gallery?.setSheet(change),
   look: () => toggleCard(lookCard),
+  poster: () => setGalleryPoster(!gallery?.poster),
+  save: () => saveGalleryPoster(),
 });
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
@@ -169,7 +172,7 @@ picker.addEventListener("change", () => {
 });
 document.body.append(masthead.element, structure.element, library.element, selection.element,
                      lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, toolbar.moreMenu,
-                     galleryToolbar.element,
+                     galleryToolbar.element, galleryToolbar.posterBar,
                      holdHint.element,
                      hoverChip.element, dropZone.element, shortcuts.element, picker);
 
@@ -421,6 +424,7 @@ function galleryFor() {
     leave: () => leaveGallery(),
     folderChanged: () => refreshMasthead(),
     changed: () => galleryToolbar.show(gallery.state),
+    leavePoster: (toggle = false) => setGalleryPoster(toggle ? !gallery.poster : false),
     search: (query, found) => library.showSearch(galleryShown, query, found),
   });
   canvas.after(gallery.view.element);
@@ -461,6 +465,31 @@ function leaveGallery() {
   library.showSearch(false);
   if (names.length === 0) showEmpty();
   refreshMasthead();
+}
+
+// Show it off: the view as a poster, the full window less 30 each side, the cards put away, with
+// Save PNG and Done in the top margin.
+function setGalleryPoster(poster) {
+  if (!gallery || !galleryShown || phone) return;
+  masthead.element.hidden = poster;
+  library.element.hidden = poster;
+  galleryToolbar.element.hidden = poster;
+  galleryToolbar.posterBar.hidden = !poster;
+  if (poster) closeCards();
+  gallery.view.setInsets(poster ? { top: 30, left: 30, bottom: 30, right: 30 } : kGalleryInsets);
+  gallery.setPoster(poster);
+  if (!poster) {
+    showLibrary(true);
+    refreshMasthead();
+  }
+}
+
+async function saveGalleryPoster() {
+  const png = await gallery?.view.posterPNG();
+  if (!png) return;
+  const link = el("a", { href: URL.createObjectURL(png), download: `${gallery.title} poster.png` });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
 }
 
 async function openFromGallery(root, path) {
@@ -1392,6 +1421,29 @@ async function runGalleryTest() {
         runs.push({ style, view, folder: path, waited, ...measure() });
       }
     }
+  }
+  if (params.has("poster")) {
+    // The folder as a poster in each view: aligned as painted, and drawn as PNG.
+    const posters = [];
+    for (const view of [0, 1]) {
+      await g.show(root, "");
+      g.setView(view);
+      setGalleryPoster(true);
+      await sleep(600);
+      await settle();
+      const run = { view, ...measure(), contentHeight: Math.round(g.core.contentHeight) };
+      const png = await g.view.posterPNG();
+      run.pngBytes = png?.size ?? 0;
+      if (png) await fetch(`/png?label=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-${view ? "sheet" : "plates"}`)}`, { method: "POST", body: png });
+      if (params.has("shots")) {
+        await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-screen-${view}`)}`);
+        await sleep(1500);
+      }
+      setGalleryPoster(false);
+      posters.push(run);
+    }
+    await post({ folder: dir, posters, groupsOver: over, maxDeviation: Math.round(deviation * 1000) / 1000 });
+    return;
   }
   const g3 = params.has("scrollOnly") ? null : await galleryMotionChecks(g, root, subfolders, measure, settle);
   // Scrolling the tallest folder: long tasks over 50 ms while it moves.

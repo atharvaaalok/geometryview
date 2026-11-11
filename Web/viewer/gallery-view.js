@@ -31,6 +31,7 @@ export class GalleryView {
   #fixed;
   #ghost = null;
   #sheetBackground = "";
+  #sheetSpec = null;
   #images = new Map(); // file -> object URL
   #painted = null; // { top, bottom } of what is painted
   #shownTop = 0; // the scroll last painted, where a copy of the old view is taken from
@@ -154,6 +155,7 @@ export class GalleryView {
   // drafting grid where the style has one.
   #drawSheet() {
     const s = this.#core.sheet(this.#style);
+    this.#sheetSpec = s;
     const rgb = (c) => `rgb(${c.map((v) => Math.round(v * 255)).join(" ")})`;
     const layers = [];
     if (s.gridPitch > 0) {
@@ -335,6 +337,145 @@ export class GalleryView {
       node.style.borderLeft = `${w}px ${style} ${cssColour(item.stroke)}`;
       node.style.borderTop = "none";
     }
+  }
+
+  // ---- The poster's picture ----
+
+  /**
+   * The poster as a PNG, `scale` pixels a point: the window's width, and as tall as it is or as the
+   * poster runs. Drawn on a canvas from the display list, as the elements paint it.
+   */
+  async posterPNG(scale = 2) {
+    const host = this.element.getBoundingClientRect();
+    const area = this.#stage.getBoundingClientRect();
+    const left = area.left - host.left, top = area.top - host.top;
+    const bottom = host.bottom - area.bottom;
+    const width = host.width;
+    const height = Math.max(host.height, top + this.#core.contentHeight + bottom);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const g = canvas.getContext("2d");
+    g.scale(scale, scale);
+    this.#paintSheetOn(g, width, height);
+    await document.fonts?.ready;
+    const items = this.#core.items;
+    // Each picture once, as a bitmap.
+    const bitmaps = new Map();
+    await Promise.all([...new Set(items.filter((i) => i.kind === Kinds.Picture).map((i) => i.file))].map(async (file) => {
+      const url = this.#images.get(file);
+      if (!url) return;
+      try {
+        bitmaps.set(file, await createImageBitmap(await (await fetch(url)).blob()));
+      } catch {
+        // A picture that cannot be read is left out, as the page leaves it hidden.
+      }
+    }));
+    g.translate(left, top);
+    for (const item of items) {
+      if (item.flags & Flags.Fixed) continue;
+      const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
+      g.globalAlpha = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1);
+      switch (item.kind) {
+        case Kinds.Rect: this.#canvasRect(g, item, width, height); break;
+        case Kinds.Text: this.#canvasText(g, item); break;
+        case Kinds.Picture: {
+          const bitmap = bitmaps.get(item.file);
+          if (bitmap) g.drawImage(bitmap, item.x, item.y, item.width, item.height);
+          break;
+        }
+        case Kinds.Line:
+          g.beginPath();
+          g.moveTo(item.x, item.y);
+          g.lineTo(item.x + item.width, item.y + item.height);
+          g.strokeStyle = cssColour(item.stroke);
+          g.lineWidth = item.lineWidth;
+          g.setLineDash(item.flags & Flags.Dashed ? [4, 3] : []);
+          g.stroke();
+          break;
+      }
+    }
+    for (const bitmap of bitmaps.values()) bitmap.close();
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
+  // The style's sheet, as #drawSheet paints it with gradients.
+  #paintSheetOn(g, width, height) {
+    const s = this.#sheetSpec ?? this.#core.sheet(this.#style);
+    const rgb = (c, a = 1) => `rgb(${c.map((v) => Math.round(v * 255)).join(" ")} / ${a})`;
+    const wash = g.createLinearGradient(0, 0, 0, height);
+    wash.addColorStop(0, rgb(s.top));
+    wash.addColorStop(1, rgb(s.bottom));
+    g.fillStyle = wash;
+    g.fillRect(0, 0, width, height);
+    if (s.vignette > 0) {
+      const r = Math.hypot(width, height) / 2;
+      const dark = g.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, r);
+      dark.addColorStop(0.3, "rgb(0 0 0 / 0)");
+      dark.addColorStop(1, `rgb(0 0 0 / ${s.vignette})`);
+      g.fillStyle = dark;
+      g.fillRect(0, 0, width, height);
+    }
+    if (s.gridPitch > 0) {
+      for (const [step, alpha] of [[s.gridPitch, s.gridAlpha], [s.gridPitch * 5, s.gridAlpha * 1.6]]) {
+        g.fillStyle = rgb(s.grid, alpha);
+        for (let x = 0; x < width; x += step) g.fillRect(x, 0, 1, height);
+        for (let y = 0; y < height; y += step) g.fillRect(0, y, width, 1);
+      }
+    }
+  }
+
+  #canvasRect(g, item, width, height) {
+    const path = () => {
+      g.beginPath();
+      g.roundRect(item.x, item.y, item.width, item.height, item.radius);
+    };
+    if (item.flags & Flags.Sticker && item.shadow) {
+      g.beginPath();
+      g.roundRect(item.x + 3, item.y + 3, item.width, item.height, item.radius);
+      g.fillStyle = cssColour(item.shadow);
+      g.fill();
+    }
+    path();
+    if (item.flags & Flags.Hatched) {
+      g.save();
+      g.clip();
+      g.strokeStyle = cssColour(item.stroke);
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let d = -item.height; d < item.width; d += 7) {
+        g.moveTo(item.x + d, item.y + item.height);
+        g.lineTo(item.x + d + item.height, item.y);
+      }
+      g.stroke();
+      g.restore();
+      path();
+    } else if (item.flags & Flags.Sheet) {
+      g.save();
+      g.clip();
+      this.#paintSheetOn(g, width, height);
+      g.restore();
+      path();
+    } else if (item.fill) {
+      g.fillStyle = cssColour(item.fill);
+      g.fill();
+    }
+    if (item.stroke) {
+      g.strokeStyle = cssColour(item.stroke);
+      g.lineWidth = item.lineWidth;
+      g.setLineDash(item.flags & Flags.Dashed ? [4, 3] : []);
+      g.stroke();
+    }
+  }
+
+  #canvasText(g, item) {
+    g.font = `${item.weight} ${item.fontSize}px "Plex Mono", ui-monospace, monospace`;
+    g.letterSpacing = `${item.tracking}px`;
+    g.fillStyle = cssColour(item.fill);
+    g.textBaseline = "alphabetic";
+    g.textAlign = item.align === 1 ? "center" : item.align === 2 ? "right" : "left";
+    const x = item.align === 1 ? item.x + item.width / 2 : item.align === 2 ? item.x + item.width : item.x;
+    g.fillText(this.#core.text(item), x, item.baseline);
   }
 
   // ---- Motion ----

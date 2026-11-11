@@ -116,6 +116,17 @@ export class Gallery {
     this.#scheduleWant();
   }
 
+  /** Shows the view as a poster, dated today, or as the gallery again. */
+  setPoster(poster) {
+    const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    this.core.setPoster(poster, date);
+    this.view.scrollToTop();
+    this.view.reload();
+    this.#scheduleWant();
+  }
+
+  get poster() { return this.core.poster; }
+
   /** Searches the folder in view; empty clears it. */
   setSearch(query) {
     if (query === this.core.search) return;
@@ -164,6 +175,11 @@ export class Gallery {
    * search box itself only Esc is the gallery's: it clears the search.
    */
   key(e) {
+    if (this.core.poster) {
+      // A poster takes no keys but Esc, which the page turns into putting it away.
+      if (e.key === "Escape") this.#on.leavePoster?.();
+      return true;
+    }
     const field = e.target?.closest?.("input, textarea, select");
     if (field) {
       if (e.key !== "Escape" || field.type !== "search") return false;
@@ -172,6 +188,10 @@ export class Gallery {
       return true;
     }
     const mod = e.metaKey || e.ctrlKey;
+    if (e.altKey && !mod && e.code === "KeyP") {
+      this.#on.leavePoster?.(true);
+      return true;
+    }
     if (e.altKey && !mod && /^Digit[1-5]$/.test(e.code)) {
       this.setView(Number(e.code.slice(5)) - 1);
       return true;
