@@ -34,6 +34,9 @@ typedef enum GeoGalleryItemFlags {
     GeoItemLost = 128,  // drawn at 35%: a folder that can no longer be read, as last seen
     GeoItemRuler = 256, // a rectangle drawn as a ruler: its top line, minor ticks every `radius`
                         // points, major ticks every `tracking` (Ladders)
+    GeoItemTurn =
+        512, // a picture drawn as Peek's turntable: the painter's frame of `file`,
+             // every frame fitted alike into the rectangle (geo_gallery_set_peek_turnable)
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -131,6 +134,7 @@ typedef enum GeoGalleryActionKind {
     GeoActionPeek = 4,        // target: the file
     GeoActionLeave = 5,       // at the top already: close the gallery
     GeoActionReconnect = 6,   // ask again to read the folder
+    GeoActionTurn = 7,        // Peek's turntable: target 0 turns it a frame back, 1 on
 } GeoGalleryActionKind;
 
 typedef struct GeoGalleryAction {
@@ -328,6 +332,11 @@ void geo_gallery_set_changed(GeoGallery* gallery, uint32_t file, bool changed);
 /// closes it.
 void geo_gallery_peek(GeoGallery* gallery, uint32_t file);
 uint32_t geo_gallery_peeking(const GeoGallery* gallery);
+/// Whether the file in Peek can turn: its turntable's frames have come. Peek then draws its part as
+/// a GeoItemTurn picture over the whole picture area, with a hint, and ← → turn it
+/// (GeoActionTurn) instead of moving to the next file. Peeking another file sets it false.
+void geo_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable);
+bool geo_gallery_peek_turnable(const GeoGallery* gallery);
 
 /// Where to scroll so the selection shows, after a switch or a key; negative if it shows already.
 float geo_gallery_reveal(const GeoGallery* gallery);

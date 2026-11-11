@@ -603,6 +603,48 @@ TEST_CASE("Peek: the card stays, Open opens, anywhere else closes, and arrows mo
     CHECK(g.peeking() == kNone);
 }
 
+TEST_CASE("Peek turns a part that can turn: ← → turn it, ↑ ↓ still move, another file waits") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("bearing")); // rows of parts, so ↓ has somewhere to go
+    g.layout();
+    const u32 first = g.result().parts[0].index;
+    g.click(GeoTargetFile, first, false);
+    REQUIRE(g.key(GeoKeySpace).kind == GeoActionPeek);
+    g.layout();
+    const auto turntable = [&]() -> const GeoGalleryItem* {
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if ((item.flags & GeoItemTurn) != 0) {
+                return &item;
+            }
+        }
+        return nullptr;
+    };
+    // Its frames still to come: the still picture, and arrows move file to file.
+    CHECK(turntable() == nullptr);
+    CHECK(countText(g, "Drag to turn") == 0);
+    g.setPeekTurnable(true);
+    REQUIRE(g.layout());
+    const GeoGalleryItem* item = turntable();
+    REQUIRE(item != nullptr);
+    CHECK(item->kind == GeoItemPicture);
+    CHECK(item->file == first);
+    CHECK((item->flags & GeoItemFixed) != 0); // Peek's, over the view
+    CHECK(countText(g, "Drag to turn") == 1);
+    const GeoGalleryAction back = g.key(GeoKeyLeft), on = g.key(GeoKeyRight);
+    CHECK(back.kind == GeoActionTurn);
+    CHECK(back.target == 0);
+    CHECK(on.kind == GeoActionTurn);
+    CHECK(on.target == 1);
+    CHECK(g.peeking() == first);
+    // ↓ goes to the next file, whose turntable is yet to come.
+    CHECK(g.key(GeoKeyDown).kind == GeoActionHandled);
+    g.layout();
+    CHECK(g.peeking() != first);
+    CHECK_FALSE(g.peekTurnable());
+    CHECK(turntable() == nullptr);
+    CHECK(g.key(GeoKeyLeft).kind != GeoActionTurn);
+}
+
 TEST_CASE("Peek's stats share their baselines, and its card fits the view") {
     for (const float height : {420.0f, 720.0f, 1200.0f}) {
         CAPTURE(height);

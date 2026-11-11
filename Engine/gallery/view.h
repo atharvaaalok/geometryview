@@ -127,6 +127,14 @@ public:
     const std::optional<std::unordered_set<u32>>& matches() const { return matches_; }
     void peek(u32 file);
     u32 peeking() const { return peek_; }
+    void setPeekTurnable(bool turnable) {
+        turnable = turnable && peek_ != kNone;
+        if (turnable != peekTurnable_) {
+            peekTurnable_ = turnable;
+            dirty_ = true;
+        }
+    }
+    bool peekTurnable() const { return peekTurnable_; }
     /// Where to scroll so the selection shows, or negative if it shows already.
     float reveal() const;
     /// The selection's lane and the scroll that shows it, if it is in a lane and does not show.
@@ -162,6 +170,7 @@ private:
     std::string search_;
     std::optional<std::unordered_set<u32>> matches_;
     u32 peek_ = kNone;
+    bool peekTurnable_ = false; // its turntable's frames have come
     bool poster_ = false;
     bool lost_ = false;
     bool laddersShared_ = false;
