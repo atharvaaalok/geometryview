@@ -1,5 +1,5 @@
 // Gathers the viewer's files into Launcher/web, as the launcher serves them when packed: the page,
-// its engine, its importers, its fonts and the licenses. Run after the wasm-webgpu, wasm-release and
+// its engine, its picture worker's renderer, its importers, its fonts and the licenses. Run after the wasm-webgpu, wasm-release and
 // wasm-threads presets are built.
 
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
@@ -14,6 +14,8 @@ const copies = [
   [join(root, "Web/viewer"), web],
   [join(root, "build/wasm-webgpu/Engine/geometryview-web.mjs"), join(web, "build/geometryview-web.mjs")],
   [join(root, "build/wasm-webgpu/Engine/geometryview-web.wasm"), join(web, "build/geometryview-web.wasm")],
+  [join(root, "build/wasm-webgpu/Engine/geometryview-thumbs-web.mjs"), join(web, "build/geometryview-thumbs-web.mjs")],
+  [join(root, "build/wasm-webgpu/Engine/geometryview-thumbs-web.wasm"), join(web, "build/geometryview-thumbs-web.wasm")],
   [join(root, "build/wasm-release/Import/geometryview-step-web.mjs"), join(web, "occt/geometryview-step-web.mjs")],
   [join(root, "build/wasm-release/Import/geometryview-step-web.wasm"), join(web, "occt/geometryview-step-web.wasm")],
   [join(root, "build/wasm-release/Import/geometryview-occt-web.mjs"), join(web, "occt/geometryview-occt-web.mjs")],

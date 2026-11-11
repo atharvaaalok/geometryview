@@ -805,6 +805,7 @@ if (params.has("token")) {
 if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "library") runLibraryTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "refine") runRefineTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "thumbs") runThumbsTest().catch((error) => post({ error: error.message }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
 // ---- The launcher's bridge ---------------------------------------------------------------------
@@ -967,7 +968,9 @@ function bridgeHandlers() {
 function testLabel() {
   // A report's name is a file's, so an imported fixture's folder joins it with a dash.
   const name = (model ?? params.get("file") ?? "none").replaceAll("/", "-");
-  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${name}`;
+  // The gallery's checks are reported with its measurements.
+  const phase = params.get("test") === "thumbs" ? "g1" : "p4";
+  return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
 async function post(report) {
@@ -1079,6 +1082,46 @@ async function runLibraryTest() {
                recentFirst: recent[0]?.key,
                recentWhere: recent[0]?.where, reopenMs, reopenedFromCache,
                idleFrames: idle.frames - settled.frames, looping: idle.looping, rows });
+}
+
+// Draws fixtures' pictures in the gallery's picture worker, one after another as the gallery
+// will, and reports how long each took, the most memory the worker held and how often it was
+// replaced; the first eight go on a sheet, kept as a PNG.
+async function runThumbsTest() {
+  const { Thumbnailer } = await import("./thumbs.js");
+  const files = (params.get("files") ?? "gallery-drive,gallery-motor").split(",");
+  const count = Number(params.get("count") ?? 40);
+  const thumbnailer = new Thumbnailer({ recycleMB: Number(params.get("recycle") ?? 256) });
+  const blobs = await Promise.all(files.map(async (f) => (await fetch(`${fixtures}${f}.geoblob`)).blob()));
+  const spec = { pixels: Number(params.get("size") ?? 256), style: Number(params.get("style") ?? 0),
+                 colorMode: 1, pixelsPerPoint: 2, lineScale: 0.5 };
+  const times = [];
+  let firstMs = 0, maxHeapMB = 0, firstPicture = null;
+  const kept = [];
+  for (let i = 0; i < count; i++) {
+    const started = performance.now();
+    const picture = await thumbnailer.draw(blobs[i % blobs.length], spec, i % 4);
+    const ms = performance.now() - started;
+    if (i === 0) firstMs = ms;
+    else times.push(ms);
+    maxHeapMB = Math.max(maxHeapMB, thumbnailer.heapMB);
+    firstPicture ??= { width: picture.width, partRect: picture.partRect, inkRect: picture.inkRect,
+                       worldPerPixel: picture.worldPerPixel, pngBytes: picture.png.size };
+    if (kept.length < 8) kept.push(picture.bitmap);
+    else picture.bitmap.close();
+  }
+  thumbnailer.close();
+  const sheet = new OffscreenCanvas(spec.pixels * kept.length, spec.pixels);
+  const context = sheet.getContext("2d");
+  context.fillStyle = "#f2ead8";
+  context.fillRect(0, 0, sheet.width, sheet.height);
+  kept.forEach((bitmap, i) => context.drawImage(bitmap, i * spec.pixels, 0));
+  const png = await sheet.convertToBlob({ type: "image/png" });
+  await fetch(`/png?label=${encodeURIComponent(testLabel())}`, { method: "POST", body: png }).catch(() => {});
+  times.sort((a, b) => a - b);
+  const at = (q) => Math.round(times[Math.min(times.length - 1, Math.floor(q * times.length))] * 100) / 100;
+  await post({ files, count, size: spec.pixels, style: spec.style, firstMs: Math.round(firstMs),
+               p50Ms: at(0.5), p90Ms: at(0.9), maxHeapMB, recycled: thumbnailer.recycled, firstPicture });
 }
 
 // Waits for an imported file's scene, zooms in on the middle of the view, and reports how many
