@@ -58,6 +58,7 @@ typedef enum GeoLibraryEventKind {
     GeoLibraryPicture = 1,
     GeoLibraryProgress = 2,
     GeoLibraryFailed = 3,
+    GeoLibraryTurnFrame = 4, // a turntable's frame: `done` of `total`, in `picture`
 } GeoLibraryEventKind;
 
 typedef struct GeoLibraryEvent {
@@ -65,7 +66,7 @@ typedef struct GeoLibraryEvent {
     const char* path;
     GeoFacts facts;       // GeoLibraryFacts
     GeoPicture picture;   // GeoLibraryPicture
-    uint32_t done, total; // GeoLibraryProgress, in slices
+    uint32_t done, total; // GeoLibraryProgress, in slices; GeoLibraryTurnFrame, frame of frames
     const char* message;  // GeoLibraryFailed
 } GeoLibraryEvent;
 
@@ -101,6 +102,10 @@ void geo_library_destroy(GeoLibrary* library);
 void geo_library_want(GeoLibrary* library, const GeoLibraryWant* wants, uint32_t count);
 void geo_library_set_picture(GeoLibrary* library, const GeoPictureSpec* spec);
 void geo_library_set_prefetch(GeoLibrary* library, bool allowed);
+/// Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly about
+/// the upright at one scale, ahead of any other picture, each told as a GeoLibraryTurnFrame.
+/// 0 frames, or a null path, stops it.
+void geo_library_turn(GeoLibrary* library, const char* path, uint32_t frames, uint32_t pixels);
 /// Blocks until nothing waits or runs: for tools and tests.
 void geo_library_wait_idle(GeoLibrary* library);
 
