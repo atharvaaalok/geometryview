@@ -54,6 +54,11 @@ std::string eyebrowOf(const Tree& tree, u32 folder) {
 
 // ---- Drawing --------------------------------------------------------------------------------
 
+// A part drawn smaller than this, in points, beside one at least 48 points, gets a detail bubble.
+constexpr float kTiny = 6.0f;
+constexpr float kBubble = 84.0f; // the bubble's diameter
+constexpr float kRing = 18.0f;   // the ring's on the shelf
+
 class Painter : public Draw {
 public:
     using Draw::Draw;
@@ -118,6 +123,8 @@ public:
             u32 file;
             float w, h, below, left, slot;
             double mm;
+            int detail = 0; // the part again at detail:1, in a bubble beside it; 0 for none
+            char letter = 0;
         };
         std::vector<Item> items;
         for (const u32 f : files) {
@@ -135,6 +142,27 @@ public:
             }
             it.slot = std::max(it.w, options.minSlot);
             items.push_back(it);
+        }
+        // Tiny beside huge: a part too small to see at the shelf's scale gets a detail bubble, the
+        // drawing office's way: a ring and a letter on it, and the part again, larger, at a stated
+        // scale, in a circle beside it.
+        float tallest = 0.0f;
+        for (const Item& it : items) {
+            tallest = std::max(tallest, std::max(it.w, it.h));
+        }
+        char letter = 'A';
+        for (Item& it : items) {
+            if (failedBoxes || std::max(it.w, it.h) >= kTiny || tallest < 48.0f || letter > 'Z') {
+                continue;
+            }
+            for (const int n : {2, 5, 10, 20, 50, 100, 200, 500}) {
+                it.detail = n;
+                if (std::max(it.w, it.h) * float(n) >= kBubble * 0.45f) {
+                    break;
+                }
+            }
+            it.letter = letter++;
+            it.slot = std::max(options.minSlot, kRing + 18.0f + kBubble);
         }
         // Every label of a shelf has the same lines, so names, subtitles and sizes share rows.
         const bool withSub = std::any_of(files.begin(), files.end(), [&](u32 f) {
@@ -158,7 +186,7 @@ public:
         for (const std::vector<Item>& r : rows) {
             float above = 0.0f, below = 0.0f;
             for (const Item& it : r) {
-                above = std::max(above, it.h);
+                above = std::max(above, it.detail ? kBubble : it.h);
                 below = std::max(below, it.below);
             }
             const float baseline = y + above;
@@ -168,7 +196,12 @@ public:
             float cx = kContentLeft;
             for (const Item& it : r) {
                 const File& file = tree.file(it.file);
-                const float left = cx + (it.slot - it.w) / 2.0f;
+                // A detailed part stands in its ring at the slot's left, its bubble to the right.
+                const float left =
+                    it.detail ? cx + (kRing - it.w) / 2.0f : cx + (it.slot - it.w) / 2.0f;
+                const float centre = it.detail ? cx + it.slot / 2.0f : left + it.w / 2.0f;
+                const float boxLeft = it.detail ? cx : left, boxW = it.detail ? it.slot : it.w;
+                const float boxTop = baseline - (it.detail ? kBubble : it.h);
                 const bool hovered = in.hoverKind == GeoTargetFile && in.hover == it.file;
                 const bool selected = in.selected == it.file;
                 const bool faded = in.matches && !in.matches->contains(it.file);
@@ -180,9 +213,8 @@ public:
                 }
                 const float labelBottom = labelTop + options.labelH - 6.0f;
                 if (selected || hovered) {
-                    out.rect(left - 10.0f, baseline - it.h - 8.0f, it.w + 20.0f,
-                             labelBottom - (baseline - it.h - 8.0f),
-                             selected ? palette.wash : palette.lift,
+                    out.rect(boxLeft - 10.0f, boxTop - 8.0f, boxW + 20.0f,
+                             labelBottom - (boxTop - 8.0f), selected ? palette.wash : palette.lift,
                              selected ? palette.washLine : palette.liftLine, 1.5f, 10.0f,
                              GeoItemSticker, selected ? palette.washLine : palette.liftLine);
                 }
@@ -194,10 +226,29 @@ public:
                 } else {
                     part(it.file, left, baseline, it.mm, (hovered && !selected) ? 0 : partGroup);
                 }
+                if (it.detail) {
+                    // The ring on the shelf, its letter above, a leader to the bubble, and the
+                    // part again inside it.
+                    constexpr TextStyle kLetter{9.5f, 600, 0.0f, false};
+                    const float rcx = cx + kRing / 2.0f, rcy = baseline - it.h / 2.0f;
+                    const float ring = std::max(kRing, std::max(it.w, it.h) + 8.0f) / 2.0f;
+                    out.rect(rcx - ring, rcy - ring, 2.0f * ring, 2.0f * ring, 0, palette.on, 1.25f,
+                             ring);
+                    out.text(std::string(1, it.letter), kLetter, palette.on, rcx - 8.0f,
+                             rcy - ring - 3.0f, 16.0f, 1);
+                    const float bx = cx + it.slot - kBubble, by = baseline - kBubble;
+                    out.line(rcx + ring, rcy, bx, by + kBubble / 2.0f, palette.on, 1.0f,
+                             GeoItemDashed);
+                    out.rect(bx, by, kBubble, kBubble, 0, palette.on, 1.5f, kBubble / 2.0f);
+                    const double mm = it.mm / double(it.detail);
+                    const float dw = it.w * float(it.detail), dh = it.h * float(it.detail);
+                    part(it.file, bx + (kBubble - dw) / 2.0f, by + (kBubble + dh) / 2.0f, mm, 0,
+                         /*marks=*/false);
+                }
                 const u32 text = selected && !palette.dark ? hex(0x231E16) : palette.on;
                 const u32 textMuted = selected && !palette.dark ? hex(0x231E16) : palette.muted;
                 const float labelW = it.slot + options.gap - 6.0f;
-                const float labelX = left + it.w / 2.0f - labelW / 2.0f;
+                const float labelX = centre - labelW / 2.0f;
                 const bool grouped = !(hovered && !selected);
                 // Its name, then what tells it apart, then its size.
                 std::string sub = file.failed() ? "couldn't read" : file.names.sub;
@@ -206,6 +257,9 @@ public:
                     const double sides[3] = {file.facts->size[0], file.facts->size[1],
                                              file.facts->size[2]};
                     dims = dimensions(sides, true);
+                }
+                if (it.detail) {
+                    dims = std::format("DETAIL {} {}:1 \xC2\xB7 ", it.letter, it.detail) + dims;
                 }
                 std::vector<std::pair<std::string, bool>> lines = {{file.names.label, false}};
                 if (failedBoxes) {
@@ -235,8 +289,8 @@ public:
                 out.offset(0.0f, 0.0f);
                 out.target(GeoTargetNone, 0);
                 out.key(0);
-                result.parts.push_back({GeoTargetFile, it.file, left, baseline - it.h, it.w,
-                                        it.h + below + options.labelH});
+                result.parts.push_back({GeoTargetFile, it.file, boxLeft, boxTop, boxW,
+                                        baseline - boxTop + below + options.labelH});
                 cx += it.slot + options.gap;
             }
             y += above + below + options.labelH + options.rowGap;
