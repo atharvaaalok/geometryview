@@ -251,6 +251,7 @@ struct StyleUniforms {
     float metalDiffuse; // the share of diffuse light a metal keeps
     float fold;         // the ink of a body folding in front of itself, 0 for none
     float ghostLine;    // the width of a ghost's dashed lines, pixels
+    float sheetAlpha;   // 1 for an opaque sheet; 0 leaves the background clear, premultiplied
 };
 
 struct FrameUniforms {

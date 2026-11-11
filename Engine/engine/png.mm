@@ -7,11 +7,13 @@
 
 namespace geo::engine {
 
-bool writePng(const char* path, const std::vector<u8>& bgra, u32 width, u32 height) {
+bool writePng(const char* path, const std::vector<u8>& bgra, u32 width, u32 height, Alpha alpha) {
     CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef context = CGBitmapContextCreate(
-        const_cast<u8*>(bgra.data()), width, height, 8, usize(width) * 4, colorSpace,
-        kCGBitmapByteOrder32Little | u32(kCGImageAlphaNoneSkipFirst));
+    const CGImageAlphaInfo info = alpha == Alpha::Premultiplied ? kCGImageAlphaPremultipliedFirst
+                                                                : kCGImageAlphaNoneSkipFirst;
+    CGContextRef context =
+        CGBitmapContextCreate(const_cast<u8*>(bgra.data()), width, height, 8, usize(width) * 4,
+                              colorSpace, kCGBitmapByteOrder32Little | u32(info));
     CGImageRef image = CGBitmapContextCreateImage(context);
     NSURL* url = [NSURL fileURLWithPath:@(path)];
     CGImageDestinationRef destination = CGImageDestinationCreateWithURL(

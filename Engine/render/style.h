@@ -138,6 +138,11 @@ struct Raster {
     /// paper grain or the drafting grid. Below 1 for small pictures, whose lines would otherwise
     /// swamp the part: the gallery uses clamp(cell / 320 pt, 0.5, 1).
     float lineScale = 1.0f;
+    /// The sheet's opacity. At 0 the background is left clear and the frame comes out with
+    /// premultiplied alpha: the part, its lines and its cast shadow, to stand on another sheet.
+    float sheetAlpha = 1.0f;
+
+    bool operator==(const Raster&) const = default;
 };
 
 /// The style's uniforms for shaders, rasterised as `raster` says.

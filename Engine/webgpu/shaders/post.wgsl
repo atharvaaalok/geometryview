@@ -31,7 +31,7 @@ fn screenVertex(@builtin(vertex_index) vertexId: u32) -> ScreenVertex {
 @fragment
 fn resolveFragment(in: ScreenVertex) -> @location(0) vec4f {
     let p = vec2i(in.position.xy);
-    var color = textureLoad(colorTexture, p, 0).rgb;
+    let color = textureLoad(colorTexture, p, 0);
     let ink = textureLoad(inkTexture, p, 0);
     let tags = textureLoad(tagTexture, p, 0).rg;
     let inkAlpha = style.inkAlpha;
@@ -44,8 +44,8 @@ fn resolveFragment(in: ScreenVertex) -> @location(0) vec4f {
     }
     let ghost = ink.g * style.ghostLineAlpha * inkAlpha;
     let cover = 1.0 - (1.0 - solid) * (1.0 - ghost);
-    color = mix(color, style.ink, cover);
-    return vec4f(color, 1.0);
+    // Over a clear background the ink brings its own coverage, premultiplied.
+    return mix(color, vec4f(style.ink, 1.0), cover);
 }
 
 // ---- Ambient occlusion, from depth at half resolution ----------------------------------------
@@ -263,7 +263,8 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
         let blotch = valueNoise(px / (90.0 * style.pixelsPerPoint));
         print = mix(1.0, (0.955 + 0.07 * fine) * (0.975 + 0.05 * blotch), style.grain);
     }
-    // As the Metal composite blends: ink, plus what remains of the colour beneath.
-    let color = textureLoad(colorTexture, vec2i(px), 0).rgb;
-    return vec4f(style.ink * ink * print + color * (1.0 - ink) * shade * print, 1.0);
+    // As the Metal composite blends: ink, plus what remains of the colour beneath, premultiplied.
+    let color = textureLoad(colorTexture, vec2i(px), 0);
+    return vec4f(style.ink * ink * print + color.rgb * (1.0 - ink) * shade * print,
+                 ink + color.a * (1.0 - ink));
 }

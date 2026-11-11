@@ -30,7 +30,7 @@ void LookState::set(const render::LookSettings& settings) {
 }
 
 void LookState::setRaster(const render::Raster& raster) {
-    if (raster.pixelsPerPoint != raster_.pixelsPerPoint || raster.lineScale != raster_.lineScale) {
+    if (raster != raster_) {
         raster_ = raster;
         styleDirty_ = true;
     }

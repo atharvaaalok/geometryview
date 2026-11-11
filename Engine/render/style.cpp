@@ -584,6 +584,7 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.metalDiffuse = style.studio.metalDiffuse;
     u.fold = style.ink.fold;
     u.ghostLine = style.ink.ghost * line;
+    u.sheetAlpha = std::clamp(raster.sheetAlpha, 0.0f, 1.0f);
     return u;
 }
 
