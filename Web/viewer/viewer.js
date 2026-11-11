@@ -1177,7 +1177,7 @@ function testLabel() {
     .replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
   const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
-    : params.get("test") === "gallery" ? "g6" : "p4";
+    : params.get("test") === "gallery" ? "g7" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
@@ -1439,6 +1439,15 @@ async function runGalleryTest() {
           await sleep(1500);
         }
         runs.push({ style, view, folder: path, waited, ...measure() });
+        if (view === 3) {
+          // Atlas closer in: the districts, then every part named.
+          for (const level of [1, 2]) {
+            g.atlas({ level });
+            await sleep(300);
+            await settle();
+            runs.push({ style, view, level, folder: path, waited: 0, ...measure() });
+          }
+        }
       }
     }
   }

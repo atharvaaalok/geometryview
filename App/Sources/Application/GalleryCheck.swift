@@ -137,6 +137,19 @@ final class GalleryCheck {
                     run["waitedSeconds"] = waited
                     run["waitingInView"] = controller.waitingInView
                     runs.append(run)
+                    if view == GeoViewAtlas.rawValue {
+                        // Atlas closer in: the districts, then every part named.
+                        for level in [1, 2] {
+                            controller.atlas(level: level)
+                            _ = await settle()
+                            var closer = measure()
+                            closer["style"] = Int(style.rawValue)
+                            closer["view"] = Int(view)
+                            closer["level"] = level
+                            closer["folder"] = controller.gallery.folder
+                            runs.append(closer)
+                        }
+                    }
                     print(
                         "gallery-check: style \(style.rawValue) \(names[Int(view)]) \(controller.gallery.folder.isEmpty ? "/" : controller.gallery.folder): \(run["groupsChecked"] ?? 0) groups, \((run["over"] as? [Any])?.count ?? 0) over 0.5 pt, waited \(String(format: "%.1f", waited)) s"
                     )

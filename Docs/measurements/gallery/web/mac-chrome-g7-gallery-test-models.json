@@ -1,0 +1,853 @@
+{
+  "label": "mac-chrome-g7-gallery-test-models",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "test-models",
+  "files": 1862,
+  "runs": [
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "",
+      "waited": 88.815,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 112,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "slices",
+      "waited": 2.417,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 142,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "",
+      "waited": 1.676,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 318,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "slices",
+      "waited": 1.423,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 336,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "",
+      "waited": 0.405,
+      "groupsChecked": 16,
+      "over": [],
+      "painted": 297,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.404,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.405,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "",
+      "waited": 0.403,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 50,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 60,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "slices",
+      "waited": 0.402,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 43,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 51,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 121,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "",
+      "waited": 2.932,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 133,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "slices",
+      "waited": 0.666,
+      "groupsChecked": 16,
+      "over": [],
+      "painted": 168,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "",
+      "waited": 0.414,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 318,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "slices",
+      "waited": 0.41,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 334,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "",
+      "waited": 0.405,
+      "groupsChecked": 17,
+      "over": [],
+      "painted": 330,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.401,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 262,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "",
+      "waited": 0.412,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 50,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 63,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "large",
+      "waited": 0.401,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 11,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "models",
+      "waited": 0.401,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "slices",
+      "waited": 0.404,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 43,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 51,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 121,
+      "maxDeviation": 0.029
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "",
+      "waited": 3.183,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 133,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.402,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.401,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "slices",
+      "waited": 0.907,
+      "groupsChecked": 16,
+      "over": [],
+      "painted": 168,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "",
+      "waited": 0.407,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 316,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.401,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "slices",
+      "waited": 0.413,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 334,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "",
+      "waited": 0.413,
+      "groupsChecked": 17,
+      "over": [],
+      "painted": 343,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.401,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.404,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 276,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "",
+      "waited": 0.412,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 50,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 63,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "large",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 13,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "large",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "models",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "slices",
+      "waited": 0.404,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 43,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 8,
+      "over": [],
+      "painted": 51,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "slices",
+      "waited": 0,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 121,
+      "maxDeviation": 0.027
+    }
+  ],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0.208,
+  "scroll": {
+    "folder": "slices/hard",
+    "height": 7195,
+    "frames": 120,
+    "ms": 1986,
+    "longTasks": [],
+    "items": 1696,
+    "longest": 0
+  },
+  "framesWhileCovered": 0,
+  "g3": {
+    "sticky": {
+      "stickyTop": 412.5999755859375,
+      "scroll": 5265,
+      "fromViewTop": -0.006,
+      "layoutTop": 412.594,
+      "aligned": {
+        "groupsChecked": 28,
+        "over": [],
+        "painted": 416,
+        "maxDeviation": 0.024
+      }
+    },
+    "search": {
+      "query": "668",
+      "found": 221,
+      "fadedNodes": 205,
+      "aligned": {
+        "groupsChecked": 38,
+        "over": [],
+        "painted": 314,
+        "maxDeviation": 0.023
+      }
+    },
+    "peek": {
+      "file": "large/stl2m.stl",
+      "fixedNodes": 19,
+      "aligned": {
+        "groupsChecked": 13,
+        "over": [],
+        "painted": 63,
+        "maxDeviation": 0.024
+      }
+    },
+    "switch": {
+      "transition": {
+        "kind": 1,
+        "duration": 520,
+        "fadeOut": 260
+      },
+      "fly": 7,
+      "fadeIn": 0,
+      "flyTiming": [
+        "0+520"
+      ],
+      "fadeTiming": [],
+      "animations": 9,
+      "animationTimings": [
+        "0+520",
+        "0+160",
+        "0+260"
+      ],
+      "selectionKept": true
+    },
+    "zoom": {
+      "into": {
+        "kind": 2,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          264
+        ]
+      },
+      "out": {
+        "kind": 3,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          264
+        ]
+      },
+      "animations": 2,
+      "animationTimings": [
+        "0+420"
+      ]
+    }
+  },
+  "overflowX": {
+    "page": 0,
+    "gallery": 0,
+    "width": 1440
+  }
+}
