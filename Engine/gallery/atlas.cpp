@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -224,7 +225,12 @@ public:
         }
     }
 
-    float mapH() const { return kMapW * in.height / std::max(1.0f, in.width); }
+    float mapH() const { return mapW_ * aspect_; }
+    /// The map's width in its units: 2,400, or a poster's, narrower so it is drawn as close as
+    /// districts are seen live, their names room to stand.
+    float mapW_ = kMapW;
+    /// The map's height to its width: the view's, or a poster's map area's.
+    float aspect_ = in.height / std::max(1.0f, in.width);
 
     // The camera: view points from map units.
     float sx(float x) const { return x * cam_.k + cam_.x; }
@@ -491,6 +497,73 @@ public:
         (void)kCardSmall;
     }
 
+    /// A poster's cartouche, its bottom right at (right, bottom): a compass, the title, what the
+    /// map holds, a legend of its regions, and how it was drawn.
+    void cartouche(const std::vector<Place>& regions, bool bands, float right, float bottom) {
+        constexpr float w = 330.0f, pad = 18.0f, rowH = 18.0f;
+        constexpr TextStyle eyebrow{10.0f, 600, 0.16f, true}, title{20.0f, 600, 0.0f, false},
+            sub{11.0f, 400, 0.0f, false}, name{10.0f, 600, 0.1f, true},
+            number{10.5f, 500, 0.0f, false}, note{9.5f, 400, 0.0f, false};
+        usize districts = 0;
+        for (const Place& r : regions) {
+            districts += std::max<usize>(1, r.children.size());
+        }
+        const usize shown = std::min<usize>(regions.size(), 12);
+        const bool more = regions.size() > shown;
+        const float h = pad + 24.0f + 30.0f + 20.0f + 14.0f + rowH * float(shown + (more ? 1 : 0)) +
+                        14.0f + 30.0f + pad;
+        const float x = right - w, top = bottom - h;
+        out.rect(x, top, w, h, 0, palette.on, 1.5f, 0.0f, GeoItemSheet);
+        const float lx = x + pad, rx = right - pad;
+        // The compass, top right: a needle pointing up, and N.
+        const float cx = rx - 10.0f, cy = top + pad + 2.0f;
+        out.line(cx, cy, cx, cy + 26.0f, palette.on, 1.25f);
+        out.line(cx - 5.0f, cy + 9.0f, cx, cy, palette.on, 1.25f);
+        out.line(cx + 5.0f, cy + 9.0f, cx, cy, palette.on, 1.25f);
+        out.text("N", TextStyle{9.5f, 600, 0.0f, false}, palette.on, cx - 3.0f, cy + 38.0f, 8.0f,
+                 1);
+        float y = top + pad + ascentOf(eyebrow);
+        out.text("An atlas of", eyebrow, palette.muted, lx, y, w - 2.0f * pad - 30.0f);
+        y += 30.0f;
+        out.text(tree.titleOf(in.folder), title, palette.on, lx, y, w - 2.0f * pad - 30.0f);
+        y += 20.0f;
+        const u32 n = tree.folder(in.folder).count;
+        out.text(bands ? count(n, "part") + " by size \xC2\xB7 no subfolders"
+                       : count(n, "part") + " \xC2\xB7 " + count(regions.size(), "region") +
+                             " \xC2\xB7 " + count(districts, "district"),
+                 sub, palette.muted, lx, y, w - 2.0f * pad);
+        y += 10.0f;
+        out.line(lx, y, rx, y, palette.on, 1.0f);
+        y += 4.0f;
+        // The legend: each region and its count, joined by dots.
+        for (usize i = 0; i < shown; ++i) {
+            y += rowH;
+            const u32 g = newGroup();
+            out.group(g);
+            const std::string c = grouped(regions[i].count);
+            const float cw = textWidth(c, number);
+            const float used =
+                out.text(regions[i].name, name, palette.on, lx, y, w - 2.0f * pad - cw - 24.0f);
+            out.text(c, number, palette.muted, rx - cw, y, cw, 2);
+            out.group(0);
+            if (rx - cw - 6.0f > lx + used + 12.0f) {
+                out.line(lx + used + 6.0f, y - 1.0f, rx - cw - 6.0f, y - 1.0f, palette.faint, 1.0f,
+                         GeoItemDashed);
+            }
+        }
+        if (more) {
+            y += rowH;
+            out.text(std::format("and {} more", regions.size() - shown), number, palette.muted, lx,
+                     y, w - 2.0f * pad);
+        }
+        y += 14.0f + ascentOf(note);
+        out.text("Areas grow with the square root of each folder's", note, palette.muted, lx, y,
+                 w - 2.0f * pad);
+        y += 14.0f;
+        out.text("file count. Drawn by GeometryView from its files.", note, palette.muted, lx, y,
+                 w - 2.0f * pad);
+    }
+
 private:
     const AtlasCamera& cam_;
 };
@@ -510,8 +583,27 @@ AtlasCamera atlasFit(float width, float height) {
 }
 
 LayoutResult layoutAtlas(const LayoutInput& input, Display& display, const AtlasCamera& camera) {
+    // A poster: the whole map fitted inside a drawing's frame, beside its cartouche.
+    constexpr float kFrame = 7.0f, kInside = 28.0f, kCartoucheW = 330.0f;
+    const Rect frame{kContentLeft, kContentTop, input.width - kContentLeft - kContentRight,
+                     input.height - kContentTop - kContentBottom};
+    const Rect area{frame.x + kInside, frame.y + kInside,
+                    std::max(40.0f, frame.w - 2.0f * kInside - kCartoucheW - 24.0f),
+                    std::max(40.0f, frame.h - 2.0f * kInside)};
+    AtlasCamera posterCamera;
+    if (input.poster) {
+        // The map takes the area's shape, so it fills it, at 0.75 points a unit: past where the
+        // districts show live (1.55 times the fitted zoom), so their heads have room.
+        posterCamera.fit = posterCamera.k = 0.75f;
+        posterCamera.x = area.x;
+        posterCamera.y = area.y;
+    }
     LayoutResult result;
-    Atlas atlas(input, display, result, camera);
+    Atlas atlas(input, display, result, input.poster ? posterCamera : camera);
+    if (input.poster) {
+        atlas.aspect_ = area.h / area.w;
+        atlas.mapW_ = area.w / posterCamera.k;
+    }
     const Tree& tree = *input.tree;
     if (tree.folder(input.folder).count == 0) {
         return layoutPlates(input, display); // nothing to draw: as Plates says it
@@ -521,17 +613,26 @@ LayoutResult layoutAtlas(const LayoutInput& input, Display& display, const Atlas
     for (const Place& r : regions) {
         weights.push_back(std::sqrt(double(r.count)));
     }
-    const std::vector<Rect> rects = squarify(weights, {0.0f, 0.0f, kMapW, atlas.mapH()});
+    const std::vector<Rect> rects = squarify(weights, {0.0f, 0.0f, atlas.mapW_, atlas.mapH()});
     for (usize i = 0; i < regions.size(); ++i) {
         atlas.lay(regions[i], inset(rects[i], 14.0f, 14.0f));
     }
-    // A search draws at least the districts, where its pins fall.
-    const int level = input.matches ? std::max(1, atlasLevel(camera)) : atlasLevel(camera);
+    // A search draws at least the districts, where its pins fall; a poster shows them, unless
+    // its regions are size bands.
+    const bool bands = tree.folder(input.folder).folders.empty() && regions.size() > 1;
+    const int level = input.poster    ? (bands ? 0 : 1)
+                      : input.matches ? std::max(1, atlasLevel(camera))
+                                      : atlasLevel(camera);
     for (const Place& r : regions) {
         atlas.drawPlace(r, level);
     }
     if (!input.poster) {
         atlas.card(regions, level);
+    } else {
+        atlas.cartouche(regions, bands, frame.x + frame.w - kInside, frame.y + frame.h - kInside);
+        display.rect(frame.x, frame.y, frame.w, frame.h, 0, paletteOf(input.style).on, 1.5f);
+        display.rect(frame.x + kFrame, frame.y + kFrame, frame.w - 2.0f * kFrame,
+                     frame.h - 2.0f * kFrame, 0, paletteOf(input.style).on, 1.0f);
     }
     result.contentHeight = input.height; // the map does not scroll; it pans
     return result;

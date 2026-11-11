@@ -944,6 +944,82 @@ TEST_CASE("ladders: a strip a folder, its parts on a ruler in a lane, every line
     }
 }
 
+TEST_CASE("ladders' poster: every family wrapped on one plate, framed, with a title block") {
+    for (const u32 style : {0u, 3u}) {
+        CAPTURE(style);
+        Gallery g = measured();
+        g.setViews(0b11111);
+        g.setStyle(style);
+        REQUIRE(g.setView(GeoViewLadders));
+        g.setPoster(true, "11 November 2026");
+        g.setViewport(1380.0f, 840.0f);
+        REQUIRE(g.layout());
+        checkAligned(g);
+        CHECK(g.result().lanes.empty());      // nothing scrolls on paper
+        CHECK(g.result().parts.size() == 61); // every file once
+        CHECK(countText(g, "LADDERS") == 1);
+        CHECK(countText(g, "on one plate") + countText(g, "its own scale") == 1);
+        CHECK(countText(g, "DRAWN BY") == 1);
+        CHECK(countText(g, "1 of 1") == 1);
+        // Everything inside the frame: the outer rule's rectangle, the first item it draws last.
+        const GeoGalleryItem* frame = nullptr;
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if (item.kind == GeoItemRect && item.line_width == 1.5f && item.fill == 0 &&
+                (item.flags & GeoItemSheet) == 0 && item.y <= 2.0f) {
+                frame = &item;
+            }
+        }
+        REQUIRE(frame != nullptr);
+        for (const GeoGalleryItem& item : g.display().items()) {
+            const float x0 = std::min(item.x, item.x + item.width),
+                        x1 = std::max(item.x, item.x + item.width);
+            const float y0 = std::min(item.y, item.y + item.height),
+                        y1 = std::max(item.y, item.y + item.height);
+            CHECK(x0 >= frame->x - 0.01f);
+            CHECK(x1 <= frame->x + frame->width + 0.01f);
+            CHECK(y0 >= frame->y - 0.01f);
+            CHECK(y1 <= frame->y + frame->height + 0.01f);
+        }
+    }
+}
+
+TEST_CASE("atlas' poster: the whole map in a frame, beside a cartouche with its legend") {
+    for (const u32 style : {0u, 3u}) {
+        CAPTURE(style);
+        Gallery g = measured();
+        g.setViews(0b11111);
+        g.setStyle(style);
+        REQUIRE(g.setView(GeoViewAtlas));
+        g.setAtlasCamera(4.0f, -300.0f,
+                         -200.0f); // zoomed in: the poster shows the whole map anyway
+        g.setPoster(true, "11 November 2026");
+        g.setViewport(1380.0f, 840.0f);
+        REQUIRE(g.layout());
+        checkAligned(g);
+        CHECK(countText(g, "AN ATLAS OF") == 1);
+        CHECK(countText(g, "BEARING") >= 1); // a region in the legend
+        const GeoGalleryItem* frame = nullptr;
+        for (const GeoGalleryItem& item : g.display().items()) {
+            CHECK((item.flags & GeoItemFixed) == 0); // no map card
+            if (item.kind == GeoItemRect && item.line_width == 1.5f && item.fill == 0 &&
+                (item.flags & GeoItemSheet) == 0 && item.y <= 2.0f) {
+                frame = &item;
+            }
+        }
+        REQUIRE(frame != nullptr);
+        for (const GeoGalleryItem& item : g.display().items()) {
+            const float x0 = std::min(item.x, item.x + item.width),
+                        x1 = std::max(item.x, item.x + item.width);
+            const float y0 = std::min(item.y, item.y + item.height),
+                        y1 = std::max(item.y, item.y + item.height);
+            CHECK(x0 >= frame->x - 0.01f);
+            CHECK(x1 <= frame->x + frame->width + 0.01f);
+            CHECK(y0 >= frame->y - 0.01f);
+            CHECK(y1 <= frame->y + frame->height + 0.01f);
+        }
+    }
+}
+
 TEST_CASE("ladders: a lane scrolled sideways is hit where its parts show, and only there") {
     Gallery g = measured(200); // a long bearing strip
     g.setViews(0b111);
