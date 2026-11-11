@@ -180,3 +180,23 @@ and time, without reading anything.
 - The content never scrolls. Painters turn wheels, pinches and drags into the camera's moves and
   draw again.
 - The map card is fixed in the view, like Peek's items, and takes its own clicks.
+
+## Addendum (2026-11-11): G8, Catalogue and its book
+
+**20. A view can be a book, turned a spread at a time.**
+- Catalogue sets the folder as a printed parts catalogue: an inside cover and a title page, the
+  contents, a chapter for each subfolder, a plate and tables for each folder, and an index. The
+  core paginates the whole book from the tree, and lays out only the spread in view, fitted to
+  the view on the drawing style's own sheet.
+- The content never scrolls; it turns. The core holds the spread
+  (`geo_gallery_catalogue`, `_set_catalogue_spread`, `_catalogue_index`). ← and → turn it, and a
+  new target kind, a page (`GeoTargetPage`), turns to the page it names: lines of the contents,
+  rows of an opener, the thumb index, the mosaic's parts.
+- Everything on a page stays inside its text, clear of the fold; only the thumb index hangs past
+  the edge. A unit test holds every spread to that.
+
+**21. A toolbar folds before it is cut.**
+- Each view brings its own controls, and Catalogue's are the widest. Short of room, the bar first
+  drops the view switch's keys (they stay in its tooltips), then Poster and the Look pill drop
+  their titles. The Mac and the browser fold by the same rule, and both checks record any part of
+  the bar that is still cut off.
