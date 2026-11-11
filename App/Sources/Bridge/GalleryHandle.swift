@@ -72,6 +72,13 @@ final class GalleryHandle {
         geo_gallery_set_failure(gallery, file, message)
     }
 
+    /// The view as a poster, printed with `date` in its foot.
+    func setPoster(_ poster: Bool, date: String) {
+        geo_gallery_set_poster(gallery, poster, date)
+    }
+
+    var poster: Bool { geo_gallery_poster(gallery) }
+
     /// A file being read, 0 to 1, or negative once it is not.
     func setReading(_ file: UInt32, _ fraction: Float) {
         geo_gallery_set_reading(gallery, file, fraction)

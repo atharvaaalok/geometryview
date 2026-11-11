@@ -10,6 +10,7 @@ final class GalleryToolbar: StickerCard {
     var onView: ((UInt32) -> Void)?
     var onSheet: ((SheetOptions) -> Void)?
     var onShowLook: (() -> Void)?
+    var onPoster: (() -> Void)?
 
     private static let names = ["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]
     private static let icons: [Icons.Name] = [.plates, .sheet, .ladders, .atlas, .catalogue]
@@ -28,6 +29,11 @@ final class GalleryToolbar: StickerCard {
     private let size = StickerSlider(help: "Picture size")
     private let sort = SegmentedPill(["Name", "Size"], selected: 0, help: "Order")
     private let look = PillButton(title: "Illustration", icon: .palette, help: "Look (⇧⌘L)")
+    private let poster = PillButton(
+        title: "Poster",
+        icon: .poster,
+        help: "Show it off: the view as a poster (⌥⌘P)"
+    )
     private let sheetControls: NSStackView
     private var options = SheetOptions()
 
@@ -75,8 +81,9 @@ final class GalleryToolbar: StickerCard {
             self?.change { $0.cell = ((72 + value * 128) / 4).rounded() * 4 }
         }
         look.onPress = { [weak self] in self?.onShowLook?() }
+        poster.onPress = { [weak self] in self?.onPoster?() }
 
-        let stack = NSStackView(views: [viewSwitch, sheetControls, Self.rule(), look])
+        let stack = NSStackView(views: [viewSwitch, sheetControls, Self.rule(), poster, look])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false

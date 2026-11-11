@@ -34,6 +34,10 @@ final class GalleryCheck {
         return (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)
     }
     static var isLayout: Bool { CommandLine.arguments.contains("--gallery-layout") }
+    /// `--gallery-poster`: the folder as a poster in each view, checked and saved as PNG.
+    static var isPoster: Bool { CommandLine.arguments.contains("--gallery-poster") }
+    /// Shows or puts away the poster, as the window does.
+    var usePoster: ((Bool) -> Void)?
     /// `--gallery-watch <file>`: shows the file's folder, says when it is ready, and waits for the
     /// file to change on disk, to see it re-ink alone.
     static var watchFile: String? {
@@ -83,6 +87,13 @@ final class GalleryCheck {
                 NSApp.terminate(nil)
                 return
             }
+        }
+
+        if Self.isPoster {
+            report["posters"] = await posters(root: root, folder: folder)
+            write(report, to: "gallery-check.json")
+            NSApp.terminate(nil)
+            return
         }
 
         if let watched = Self.watchFile {
@@ -294,6 +305,37 @@ final class GalleryCheck {
                     "animations": playing,
                 ] as [String: Any]
             try? await Task.sleep(for: .milliseconds(600))
+        }
+        return out
+    }
+
+    /// The folder as a poster in Plates and in Sheet: aligned as painted, and saved as PNG, with the
+    /// picture's size.
+    private func posters(root: URL, folder: URL) async -> [[String: Any]] {
+        controller.show(root: root, folder: folder)
+        let scanStart = Date()
+        while controller.scanning, Date().timeIntervalSince(scanStart) < 60 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        var out: [[String: Any]] = []
+        for (view, name) in [(GeoViewPlates, "plates"), (GeoViewSheet, "sheet")] {
+            controller.setView(view.rawValue)
+            usePoster?(true)
+            try? await Task.sleep(for: .milliseconds(600))
+            _ = await settle()
+            var run = measure()
+            run["view"] = name
+            run["contentHeight"] = Double(controller.gallery.contentHeight)
+            if let image = controller.view.posterImage() {
+                run["pixels"] = [image.width, image.height]
+                let output = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "gallery-poster-\(name).png"
+                )
+                try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
+                    .write(to: output)
+            }
+            out.append(run)
+            usePoster?(false)
         }
         return out
     }
