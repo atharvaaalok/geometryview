@@ -129,6 +129,6 @@ bool prepareOffscreen(render::Backend& backend,
 } // namespace geo::engine
 
 GeoRenderOptions geo_default_render_options(void) {
-    return {1600, 1000,    35.0, 25.0, false, true,  geo_default_look(),
-            {},   nullptr, 2.0f, 1.0f, -1,    false, 0.0};
+    return {1600, 1000, 35.0, 25.0,  false, true, geo_default_look(), {}, nullptr,
+            2.0f, 1.0f, -1,   false, 0.0,   1};
 }
