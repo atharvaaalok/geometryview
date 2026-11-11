@@ -27,6 +27,7 @@ public:
     void setFailure(u32 file, std::string message);
     void setReading(u32 file, float fraction);
     void setPoster(bool poster, std::string date);
+    void setLost(bool lost);
     bool poster() const { return poster_; }
     void setChanged(u32 file, bool changed);
 
@@ -98,6 +99,8 @@ private:
     std::optional<std::unordered_set<u32>> matches_;
     u32 peek_ = kNone;
     bool poster_ = false;
+    bool lost_ = false;
+    void layoutLost();
     std::string posterDate_;
     // Motion: what the next layout should play, and what the last one did.
     u32 pendingMotion_ = GeoTransitionNone;

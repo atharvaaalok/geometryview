@@ -87,6 +87,10 @@ EMSCRIPTEN_KEEPALIVE int gv_gallery_poster(GeoGallery* gallery) {
     return geo_gallery_poster(gallery) ? 1 : 0;
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_lost(GeoGallery* gallery, int lost) {
+    geo_gallery_set_lost(gallery, lost != 0);
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_reading(GeoGallery* gallery, uint32_t file,
                                                  float fraction) {
     geo_gallery_set_reading(gallery, file, fraction);

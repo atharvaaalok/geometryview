@@ -44,6 +44,49 @@ void Gallery::setPoster(bool poster, std::string date) {
     }
 }
 
+void Gallery::setLost(bool lost) {
+    if (lost != lost_) {
+        lost_ = lost;
+        dirty_ = true;
+    }
+}
+
+// A folder that can no longer be read: what was last seen, faded, under a card in the view's top
+// left with one way back.
+void Gallery::layoutLost() {
+    for (usize i = 0; i < display_.items().size(); ++i) {
+        display_.item(i).flags |= GeoItemLost;
+    }
+    const u32 ink = hex(0x231E16), muted = hex(0x6F685C), paper = hex(0xF7F5EE);
+    constexpr TextStyle kTitle{12.5f, 600, 0.0f, false};
+    constexpr TextStyle kLine{11.5f, 400, 0.0f, false};
+    constexpr TextStyle kPillText{11.5f, 500, 0.0f, false};
+    const usize first = display_.items().size();
+    const float w = std::min(300.0f, width_ - 16.0f), x = 8.0f, y = 8.0f;
+    const float h =
+        14.0f + lineHeightOf(kTitle) + 2.0f + lineHeightOf(kLine) + 10.0f + 30.0f + 14.0f;
+    display_.key(keyOf("lost", folder_));
+    display_.group(0);
+    display_.target(GeoTargetPeek, 0); // the card itself does nothing
+    display_.rect(x, y, w, h, paper, ink, 1.5f, 12.0f, GeoItemSticker, ink);
+    float baseline = y + 14.0f + ascentOf(kTitle);
+    display_.text(tree_.titleOf(folder_), kTitle, ink, x + 16.0f, baseline, w - 32.0f);
+    baseline += kDescent * kTitle.size + 2.0f + ascentOf(kLine);
+    display_.text("Allow reading this folder again.", kLine, muted, x + 16.0f, baseline, w - 32.0f);
+    const float py = baseline + kDescent * kLine.size + 10.0f;
+    const std::string label = "Reconnect";
+    const float pw = std::round(textWidth(label, kPillText) + 21.0f);
+    display_.target(GeoTargetReconnect, 0);
+    display_.rect(x + 16.0f, py, pw, 30.0f, ink, ink, 1.5f, 15.0f);
+    display_.text(label, kPillText, paper, x + 16.0f + 10.5f,
+                  py + (30.0f - lineHeightOf(kPillText)) / 2.0f + ascentOf(kPillText), pw);
+    display_.target(GeoTargetNone, 0);
+    display_.key(0);
+    for (usize i = first; i < display_.items().size(); ++i) {
+        display_.item(i).flags |= GeoItemFixed;
+    }
+}
+
 void Gallery::setReading(u32 file, float fraction) {
     File& f = tree_.file(file);
     // A layout for each sixteenth read at most: the bar moves in steps it can show.
@@ -152,6 +195,9 @@ bool Gallery::layout() {
         input.matches = nullptr;
     }
     result_ = view_ == GeoViewSheet ? layoutSheet(input, display_) : layoutPlates(input, display_);
+    if (lost_ && !poster_) {
+        layoutLost();
+    }
     if (peek_ != kNone && !poster_) {
         layoutPeek();
     }
@@ -506,13 +552,18 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
     // card covers the view: only what is on it, in the view's points, can be hit.
     const std::vector<GeoGalleryItem>& items = display_.items();
     const bool peeking = peek_ != kNone;
-    if (peeking) {
-        y -= scroll_;
-    }
+    const float contentY = y;
     for (auto it = items.rbegin(); it != items.rend(); ++it) {
-        if (it->target_kind == GeoTargetNone || ((it->flags & GeoItemFixed) != 0) != peeking) {
+        // Peek's items cover everything; the lost card's cover the content beneath it. Fixed items
+        // are in the view's points.
+        const bool fixed = (it->flags & GeoItemFixed) != 0;
+        const bool reachable = peeking ? fixed
+                                       : !fixed || it->target_kind == GeoTargetReconnect ||
+                                             (lost_ && it->target_kind == GeoTargetPeek);
+        if (it->target_kind == GeoTargetNone || !reachable) {
             continue;
         }
+        y = fixed ? contentY - scroll_ : contentY;
         float x0 = it->x, y0 = it->y, x1 = it->x + it->width, y1 = it->y + it->height;
         if (x0 > x1) {
             std::swap(x0, x1);
@@ -602,6 +653,10 @@ GeoGalleryAction Gallery::click(u32 kind, u32 index, bool twice) {
         return {GeoActionHandled, 0};
     }
     switch (kind) {
+    case GeoTargetReconnect:
+        return {GeoActionReconnect, 0};
+    case GeoTargetPeek:
+        return {GeoActionNone, 0}; // the lost card itself
     case GeoTargetFolder:
         return enter(index);
     case GeoTargetFile:

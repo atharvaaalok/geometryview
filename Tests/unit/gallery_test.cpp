@@ -842,3 +842,33 @@ TEST_CASE("no two texts on one line overlap, from a phone's width to a wide wind
         }
     }
 }
+
+TEST_CASE("a folder that can no longer be read shows as last seen, faded, with one way back") {
+    Gallery g = measured();
+    g.layout();
+    const usize shown = g.display().items().size();
+    g.setLost(true);
+    REQUIRE(g.layout());
+    usize lost = 0, fixed = 0;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        lost += (item.flags & GeoItemLost) != 0 ? 1 : 0;
+        fixed += (item.flags & GeoItemFixed) != 0 ? 1 : 0;
+    }
+    CHECK(lost == shown); // everything last seen, faded
+    CHECK(fixed > 3);     // the card over it
+    CHECK(countText(g, "Allow reading this folder again.") == 1);
+    // The way back, hit where it is drawn, in the view's points, however far down the view is.
+    g.setScroll(120.0f);
+    g.layout();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.target_kind == GeoTargetReconnect && item.kind == GeoItemRect) {
+            const GeoGalleryHit hit =
+                g.hit(item.x + item.width / 2.0f, 120.0f + item.y + item.height / 2.0f);
+            CHECK(hit.target_kind == GeoTargetReconnect);
+            CHECK(g.click(hit.target_kind, hit.target, false).kind == GeoActionReconnect);
+        }
+    }
+    g.setLost(false);
+    g.layout();
+    CHECK(countText(g, "Allow reading this folder again.") == 0);
+}
