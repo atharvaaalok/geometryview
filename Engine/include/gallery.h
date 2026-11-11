@@ -283,8 +283,8 @@ void geo_gallery_atlas_pan(GeoGallery* gallery, float dx, float dy);
 /// Zooms to a level, about the view's middle: 0 the whole map (regions), 1 districts, 2 every part.
 void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level);
 
-/// Catalogue: the spread in view and how many the book has, as 2 numbers; going to a spread, or to
-/// the contents (0) or the index.
+/// Catalogue: the spread in view, how many the book has and the one its index starts on, as 3
+/// numbers; going to a spread, or to the index.
 void geo_gallery_catalogue(const GeoGallery* gallery, uint32_t* out);
 void geo_gallery_set_catalogue_spread(GeoGallery* gallery, uint32_t spread);
 void geo_gallery_catalogue_index(GeoGallery* gallery);

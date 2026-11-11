@@ -309,6 +309,7 @@ void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level) {
 void geo_gallery_catalogue(const GeoGallery* gallery, uint32_t* out) {
     out[0] = gallery->gallery.catalogueSpread();
     out[1] = gallery->gallery.catalogueSpreads();
+    out[2] = gallery->gallery.catalogueIndexSpread();
 }
 
 void geo_gallery_set_catalogue_spread(GeoGallery* gallery, uint32_t spread) {
