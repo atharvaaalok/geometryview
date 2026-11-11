@@ -3,7 +3,8 @@
 // carries it across; this reads the items from the module's memory.
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
-export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128 });
+export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128,
+                                     Ruler: 256 });
 export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5,
                                        Reconnect: 6 });
@@ -15,7 +16,7 @@ export const Sorts = Object.freeze({ Name: 0, Size: 1 });
 export const Transitions = Object.freeze({ None: 0, Switch: 1, Into: 2, Out: 3 });
 export const TrackKinds = Object.freeze({ Fly: 0, FadeIn: 1 });
 
-const kItemSize = 112; // GeoGalleryItem: 28 four-byte fields
+const kItemSize = 116; // GeoGalleryItem: 29 four-byte fields
 const kNone = 0xffffffff;
 
 /** A colour from the core: straight sRGB, red in the low byte, as CSS. */
@@ -110,6 +111,25 @@ export class GalleryCore {
   }
   get poster() { return this.#m._gv_gallery_poster(this.#g) !== 0; }
 
+  /** The last layout's lanes, which scroll sideways: [{ id, rect: [x, y, w, h], contentWidth }]. */
+  get lanes() {
+    const m = this.#m;
+    const n = m._gv_gallery_lanes(this.#g, 0, 0);
+    if (n === 0) return [];
+    const out = m._malloc(n * 24);
+    m._gv_gallery_lanes(this.#g, out, n);
+    const v = new Float32Array(m.HEAPU8.buffer, out, n * 6).slice();
+    m._free(out);
+    const lanes = [];
+    for (let i = 0; i < n; i++) {
+      lanes.push({ id: v[i * 6], rect: [v[i * 6 + 1], v[i * 6 + 2], v[i * 6 + 3], v[i * 6 + 4]], contentWidth: v[i * 6 + 5] });
+    }
+    return lanes;
+  }
+  setLaneScroll(lane, x) { this.#m._gv_gallery_set_lane_scroll(this.#g, lane, x); }
+  /** Ladders' scale: each strip its own, or one shared. */
+  setLadders(shared) { this.#m._gv_gallery_set_ladders(this.#g, shared ? 1 : 0); }
+
   /** The folder can no longer be read: what was last seen, faded, with Reconnect. */
   setLost(lost) { this.#m._gv_gallery_set_lost(this.#g, lost ? 1 : 0); }
 
@@ -154,7 +174,7 @@ export class GalleryCore {
         text: u(11), textLength: u(12), fontSize: f(13), tracking: f(14), weight: u(15), align: u(16),
         baseline: f(17), file: u(18), targetKind: u(19), target: u(20), key: u(21),
         group: u(22), line: f(23), column: u(24), columnLine: f(25),
-        stickyTop: f(26), stickyUntil: f(27),
+        stickyTop: f(26), stickyUntil: f(27), lane: u(28),
       };
       end = Math.max(end, items[i].text + items[i].textLength);
     }

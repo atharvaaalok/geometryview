@@ -25,6 +25,7 @@ export class Gallery {
   #walking = null;
   #style = 0;
   #sheet = { scale: Scales.Folder, cell: 128, sort: Sorts.Name };
+  #ladders = { shared: false };
 
   /**
    * `on` takes open(root, path) to open a file in the viewer, leave() when Esc reaches the top,
@@ -43,6 +44,12 @@ export class Gallery {
       // A browser that keeps nothing starts from the defaults.
     }
     this.core.setSheet(this.#sheet.scale, this.#sheet.cell, this.#sheet.sort);
+    try {
+      Object.assign(this.#ladders, JSON.parse(localStorage.getItem("gallery.ladders") ?? "{}"));
+    } catch {
+      // The defaults.
+    }
+    this.core.setLadders(this.#ladders.shared);
     this.view = new GalleryView(this.core, {
       action: (action) => this.#act(action),
       viewChanged: () => this.#scheduleWant(),
@@ -92,7 +99,8 @@ export class Gallery {
 
   /** The view in use, those enabled, Sheet's controls and the style: what the toolbar shows. */
   get state() {
-    return { view: this.core.view, views: this.core.views, sheet: { ...this.#sheet }, style: this.#style };
+    return { view: this.core.view, views: this.core.views, sheet: { ...this.#sheet }, style: this.#style,
+             ladders: { ...this.#ladders } };
   }
 
   /** Shows a view, if enabled: parts in both fly to their places. */
@@ -127,6 +135,20 @@ export class Gallery {
   }
 
   get poster() { return this.core.poster; }
+
+  /** Ladders' scale: { shared }. */
+  setLadders(change) {
+    Object.assign(this.#ladders, change);
+    try {
+      localStorage.setItem("gallery.ladders", JSON.stringify(this.#ladders));
+    } catch {
+      // Kept for this visit only.
+    }
+    this.core.setLadders(this.#ladders.shared);
+    this.view.reload();
+    this.#changed();
+    this.#scheduleWant();
+  }
 
   /** Searches the folder in view; empty clears it. */
   setSearch(query) {

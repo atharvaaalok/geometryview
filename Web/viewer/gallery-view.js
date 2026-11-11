@@ -40,6 +40,13 @@ export class GalleryView {
   #frames = new Map(); // item index -> element painted for it
   #sticky = []; // { node, item } of headings that stay at the top
   #lifted = new Map(); // item index -> how far a heading is moved down
+  // Lanes, which scroll sideways on their own: id -> { rect, contentWidth }, their scroll, and a
+  // layer each, its elements in a clipped box.
+  #lanes = new Map();
+  #lanesOf = null;
+  #laneScroll = new Map();
+  #laneLayers = new Map();
+  #drag = null;
   #style = 0;
   #insets = kContentInsets;
   #probes = false;
@@ -72,7 +79,33 @@ export class GalleryView {
     this.#clip.addEventListener("pointerleave", () => {
       if (this.#core.hover(Targets.None, 0)) this.reload();
     });
-    this.#clip.addEventListener("click", (e) => this.#click(e, e.detail >= 2));
+    this.#clip.addEventListener("click", (e) => {
+      if (this.#drag?.moved) {
+        this.#drag = null; // a drag along a lane is not a click
+        return;
+      }
+      this.#click(e, e.detail >= 2);
+    });
+    // A lane scrolls sideways: a sideways wheel or a shifted one over it, or a drag along it.
+    this.#clip.addEventListener("wheel", (e) => {
+      const lane = this.#laneAt(this.#point(e));
+      if (!lane) return;
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey;
+      if (!sideways) return;
+      e.preventDefault();
+      this.#scrollLane(lane, (this.#laneScroll.get(lane.id) ?? 0) + (e.deltaX || e.deltaY));
+    }, { passive: false });
+    this.#clip.addEventListener("pointerdown", (e) => {
+      const lane = this.#laneAt(this.#point(e));
+      this.#drag = lane && e.button === 0 ? { lane, x: e.clientX, from: this.#laneScroll.get(lane.id) ?? 0, moved: false } : null;
+    });
+    this.#clip.addEventListener("pointermove", (e) => {
+      const d = this.#drag;
+      if (!d || !(e.buttons & 1)) return;
+      if (!d.moved && Math.abs(e.clientX - d.x) < 4) return;
+      d.moved = true;
+      this.#scrollLane(d.lane, d.from - (e.clientX - d.x));
+    });
     this.#place();
   }
 
@@ -111,6 +144,9 @@ export class GalleryView {
   }
 
   scrollToTop() {
+    // A new folder's lanes start at their beginnings.
+    for (const id of this.#laneScroll.keys()) this.#core.setLaneScroll(id, 0);
+    this.#laneScroll.clear();
     this.#clip.scrollTop = 0;
     this.#core.setScroll(0);
     this.#painted = null;
@@ -186,9 +222,14 @@ export class GalleryView {
     const window = { top: top - height, bottom: bottom + height };
     this.#painted = window;
     for (const layer of Object.values(this.#layers)) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
+    for (const layer of this.#laneLayers.values()) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
     this.#frames.clear();
     this.#sticky = [];
     const items = this.#core.items;
+    if (this.#lanesOf !== items) {
+      this.#lanes = new Map(this.#core.lanes.map((l) => [l.id, l]));
+      this.#lanesOf = items;
+    }
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const fixed = (item.flags & Flags.Fixed) !== 0;
@@ -199,7 +240,17 @@ export class GalleryView {
         const high = Math.max(item.y, item.y + item.height) + (sticky ? item.stickyUntil : 0);
         if (high < window.top - 8 || low > window.bottom + 8) continue;
       }
-      const layer = fixed ? this.#layers.fixed : this.#layers.content;
+      let layer = fixed ? this.#layers.fixed : this.#layers.content;
+      if (item.lane) {
+        // In a lane: painted a lane's width either side of what shows.
+        const lane = this.#lanes.get(item.lane);
+        if (!lane) continue;
+        const scroll = this.#laneScroll.get(item.lane) ?? 0;
+        const [lx, , lw] = lane.rect;
+        const left = Math.min(item.x, item.x + item.width), right = Math.max(item.x, item.x + item.width);
+        if (right < lx + scroll - lw || left > lx + scroll + 2 * lw) continue;
+        layer = this.#laneLayer(lane, i);
+      }
       let node;
       switch (item.kind) {
         case Kinds.Rect:
@@ -234,13 +285,63 @@ export class GalleryView {
       if (sticky) this.#sticky.push({ node, item, index: i });
       this.#frames.set(i, node);
     }
-    for (const layer of Object.values(this.#layers)) {
+    for (const layer of [...Object.values(this.#layers), ...this.#laneLayers.values()]) {
       for (const kind of Object.keys(layer.pools)) {
         const pool = layer.pools[kind];
         for (let i = layer.used[kind]; i < pool.length; i++) pool[i].hidden = true;
       }
     }
+    for (const [id, layer] of this.#laneLayers) {
+      layer.box.hidden = !this.#lanes.has(id) || Object.values(layer.used).every((n) => n === 0);
+    }
     this.#placeSticky(top);
+  }
+
+  // A lane's layer: a box clipped to the lane, holding a layer placed in content points and moved
+  // by the lane's scroll. Stacked where the lane's first item is.
+  #laneLayer(lane, index) {
+    let layer = this.#laneLayers.get(lane.id);
+    if (!layer) {
+      const box = el("div", "g-lane");
+      const node = el("div", "g-lane-content");
+      box.append(node);
+      this.#content.append(box);
+      layer = { box, node, pools: { rect: [], text: [], picture: [], line: [] }, used: null, z: -1 };
+      layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
+      this.#laneLayers.set(lane.id, layer);
+    }
+    if (layer.z === -1 || Object.values(layer.used).every((n) => n === 0)) {
+      const [x, y, w, h] = lane.rect;
+      setBox(layer.box, x, y, w, h);
+      layer.box.style.zIndex = String(index);
+      layer.node.style.left = `${-x}px`;
+      layer.node.style.top = `${-y}px`;
+      layer.node.style.transform = `translateX(${-(this.#laneScroll.get(lane.id) ?? 0)}px)`;
+      layer.z = index;
+    }
+    return layer;
+  }
+
+  #laneAt({ x, y }) {
+    for (const lane of this.#lanes.values()) {
+      const [lx, ly, lw, lh] = lane.rect;
+      if (x >= lx && x <= lx + lw && y >= ly && y <= ly + lh) return lane;
+    }
+    return null;
+  }
+
+  // Scrolls a lane sideways, within its content, painting further along it as it goes.
+  #scrollLane(lane, x) {
+    const most = Math.max(0, lane.contentWidth - lane.rect[2]);
+    const to = Math.min(Math.max(0, x), most);
+    if (to === (this.#laneScroll.get(lane.id) ?? 0)) return;
+    this.#laneScroll.set(lane.id, to);
+    this.#core.setLaneScroll(lane.id, to);
+    const layer = this.#laneLayers.get(lane.id);
+    if (layer) layer.node.style.transform = `translateX(${-to}px)`;
+    this.#painted = null;
+    this.reload();
+    this.#on.viewChanged?.();
   }
 
   // Moves each heading down by how far the view has scrolled past it, until the next takes over.
@@ -276,7 +377,16 @@ export class GalleryView {
     s.borderRadius = `${item.radius}px`;
     s.border = item.stroke ? `${item.lineWidth}px ${item.flags & Flags.Dashed ? "dashed" : "solid"} ${cssColour(item.stroke)}` : "none";
     s.boxShadow = item.flags & Flags.Sticker && item.shadow ? `3px 3px 0 ${cssColour(item.shadow)}` : "none";
-    if (item.flags & Flags.Hatched) {
+    if (item.flags & Flags.Ruler) {
+      // A ruler: its line on top, minor ticks every `radius` points, major every `tracking`.
+      const c = cssColour(item.stroke), faint = `color-mix(in srgb, ${c} 50%, transparent)`;
+      s.border = "none";
+      s.borderTop = `${item.lineWidth}px solid ${c}`;
+      s.borderRadius = "0";
+      s.boxShadow = "none";
+      s.background = `repeating-linear-gradient(to right, ${c} 0 1.1px, transparent 1.1px ${item.tracking}px) 0 0 / 100% 6.5px no-repeat, ` +
+        `repeating-linear-gradient(to right, ${faint} 0 0.75px, transparent 0.75px ${item.radius}px) 0 0 / 100% 3.5px no-repeat`;
+    } else if (item.flags & Flags.Hatched) {
       s.background = `repeating-linear-gradient(45deg, ${cssColour(item.stroke)} 0 1px, transparent 1px 7px)`;
     } else if (item.flags & Flags.Sheet) {
       s.background = this.#sheetBackground;
@@ -385,8 +495,27 @@ export class GalleryView {
       }
     }));
     g.translate(left, top);
+    const lanes = new Map(this.#core.lanes.map((l) => [l.id, l]));
     for (const item of items) {
       if (item.flags & Flags.Fixed) continue;
+      // An item in a lane: clipped to the lane, moved by its scroll.
+      const lane = item.lane ? lanes.get(item.lane) : null;
+      if (lane) {
+        g.save();
+        g.beginPath();
+        g.rect(...lane.rect);
+        g.clip();
+        g.translate(-(this.#laneScroll.get(item.lane) ?? 0), 0);
+      }
+      this.#canvasItem(g, item, bitmaps, width, height);
+      if (lane) g.restore();
+    }
+    for (const bitmap of bitmaps.values()) bitmap.close();
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
+  #canvasItem(g, item, bitmaps, width, height) {
+    {
       const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
       g.globalAlpha = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1) *
         (item.flags & Flags.Lost ? kLost : 1);
@@ -409,8 +538,6 @@ export class GalleryView {
           break;
       }
     }
-    for (const bitmap of bitmaps.values()) bitmap.close();
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   }
 
   // The style's sheet, as #drawSheet paints it with gradients.
@@ -440,6 +567,18 @@ export class GalleryView {
   }
 
   #canvasRect(g, item, width, height) {
+    if (item.flags & Flags.Ruler) {
+      // Its line, then minor and major ticks below it.
+      g.fillStyle = cssColour(item.stroke);
+      g.fillRect(item.x, item.y, item.width, item.lineWidth);
+      for (const [pitch, w, h, alpha] of [[item.radius, 0.75, 3.5, 0.5], [item.tracking, 1.1, 6.5, 1]]) {
+        if (!(pitch > 0.5)) continue;
+        g.globalAlpha *= alpha;
+        for (let x = 0; x < item.width; x += pitch) g.fillRect(item.x + x, item.y + 1, w, h);
+        g.globalAlpha /= alpha;
+      }
+      return;
+    }
     const path = () => {
       g.beginPath();
       g.roundRect(item.x, item.y, item.width, item.height, item.radius);
@@ -588,7 +727,8 @@ export class GalleryView {
       const origin = item.flags & Flags.Fixed ? fixedOrigin : contentOrigin;
       const lifted = this.#lifted.get(i) ?? 0;
       const box = node.getBoundingClientRect();
-      const top = box.top - origin.top - lifted, left = box.left - origin.left;
+      const top = box.top - origin.top - lifted;
+      const left = box.left - origin.left + (item.lane ? this.#laneScroll.get(item.lane) ?? 0 : 0);
       if (item.kind === Kinds.Text) {
         const probe = node.querySelector(".g-probe");
         lines[i] = probe ? probe.getBoundingClientRect().bottom - origin.top - lifted : top + kAscent * item.fontSize;
@@ -598,6 +738,8 @@ export class GalleryView {
       } else if (item.kind === Kinds.Line) {
         const horizontal = Math.abs(item.height) < Math.abs(item.width);
         lines[i] = horizontal ? top + item.lineWidth / 2 : top;
+      } else if (item.flags & Flags.Ruler) {
+        lines[i] = top + item.lineWidth / 2; // a ruler stands on its line, its top border
       } else {
         lines[i] = top + box.height;
       }
@@ -616,7 +758,8 @@ export class GalleryView {
     for (const [i, node] of this.#frames) {
       const origin = items[i].flags & Flags.Fixed ? fixedOrigin : contentOrigin;
       const box = node.getBoundingClientRect();
-      boxes.set(i, { x: box.left - origin.left, y: box.top - origin.top - (this.#lifted.get(i) ?? 0), w: box.width, h: box.height });
+      const along = items[i].lane ? this.#laneScroll.get(items[i].lane) ?? 0 : 0;
+      boxes.set(i, { x: box.left - origin.left + along, y: box.top - origin.top - (this.#lifted.get(i) ?? 0), w: box.width, h: box.height });
     }
     return boxes;
   }
