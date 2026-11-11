@@ -4,10 +4,10 @@
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
 export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128,
-                                     Ruler: 256 });
+                                     Ruler: 256, Turn: 512 });
 export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5, Page: 6 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5,
-                                       Reconnect: 6 });
+                                       Reconnect: 6, Turn: 7 });
 export const Keys = Object.freeze({ Left: 0, Right: 1, Up: 2, Down: 3, Enter: 4, Space: 5, Escape: 6, FolderUp: 7 });
 export const Views = Object.freeze({ Plates: 0, Sheet: 1, Ladders: 2, Atlas: 3, Catalogue: 4 });
 export const ViewNames = Object.freeze(["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]);
@@ -262,6 +262,9 @@ export class GalleryCore {
     const file = this.#m._gv_gallery_peeking(this.#g) >>> 0;
     return file === kNone ? null : file;
   }
+  /** Whether the file in Peek can turn: its turntable's frames have come. */
+  setPeekTurnable(turnable) { this.#m._gv_gallery_set_peek_turnable(this.#g, turnable); }
+  get peekTurnable() { return Boolean(this.#m._gv_gallery_peek_turnable(this.#g)); }
 
   /** The selected file, or null. */
   get selected() {

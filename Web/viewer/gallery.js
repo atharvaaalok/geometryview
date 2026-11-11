@@ -21,6 +21,9 @@ export class Gallery {
   #facts = new Map(); // path -> layout facts
   #pictures = new Map(); // path -> { png, note }
   #failures = new Map();
+  // Peek's turntable: the file it is for, and how to stop it.
+  #turnFile = null;
+  #turnAbort = null;
   #reloadScheduled = false;
   #wantScheduled = false;
   #walking = null;
@@ -387,6 +390,7 @@ export class Gallery {
         return { path, band: w.band, order: w.order, folderColor: w.folderColor, bytes: entry?.bytes ?? 0,
                  modified: entry?.modified ?? 0 };
       }));
+      this.#updateTurn();
     });
   }
 
@@ -433,7 +437,49 @@ export class Gallery {
   }
   #repaint = false;
 
+  /** Files whose turntable frames have come in Peek, 24 a turn, 768 pixels square. */
+  static turnFrames = 24;
+  static turnPixels = 768;
+
+  // Asks for the turntable of the file in Peek, if it changed, and puts the last one away. Once all
+  // its frames have come, Peek can turn.
+  #updateTurn() {
+    const peeking = this.core.peeking;
+    if (peeking === this.#turnFile) return;
+    this.#turnFile = peeking;
+    this.#turnAbort?.abort();
+    this.#turnAbort = null;
+    this.view.setTurntable(null);
+    if (peeking === null || !this.root) return;
+    const abort = new AbortController();
+    this.#turnAbort = abort;
+    const path = this.core.path(peeking);
+    const folderColor = this.core.wanted().find((w) => w.file === peeking)?.folderColor ?? -1;
+    const facts = this.#facts.get(path);
+    const frames = [];
+    let ink = null;
+    this.#library.turn(path, folderColor, Gallery.turnFrames, Gallery.turnPixels,
+                       facts?.hasBox ? facts.size : null, (frame, bitmap, note) => {
+      frames[frame] = bitmap;
+      // The box holding every frame's ink, as its corners: x0, y0, x1, y1.
+      const [x, y, w, h] = note.ink;
+      ink = ink ? [Math.min(ink[0], x), Math.min(ink[1], y), Math.max(ink[2], x + w), Math.max(ink[3], y + h)]
+        : [x, y, x + w, y + h];
+    }, abort.signal).then((done) => {
+      if (!done || abort.signal.aborted || this.#turnFile !== peeking || frames.length !== Gallery.turnFrames) {
+        for (const frame of frames) frame?.close?.();
+        return;
+      }
+      this.view.setTurntable({ file: peeking, frames, ink: [ink[0], ink[1], ink[2] - ink[0], ink[3] - ink[1]] });
+      this.core.setPeekTurnable(true);
+      this.view.reload();
+    }).catch(() => {
+      for (const frame of frames) frame?.close?.();
+    });
+  }
+
   #act(action) {
+    this.#updateTurn(); // Peek opened, closed or moved: its turntable follows
     switch (action.kind) {
       case 2: // into a folder: it shows the view it last showed
         this.#on.folderChanged?.();

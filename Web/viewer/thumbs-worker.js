@@ -47,7 +47,7 @@ async function draw(data) {
   const drawn = await new Promise((resolve) => {
     answer = resolve;
     module._thumbs_draw(data.pixels, data.style, data.colorMode, data.pixelsPerPoint ?? 2,
-                        data.lineScale ?? 0.5, firstColor);
+                        data.lineScale ?? 0.5, firstColor, data.turn ?? 0, data.worldPerPixel ?? 0);
   });
   const heapMB = Math.round(module._thumbs_heap_bytes() / 2 ** 20);
   if (!drawn.pixels) {

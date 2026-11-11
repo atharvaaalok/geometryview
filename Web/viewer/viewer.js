@@ -1668,6 +1668,24 @@ async function galleryMotionChecks(g, root, subfolders, measure, settle) {
     await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-peek`)}`);
     await sleep(1500);
   }
+  // Peek's turntable: its frames come, then → turns the part a frame at a time.
+  const turnStart = performance.now();
+  while (!g.core.peekTurnable && performance.now() - turnStart < 60_000) await sleep(100);
+  await new Promise(requestAnimationFrame);
+  const turn = { seconds: Math.round(performance.now() - turnStart) / 1000, turnable: g.core.peekTurnable,
+                 aligned: measure() };
+  if (params.has("shots")) {
+    await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-peek-turn-0`)}`);
+    await sleep(1500);
+  }
+  for (let i = 0; i < 6; i++) g.view.key(1); // a quarter turn, at 24 frames
+  turn.frameAfterSix = g.view.turnFrameShown;
+  turn.peekingStill = g.core.peeking === null ? null : g.core.path(g.core.peeking);
+  if (params.has("shots")) {
+    await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-peek-turn-6`)}`);
+    await sleep(1500);
+  }
+  out.peekTurn = turn;
   g.view.key(6); // Esc closes Peek
   // A switch from Plates to Sheet, which shows more: its transition and tracks, and the animations
   // playing. Parts in both fly; those new to Sheet fade in.
