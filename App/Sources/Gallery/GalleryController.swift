@@ -86,6 +86,21 @@ final class GalleryController {
         scheduleWant()
     }
 
+    /// Catalogue: turns a spread (`step`), goes to one (`spread`), or to the index (neither).
+    func catalogue(step: Int? = nil, spread: Int? = nil) {
+        if let step {
+            gallery.setCatalogueSpread(gallery.catalogue.spread + step)
+        } else if let spread {
+            gallery.setCatalogueSpread(spread)
+        } else {
+            gallery.catalogueIndex()
+        }
+        view.repaint()
+        view.reload()
+        onChanged?()
+        scheduleWant()
+    }
+
     /// Ladders' scale: each strip its own, or one shared.
     func setLadders(shared: Bool) {
         laddersShared = shared

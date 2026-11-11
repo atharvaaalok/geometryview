@@ -25,6 +25,13 @@ final class PillButton: ChromeControl {
             invalidateIntrinsicContentSize()
         }
     }
+    /// Folds the title away, leaving the icon, where a toolbar is short of room.
+    var titleHidden = false {
+        didSet {
+            label.isHidden = titleHidden
+            invalidateIntrinsicContentSize()
+        }
+    }
     private let icon = NSImageView()
     private let iconOnly: Bool
 

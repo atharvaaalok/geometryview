@@ -24,6 +24,14 @@ final class SegmentedPill: NSView {
     // are rendered.
     private let border = Outline()
     private var segments: [Segment] = []
+    /// Shows each option's key, where the pill has keys; a toolbar short of room hides them.
+    var showsKeys = true {
+        didSet {
+            for segment in segments {
+                segment.showsKey = showsKeys
+            }
+        }
+    }
 
     /// `tips`, when given, explain each option on its own, in place of the pill's `help`. `icons`
     /// and `keys`, when given, put an icon before each option and its key after it, as the
@@ -119,6 +127,9 @@ final class SegmentedPill: NSView {
         }
         private let label: NSTextField
         private let keyLabel: NSTextField?
+        var showsKey = true {
+            didSet { keyLabel?.isHidden = !showsKey }
+        }
         private let fill = CALayer()
         private let underline = CALayer()
         private let divider = CALayer()

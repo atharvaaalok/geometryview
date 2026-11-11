@@ -116,8 +116,7 @@ final class GalleryCheck {
         }
         var runs: [[String: Any]] = []
         let names = ["plates", "sheet", "ladders", "atlas", "catalogue"]
-        // The views built so far: Catalogue comes in G8.
-        let views = (0..<4).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
+        let views = (0..<5).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
         for style in [GeoStyleIllustration, GeoStyleBlueprint, GeoStyleStudio] {
             useStyle(style)
             for view in views {
@@ -137,6 +136,25 @@ final class GalleryCheck {
                     run["waitedSeconds"] = waited
                     run["waitingInView"] = controller.waitingInView
                     runs.append(run)
+                    if view == GeoViewCatalogue.rawValue {
+                        // The book's other spreads: the contents, an opener or a plate, the middle, the index.
+                        let spreads = controller.gallery.catalogue.spreads
+                        for spread in Set([1, 2, 3, spreads / 2, spreads - 1]).sorted()
+                        where spread > 0 && spread < spreads {
+                            controller.catalogue(spread: spread)
+                            _ = await settle()
+                            if path == folders.first {
+                                snapshot("gallery-catalogue-\(style.rawValue)-s\(spread).png")
+                            }
+                            var turned = measure()
+                            turned["style"] = Int(style.rawValue)
+                            turned["view"] = Int(view)
+                            turned["spread"] = spread
+                            turned["folder"] = controller.gallery.folder
+                            runs.append(turned)
+                        }
+                        controller.catalogue(spread: 0)
+                    }
                     if view == GeoViewAtlas.rawValue {
                         // Atlas closer in: the districts, then every part named.
                         for level in [1, 2] {
@@ -207,10 +225,31 @@ final class GalleryCheck {
         worstDeviation = max(worstDeviation, deviation)
         worst = max(worst, result.over.map(\.spread).max() ?? 0)
         failures += result.over.count
-        return [
+        var run: [String: Any] = [
             "groupsChecked": Int(result.checked), "over": over,
             "itemsPainted": lines.filter { !$0.isNaN }.count, "maxDeviation": Double(deviation),
         ]
+        // The toolbar fits its room: folded as it must be, never cut off.
+        if let toolbar = Self.find(GalleryToolbar.self, in: controller.view.window?.contentView) {
+            run["toolbarCut"] = Double(toolbar.cut)
+            run["toolbarFold"] = toolbar.folds
+        }
+        return run
+    }
+
+    private static func find<T: NSView>(_ type: T.Type, in view: NSView?) -> T? {
+        guard let view else {
+            return nil
+        }
+        if let found = view as? T {
+            return found
+        }
+        for sub in view.subviews {
+            if let found = find(type, in: sub) {
+                return found
+            }
+        }
+        return nil
     }
 
     /// G3's checks: a heading of Sheet's stays at the top as its block scrolls under it; a search

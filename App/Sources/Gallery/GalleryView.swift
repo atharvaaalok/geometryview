@@ -1059,9 +1059,11 @@ final class GalleryView: NSView {
         }
         let pointing =
             hit.map {
-                [GeoTargetFolder.rawValue, GeoTargetFile.rawValue, GeoTargetMore.rawValue].contains(
-                    $0.target_kind
-                ) || ($0.target_kind == GeoTargetPeek.rawValue && $0.target == 1)
+                [
+                    GeoTargetFolder.rawValue, GeoTargetFile.rawValue, GeoTargetMore.rawValue,
+                    GeoTargetPage.rawValue,
+                ].contains($0.target_kind)
+                    || ($0.target_kind == GeoTargetPeek.rawValue && $0.target == 1)
             } ?? false
         (pointing ? NSCursor.pointingHand : NSCursor.arrow).set()
     }
@@ -1088,6 +1090,9 @@ final class GalleryView: NSView {
             return
         }
         act(gallery.click(kind: hit.target_kind, target: hit.target, twice: event.clickCount >= 2))
+        if hit.target_kind == GeoTargetPage.rawValue {
+            onAtlasMoved?()  // the book turned: the toolbar says so
+        }
     }
 
     /// A pinch zooms the map about the pointer.
@@ -1188,6 +1193,9 @@ final class GalleryView: NSView {
         if let key {
             act(gallery.key(key), reveal: true)
             onSearchChanged?()
+            if gallery.view == GeoViewCatalogue.rawValue {
+                onAtlasMoved?()  // a turned page: the toolbar says so
+            }
             return
         }
         let plain = modifiers.isDisjoint(with: [.command, .control, .option])

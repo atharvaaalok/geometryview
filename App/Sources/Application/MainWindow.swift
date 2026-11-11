@@ -136,9 +136,13 @@ final class MainWindow: NSWindow {
     private func makeLayout() -> NSView {
         let root = ChromeRoot()
         root.wantsLayer = true
-        // The toolbar folds what doesn't fit into More: worked out when the width changes. Its room
-        // is the window's width less the cards', as the page leaves it.
-        root.onWidthChange = { [weak self] width in self?.toolBar.fit(available: width - 336) }
+        // The toolbars fit their room, worked out when the width changes: the viewer's folds what
+        // doesn't fit into More, the gallery's its keys and titles. Their room is the window's
+        // width less the cards', as the page leaves it.
+        root.onWidthChange = { [weak self] width in
+            self?.toolBar.fit(available: width - 336)
+            self?.galleryToolbar.fit(available: width - 336)
+        }
         let gallery = galleryController.view
         gallery.isHidden = true
         galleryToolbar.isHidden = true
@@ -290,6 +294,9 @@ final class MainWindow: NSWindow {
         }
         galleryToolbar.onAtlasStep = { [weak self] step in
             self?.galleryController.atlas(step: step)
+        }
+        galleryToolbar.onCatalogue = { [weak self] step, spread in
+            self?.galleryController.catalogue(step: step, spread: spread)
         }
         libraryCard.onSearch = { [weak self] query in self?.galleryController.search(query) }
         libraryCard.onSearchDone = { [weak self] in
@@ -825,7 +832,8 @@ final class MainWindow: NSWindow {
             sheet: galleryController.sheet,
             style: look.style.title,
             laddersShared: galleryController.laddersShared,
-            atlasLevel: galleryController.gallery.atlasLevel
+            atlasLevel: galleryController.gallery.atlasLevel,
+            catalogue: galleryController.gallery.catalogue
         )
     }
 
