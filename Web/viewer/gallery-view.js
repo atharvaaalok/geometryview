@@ -515,11 +515,17 @@ export class GalleryView {
   async posterJPEG(scale = 2) {
     const { canvas, width, height } = await this.posterCanvas(scale);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    // A PDF's page is 14,400 points a side at most: a taller poster's page is smaller, whole.
+    const k = Math.min(1, 14400 / Math.max(width, height));
     return { jpeg: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height,
-             points: [width, height] };
+             points: [width * k, height * k] };
   }
 
-  /** The poster drawn on a canvas, `scale` pixels a point, and its size in points. */
+  /**
+   * The poster drawn on a canvas, `scale` pixels a point or fewer, and its size in points. A very
+   * tall poster is drawn smaller: a canvas holds 32,767 pixels a side at most, and 60 million
+   * pixels is plenty.
+   */
   async posterCanvas(scale = 2) {
     const host = this.element.getBoundingClientRect();
     const area = this.#stage.getBoundingClientRect();
@@ -527,6 +533,7 @@ export class GalleryView {
     const bottom = host.bottom - area.bottom;
     const width = host.width;
     const height = Math.max(host.height, top + this.#core.contentHeight + bottom);
+    scale = Math.min(scale, 32000 / height, Math.sqrt(60e6 / (width * height)));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);

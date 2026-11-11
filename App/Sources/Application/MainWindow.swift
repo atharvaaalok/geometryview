@@ -31,6 +31,8 @@ final class MainWindow: NSWindow {
     /// Whether the gallery covers the viewport, and whether the files open came from it, so Esc
     /// goes back.
     private var inGallery = false
+    /// A PDF being made: another waits until it is done.
+    private var exportingPDF = false
     private var openedFromGallery = false
     private var look = Look.saved()
     private var exercise: Exercise?
@@ -726,8 +728,10 @@ final class MainWindow: NSWindow {
         case #selector(togglePoster(_:)):
             item.state = galleryController.gallery.poster ? .on : .off
             return inGallery
-        case #selector(exportPoster(_:)), #selector(exportPDF(_:)):
+        case #selector(exportPoster(_:)):
             return inGallery
+        case #selector(exportPDF(_:)):
+            return inGallery && !exportingPDF
         case #selector(chooseGalleryView(_:)):
             let enabled = galleryController.gallery.views & (1 << UInt32(item.tag)) != 0
             item.isHidden = !enabled
@@ -869,33 +873,44 @@ final class MainWindow: NSWindow {
     }
 
     /// Export as PDF… (⌥⇧⌘E): the view as a poster, or in Catalogue the whole book, saved where
-    /// the person chooses.
+    /// the person chooses. A book can take a while: the masthead counts its pages meanwhile.
     @objc func exportPDF(_ sender: Any?) {
-        guard inGallery else {
+        guard inGallery, !exportingPDF else {
             return
         }
-        let wasPoster = galleryController.gallery.poster
-        if !wasPoster {
-            setPoster(true)
-        }
         let book = galleryController.gallery.view == GeoViewCatalogue.rawValue
-        Task { @MainActor in
-            let data = await galleryController.posterPDF()
-            if !wasPoster {
-                setPoster(false)
-            }
-            guard let data else {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue =
+            "\(galleryController.title) \(book ? "catalogue" : "poster").pdf"
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else {
                 return
             }
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.pdf]
-            panel.nameFieldStringValue =
-                "\(galleryController.title) \(book ? "catalogue" : "poster").pdf"
-            panel.beginSheetModal(for: self) { response in
-                guard response == .OK, let url = panel.url else {
-                    return
+            exportingPDF = true
+            let wasPoster = galleryController.gallery.poster
+            if !wasPoster {
+                setPoster(true)
+            }
+            // The masthead, put away for the poster, comes back to count the pages; the PDF is
+            // drawn from the gallery's own layers, so it is not in it.
+            masthead.isHidden = false
+            Task { @MainActor in
+                let data = await self.galleryController.posterPDF { page, pages in
+                    self.masthead.show(
+                        title: self.galleryController.title,
+                        subtitle: "Saving page \(page) of \(pages)\u{2026}"
+                    )
+                    self.masthead.setProgress(Double(page - 1) / Double(max(1, pages)))
                 }
-                try? data.write(to: url)
+                self.masthead.setProgress(nil)
+                self.masthead.show(
+                    title: self.galleryController.title,
+                    subtitle: self.galleryController.subtitle
+                )
+                self.setPoster(wasPoster)
+                self.exportingPDF = false
+                try? data?.write(to: url)
             }
         }
     }

@@ -514,7 +514,14 @@ async function saveGalleryPoster() {
 }
 
 async function saveGalleryPDF() {
-  const pdf = await gallery?.posterPDF();
+  if (!gallery) return;
+  // A book can take a while: the button counts its pages meanwhile, and takes no second press.
+  let pdf;
+  try {
+    pdf = await gallery.posterPDF((page, pages) => galleryToolbar.savingPDF(`Page ${page} of ${pages}\u2026`));
+  } finally {
+    galleryToolbar.savingPDF(null);
+  }
   if (!pdf) return;
   const what = gallery.core.view === 4 ? "catalogue" : "poster";
   const link = el("a", { href: URL.createObjectURL(pdf), download: `${gallery.title} ${what}.pdf` });
@@ -1539,7 +1546,15 @@ async function runGalleryTest() {
       run.pngBytes = png?.size ?? 0;
       // Its PDF too: a page, or in Catalogue the book, a spread a page.
       const pdfStart = performance.now();
-      const pdf = await g.posterPDF();
+      let counted = 0, label = "";
+      const pdf = await g.posterPDF((page, pages) => {
+        counted++;
+        galleryToolbar.savingPDF(`Page ${page} of ${pages}\u2026`); // as the button counts them
+        label = galleryToolbar.posterBar.textContent;
+      });
+      galleryToolbar.savingPDF(null);
+      run.pdfPagesCounted = counted;
+      run.pdfLabel = label;
       run.pdfBytes = pdf.size;
       run.pdfMs = Math.round(performance.now() - pdfStart);
       await fetch(`/png?type=pdf&label=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-${names[view]}`)}`,

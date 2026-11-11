@@ -87,8 +87,9 @@ final class GalleryController {
     }
 
     /// The view as a PDF: the poster on one page, or in Catalogue the whole book, a spread a page,
-    /// each drawn once its pictures have come (20 s at most a spread).
-    func posterPDF() async -> Data? {
+    /// each drawn once its pictures have come (20 s at most a spread). `progress` is told each
+    /// page as it is begun, and how many there are.
+    func posterPDF(progress: ((_ page: Int, _ pages: Int) -> Void)? = nil) async -> Data? {
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData),
             let context = CGContext(consumer: consumer, mediaBox: nil, nil)
@@ -97,7 +98,9 @@ final class GalleryController {
         }
         if gallery.view == GeoViewCatalogue.rawValue {
             let open = gallery.catalogue.spread
-            for spread in 0..<gallery.catalogue.spreads {
+            let spreads = gallery.catalogue.spreads
+            for spread in 0..<spreads {
+                progress?(spread + 1, spreads)
                 catalogue(spread: spread)
                 let start = Date()
                 while waitingInView > 0, Date().timeIntervalSince(start) < 20 {
@@ -107,6 +110,7 @@ final class GalleryController {
             }
             catalogue(spread: open)
         } else {
+            progress?(1, 1)
             view.posterPage(into: context)
         }
         context.closePDF()

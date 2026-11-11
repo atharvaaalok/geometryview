@@ -150,13 +150,18 @@ export class Gallery {
 
   /**
    * The view as a PDF: the poster on one page, or in Catalogue the whole book, a spread a page,
-   * each drawn once its pictures have come (20 s at most a spread).
+   * each drawn once its pictures have come (20 s at most a spread). `progress(page, pages)` is
+   * told each page as it is begun.
    */
-  async posterPDF() {
-    if (this.core.view !== 4) return pdfOfJpegs([await this.view.posterJPEG()]);
+  async posterPDF(progress) {
+    if (this.core.view !== 4) {
+      progress?.(1, 1);
+      return pdfOfJpegs([await this.view.posterJPEG()]);
+    }
     const { spread: open, spreads } = this.core.catalogue;
     const pages = [];
     for (let spread = 0; spread < spreads; spread++) {
+      progress?.(spread + 1, spreads);
       this.core.setCatalogueSpread(spread);
       this.view.reload();
       this.#scheduleWant();

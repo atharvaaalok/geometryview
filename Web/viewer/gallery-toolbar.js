@@ -30,8 +30,9 @@ export class GalleryToolbar {
   #pages;
   #contents;
   #index;
-  /** While a poster shows: Save PNG and Done, over its top margin. */
+  /** While a poster shows: Save PNG, Save PDF and Done, over its top margin. */
   posterBar;
+  #savePDF;
 
   /**
    * `on` takes view(index), sheet({ scale, cell, sort }) with what changed, look(), poster() to show
@@ -96,10 +97,16 @@ export class GalleryToolbar {
                        this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
-      pill({ title: "Save PDF", help: "Save the poster, or in Catalogue the whole book, as a PDF",
-             onPress: () => on.savePDF() }),
+      this.#savePDF = pill({ title: "Save PDF", help: "Save the poster, or in Catalogue the whole book, as a PDF",
+                             onPress: () => on.savePDF() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
     ]);
+  }
+
+  /** Save PDF's label while a PDF is made, "Page 3 of 57…", or null when done. */
+  savingPDF(text) {
+    this.#savePDF.querySelector("span").textContent = text ?? "Save PDF";
+    this.#savePDF.disabled = text != null;
   }
 
   /** Shows the view in use among those enabled (a bit each), Sheet's controls, and the style. */

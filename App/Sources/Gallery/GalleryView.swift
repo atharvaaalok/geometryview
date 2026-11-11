@@ -899,9 +899,11 @@ final class GalleryView: NSView {
     /// The poster as a picture, `scale` pixels a point: the window's width, and as tall as it is or
     /// as the poster runs, whichever is taller. The live view's content is lent to a page of its own
     /// for the drawing and handed back before anything shows.
-    func posterImage(scale: CGFloat = 2) -> CGImage? {
+    func posterImage(scale wanted: CGFloat = 2) -> CGImage? {
         var image: CGImage?
         drawPoster { size in
+            // A very tall poster is drawn smaller: 60 million pixels is plenty.
+            let scale = min(wanted, (60e6 / (size.width * size.height)).squareRoot())
             guard
                 let context = CGContext(
                     data: nil,
@@ -928,9 +930,12 @@ final class GalleryView: NSView {
     func posterPage(into context: CGContext) {
         drawPoster { size in
             // The page's box, as Core Graphics takes it: the rectangle's bytes.
-            var box = CGRect(origin: .zero, size: size)
+            // A PDF's page is 14,400 points a side at most: a taller poster's is smaller, whole.
+            let k = min(1, 14400 / max(size.width, size.height))
+            var box = CGRect(x: 0, y: 0, width: size.width * k, height: size.height * k)
             let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size) as CFData
             context.beginPDFPage([kCGPDFContextMediaBox as String: boxData] as CFDictionary)
+            context.scaleBy(x: k, y: k)
             return context
         } finish: { context in
             context.endPDFPage()
@@ -963,7 +968,11 @@ final class GalleryView: NSView {
         paintEverything = false
         painted = nil
         let size = posterSize
-        guard let sheetPicture = sheetImage(size, scale: 2), let context = begin(size) else {
+        // The sheet's grain and grid as a picture: 2 pixels a point, or fewer for a very tall
+        // poster.
+        let sheetScale = min(2, (60e6 / (size.width * size.height)).squareRoot())
+        guard let sheetPicture = sheetImage(size, scale: sheetScale), let context = begin(size)
+        else {
             paint()
             return
         }
