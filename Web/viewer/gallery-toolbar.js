@@ -96,6 +96,8 @@ export class GalleryToolbar {
                        this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
+      pill({ title: "Save PDF", help: "Save the poster, or in Catalogue the whole book, as a PDF",
+             onPress: () => on.savePDF() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
     ]);
   }

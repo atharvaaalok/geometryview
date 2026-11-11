@@ -2,6 +2,7 @@
 // the view painting the layout as facts and pictures arrive. The page's counterpart of
 // App/Sources/Gallery/GalleryController.swift.
 
+import { pdfOfJpegs } from "./pdf.js";
 import { GalleryCore, Keys, Scales, Sorts } from "./gallery-core.js";
 import { GalleryLibrary, layoutFacts } from "./gallery-library.js";
 import { GalleryView } from "./gallery-view.js";
@@ -145,6 +146,31 @@ export class Gallery {
     this.view.reload();
     this.#changed();
     this.#scheduleWant();
+  }
+
+  /**
+   * The view as a PDF: the poster on one page, or in Catalogue the whole book, a spread a page,
+   * each drawn once its pictures have come (20 s at most a spread).
+   */
+  async posterPDF() {
+    if (this.core.view !== 4) return pdfOfJpegs([await this.view.posterJPEG()]);
+    const { spread: open, spreads } = this.core.catalogue;
+    const pages = [];
+    for (let spread = 0; spread < spreads; spread++) {
+      this.core.setCatalogueSpread(spread);
+      this.view.reload();
+      this.#scheduleWant();
+      const started = performance.now();
+      while (this.waitingInView > 0 && performance.now() - started < 20_000) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      await new Promise(requestAnimationFrame);
+      pages.push(await this.view.posterJPEG());
+    }
+    this.core.setCatalogueSpread(open);
+    this.view.reload();
+    this.#changed();
+    return pdfOfJpegs(pages);
   }
 
   /** Catalogue: { step } turns a spread, { spread } goes to one, { index } to the index. */

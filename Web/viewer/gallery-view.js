@@ -507,6 +507,20 @@ export class GalleryView {
    * poster runs. Drawn on a canvas from the display list, as the elements paint it.
    */
   async posterPNG(scale = 2) {
+    const { canvas } = await this.posterCanvas(scale);
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
+  /** The poster as a JPEG for a PDF's page: its bytes, pixels, and size in points. */
+  async posterJPEG(scale = 2) {
+    const { canvas, width, height } = await this.posterCanvas(scale);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    return { jpeg: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height,
+             points: [width, height] };
+  }
+
+  /** The poster drawn on a canvas, `scale` pixels a point, and its size in points. */
+  async posterCanvas(scale = 2) {
     const host = this.element.getBoundingClientRect();
     const area = this.#stage.getBoundingClientRect();
     const left = area.left - host.left, top = area.top - host.top;
@@ -549,7 +563,7 @@ export class GalleryView {
       if (lane) g.restore();
     }
     for (const bitmap of bitmaps.values()) bitmap.close();
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    return { canvas, width, height };
   }
 
   #canvasItem(g, item, bitmaps, width, height) {
@@ -774,8 +788,10 @@ export class GalleryView {
         const fraction = item.height ? (item.line - item.y) / item.height : 1;
         lines[i] = top + fraction * box.height;
       } else if (item.kind === Kinds.Line) {
-        const horizontal = Math.abs(item.height) < Math.abs(item.width);
-        lines[i] = horizontal ? top + item.lineWidth / 2 : top;
+        // The box's top is above the line's by half the stroke, as much of it as runs upright: all
+        // of it level, none of it upright, and in between as the line slants.
+        const length = Math.hypot(item.width, item.height) || 1;
+        lines[i] = top + (item.lineWidth / 2) * Math.abs(item.width) / length;
       } else if (item.flags & Flags.Ruler) {
         lines[i] = top + item.lineWidth / 2; // a ruler stands on its line, its top border
       } else {

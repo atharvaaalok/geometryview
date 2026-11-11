@@ -164,6 +164,7 @@ const galleryToolbar = new GalleryToolbar({
   look: () => toggleCard(lookCard),
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
+  savePDF: () => saveGalleryPDF(),
   // On a phone the Library is a sheet raised from the toolbar.
   library: () => {
     panelOpen = !panelOpen;
@@ -508,6 +509,15 @@ async function saveGalleryPoster() {
   const png = await gallery?.view.posterPNG();
   if (!png) return;
   const link = el("a", { href: URL.createObjectURL(png), download: `${gallery.title} poster.png` });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+}
+
+async function saveGalleryPDF() {
+  const pdf = await gallery?.posterPDF();
+  if (!pdf) return;
+  const what = gallery.core.view === 4 ? "catalogue" : "poster";
+  const link = el("a", { href: URL.createObjectURL(pdf), download: `${gallery.title} ${what}.pdf` });
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
 }
@@ -1178,7 +1188,7 @@ function testLabel() {
     .replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
   const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
-    : params.get("test") === "gallery" ? "g8" : "p4";
+    : params.get("test") === "gallery" ? "g9" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
@@ -1517,7 +1527,8 @@ async function runGalleryTest() {
   if (params.has("poster")) {
     // The folder as a poster in each view: aligned as painted, and drawn as PNG.
     const posters = [];
-    for (const view of [0, 1]) {
+    const names = ["plates", "sheet", "ladders", "atlas", "catalogue"];
+    for (const view of params.get("views") === "all" ? [0, 1, 2, 3, 4] : [0, 1]) {
       await g.show(root, "");
       g.setView(view);
       setGalleryPoster(true);
@@ -1526,7 +1537,14 @@ async function runGalleryTest() {
       const run = { view, ...measure(), contentHeight: Math.round(g.core.contentHeight) };
       const png = await g.view.posterPNG();
       run.pngBytes = png?.size ?? 0;
-      if (png) await fetch(`/png?label=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-${view ? "sheet" : "plates"}`)}`, { method: "POST", body: png });
+      // Its PDF too: a page, or in Catalogue the book, a spread a page.
+      const pdfStart = performance.now();
+      const pdf = await g.posterPDF();
+      run.pdfBytes = pdf.size;
+      run.pdfMs = Math.round(performance.now() - pdfStart);
+      await fetch(`/png?type=pdf&label=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-${names[view]}`)}`,
+                  { method: "POST", body: pdf });
+      if (png) await fetch(`/png?label=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-${names[view]}`)}`, { method: "POST", body: png });
       if (params.has("shots")) {
         await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-poster-screen-${view}`)}`);
         await sleep(1500);

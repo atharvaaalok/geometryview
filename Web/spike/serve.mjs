@@ -119,7 +119,8 @@ const server = createServer(async (request, response) => {
     const name = String(url.searchParams.get("label") ?? "unlabelled").replace(/[^\w.-]+/g, "-");
     const folder = join(root, "build/fixtures/out");
     await mkdir(folder, { recursive: true });
-    const file = join(folder, `${name}.png`);
+    const extension = url.searchParams.get("type") === "pdf" ? "pdf" : "png";
+    const file = join(folder, `${name}.${extension}`);
     await writeFile(file, Buffer.concat(chunks));
     console.log(`png: ${file}`);
     response.writeHead(204, headers).end();
