@@ -35,6 +35,15 @@ void Gallery::setPicture(u32 file, const Picture& picture) {
     dirty_ = true;
 }
 
+void Gallery::setPoster(bool poster, std::string date) {
+    if (poster != poster_ || date != posterDate_) {
+        poster_ = poster;
+        posterDate_ = std::move(date);
+        pendingMotion_ = GeoTransitionNone;
+        dirty_ = true;
+    }
+}
+
 void Gallery::setReading(u32 file, float fraction) {
     File& f = tree_.file(file);
     // A layout for each sixteenth read at most: the bar moves in steps it can show.
@@ -134,8 +143,16 @@ bool Gallery::layout() {
     input.sheetCell = sheetCell_;
     input.sort = sort_;
     input.matches = matches_ ? &*matches_ : nullptr;
+    if (poster_) {
+        // Printed: nothing hovered, selected, focused or peeked, every band whole.
+        input.poster = true;
+        input.posterDate = posterDate_;
+        input.hoverKind = GeoTargetNone;
+        input.selected = input.focused = kNone;
+        input.matches = nullptr;
+    }
     result_ = view_ == GeoViewSheet ? layoutSheet(input, display_) : layoutPlates(input, display_);
-    if (peek_ != kNone) {
+    if (peek_ != kNone && !poster_) {
         layoutPeek();
     }
     // What this layout plays against the one before: once, for the change that made it.

@@ -188,4 +188,66 @@ float Draw::scaleBarWidth(double mmPerPoint, bool small) {
                     textWidth(millimetres(length), small ? kBarNumberSmall : kBarNumber));
 }
 
+namespace {
+
+constexpr TextStyle kPosterTitle{44.0f, 600, -0.02f, false};
+constexpr TextStyle kPosterSmall{13.0f, 400, 0.0f, false};
+constexpr TextStyle kPosterEyebrow{10.5f, 600, 0.16f, true};
+constexpr TextStyle kPosterFoot{10.5f, 400, 0.12f, true};
+constexpr const char* kStyleNames[] = {"Illustration", "Metal",     "Clay",
+                                       "Blueprint",    "Technical", "Studio"};
+
+const char* styleName(u32 style) {
+    return kStyleNames[std::min<u32>(style, 5)];
+}
+
+} // namespace
+
+float Draw::posterHead(std::string_view summary, std::string_view eyebrow, float width) {
+    const float baseline = kContentTop + ascentOf(kPosterTitle);
+    const u32 g = newGroup();
+    out.group(g);
+    const std::string title = tree.titleOf(in.folder);
+    const float titleW =
+        out.text(title, kPosterTitle, palette.on, kContentLeft, baseline, width * 0.6f);
+    out.last().line = baseline;
+    const std::string right = std::string(eyebrow) + " \xC2\xB7 " + styleName(in.style);
+    const float rightW = textWidth(right, kPosterEyebrow) + kPosterEyebrow.size;
+    const float smallX = kContentLeft + titleW + 18.0f;
+    const float room = kContentLeft + width - rightW - 18.0f - smallX;
+    if (room > 40.0f) {
+        out.text(summary, kPosterSmall, palette.muted, smallX, baseline, room);
+        out.last().line = baseline;
+    }
+    out.text(right, kPosterEyebrow, palette.muted, kContentLeft, baseline, width, 2);
+    out.last().line = baseline;
+    out.group(0);
+    return kContentTop + 64.0f;
+}
+
+float Draw::posterFoot(float y, float width) {
+    out.line(kContentLeft, y, kContentLeft + width, y, palette.on, 1.5f);
+    const float baseline = y + 8.0f + ascentOf(kPosterFoot);
+    std::string path = tree.title();
+    if (const std::string& inside = tree.folder(in.folder).path; !inside.empty()) {
+        path += "/" + inside;
+    }
+    std::string middle = std::string("GeometryView \xC2\xB7 ") + styleName(in.style);
+    if (in.style == 0) {
+        middle += " \xC2\xB7 one colour per folder";
+    }
+    const u32 g = newGroup();
+    out.group(g);
+    const float third = width / 3.0f;
+    out.text(path, kPosterFoot, palette.muted, kContentLeft, baseline, third - 12.0f);
+    out.last().line = baseline;
+    out.text(middle, kPosterFoot, palette.muted, kContentLeft + third, baseline, third, 1);
+    out.last().line = baseline;
+    out.text(in.posterDate, kPosterFoot, palette.muted, kContentLeft + 2.0f * third + 12.0f,
+             baseline, third - 12.0f, 2);
+    out.last().line = baseline;
+    out.group(0);
+    return baseline + kDescent * kPosterFoot.size + 4.0f;
+}
+
 } // namespace geo::gallery
