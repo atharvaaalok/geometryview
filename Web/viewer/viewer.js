@@ -13,6 +13,7 @@ import { LibraryCard, cachedImport, forgetKept, keptFile, keptSource, libraryEnt
 import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
+import { Gallery } from "./gallery.js";
 import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
          keyOf as keptKeyOf, persistOnce } from "./kept.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
@@ -107,6 +108,10 @@ const progress = new Map();
 let hovered = null; // { document, node, face }
 // The tree and library card: always open on a desktop, a sheet opened when wanted on a phone.
 let panelOpen = !phone;
+// The gallery, made when a folder's is first shown (gallery.js).
+let gallery = null;
+let galleryShown = false;
+let openedFromGallery = false;
 // What the chrome covers of the view, in CSS pixels, as framing keeps clear of it.
 let insets = { left: 0, top: 0, right: 0, bottom: 0 };
 let pointer = null; // { x, y } in CSS pixels, while over the view
@@ -121,6 +126,7 @@ const library = new LibraryCard(libraryStore, {
   connect: () => connectFolder(),
   switch: (show) => showLibrary(show),
   forget: (key) => forgetRecent(key),
+  showFolder: (root, path) => showGallery(root, path),
 });
 const selection = new SelectionCard((action) => engine.perform(action));
 const lookCard = new LookCard(look, (next) => applyLook(next));
@@ -171,6 +177,18 @@ new ViewportInput(engine, canvas, {
     showHover();
   },
 });
+// While the gallery shows, its keys are its own; in the viewer, Esc goes back to the gallery the
+// files came from once no card is open.
+addEventListener("keydown", (e) => {
+  if (galleryShown && gallery?.key(e)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  } else if (!galleryShown && openedFromGallery && e.key === "Escape" && !dismissCard()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    enterGallery();
+  }
+}, { capture: true });
 // ⌘O opens files, ⇧⌘O adds them to what is shown, ⌥⌘O connects a folder: the Mac's keys.
 addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
@@ -263,6 +281,11 @@ function refreshSelection() {
 }
 
 function refreshMasthead() {
+  if (galleryShown) {
+    masthead.show(gallery.title, gallery.subtitle);
+    masthead.setProgress(null);
+    return;
+  }
   if (names.length === 0) {
     masthead.hide();
     return;
@@ -374,6 +397,59 @@ function applyLook(next, { remember = true } = {}) {
   const dark = Styles[look.style].onDark;
   masthead.setOnDark(dark);
   document.body.classList.toggle("on-dark", dark);
+  gallery?.setStyle(look.engineLook.style);
+}
+
+// ---- The gallery --------------------------------------------------------------------------------
+
+// A connected folder's gallery covers the view, the Library beside it; the 3D view draws nothing
+// meanwhile. A file opened from it opens in the viewer, and Esc there comes back.
+function galleryFor() {
+  if (gallery) return gallery;
+  gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery" }, {
+    open: (root, path) => openFromGallery(root, path),
+    leave: () => leaveGallery(),
+    folderChanged: () => refreshMasthead(),
+  });
+  canvas.after(gallery.view.element);
+  gallery.setStyle(look.engineLook.style);
+  return gallery;
+}
+
+async function showGallery(root, path) {
+  const g = galleryFor();
+  enterGallery();
+  await g.show(root, path);
+}
+
+function enterGallery() {
+  galleryShown = true;
+  gallery.view.element.hidden = false;
+  engine.setCovered(true);
+  status.hide();
+  toolbar.element.hidden = true;
+  selection.element.hidden = true;
+  if (!phone) {
+    panelOpen = true;
+    showLibrary(true);
+  }
+  gallery.view.reload();
+  refreshMasthead();
+}
+
+function leaveGallery() {
+  galleryShown = false;
+  gallery.view.element.hidden = true;
+  engine.setCovered(false);
+  toolbar.element.hidden = false;
+  if (names.length === 0) showEmpty();
+  refreshMasthead();
+}
+
+async function openFromGallery(root, path) {
+  leaveGallery();
+  openedFromGallery = true;
+  await openFromFolder({ root: root.id, path, name: path.split("/").pop() }, false);
 }
 
 // ---- Layout -----------------------------------------------------------------------------------
@@ -870,6 +946,7 @@ else if (params.get("test") === "library") runLibraryTest().catch((error) => pos
 else if (params.get("test") === "refine") runRefineTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "thumbs") runThumbsTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "worker") runWorkerTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "gallery") runGalleryTest().catch((error) => post({ error: error.message, stack: error.stack }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
 // ---- The launcher's bridge ---------------------------------------------------------------------
@@ -1033,7 +1110,8 @@ function testLabel() {
   // A report's name is a file's, so an imported fixture's folder joins it with a dash.
   const name = (model ?? params.get("file") ?? "none").replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
-  const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1" : "p4";
+  const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
+    : params.get("test") === "gallery" ? "g2" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
@@ -1230,6 +1308,90 @@ async function runWorkerTest() {
   await post({ file: name, structure: structure.type, structureMs, structureSegments: segments,
                cancelOutcome: outcome.type, cancelled: outcome.cancelled ?? false, cancelMs,
                message: outcome.message ?? "" });
+}
+
+// A served folder's gallery (?folder=test-models), measured as the Mac's --gallery-check measures
+// its own: in Illustration, Blueprint and Studio, the folder and its first subfolders, every
+// alignment group as painted, and how far anything was painted from where the core laid it. Then
+// the view is scrolled through its tallest folder while long tasks are counted, and the 3D view's
+// frames while the gallery covers it.
+async function runGalleryTest() {
+  const dir = params.get("folder") ?? "test-models";
+  const listing = await (await fetch(`/list?dir=${encodeURIComponent(dir)}`)).json();
+  if (!libraryStore.folders.adoptRemote) throw new Error("Run with backend=visit.");
+  const name = dir.split("/").pop();
+  const id = libraryStore.folders.adoptRemote(name, listing, `/viewer/${dir}/`);
+  await library.refresh();
+  const root = { id, name };
+  const g = galleryFor();
+  await showGallery(root, "");
+  const settle = async () => {
+    const started = performance.now();
+    while (g.waitingInView > 0 && performance.now() - started < Number(params.get("wait") ?? 240000)) await sleep(250);
+    await sleep(400);
+    g.view.repaint();
+    await new Promise(requestAnimationFrame);
+    return Math.round(performance.now() - started) / 1000;
+  };
+  const subfolders = [...new Set(listing.filter((e) => e.folder && !e.path.includes("/")).map((e) => e.path))]
+    .filter((p) => listing.some((e) => !e.folder && e.path.startsWith(`${p}/`))).sort().slice(0, 3);
+  const runs = [];
+  let worst = 0, over = 0, deviation = 0;
+  for (const style of [0, 3, 5]) {
+    const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
+    next.choose(style);
+    applyLook(next, { remember: false });
+    for (const path of ["", ...subfolders]) {
+      await g.show(root, path);
+      const waited = await settle();
+      const { lines, columns } = g.view.measured();
+      const result = g.core.check(lines, columns, 0.5);
+      // How far each item was painted from where the core laid it.
+      const items = g.core.items;
+      let off = 0;
+      for (let i = 0; i < items.length; i++) {
+        if (!Number.isNaN(lines[i])) off = Math.max(off, Math.abs(lines[i] - items[i].line));
+        if (items[i].column && !Number.isNaN(columns[i])) off = Math.max(off, Math.abs(columns[i] - items[i].columnLine));
+      }
+      deviation = Math.max(deviation, off);
+      worst = Math.max(worst, ...result.over.map((o) => o.spread), 0);
+      over += result.over.length;
+      runs.push({ style, folder: path, groupsChecked: result.checked, over: result.over, waited,
+                  painted: lines.filter((v) => !Number.isNaN(v)).length, maxDeviation: Math.round(off * 1000) / 1000 });
+    }
+  }
+  // Scrolling the tallest folder: long tasks over 50 ms while it moves.
+  const tall = params.get("scroll") ?? subfolders.at(-1) ?? "";
+  await g.show(root, tall);
+  await settle();
+  const longTasks = [];
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) longTasks.push(Math.round(entry.duration));
+  });
+  try {
+    observer.observe({ type: "longtask", buffered: false });
+  } catch {
+    // No long tasks reported here.
+  }
+  const clip = g.view.element.querySelector(".gallery-clip");
+  const height = clip.scrollHeight - clip.clientHeight;
+  const scrollStarted = performance.now();
+  for (let i = 1; i <= 120; i++) {
+    clip.scrollTop = (height * i) / 120;
+    await new Promise(requestAnimationFrame);
+  }
+  const scrollMs = Math.round(performance.now() - scrollStarted);
+  await sleep(200);
+  observer.disconnect();
+  // No 3D frames while the gallery covers the view.
+  const before = engine.stats().frames;
+  await sleep(2000);
+  const framesWhileCovered = engine.stats().frames - before;
+  await post({ folder: dir, files: listing.filter((e) => !e.folder).length, runs, groupsOver: over,
+               worstSpread: worst, maxDeviation: Math.round(deviation * 1000) / 1000,
+               scroll: { folder: tall, height: Math.round(height), frames: 120, ms: scrollMs, longTasks,
+                         longest: Math.max(0, ...longTasks) },
+               framesWhileCovered });
 }
 
 // Waits for an imported file's scene, zooms in on the middle of the view, and reports how many

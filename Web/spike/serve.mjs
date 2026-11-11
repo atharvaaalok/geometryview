@@ -9,7 +9,7 @@
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,8 @@ const mounts = [
   ["/viewer/build/", join(root, "build/wasm-webgpu/Engine")],
   ["/viewer/fonts/", join(root, "ThirdParty/ibm-plex-mono")],
   ["/viewer/fixtures/", join(root, "build/fixtures")],
+  // GeometryView's own test models, for the gallery's checks.
+  ["/viewer/test-models/", join(root, "test-models")],
   ["/viewer/occt/", join(root, "build/wasm-release/Import")],
   ["/viewer/occt-threads/", join(root, "build/wasm-threads/Import")],
   ["/viewer/", join(root, "Web/viewer")],
@@ -55,6 +57,34 @@ const server = createServer(async (request, response) => {
     "Cache-Control": "no-store",
   };
   const url = new URL(request.url, `http://${request.headers.host}`);
+  // A served folder's STEP and STL files and its folders, for the gallery's checks:
+  // /list?dir=test-models/models answers [{ path, folder, bytes, modified }].
+  if (request.method === "GET" && url.pathname === "/list") {
+    const dir = String(url.searchParams.get("dir") ?? "");
+    const mount = mounts.find(([prefix]) => `/viewer/${dir}/`.startsWith(prefix) && prefix !== "/viewer/");
+    if (!mount || dir.includes("..")) {
+      response.writeHead(404, headers).end();
+      return;
+    }
+    const base = join(mount[1], `/viewer/${dir}/`.slice(mount[0].length));
+    const entries = [];
+    const walk = async (folder, prefix) => {
+      for (const entry of await readdir(folder, { withFileTypes: true })) {
+        if (entry.name.startsWith(".")) continue;
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          entries.push({ path, folder: true });
+          await walk(join(folder, entry.name), path);
+        } else if (/\.(step|stp|stl)$/i.test(entry.name)) {
+          const info = await stat(join(folder, entry.name));
+          entries.push({ path, folder: false, bytes: info.size, modified: Math.round(info.mtimeMs) });
+        }
+      }
+    };
+    await walk(base, "");
+    response.writeHead(200, { ...headers, "Content-Type": "application/json" }).end(JSON.stringify(entries));
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/report") {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);

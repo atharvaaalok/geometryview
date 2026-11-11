@@ -201,6 +201,21 @@ class VisitFolders {
     return this.#add({ name, files });
   }
 
+  // A folder served elsewhere, for checks: its listing [{ path, folder, bytes, modified }], each
+  // file read from `base` + its path only when asked for.
+  adoptRemote(name, listing, base) {
+    const files = new Map();
+    for (const entry of listing) {
+      if (entry.folder) continue;
+      files.set(entry.path, async () => {
+        const response = await fetch(base + entry.path.split("/").map(encodeURIComponent).join("/"));
+        if (!response.ok) throw new Error(`${entry.path} could not be read.`);
+        return new File([await response.blob()], entry.path.split("/").pop(), { lastModified: entry.modified });
+      });
+    }
+    return this.#add({ name, files, listing });
+  }
+
   #add(folder) {
     const id = crypto.randomUUID();
     this.#folders.push({ id, ...folder });
@@ -247,7 +262,10 @@ class VisitFolders {
   async file(id, path) {
     const folder = this.#folders.find((f) => f.id === id);
     if (!folder) throw new Error("That folder is no longer connected.");
-    if (folder.files) return folder.files.get(path);
+    if (folder.files) {
+      const file = folder.files.get(path);
+      return typeof file === "function" ? file() : file;
+    }
     const parts = path.split("/");
     const name = parts.pop();
     const directory = await this.#entry(folder.entry, parts.join("/"));
@@ -262,6 +280,15 @@ class VisitFolders {
     const folder = this.#folders.find((f) => f.id === id);
     if (!folder) throw new Error("That folder is no longer connected.");
     let found = 0;
+    if (folder.listing) {
+      const prefix = path ? `${path}/` : "";
+      for (const entry of folder.listing) {
+        if (!entry.path.startsWith(prefix)) continue;
+        if (!entry.folder && found++ === files) return;
+        yield { path: entry.path, kind: entry.folder ? "folder" : "file", bytes: entry.bytes, modified: entry.modified };
+      }
+      return;
+    }
     if (folder.files) {
       const prefix = path ? `${path}/` : "";
       const folders = new Set();

@@ -26,12 +26,13 @@ export class Thumbnailer {
 
   /**
    * Draws a cache file (a Blob or ArrayBuffer) as spec says: { pixels, style, colorMode,
-   * pixelsPerPoint, lineScale }, its parts starting at firstColor (-1 for the cycle's own).
-   * Resolves to { bitmap, png, width, height, worldPerPixel, partRect, inkRect }; rejects with why
-   * it could not be drawn.
+   * pixelsPerPoint, lineScale }, its parts starting at firstColor (-1 for the cycle's own), or a
+   * file of one part at folderColor. With keep { key, picture }, the picture and the file's facts
+   * are kept (kept.js). Resolves to { bitmap, png, width, height, worldPerPixel, partRect, inkRect,
+   * facts, firstColor }; rejects with why it could not be drawn.
    */
-  draw(blob, spec, firstColor = -1) {
-    const drawn = this.#queue.then(() => this.#draw(blob, spec, firstColor));
+  draw(blob, spec, firstColor = -1, { folderColor = -1, keep = null } = {}) {
+    const drawn = this.#queue.then(() => this.#draw(blob, spec, firstColor, folderColor, keep));
     this.#queue = drawn.catch(() => {});
     return drawn;
   }
@@ -44,7 +45,7 @@ export class Thumbnailer {
     this.#ready = null;
   }
 
-  async #draw(blob, spec, firstColor) {
+  async #draw(blob, spec, firstColor, folderColor, keep) {
     clearTimeout(this.#trimTimer);
     await this.#start();
     const id = this.#next++;
@@ -52,7 +53,7 @@ export class Thumbnailer {
       this.#answers.set(id, resolve);
       this.#worker.postMessage({ type: "draw", id, blob, pixels: spec.pixels, style: spec.style,
                                  colorMode: spec.colorMode, pixelsPerPoint: spec.pixelsPerPoint,
-                                 lineScale: spec.lineScale, firstColor });
+                                 lineScale: spec.lineScale, firstColor, folderColor, keep });
     });
     this.heapMB = answer.heapMB ?? this.heapMB;
     if (this.heapMB > this.#recycleMB) {
@@ -62,8 +63,8 @@ export class Thumbnailer {
       this.#trimTimer = setTimeout(() => this.#worker?.postMessage({ type: "trim" }), kTrimAfterMs);
     }
     if (!answer.bitmap) throw new Error(answer.message);
-    const { bitmap, png, width, height, worldPerPixel, partRect, inkRect } = answer;
-    return { bitmap, png, width, height, worldPerPixel, partRect, inkRect };
+    const { bitmap, png, width, height, worldPerPixel, partRect, inkRect, facts } = answer;
+    return { bitmap, png, width, height, worldPerPixel, partRect, inkRect, facts, firstColor: answer.firstColor };
   }
 
   #start() {

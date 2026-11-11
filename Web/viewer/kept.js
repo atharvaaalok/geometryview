@@ -220,3 +220,41 @@ export async function keepSource(key, file) {
   await writeWhole(await folder(kNote), `${key}.json`, new TextEncoder().encode(JSON.stringify(note)));
 }
 const kSourcePiece = 8 << 20;
+
+// ---- Pictures and facts --------------------------------------------------------------------------
+
+/** The key of a picture of a file: a hash of how it is drawn and the engine's version. */
+export async function pictureKeyOf({ style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version }) {
+  const text = JSON.stringify([style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version]);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  return [...digest.subarray(0, 8)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** A file's facts and its picture kept under `key`: { facts, png, note } or null for each missing. */
+export async function keptPicture(key, picture) {
+  try {
+    const thumbs = await folder(kThumbs);
+    const facts = JSON.parse(await readText(thumbs, `${key}.facts.json`));
+    let png = null, note = null;
+    try {
+      note = JSON.parse(await readText(thumbs, `${key}.${picture}.json`));
+      png = await (await thumbs.getFileHandle(`${key}.${picture}.png`)).getFile();
+    } catch {
+      // Drawn in another style, or not at all.
+    }
+    return { facts, png, note };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keeps a picture, its note and the file's facts, from a worker: the PNG, then the facts, then the
+ * note, last, which marks the picture whole.
+ */
+export async function keepPicture(key, picture, png, note, facts) {
+  const thumbs = await folder(kThumbs);
+  await writeWhole(thumbs, `${key}.${picture}.png`, new Uint8Array(await png.arrayBuffer()));
+  if (facts) await writeWhole(thumbs, `${key}.facts.json`, new TextEncoder().encode(JSON.stringify(facts)));
+  await writeWhole(thumbs, `${key}.${picture}.json`, new TextEncoder().encode(JSON.stringify(note)));
+}
