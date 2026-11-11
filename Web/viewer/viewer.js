@@ -1354,6 +1354,11 @@ async function runGalleryTest() {
         if (items[i].column && !Number.isNaN(columns[i])) off = Math.max(off, Math.abs(columns[i] - items[i].columnLine));
       }
       deviation = Math.max(deviation, off);
+      if (params.has("shots") && path === "") {
+        // Whoever runs the browser takes a screenshot while the page waits.
+        await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-${dir.replaceAll("/", "-")}-${style}`)}`);
+        await sleep(1500);
+      }
       worst = Math.max(worst, ...result.over.map((o) => o.spread), 0);
       over += result.over.length;
       runs.push({ style, folder: path, groupsChecked: result.checked, over: result.over, waited,

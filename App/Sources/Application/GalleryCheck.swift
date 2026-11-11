@@ -79,6 +79,7 @@ final class GalleryCheck {
         }
         var runs: [[String: Any]] = []
         var worst: Float = 0
+        var worstDeviation: Float = 0
         var failures = 0
         for style in [GeoStyleIllustration, GeoStyleBlueprint, GeoStyleStudio] {
             useStyle(style)
@@ -102,12 +103,24 @@ final class GalleryCheck {
                         as [String: Any]
                 }
                 let painted = lines.filter { !$0.isNaN }.count
+                // How far each item was painted from where the core laid it.
+                var deviation: Float = 0
+                for (index, item) in controller.gallery.items.enumerated() {
+                    if !lines[index].isNaN {
+                        deviation = max(deviation, abs(lines[index] - item.line))
+                    }
+                    if item.column != 0, !columns[index].isNaN {
+                        deviation = max(deviation, abs(columns[index] - item.column_line))
+                    }
+                }
+                worstDeviation = max(worstDeviation, deviation)
                 worst = max(worst, result.over.map(\.spread).max() ?? 0)
                 failures += result.over.count
                 runs.append([
                     "style": Int(style.rawValue), "folder": controller.gallery.folder,
                     "groupsChecked": Int(result.checked), "over": over, "itemsPainted": painted,
                     "waitedSeconds": waited, "waitingInView": controller.waitingInView,
+                    "maxDeviation": Double(deviation),
                 ])
                 print(
                     "gallery-check: style \(style.rawValue) \(controller.gallery.folder.isEmpty ? "/" : controller.gallery.folder): \(result.checked) groups, \(result.over.count) over 0.5 pt, waited \(String(format: "%.1f", waited)) s"
@@ -122,6 +135,7 @@ final class GalleryCheck {
         report["runs"] = runs
         report["groupsOver"] = failures
         report["worstSpread"] = Double(worst)
+        report["maxDeviation"] = Double(worstDeviation)
         if let stats = controller.stats() {
             report["library"] = [
                 "helpers": stats.helpers, "imports": stats.imports, "pictures": stats.pictures,

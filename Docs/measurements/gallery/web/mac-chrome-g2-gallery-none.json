@@ -1,0 +1,103 @@
+{
+  "label": "mac-chrome-g2-gallery-none",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "designlib",
+  "files": 166,
+  "runs": [
+    {
+      "style": 0,
+      "folder": "",
+      "groupsChecked": 11,
+      "over": [],
+      "waited": 11.213,
+      "painted": 77,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "folder": "gallery",
+      "groupsChecked": 23,
+      "over": [],
+      "waited": 3.683,
+      "painted": 140,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "folder": "review",
+      "groupsChecked": 4,
+      "over": [],
+      "waited": 0.402,
+      "painted": 35,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 3,
+      "folder": "",
+      "groupsChecked": 11,
+      "over": [],
+      "waited": 1.405,
+      "painted": 89,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "folder": "gallery",
+      "groupsChecked": 23,
+      "over": [],
+      "waited": 1.42,
+      "painted": 140,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "folder": "review",
+      "groupsChecked": 4,
+      "over": [],
+      "waited": 0.402,
+      "painted": 35,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "folder": "",
+      "groupsChecked": 11,
+      "over": [],
+      "waited": 1.155,
+      "painted": 89,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "folder": "gallery",
+      "groupsChecked": 23,
+      "over": [],
+      "waited": 1.421,
+      "painted": 140,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "folder": "review",
+      "groupsChecked": 4,
+      "over": [],
+      "waited": 0.401,
+      "painted": 35,
+      "maxDeviation": 0.019
+    }
+  ],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0.026,
+  "scroll": {
+    "folder": "review",
+    "height": 0,
+    "frames": 120,
+    "ms": 1995,
+    "longTasks": [],
+    "longest": 0
+  },
+  "framesWhileCovered": 0
+}

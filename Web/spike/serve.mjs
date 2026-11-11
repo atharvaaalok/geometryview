@@ -23,7 +23,9 @@ const reportsFor = (label) => {
   if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
   // The gallery's pictures, drawn as the browser will draw them, and its other checks.
-  if (label.includes("-thumbs-") || label.includes("-g1-")) return join(root, "Docs/measurements/gallery/web");
+  if (label.includes("-thumbs-") || label.includes("-g1-") || label.includes("-g2-")) {
+    return join(root, "Docs/measurements/gallery/web");
+  }
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
   return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 };
@@ -37,8 +39,11 @@ const mounts = [
   ["/viewer/build/", join(root, "build/wasm-webgpu/Engine")],
   ["/viewer/fonts/", join(root, "ThirdParty/ibm-plex-mono")],
   ["/viewer/fixtures/", join(root, "build/fixtures")],
-  // GeometryView's own test models, for the gallery's checks.
+  // GeometryView's own test models, for the gallery's checks, and any other folders named in
+  // GEOMETRYVIEW_GALLERY_FOLDERS as name=path,name=path, read only.
   ["/viewer/test-models/", join(root, "test-models")],
+  ...(process.env.GEOMETRYVIEW_GALLERY_FOLDERS ?? "").split(",").filter((pair) => pair.includes("="))
+    .map((pair) => [`/viewer/${pair.split("=")[0]}/`, pair.slice(pair.indexOf("=") + 1)]),
   ["/viewer/occt/", join(root, "build/wasm-release/Import")],
   ["/viewer/occt-threads/", join(root, "build/wasm-threads/Import")],
   ["/viewer/", join(root, "Web/viewer")],
@@ -83,6 +88,12 @@ const server = createServer(async (request, response) => {
     };
     await walk(base, "");
     response.writeHead(200, { ...headers, "Content-Type": "application/json" }).end(JSON.stringify(entries));
+    return;
+  }
+  // A page asks for a screenshot of itself: whoever runs the browser takes it (Tools/web_report.mjs).
+  if (request.method === "GET" && url.pathname === "/shot") {
+    console.log(`shot: ${String(url.searchParams.get("name") ?? "shot").replace(/[^\w.-]+/g, "-")}`);
+    response.writeHead(204, headers).end();
     return;
   }
   if (request.method === "POST" && url.pathname === "/report") {

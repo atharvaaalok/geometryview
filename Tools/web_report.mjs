@@ -6,6 +6,9 @@
 //   node Tools/web_report.mjs "<path and query under the server>" [timeout seconds]
 //   node Tools/web_report.mjs "/viewer/?test=thumbs&label=mac-chrome&count=60"
 //
+// A page that asks for a screenshot (GET /shot?name=...) gets one, through Chrome's DevTools,
+// written to build/fixtures/out/<name>.png.
+//
 // Chrome is GEOMETRYVIEW_CHROME, or Google Chrome's usual place on a Mac.
 
 import { spawn } from "node:child_process";
@@ -21,6 +24,7 @@ if (!page) {
 }
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = 7400 + Math.floor(Math.random() * 400);
+const devtools = port + 1000;
 const server = spawn(process.execPath, [join(root, "Web/spike/serve.mjs"), String(port)],
                      { stdio: ["ignore", "pipe", "inherit"] });
 const profile = mkdtempSync(join(tmpdir(), "geometryview-report-"));
@@ -45,6 +49,7 @@ server.stdout.on("data", (text) => {
     // The server prints once it listens; then the page opens.
     const chromePath = process.env.GEOMETRYVIEW_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     chrome = spawn(chromePath, ["--headless=new", `--user-data-dir=${profile}`, "--no-first-run",
+                                `--remote-debugging-port=${devtools}`,
                                 "--enable-unsafe-webgpu", "--window-size=1440,900",
                                 `http://127.0.0.1:${port}${page}`], { stdio: "ignore" });
   }
@@ -57,6 +62,34 @@ server.stdout.on("data", (text) => {
       });
     } else if (line.startsWith("png: ")) {
       process.stdout.write(`${line.trim()}\n`);
+    } else if (line.startsWith("shot: ")) {
+      screenshot(line.slice(6).trim()).catch((error) => process.stderr.write(`shot failed: ${error.message}\n`));
     }
   }
 });
+
+// A screenshot of the page, through Chrome's DevTools protocol.
+async function screenshot(name) {
+  const pages = await (await fetch(`http://127.0.0.1:${devtools}/json/list`)).json();
+  const page = pages.find((p) => p.type === "page");
+  if (!page) throw new Error("no page");
+  const socket = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve;
+    socket.onerror = reject;
+  });
+  const shot = await new Promise((resolve) => {
+    socket.onmessage = ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.id === 1) resolve(message.result?.data);
+    };
+    socket.send(JSON.stringify({ id: 1, method: "Page.captureScreenshot", params: { format: "png" } }));
+  });
+  socket.close();
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const folder = join(root, "build/fixtures/out");
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, `${name}.png`);
+  writeFileSync(file, Buffer.from(shot, "base64"));
+  process.stdout.write(`shot: ${file}\n`);
+}
