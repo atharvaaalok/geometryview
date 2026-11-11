@@ -102,5 +102,6 @@ It is left for when the phone can be cabled and the folder connected.
   - no two texts on one line overlapping, from 374 to 1800 pt;
   - the lost state's card and hits;
   - the detail bubble.
+- The same core in wasm: 236 cases.
 - `npm test` in Launcher: 60 of 61, 1 skipped as before. Among them are the five tools,
   view_folder, and the cache's sweep.
