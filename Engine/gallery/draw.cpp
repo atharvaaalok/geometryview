@@ -134,6 +134,9 @@ std::array<float, 2> Draw::part(u32 file, float x, float bottom, double mmPerPoi
         const float k = float(p.mmPerPixel / mmPerPoint); // points a pixel
         out.picture(file, x - p.part[0] * k, bottom - (p.part[1] + p.part[3]) * k,
                     float(p.width) * k, float(p.height) * k);
+        if (k > kDetailAbove) {
+            out.last().flags |= GeoItemDetail; // drawn large: its detail picture, once it comes
+        }
         if (f.stale) {
             out.last().flags |= GeoItemStale; // drawn again: faded until the new picture comes
         }

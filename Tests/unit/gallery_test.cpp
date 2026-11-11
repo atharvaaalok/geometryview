@@ -1062,6 +1062,95 @@ TEST_CASE("atlas' poster: the whole map in a frame, beside a cartouche with its 
     }
 }
 
+TEST_CASE("shadows end above the rule or ruler under a part's foot, in Plates and Ladders") {
+    for (const u32 view : {u32(GeoViewPlates), u32(GeoViewLadders)}) {
+        for (const u32 style : {0u, 3u}) {
+            CAPTURE(view);
+            CAPTURE(style);
+            Gallery g = measured();
+            g.setViews(0b11111);
+            g.setStyle(style);
+            REQUIRE(g.setView(view));
+            g.setViewport(1380.0f, 840.0f);
+            g.layout();
+            const auto items = g.display().items();
+            usize checked = 0;
+            for (const GeoGalleryItem& part : items) {
+                if (part.kind != GeoItemPicture || (part.flags & GeoItemFixed) != 0) {
+                    continue;
+                }
+                const Picture& p = *g.tree().file(part.file).picture;
+                const float k = part.width / float(p.width);
+                const float inkL = part.x + p.ink[0] * k, inkR = inkL + p.ink[2] * k;
+                const float inkBottom = part.y + (p.ink[1] + p.ink[3]) * k;
+                for (const GeoGalleryItem& rule : items) {
+                    // A level rule (a line or a ruler) across the part, under its foot.
+                    float top = 0;
+                    if (rule.kind == GeoItemLine && rule.height == 0.0f && rule.width > 0.0f) {
+                        top = rule.y - rule.line_width / 2.0f;
+                    } else if (rule.kind == GeoItemRect && (rule.flags & GeoItemRuler) != 0) {
+                        top = rule.y;
+                    } else {
+                        continue;
+                    }
+                    if (rule.lane != part.lane || rule.x > inkR || rule.x + rule.width < inkL ||
+                        top < part.line - 0.01f || top > part.line + 40.0f) {
+                        continue;
+                    }
+                    CAPTURE(part.file);
+                    CAPTURE(inkBottom);
+                    CAPTURE(top);
+                    CHECK(inkBottom <= top + 0.01f);
+                    ++checked;
+                }
+            }
+            CHECK(checked > 3);
+        }
+    }
+}
+
+TEST_CASE("pictures drawn large are details; none is drawn past 1.25 times its pixels") {
+    // A large window, where Catalogue's page is drawn well over its own size.
+    for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet), u32(GeoViewCatalogue)}) {
+        CAPTURE(view);
+        Gallery g = measured();
+        g.setViews(0b11111);
+        REQUIRE(g.setView(view));
+        g.setViewport(2400.0f, 1500.0f);
+        const u32 spreads = view == GeoViewCatalogue ? g.catalogueSpreads() : 1;
+        std::unordered_set<u32> large;
+        for (u32 s = 0; s < spreads; ++s) {
+            if (view == GeoViewCatalogue) {
+                g.setCatalogueSpread(s);
+            }
+            g.layout();
+            for (const GeoGalleryItem& item : g.display().items()) {
+                if (item.kind != GeoItemPicture || (item.flags & GeoItemTurn) != 0) {
+                    continue;
+                }
+                const Picture& p = *g.tree().file(item.file).picture;
+                const float k = item.width / float(p.width); // points a picture pixel
+                CAPTURE(s);
+                CAPTURE(k);
+                CHECK(k <= kMaxPointsPerPixel * 1.001f);
+                CHECK(((item.flags & GeoItemDetail) != 0) == (k > kDetailAbove));
+                if ((item.flags & GeoItemDetail) != 0) {
+                    large.insert(item.file);
+                }
+            }
+            // Those in view are the details wanted, at most 32.
+            const std::vector<u32> details = g.details();
+            CHECK(details.size() <= 32);
+            for (const u32 f : details) {
+                CHECK(large.contains(f));
+            }
+        }
+        if (view == GeoViewCatalogue) {
+            CHECK(!large.empty()); // its figures, at least, are drawn large
+        }
+    }
+}
+
 TEST_CASE("ladders: a lane scrolled sideways is hit where its parts show, and only there") {
     Gallery g = measured(200); // a long bearing strip
     g.setViews(0b111);

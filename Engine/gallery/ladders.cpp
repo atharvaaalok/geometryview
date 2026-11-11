@@ -518,6 +518,10 @@ public:
         for (const Placed& p : placed) {
             const File& file = tree.file(p.file);
             const float baseline = y + float(p.row) * kRowH + kPadTop + kDrawH;
+            // Ink stands this far above the ruler's line: clear of its stroke, half of which lies
+            // above the line, and a point more.
+            constexpr float kClear = 1.75f;
+            const float stand = baseline - kClear;
             const float left = offsetX + p.left;
             const bool hovered = in.hoverKind == GeoTargetFile && in.hover == p.file;
             const bool selected = selectedFile == p.file;
@@ -525,16 +529,17 @@ public:
             const usize first = out.items().size();
             out.target(GeoTargetFile, p.file);
             out.key(keyOf("part", p.file));
-            const float top = baseline - p.below - p.h;
+            const float top = stand - p.below - p.h;
             if (selected || hovered) {
                 out.rect(left - 8.0f, top - 8.0f, p.w + 16.0f, p.h + p.below + 16.0f,
                          selected ? palette.wash : palette.lift,
                          selected ? palette.washLine : palette.liftLine, 1.5f, 8.0f, GeoItemSticker,
                          selected ? palette.washLine : palette.liftLine);
             }
-            // Its ink stands on the ruler: the part's foot is its shadow's depth above it.
-            part(p.file, left, baseline - p.below, p.mm, rowGroups[p.row * 3]);
-            lastLine(baseline);
+            // Its ink stands just above the ruler: the part's foot is its shadow's depth above
+            // that.
+            part(p.file, left, stand - p.below, p.mm, rowGroups[p.row * 3]);
+            lastLine(stand);
             const bool dup = labels[file.names.label] > 1 && !file.names.sub.empty();
             const float labW = p.slot + kGap - 6.0f;
             const float labX = left + p.w / 2.0f - labW / 2.0f;

@@ -46,11 +46,11 @@ struct LayoutResult {
         float x, y, w, h;
         u32 lane = 0; // placed in a lane's content
     };
-    std::vector<Place> plates;      // subfolders, in order
-    std::vector<Place> parts;       // files on shelves, in order
-    std::vector<Place> covers;      // files drawn on plates' covers
-    std::vector<std::string> bands; // keys of size bands cut short, by their "more" target index
-    u32 groups = 0;                 // alignment groups made
+    std::vector<Place> plates;         // subfolders, in order
+    std::vector<Place> parts;          // files on shelves, in order
+    std::vector<Place> covers;         // files drawn on plates' covers
+    std::vector<std::string> bands;    // keys of size bands cut short, by their "more" target index
+    u32 groups = 0;                    // alignment groups made
     std::vector<GeoGalleryLane> lanes; // bands that scroll sideways on their own
 };
 
@@ -62,6 +62,9 @@ inline constexpr float kContentBottom = 30.0f;
 
 /// Pictures display at most 1.25 times their own pixels at 2 per point: 0.625 points a pixel.
 inline constexpr float kMaxPointsPerPixel = 0.625f;
+/// Above half a point a pixel a picture is enlarged on a 2× screen: its file's detail picture,
+/// twice the pixels, is wanted (GeoItemDetail).
+inline constexpr float kDetailAbove = 0.5f;
 
 /// Ladders: every folder holding files a strip, smallest to largest, on a ruler at its scale; each
 /// strip's parts in a lane of their own. `laneScroll` says how far each lane is scrolled.

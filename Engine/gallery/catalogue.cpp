@@ -504,6 +504,18 @@ public:
 
     /// Parts standing on baselines at one scale, wrapping into up to `maxRows` rows, in a box `w` ×
     /// `h` at (x, y) page points; names under them with `labels`. Returns the millimetres a point.
+    /// The fewest millimetres a page point at which these files' pictures stay sharp in the view:
+    /// no more than kMaxPointsPerPixel view points a pixel, the page being drawn `s` times its own.
+    double sharpest(const std::vector<u32>& files) const {
+        double mm = 0;
+        for (const u32 f : files) {
+            if (const auto& p = tree.file(f).picture; p && p->mmPerPixel > 0) {
+                mm = std::max(mm, p->mmPerPixel * double(s) / double(kMaxPointsPerPixel));
+            }
+        }
+        return mm;
+    }
+
     double stand(const std::vector<u32>& files, int side, float x, float y, float w, float h,
                  usize maxRows, bool labels) {
         const std::vector<u32> ok = drawable(tree, files);
@@ -527,6 +539,7 @@ public:
         const double rowW = double(w) * double(rows) - double(gap) * double(ok.size());
         const double rowH = (double(h) - double(rows) * double(labH)) / double(rows) - 8.0;
         double mm = std::max(totalW / std::max(1.0, rowW), tallest / std::max(1.0, rowH));
+        mm = std::max(mm, sharpest(ok));
         // Fill rows left to right, each row centred. The last row takes what is left, so while a
         // row is wider than the box, draw them all smaller and fill again.
         std::vector<std::vector<u32>> lines;
@@ -777,7 +790,8 @@ public:
             // Each part to fit its cell, its shadow and all.
             const Drawn d = *drawnOf(tree.file(files[i]));
             const double inkW = d.w + d.left + d.right, inkH = d.h + d.above + d.below;
-            const double mm = std::max(inkW / double(cw - 2.0f), inkH / double(ch - 2.0f));
+            const double mm = std::max(
+                {inkW / double(cw - 2.0f), inkH / double(ch - 2.0f), sharpest({files[i]})});
             const float pw = float(inkW / mm), ph = float(inkH / mm);
             const float cx = x + float(i % cols) * cw, cy = y + float(i / cols) * ch;
             out.target(GeoTargetPage, book_.pageOf.count(files[i]) ? book_.pageOf.at(files[i]) : 0);
@@ -892,7 +906,8 @@ public:
         const double inkW = d.w + d.left + d.right, inkH = d.h + d.above + d.below;
         double mm = std::max(inkW / double(kText), inkH / double(h));
         if (file.picture && file.picture->mmPerPixel > 0.0) {
-            mm = std::max(mm, file.picture->mmPerPixel / double(kMaxPointsPerPixel));
+            // In the view's points: the page is drawn `s` times its own.
+            mm = std::max(mm, file.picture->mmPerPixel * double(s) / double(kMaxPointsPerPixel));
         }
         const float pw = float(inkW / mm), ph = float(inkH / mm);
         out.target(GeoTargetFile, f);
