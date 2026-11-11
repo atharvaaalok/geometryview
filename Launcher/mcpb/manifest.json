@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "geometryview",
   "display_name": "GeometryView",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "View 3D CAD models: open, inspect and picture STEP and STL files on this computer.",
   "long_description": "Lets Claude open STEP and STL files on this computer, list their assemblies and parts, render pictures of them from any angle and in any drawing style, show parts alone or cut sections through them, and show them to you: in the GeometryView app on a Mac that has it, or else in a viewer in your browser that runs on this computer only.",
   "author": { "name": "Atharva Aalok", "url": "https://github.com/atharvaaalok" },
