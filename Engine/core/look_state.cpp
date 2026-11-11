@@ -29,9 +29,9 @@ void LookState::set(const render::LookSettings& settings) {
     styleDirty_ = true;
 }
 
-void LookState::setScale(float pixelsPerPoint) {
-    if (pixelsPerPoint != pixelsPerPoint_) {
-        pixelsPerPoint_ = pixelsPerPoint;
+void LookState::setRaster(const render::Raster& raster) {
+    if (raster.pixelsPerPoint != raster_.pixelsPerPoint || raster.lineScale != raster_.lineScale) {
+        raster_ = raster;
         styleDirty_ = true;
     }
 }
@@ -58,8 +58,7 @@ void LookState::apply(render::Backend& renderer, const scene::Scene& scene) {
         paletteDirty_ = false;
     }
     if (styleDirty_) {
-        renderer.setStyle(render::makeStyleUniforms(style, settings_, pixelsPerPoint_),
-                          style.physical);
+        renderer.setStyle(render::makeStyleUniforms(style, settings_, raster_), style.physical);
         styleDirty_ = false;
     }
 }

@@ -118,6 +118,36 @@ TEST_CASE("style uniforms are in pixels at the display's scale") {
     CHECK(metal.wobble == 0.0f);
 }
 
+TEST_CASE("a line scale thins the ink and soft shadows, but not grain, grid or sampling") {
+    LookSettings settings;
+    settings.wobble = 2.0f;
+    for (const StyleName name : {StyleName::Illustration, StyleName::Metal, StyleName::Blueprint}) {
+        CAPTURE(int(name));
+        const Style& style = styleNamed(name);
+        const StyleUniforms full = makeStyleUniforms(style, settings, 2.0f);
+        const StyleUniforms thin =
+            makeStyleUniforms(style, settings, Raster{.pixelsPerPoint = 2.0f, .lineScale = 0.5f});
+        CHECK(thin.silhouette == doctest::Approx(full.silhouette * 0.5f));
+        CHECK(thin.partLine == doctest::Approx(full.partLine * 0.5f));
+        CHECK(thin.crease == doctest::Approx(full.crease * 0.5f));
+        CHECK(thin.highlight == doctest::Approx(full.highlight * 0.5f));
+        CHECK(thin.ghostLine == doctest::Approx(full.ghostLine * 0.5f));
+        CHECK(thin.wobble == doctest::Approx(full.wobble * 0.5f));
+        if (full.shadowSoft > 1.0f) {
+            CHECK(thin.shadowSoft == doctest::Approx(full.shadowSoft * 0.5f));
+        }
+        CHECK(thin.grain == full.grain);
+        CHECK(thin.gridPitch == full.gridPitch);
+        CHECK(thin.wobblePeriod == full.wobblePeriod);
+        CHECK(thin.pixelsPerPoint == full.pixelsPerPoint);
+        CHECK(thin.fold == full.fold);
+    }
+    // A soft shadow stays soft however small the picture: at 1 it would turn crisp.
+    const StyleUniforms tiny = makeStyleUniforms(styleNamed(StyleName::Technical), settings,
+                                                 Raster{.pixelsPerPoint = 1.0f, .lineScale = 0.1f});
+    CHECK(tiny.shadowSoft > 1.0f);
+}
+
 TEST_CASE("studio draws polished metal on a dark sheet, with no lines but highlights") {
     const Style& studio = styleNamed(StyleName::Studio);
     CHECK(studio.physical);

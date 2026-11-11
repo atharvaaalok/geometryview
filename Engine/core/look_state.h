@@ -21,7 +21,7 @@ render::LookSettings lookSettings(const GeoLook& look);
 class LookState {
 public:
     void set(const render::LookSettings& settings);
-    void setScale(float pixelsPerPoint);
+    void setRaster(const render::Raster& raster);
     /// Occurrences were added or removed, so every body's look must be decided again, and which
     /// are shell.
     void sceneChanged() {
@@ -62,7 +62,7 @@ private:
     render::LookAssignment looks_;
     std::vector<u8> shells_;
     std::vector<std::optional<u32>> firstColors_;
-    float pixelsPerPoint_ = 2.0f;
+    render::Raster raster_;
     bool looksDirty_ = true;
     bool paletteDirty_ = true;
     bool styleDirty_ = true;
