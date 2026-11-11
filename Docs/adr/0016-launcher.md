@@ -106,3 +106,22 @@ a `geometryview` folder of its own.
   the first by its identity route (`/geometryview.json`) and opens the browser there; one that finds
   the port held by something else takes any free port, with a library of its own.
 - The page has a manifest and icons, so a browser can install it as an app window while it runs.
+
+## Addendum (2026-11-11): the fifth tool, view_folder (G4)
+
+- `view_folder` pictures a folder of models on one contact sheet (`gcli sheet`), each part over its
+  name, its number and its measured size, with a numbered index of paths, sizes in millimetres,
+  parts, triangles and the name inside each file. It takes `path`, `recursive`, `max_files` (36,
+  at most 144), `filter`, `sort` (name, or smallest to largest), `style`, `colour`, `same_scale`,
+  `cell` and `columns`.
+- Files are imported a few at a time: a third of the cores, at most four, a limit `render_view`
+  shares. Each file is imported once however often it is asked for. After 90 s the sheet is drawn
+  with what has come; the rest are listed and keep importing, so asking again shows them.
+- It needs the native engine. Where there is none it says so, and `render_view` pictures files
+  one by one through the page. Drawing a folder in the page, through the gallery's picture worker,
+  is left for later.
+- The launcher's cache gets a budget: `GEOMETRYVIEW_CACHE_BYTES`, else 4 GB. A cache file's time
+  is its last use. A sweep 30 s after the last import removes the files used longest ago, down to
+  80% of the budget, sparing any used in the last minute. Partial files from an import that died
+  go once an hour old.
+- No new dependencies.

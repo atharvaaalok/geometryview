@@ -18,11 +18,13 @@ models: [atharvaaalok.github.io/geometryview](https://atharvaaalok.github.io/geo
 
 ## Use it from your AI app
 
-`geometryview --mcp` is a tool server (MCP) with four tools:
+`geometryview --mcp` is a tool server (MCP) with five tools:
 
 - `open_model` opens a file and sums it up.
 - `get_structure` lists its assemblies and parts.
 - `render_view` returns a picture: any view, any of six styles, sections, parts alone.
+- `view_folder` pictures a whole folder on one contact sheet, with a numbered index of sizes and
+  parts. It needs the native engine (a Mac with Apple silicon and macOS 26).
 - `open_in_viewer` shows it to you, live.
 
 ```sh
