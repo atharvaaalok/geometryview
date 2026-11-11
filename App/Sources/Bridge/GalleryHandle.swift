@@ -91,6 +91,26 @@ final class GalleryHandle {
         geo_gallery_set_lane_scroll(gallery, lane, Float(x))
     }
 
+    /// Atlas's level of detail: 0 regions, 1 districts, 2 every part.
+    var atlasLevel: Int {
+        var out = [Float](repeating: 0, count: 4)
+        geo_gallery_atlas_camera(gallery, &out)
+        return out[0] < out[3] * 1.55 ? 0 : out[0] < out[3] * 3.3 ? 1 : 2
+    }
+
+    /// Zooms the map by `factor` about a point of the view; pans it; or goes to a level.
+    func atlasZoom(_ factor: CGFloat, at point: CGPoint) {
+        geo_gallery_atlas_zoom(gallery, Float(factor), Float(point.x), Float(point.y))
+    }
+
+    func atlasPan(_ dx: CGFloat, _ dy: CGFloat) {
+        geo_gallery_atlas_pan(gallery, Float(dx), Float(dy))
+    }
+
+    func atlasLevel(_ level: Int) {
+        geo_gallery_atlas_level(gallery, UInt32(max(0, min(2, level))))
+    }
+
     /// Ladders' scale: each strip its own, or one shared.
     func setLadders(shared: Bool) {
         geo_gallery_set_ladders(gallery, shared)

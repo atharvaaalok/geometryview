@@ -89,6 +89,9 @@ final class GalleryView: NSView {
     var onSearchChanged: (() -> Void)?
     /// Called with Esc while a poster shows.
     var onLeavePoster: (() -> Void)?
+    /// Called when Atlas's map moved, for the toolbar's level.
+    var onAtlasMoved: (() -> Void)?
+    private var atlasDrag: CGPoint?
     /// Paints every item, not only those near the view: for a poster's picture.
     private var paintEverything = false
 
@@ -1076,11 +1079,43 @@ final class GalleryView: NSView {
         }
         laneDrag = lane(at: point).map { ($0.id, point.x, laneScroll[$0.id] ?? 0) }
         let hit = gallery.hit(point)
+        if gallery.view == GeoViewAtlas.rawValue, event.clickCount >= 2,
+            hit.target_kind == GeoTargetNone.rawValue
+        {
+            // A double-click on the map goes a level in.
+            gallery.atlasZoom(2.2, at: CGPoint(x: point.x, y: point.y - scrollY))
+            atlasMoved()
+            return
+        }
         act(gallery.click(kind: hit.target_kind, target: hit.target, twice: event.clickCount >= 2))
     }
 
-    /// A drag along a lane scrolls it.
+    /// A pinch zooms the map about the pointer.
+    override func magnify(with event: NSEvent) {
+        guard gallery.view == GeoViewAtlas.rawValue, let point = contentPoint(event) else {
+            return
+        }
+        gallery.atlasZoom(1 + event.magnification, at: CGPoint(x: point.x, y: point.y - scrollY))
+        atlasMoved()
+    }
+
+    private func atlasMoved() {
+        painted = nil
+        reload()
+        onAtlasMoved?()
+        onViewChanged?()
+    }
+
+    /// A drag along a lane scrolls it; on the map, it pans.
     override func mouseDragged(with event: NSEvent) {
+        if gallery.view == GeoViewAtlas.rawValue, let point = contentPoint(event) {
+            if let from = atlasDrag {
+                gallery.atlasPan(point.x - from.x, point.y - from.y)
+                atlasMoved()
+            }
+            atlasDrag = point
+            return
+        }
         guard let drag = laneDrag, let point = contentPoint(event), let lane = lanes[drag.lane]
         else {
             return
@@ -1090,9 +1125,25 @@ final class GalleryView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         laneDrag = nil
+        atlasDrag = nil
     }
 
     override func scrollWheel(with event: NSEvent) {
+        if gallery.view == GeoViewAtlas.rawValue, let point = contentPoint(event) {
+            // The map: a modified wheel zooms about the pointer, a plain one pans.
+            let modified = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+            if modified {
+                let dy =
+                    event.hasPreciseScrollingDeltas
+                    ? event.scrollingDeltaY : event.scrollingDeltaY * 12
+                gallery.atlasZoom(exp(dy * 0.004), at: CGPoint(x: point.x, y: point.y - scrollY))
+            } else {
+                let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 12
+                gallery.atlasPan(event.scrollingDeltaX * scale, event.scrollingDeltaY * scale)
+            }
+            atlasMoved()
+            return
+        }
         // Sideways, or shifted, over a lane: the lane scrolls.
         let sideways =
             abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
@@ -1140,6 +1191,14 @@ final class GalleryView: NSView {
             return
         }
         let plain = modifiers.isDisjoint(with: [.command, .control, .option])
+        // In Atlas, + and − go a level in and out, while nothing is being searched.
+        if plain, gallery.view == GeoViewAtlas.rawValue, gallery.search.isEmpty,
+            let c = event.characters, ["+", "=", "-"].contains(c)
+        {
+            gallery.atlasLevel(gallery.atlasLevel + (c == "-" ? -1 : 1))
+            atlasMoved()
+            return
+        }
         if event.keyCode == 51, plain {
             // Backspace
             search(String(gallery.search.dropLast()))
