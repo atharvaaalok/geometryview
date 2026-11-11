@@ -800,12 +800,13 @@ TEST_CASE("on a phone, plates stand two abreast, the sheet three, and Peek fits"
 
 TEST_CASE("no two texts on one line overlap, from a phone's width to a wide window") {
     for (const float width : {374.0f, 500.0f, 1080.0f, 1800.0f}) {
-        for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet)}) {
+        for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet), u32(GeoViewLadders)}) {
             for (const char* folder : {"", "bearing", "motor"}) {
                 CAPTURE(width);
                 CAPTURE(view);
                 CAPTURE(folder);
                 Gallery g = measured();
+                g.setViews(0b111);
                 g.setViewport(width, 720.0f);
                 REQUIRE(g.setFolder(folder));
                 g.setView(view);
@@ -911,4 +912,83 @@ TEST_CASE("tiny beside huge: a speck at the shelf's scale gets a detail bubble")
     for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
         CHECK(spread.spread < 0.01f);
     }
+}
+
+// ---- G6: Ladders
+// ----------------------------------------------------------------------------------
+
+TEST_CASE("ladders: a strip a folder, its parts on a ruler in a lane, every line aligned") {
+    for (const u32 style : {0u, 3u, 5u}) {
+        for (const bool shared : {false, true}) {
+            CAPTURE(style);
+            CAPTURE(shared);
+            Gallery g = measured();
+            g.setViews(0b111);
+            g.setStyle(style);
+            REQUIRE(g.setView(GeoViewLadders));
+            g.setLadders(shared);
+            g.layout();
+            checkAligned(g);
+            // Each family a strip in a lane: bearing, the hex nuts, motor, and the top's own files.
+            CHECK(g.result().lanes.size() == 4);
+            CHECK(g.result().parts.size() == 61); // every file once
+            usize rulers = 0;
+            for (const GeoGalleryItem& item : g.display().items()) {
+                rulers += (item.flags & GeoItemRuler) != 0 ? 1 : 0;
+            }
+            CHECK(rulers >= 4);
+            // Headings stay at the top, as Sheet's.
+            CHECK(countText(g, "IN THIS FOLDER") == 1);
+        }
+    }
+}
+
+TEST_CASE("ladders: a lane scrolled sideways is hit where its parts show, and only there") {
+    Gallery g = measured(200); // a long bearing strip
+    g.setViews(0b111);
+    g.setView(GeoViewLadders);
+    g.layout();
+    const GeoGalleryLane* longest = nullptr;
+    for (const GeoGalleryLane& lane : g.result().lanes) {
+        if (longest == nullptr || lane.content_width > longest->content_width) {
+            longest = &lane;
+        }
+    }
+    REQUIRE(longest != nullptr);
+    CHECK(longest->content_width > longest->rect[2]); // longer than the track
+    CHECK(countText(g, "more \xE2\x86\x92") >= 1);
+    // A part past the track's right end, scrolled into view.
+    const LayoutResult::Place* far = nullptr;
+    for (const auto& p : g.result().parts) {
+        if (p.lane == longest->id && p.x > longest->rect[0] + longest->rect[2] + 100.0f) {
+            far = &p;
+            break;
+        }
+    }
+    REQUIRE(far != nullptr);
+    const float scroll = far->x - longest->rect[0] - 40.0f;
+    g.setLaneScroll(longest->id, scroll);
+    const GeoGalleryHit hit = g.hit(far->x - scroll + far->w / 2.0f, far->y + far->h / 2.0f);
+    CHECK(hit.target_kind == GeoTargetFile);
+    CHECK(hit.target == far->index);
+    // The head column beside the lane hits nothing in it.
+    const GeoGalleryHit head = g.hit(longest->rect[0] - 20.0f, far->y + far->h / 2.0f);
+    CHECK(head.target != far->index);
+}
+
+TEST_CASE("ladders: calipers on the hovered part, and its difference to the chosen one") {
+    Gallery g = measured();
+    g.setViews(0b111);
+    REQUIRE(g.setFolder("motor"));
+    g.setView(GeoViewLadders);
+    g.layout();
+    const u32 a = g.result().parts[0].index, b = g.result().parts[2].index;
+    g.hover(GeoTargetFile, a);
+    g.layout();
+    CHECK(countText(g, " mm") >= 2); // across the top and down the side
+    g.click(GeoTargetFile, b, false);
+    g.hover(GeoTargetFile, a);
+    g.layout();
+    CHECK(countText(g, " against ") == 1);
+    CHECK(countText(g, "\xCE\x94 x ") == 1);
 }

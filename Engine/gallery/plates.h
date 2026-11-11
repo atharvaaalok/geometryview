@@ -6,6 +6,7 @@
 #include "gallery/display.h"
 #include "gallery/tree.h"
 
+#include <functional>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -33,6 +34,8 @@ struct LayoutInput {
     /// nothing hovered or selected; `posterDate` is printed in the foot.
     bool poster = false;
     std::string_view posterDate;
+    /// Ladders: every strip at one scale.
+    bool laddersShared = false;
 };
 
 /// What a layout found out, beside its items: where things are, for keys and wanted pictures.
@@ -41,12 +44,14 @@ struct LayoutResult {
     struct Place {
         u32 kind, index; // GeoTargetFolder or GeoTargetFile
         float x, y, w, h;
+        u32 lane = 0; // placed in a lane's content
     };
     std::vector<Place> plates;      // subfolders, in order
     std::vector<Place> parts;       // files on shelves, in order
     std::vector<Place> covers;      // files drawn on plates' covers
     std::vector<std::string> bands; // keys of size bands cut short, by their "more" target index
     u32 groups = 0;                 // alignment groups made
+    std::vector<GeoGalleryLane> lanes; // bands that scroll sideways on their own
 };
 
 /// Content insets: one left edge for every view.
@@ -58,6 +63,10 @@ inline constexpr float kContentBottom = 30.0f;
 /// Pictures display at most 1.25 times their own pixels at 2 per point: 0.625 points a pixel.
 inline constexpr float kMaxPointsPerPixel = 0.625f;
 
+/// Ladders: every folder holding files a strip, smallest to largest, on a ruler at its scale; each
+/// strip's parts in a lane of their own. `laneScroll` says how far each lane is scrolled.
+LayoutResult layoutLadders(const LayoutInput& input, Display& display,
+                           const std::function<float(u32)>& laneScroll);
 LayoutResult layoutPlates(const LayoutInput& input, Display& display);
 /// Sheet: every file once, folder by folder under headings that stay put while scrolling.
 LayoutResult layoutSheet(const LayoutInput& input, Display& display);

@@ -76,6 +76,7 @@ GeoGalleryItem& Display::add(u32 kind) {
     item.target = target_;
     item.key = key_;
     item.group = group_;
+    item.lane = lane_;
     items_.push_back(item);
     return items_.back();
 }

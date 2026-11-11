@@ -194,7 +194,18 @@ bool Gallery::layout() {
         input.selected = input.focused = kNone;
         input.matches = nullptr;
     }
-    result_ = view_ == GeoViewSheet ? layoutSheet(input, display_) : layoutPlates(input, display_);
+    input.laddersShared = laddersShared_;
+    switch (view_) {
+    case GeoViewSheet:
+        result_ = layoutSheet(input, display_);
+        break;
+    case GeoViewLadders:
+        result_ = layoutLadders(input, display_, [this](u32 lane) { return laneScroll(lane); });
+        break;
+    default:
+        result_ = layoutPlates(input, display_);
+        break;
+    }
     if (lost_ && !poster_) {
         layoutLost();
     }
@@ -552,7 +563,7 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
     // card covers the view: only what is on it, in the view's points, can be hit.
     const std::vector<GeoGalleryItem>& items = display_.items();
     const bool peeking = peek_ != kNone;
-    const float contentY = y;
+    const float contentY = y, contentX = x;
     for (auto it = items.rbegin(); it != items.rend(); ++it) {
         // Peek's items cover everything; the lost card's cover the content beneath it. Fixed items
         // are in the view's points.
@@ -564,6 +575,17 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
             continue;
         }
         y = fixed ? contentY - scroll_ : contentY;
+        // An item in a lane is placed in the lane's content, moved by its scroll, and shows only
+        // within the lane.
+        x = contentX;
+        if (it->lane != 0) {
+            const GeoGalleryLane* lane = laneOf(it->lane);
+            if (lane == nullptr || contentX < lane->rect[0] ||
+                contentX > lane->rect[0] + lane->rect[2]) {
+                continue;
+            }
+            x = contentX + laneScroll(it->lane);
+        }
         float x0 = it->x, y0 = it->y, x1 = it->x + it->width, y1 = it->y + it->height;
         if (x0 > x1) {
             std::swap(x0, x1);
@@ -578,13 +600,25 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
     if (peeking) {
         return hit;
     }
+    x = contentX;
+    y = contentY;
     // A plate is wholly its folder's, between its items too.
     for (const LayoutResult::Place& p : result_.plates) {
         if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
             return {p.kind, p.index, keyOf("plate", p.index)};
         }
     }
+    y = contentY;
     for (const LayoutResult::Place& p : result_.parts) {
+        x = contentX;
+        if (p.lane != 0) {
+            const GeoGalleryLane* lane = laneOf(p.lane);
+            if (lane == nullptr || contentX < lane->rect[0] ||
+                contentX > lane->rect[0] + lane->rect[2]) {
+                continue;
+            }
+            x += laneScroll(p.lane);
+        }
         if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
             return {p.kind, p.index, keyOf("part", p.index)};
         }
@@ -826,12 +860,20 @@ std::vector<GeoGalleryWant> Gallery::wanted() const {
             out.push_back({file, band, order, colourOf(file)});
         }
     };
-    // What is drawn in view, then near it, by distance from the middle.
+    // What is drawn in view, then near it, by distance from the middle. In a lane, what shows
+    // across it: a lane's width either side is near.
     for (const auto* places : {&result_.covers, &result_.parts}) {
         for (const LayoutResult::Place& p : *places) {
             const float centre = p.y + p.h / 2.0f;
-            const bool inView = p.y + p.h >= top && p.y <= bottom;
-            const bool near = p.y + p.h >= top - height_ && p.y <= bottom + height_;
+            bool across = true, nearAcross = true;
+            if (const GeoGalleryLane* lane = p.lane != 0 ? laneOf(p.lane) : nullptr) {
+                const float left = p.x - laneScroll(p.lane), right = left + p.w;
+                const float l0 = lane->rect[0], l1 = lane->rect[0] + lane->rect[2];
+                across = right >= l0 && left <= l1;
+                nearAcross = right >= l0 - lane->rect[2] && left <= l1 + lane->rect[2];
+            }
+            const bool inView = across && p.y + p.h >= top && p.y <= bottom;
+            const bool near = nearAcross && p.y + p.h >= top - height_ && p.y <= bottom + height_;
             if (inView || near) {
                 add(p.index, inView ? 1 : 2, std::fabs(centre - middle));
             }

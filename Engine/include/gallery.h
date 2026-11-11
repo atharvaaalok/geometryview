@@ -32,6 +32,8 @@ typedef enum GeoGalleryItemFlags {
     GeoItemSheet = 32,  // a rectangle filled with the drawing style's own sheet, as the gallery's
     GeoItemStale = 64,  // drawn at 45%: a picture being drawn again, its file changed
     GeoItemLost = 128,  // drawn at 35%: a folder that can no longer be read, as last seen
+    GeoItemRuler = 256, // a rectangle drawn as a ruler: its top line, minor ticks every `radius`
+                        // points, major ticks every `tracking` (Ladders)
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -70,7 +72,18 @@ typedef struct GeoGalleryItem {
     // for an item that scrolls with the content.
     float sticky_top;
     float sticky_until;
+    // A lane that scrolls sideways on its own (a strip of Ladders), or 0: the item is placed in the
+    // lane's content, which the painter clips to the lane and moves by its scroll.
+    uint32_t lane;
 } GeoGalleryItem;
+
+/// A lane: a band of the content that scrolls sideways on its own, clipped to its rect (in content
+/// points), its content `content_width` wide.
+typedef struct GeoGalleryLane {
+    uint32_t id;
+    float rect[4];
+    float content_width;
+} GeoGalleryLane;
 
 typedef struct GeoGalleryEntry {
     const char* path; // relative to the gallery's root
@@ -259,6 +272,9 @@ uint32_t geo_gallery_view(const GeoGallery* gallery);
 /// order (GeoGallerySort).
 void geo_gallery_set_sheet(GeoGallery* gallery, uint32_t scale, float cell, uint32_t sort);
 
+/// Ladders' scale: each strip its own (false), or one for every strip (true).
+void geo_gallery_set_ladders(GeoGallery* gallery, bool shared);
+
 /// Searches the folder in view: names, the names inside files, and folders. Empty clears it.
 void geo_gallery_set_search(GeoGallery* gallery, const char* query);
 const char* geo_gallery_search(const GeoGallery* gallery);
@@ -270,6 +286,11 @@ uint32_t geo_gallery_matches(const GeoGallery* gallery);
 /// front end sets the viewport to the page it prints.
 void geo_gallery_set_poster(GeoGallery* gallery, bool poster, const char* date);
 bool geo_gallery_poster(const GeoGallery* gallery);
+
+/// The lanes of the last layout, at most `capacity`; returns how many there are.
+uint32_t geo_gallery_lanes(const GeoGallery* gallery, GeoGalleryLane* out, uint32_t capacity);
+/// How far a lane is scrolled sideways, which hits take into account; kept across layouts.
+void geo_gallery_set_lane_scroll(GeoGallery* gallery, uint32_t lane, float x);
 
 /// The folder can no longer be read (in the browser, its permission lapsed): what was last seen
 /// shows faded, under a card with one way back, Reconnect, whose click returns GeoActionReconnect.

@@ -248,6 +248,22 @@ bool geo_gallery_poster(const GeoGallery* gallery) {
     return gallery->gallery.poster();
 }
 
+uint32_t geo_gallery_lanes(const GeoGallery* gallery, GeoGalleryLane* out, uint32_t capacity) {
+    const std::vector<GeoGalleryLane>& lanes = gallery->gallery.result().lanes;
+    if (out != nullptr) {
+        std::copy_n(lanes.begin(), std::min<usize>(capacity, lanes.size()), out);
+    }
+    return uint32_t(lanes.size());
+}
+
+void geo_gallery_set_lane_scroll(GeoGallery* gallery, uint32_t lane, float x) {
+    gallery->gallery.setLaneScroll(lane, x);
+}
+
+void geo_gallery_set_ladders(GeoGallery* gallery, bool shared) {
+    gallery->gallery.setLadders(shared);
+}
+
 void geo_gallery_set_lost(GeoGallery* gallery, bool lost) {
     gallery->gallery.setLost(lost);
 }

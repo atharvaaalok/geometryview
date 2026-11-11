@@ -51,6 +51,8 @@ public:
         targetKind_ = kind;
         target_ = index;
     }
+    /// The lane the items added from now on are placed in, or 0.
+    void lane(u32 value) { lane_ = value; }
     /// The key the items added from now on carry, and the group they align in.
     void key(u32 value) { key_ = value; }
     void group(u32 value) { group_ = value; }
@@ -77,7 +79,7 @@ private:
     std::vector<GeoGalleryItem> items_;
     std::string text_;
     u32 targetKind_ = GeoTargetNone, target_ = 0;
-    u32 key_ = 0, group_ = 0;
+    u32 key_ = 0, group_ = 0, lane_ = 0;
     float dx_ = 0.0f, dy_ = 0.0f;
 };
 
