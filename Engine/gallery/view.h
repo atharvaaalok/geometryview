@@ -92,6 +92,8 @@ public:
     u32 peeking() const { return peek_; }
     /// Where to scroll so the selection shows, or negative if it shows already.
     float reveal() const;
+    /// The selection's lane and the scroll that shows it, if it is in a lane and does not show.
+    std::optional<std::pair<u32, float>> revealLane() const;
     const GeoGalleryTransition& transition() const { return transition_; }
     const std::vector<GeoGalleryTrack>& tracks() const { return tracks_; }
 

@@ -80,6 +80,13 @@ final class GalleryHandle {
         return out
     }
 
+    /// The selection's lane and the scroll that shows it, or nil if it shows or is in none.
+    func revealLane() -> (lane: UInt32, x: CGFloat)? {
+        var lane: UInt32 = 0
+        var x: Float = 0
+        return geo_gallery_reveal_lane(gallery, &lane, &x) ? (lane, CGFloat(x)) : nil
+    }
+
     func setLaneScroll(_ lane: UInt32, _ x: CGFloat) {
         geo_gallery_set_lane_scroll(gallery, lane, Float(x))
     }

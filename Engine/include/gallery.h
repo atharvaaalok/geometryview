@@ -292,6 +292,10 @@ uint32_t geo_gallery_lanes(const GeoGallery* gallery, GeoGalleryLane* out, uint3
 /// How far a lane is scrolled sideways, which hits take into account; kept across layouts.
 void geo_gallery_set_lane_scroll(GeoGallery* gallery, uint32_t lane, float x);
 
+/// Where to scroll the selection's lane so it shows, after a key: true with the lane and its
+/// scroll, false if it is in no lane or shows already.
+bool geo_gallery_reveal_lane(const GeoGallery* gallery, uint32_t* lane, float* x);
+
 /// The folder can no longer be read (in the browser, its permission lapsed): what was last seen
 /// shows faded, under a card with one way back, Reconnect, whose click returns GeoActionReconnect.
 void geo_gallery_set_lost(GeoGallery* gallery, bool lost);

@@ -1024,3 +1024,23 @@ TEST_CASE("ladders: scales read as drawings write them, and stamps show whole") 
     }
     CHECK(stamps >= 4);
 }
+
+TEST_CASE("ladders: arrows along a strip scroll its lane to show the selection") {
+    Gallery g = measured(200);
+    g.setViews(0b111);
+    REQUIRE(g.setFolder("bearing"));
+    g.setView(GeoViewLadders);
+    g.layout();
+    g.key(GeoKeyRight);
+    g.layout();
+    CHECK_FALSE(g.revealLane().has_value()); // the first part shows
+    std::optional<std::pair<u32, float>> reveal;
+    for (int i = 0; i < 40 && !reveal; ++i) {
+        g.key(GeoKeyRight);
+        g.layout();
+        reveal = g.revealLane();
+    }
+    REQUIRE(reveal.has_value()); // past the track's end
+    g.setLaneScroll(reveal->first, reveal->second);
+    CHECK_FALSE(g.revealLane().has_value()); // shown, centred
+}

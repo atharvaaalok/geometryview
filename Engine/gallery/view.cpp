@@ -396,6 +396,30 @@ std::string compactCount(u64 n) {
 
 } // namespace
 
+std::optional<std::pair<u32, float>> Gallery::revealLane() const {
+    if (selected_ == kNone) {
+        return std::nullopt;
+    }
+    for (const LayoutResult::Place& p : result_.parts) {
+        if (p.index != selected_ || p.lane == 0) {
+            continue;
+        }
+        const GeoGalleryLane* lane = laneOf(p.lane);
+        if (lane == nullptr) {
+            return std::nullopt;
+        }
+        const float scroll = laneScroll(p.lane);
+        const float left = p.x - lane->rect[0] - scroll, right = left + p.w;
+        if (left >= 0.0f && right <= lane->rect[2]) {
+            return std::nullopt; // it shows
+        }
+        const float most = std::max(0.0f, lane->content_width - lane->rect[2]);
+        const float centred = p.x - lane->rect[0] + p.w / 2.0f - lane->rect[2] / 2.0f;
+        return std::pair{p.lane, std::clamp(centred, 0.0f, most)};
+    }
+    return std::nullopt;
+}
+
 // Peek: the file large over the view, as the design's card has it. A scrim over the view, then the
 // card, in the chrome's own paper and ink whatever the style: the name and where the file is, the
 // part on the style's sheet, its measured size, parts, triangles and file, and Open.

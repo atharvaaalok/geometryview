@@ -127,6 +127,12 @@ export class GalleryCore {
     return lanes;
   }
   setLaneScroll(lane, x) { this.#m._gv_gallery_set_lane_scroll(this.#g, lane, x); }
+  /** The selection's lane and the scroll that shows it, or null if it shows or is in none. */
+  revealLane() {
+    if (!this.#m._gv_gallery_reveal_lane(this.#g, this.#scratch)) return null;
+    const v = new Float32Array(this.#m.HEAPU8.buffer, this.#scratch, 2);
+    return { lane: v[0], x: v[1] };
+  }
   /** Ladders' scale: each strip its own, or one shared. */
   setLadders(shared) { this.#m._gv_gallery_set_ladders(this.#g, shared ? 1 : 0); }
 

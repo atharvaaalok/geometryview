@@ -260,6 +260,16 @@ void geo_gallery_set_lane_scroll(GeoGallery* gallery, uint32_t lane, float x) {
     gallery->gallery.setLaneScroll(lane, x);
 }
 
+bool geo_gallery_reveal_lane(const GeoGallery* gallery, uint32_t* lane, float* x) {
+    const std::optional<std::pair<u32, float>> reveal = gallery->gallery.revealLane();
+    if (!reveal) {
+        return false;
+    }
+    *lane = reveal->first;
+    *x = reveal->second;
+    return true;
+}
+
 void geo_gallery_set_ladders(GeoGallery* gallery, bool shared) {
     gallery->gallery.setLadders(shared);
 }

@@ -207,6 +207,10 @@ final class GalleryView: NSView {
         if let (transition, tracks, old) = motion {
             play(transition, tracks: tracks, old: old)
         }
+        // Along its lane too, if the selection is in one and scrolled out of it.
+        if reveal, let along = gallery.revealLane(), let lane = lanes[along.lane] {
+            scrollLane(lane, to: along.x)
+        }
         if changed {
             onViewChanged?()
         }

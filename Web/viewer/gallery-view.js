@@ -177,6 +177,12 @@ export class GalleryView {
     }
     this.#paint();
     if (motion) this.#play(motion);
+    if (reveal) {
+      // Along its lane too, if the selection is in one and scrolled out of it.
+      const along = this.#core.revealLane();
+      const lane = along && this.#lanes.get(along.lane);
+      if (lane) this.#scrollLane(lane, along.x);
+    }
     if (changed) this.#on.viewChanged?.();
   }
 
