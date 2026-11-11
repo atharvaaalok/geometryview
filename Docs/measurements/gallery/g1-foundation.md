@@ -103,6 +103,33 @@ file:
 
 ## The iPhone
 
-Not yet measured: this needs the phone free. The check is the shell's `?test=thumbs` and a
-gallery-sized walk over test-models, with the page's memory from the shell's census, against
-G4's budget of 600 MB.
+On the iPhone 16 Pro (iOS 26.7), in the shell over loopback HTTP, at DPR 3, with the G1 build
+installed on 2026-11-11 at about 9:19 AM PT. Reports are in `iphone/`.
+
+**The picture worker**, with a GPU device of its own in a worker:
+
+| Run | Pictures | First | p50 | p90 | Worker heap | Replaced |
+|---|---|---|---|---|---|---|
+| First launch | 120 | 950 ms | 6.7 ms | 7.5 ms | 16 MB | 0 |
+| Long run | 4,000 | 41 ms | 7.6 ms | 8.5 ms | 16 MB | 0 |
+
+- Shaders were cached after the first launch, so later first pictures took 41–45 ms.
+- The heap stays at 16 MB over 4,000 pictures, and iOS never stopped the page.
+- So the phone draws pictures in their own worker and device, as the desktop does. Each takes
+  about 1.5× Chrome's time on the M4 Max.
+
+**The shell's walk and the library** (`test=library`, shell backend):
+- The folder walk went through `/scan`: `sub` and `sub/pack.step`.
+- The pack imported from the connected folder in 1.8 s, and reopened from Recent in 114 ms, from
+  the import kept under its key.
+
+**The import worker** (`test=worker`) on the 52 MB file:
+- A structure pass took 410 ms, for one 16 KB model segment.
+- A cancel at the first progress stopped the import 1.1 s after it started.
+
+**Memory.** Not recorded:
+- Instruments' Activity Monitor dropped the phone ("Device disconnected") about a second into
+  every recording made while the shell ran, though it recorded the idle phone.
+- The page's own figures are steady: a 16 MB worker heap and no stop over 4,000 pictures.
+- G4's iPhone gate (600 MB on test-models) measures the whole page with the gallery, and needs a
+  recording that holds.

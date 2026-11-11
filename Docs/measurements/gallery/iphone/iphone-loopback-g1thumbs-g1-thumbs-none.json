@@ -1,0 +1,36 @@
+{
+  "firstPicture": {
+    "inkRect": [
+      48,
+      55,
+      155,
+      183
+    ],
+    "worldPerPixel": 0.5467779179213452,
+    "partRect": [
+      55,
+      56,
+      146,
+      150
+    ],
+    "width": 256,
+    "pngBytes": 34525
+  },
+  "p90Ms": 7.5,
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+  "thermalState": "nominal",
+  "p50Ms": 6.68,
+  "firstMs": 950,
+  "count": 120,
+  "errors": [],
+  "size": 256,
+  "devicePixelRatio": 3,
+  "files": [
+    "gallery-drive",
+    "gallery-motor"
+  ],
+  "recycled": 0,
+  "maxHeapMB": 16,
+  "label": "iphone-loopback-g1thumbs-g1-thumbs-none",
+  "style": 0
+}

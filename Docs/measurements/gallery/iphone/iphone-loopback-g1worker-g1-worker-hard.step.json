@@ -1,0 +1,17 @@
+{
+  "message": "The import was cancelled.",
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+  "structureMs": 410,
+  "file": "hard.step",
+  "cancelled": true,
+  "thermalState": "nominal",
+  "structureSegments": [
+    16384
+  ],
+  "cancelOutcome": "failed",
+  "devicePixelRatio": 3,
+  "errors": [],
+  "structure": "done",
+  "label": "iphone-loopback-g1worker-g1-worker-hard.step",
+  "cancelMs": 1070
+}

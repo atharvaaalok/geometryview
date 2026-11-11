@@ -1,0 +1,31 @@
+{
+  "idleFrames": 0,
+  "stayedOnLibrary": true,
+  "listed": [
+    "notes.txt",
+    "sub"
+  ],
+  "keptBefore": [
+    "hard.step"
+  ],
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+  "stillOnLibrary": true,
+  "thermalState": "nominal",
+  "reopenedFromCache": true,
+  "recentFirst": "pack.step",
+  "firstMs": 1849,
+  "backend": "shell",
+  "rows": [],
+  "imported": true,
+  "walked": [
+    "folder:sub",
+    "file:sub/pack.step"
+  ],
+  "errors": [],
+  "reopenMs": 114,
+  "recentWhere": "library-test/sub/pack.step",
+  "origin": "http://127.0.0.1:47701",
+  "devicePixelRatio": 3,
+  "looping": false,
+  "label": "iphone-loopback-g1lib-p4-library-none"
+}
