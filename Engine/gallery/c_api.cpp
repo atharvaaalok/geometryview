@@ -306,6 +306,19 @@ void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level) {
                                     cy - (cy - cam.y) * k / cam.k);
 }
 
+void geo_gallery_catalogue(const GeoGallery* gallery, uint32_t* out) {
+    out[0] = gallery->gallery.catalogueSpread();
+    out[1] = gallery->gallery.catalogueSpreads();
+}
+
+void geo_gallery_set_catalogue_spread(GeoGallery* gallery, uint32_t spread) {
+    gallery->gallery.setCatalogueSpread(spread);
+}
+
+void geo_gallery_catalogue_index(GeoGallery* gallery) {
+    gallery->gallery.setCatalogueSpread(gallery->gallery.catalogueIndexSpread());
+}
+
 void geo_gallery_set_ladders(GeoGallery* gallery, bool shared) {
     gallery->gallery.setLadders(shared);
 }

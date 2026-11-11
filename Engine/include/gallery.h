@@ -44,6 +44,7 @@ typedef enum GeoGalleryTargetKind {
     GeoTargetMore = 3,      // "show all" of a size band cut short
     GeoTargetPeek = 4,      // Peek's card (0), where a click does nothing, or its close button (1)
     GeoTargetReconnect = 5, // the way back to a folder that can no longer be read
+    GeoTargetPage = 6,      // a page of Catalogue's book, turned to on a click
 } GeoGalleryTargetKind;
 
 typedef struct GeoGalleryItem {
@@ -281,6 +282,12 @@ void geo_gallery_atlas_zoom(GeoGallery* gallery, float factor, float x, float y)
 void geo_gallery_atlas_pan(GeoGallery* gallery, float dx, float dy);
 /// Zooms to a level, about the view's middle: 0 the whole map (regions), 1 districts, 2 every part.
 void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level);
+
+/// Catalogue: the spread in view and how many the book has, as 2 numbers; going to a spread, or to
+/// the contents (0) or the index.
+void geo_gallery_catalogue(const GeoGallery* gallery, uint32_t* out);
+void geo_gallery_set_catalogue_spread(GeoGallery* gallery, uint32_t spread);
+void geo_gallery_catalogue_index(GeoGallery* gallery);
 
 /// Ladders' scale: each strip its own (false), or one for every strip (true).
 void geo_gallery_set_ladders(GeoGallery* gallery, bool shared);

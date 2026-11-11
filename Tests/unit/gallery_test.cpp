@@ -1120,3 +1120,99 @@ TEST_CASE("atlas: the card takes clicks, and a search drops pins") {
     g.layout();
     CHECK(countText(g, "Districts") == 1); // a search shows at least the districts
 }
+
+// ---- G8: Catalogue
+// ----------------------------------------------------------------------------------
+
+namespace {
+
+void checkNoOverlaps(const Gallery& g) {
+    struct Span {
+        float baseline, left, right;
+        std::string text;
+    };
+    std::vector<Span> spans;
+    const std::string& buffer = g.display().textBuffer();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind != GeoItemText) {
+            continue;
+        }
+        const std::string text = buffer.substr(item.text, item.text_length);
+        const float used = float(characters(text)) * (0.6f * item.font_size + item.tracking);
+        const float left = item.align == 1   ? item.x + (item.width - used) / 2.0f
+                           : item.align == 2 ? item.x + item.width - used
+                                             : item.x;
+        spans.push_back({item.baseline, left, left + used, text});
+    }
+    for (usize a = 0; a < spans.size(); ++a) {
+        for (usize b = a + 1; b < spans.size(); ++b) {
+            if (std::fabs(spans[a].baseline - spans[b].baseline) > 0.5f) {
+                continue;
+            }
+            CAPTURE(spans[a].text);
+            CAPTURE(spans[b].text);
+            CHECK(
+                (spans[a].right <= spans[b].left + 0.5f || spans[b].right <= spans[a].left + 0.5f));
+        }
+    }
+}
+
+} // namespace
+
+TEST_CASE("catalogue: the folder as a book, every spread aligned, every file in its tables once") {
+    for (const u32 style : {0u, 3u, 5u}) {
+        CAPTURE(style);
+        Gallery g = measured();
+        g.setViews(0b11111);
+        g.setStyle(style);
+        REQUIRE(g.setView(GeoViewCatalogue));
+        g.layout();
+        CHECK(countText(g, "FRONTISPIECE") == 1);
+        CHECK(countText(g, "PARTS CATALOGUE") == 1);
+        const u32 book = g.catalogueSpreads();
+        CHECK(book >= 6);
+        std::vector<u32> rows;
+        for (u32 s = 0; s < book; ++s) {
+            CAPTURE(s);
+            g.setCatalogueSpread(s);
+            g.layout();
+            CHECK(g.result().contentHeight == 720.0f); // it turns; it does not scroll
+            for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+                CHECK(spread.spread < 0.01f);
+            }
+            checkNoOverlaps(g);
+            for (const auto& p : g.result().parts) {
+                rows.push_back(p.index);
+            }
+        }
+        std::sort(rows.begin(), rows.end());
+        CHECK(rows.size() == 61); // every file in a table, once
+        CHECK(std::unique(rows.begin(), rows.end()) == rows.end());
+        // The index is at the end.
+        g.setCatalogueSpread(g.catalogueIndexSpread());
+        g.layout();
+        CHECK(countText(g, "Index") >= 1);
+    }
+}
+
+TEST_CASE("catalogue: arrows turn the book; a contents line turns to its page") {
+    Gallery g = measured();
+    g.setViews(0b11111);
+    g.setView(GeoViewCatalogue);
+    g.layout();
+    CHECK(g.key(GeoKeyLeft).kind == GeoActionNone); // the front already
+    CHECK(g.key(GeoKeyRight).kind == GeoActionHandled);
+    CHECK(g.catalogueSpread() == 1);
+    g.layout();
+    // A contents line: a page target, turning to that page's spread.
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.target_kind == GeoTargetPage && item.target > 4) {
+            CHECK(g.click(GeoTargetPage, item.target, false).kind == GeoActionHandled);
+            CHECK(g.catalogueSpread() == item.target / 2);
+            break;
+        }
+    }
+    g.setCatalogueSpread(1000);
+    CHECK(g.catalogueSpread() == g.catalogueSpreads() - 1); // the back cover at most
+    CHECK(g.key(GeoKeyRight).kind == GeoActionNone);
+}

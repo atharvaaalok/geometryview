@@ -3,6 +3,7 @@
 #pragma once
 
 #include "gallery/atlas.h"
+#include "gallery/catalogue.h"
 #include "gallery/display.h"
 #include "gallery/plates.h"
 #include "gallery/tree.h"
@@ -54,6 +55,20 @@ public:
     void resetAtlasCamera() {
         atlas_.reset();
         dirty_ = true;
+    }
+    /// Catalogue's spread in view, how many the book has, and the index's.
+    u32 catalogueSpread() const { return spread_; }
+    u32 catalogueSpreads() const { return ::geo::gallery::catalogueSpreads(tree_, folder_); }
+    u32 catalogueIndexSpread() const {
+        return ::geo::gallery::catalogueIndexSpread(tree_, folder_);
+    }
+    void setCatalogueSpread(u32 spread) {
+        const u32 last = std::max(1u, catalogueSpreads()) - 1;
+        if (std::min(spread, last) != spread_) {
+            spread_ = std::min(spread, last);
+            selected_ = kNone;
+            dirty_ = true;
+        }
     }
     float viewWidth() const { return width_; }
     float viewHeight() const { return height_; }
@@ -151,6 +166,7 @@ private:
     bool lost_ = false;
     bool laddersShared_ = false;
     std::optional<AtlasCamera> atlas_;
+    u32 spread_ = 0;
     std::pair<float, float> atlasFor_;
     std::unordered_map<u32, float> laneScroll_;
     void layoutLost();
