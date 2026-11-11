@@ -992,3 +992,35 @@ TEST_CASE("ladders: calipers on the hovered part, and its difference to the chos
     CHECK(countText(g, " against ") == 1);
     CHECK(countText(g, "\xCE\x94 x ") == 1);
 }
+
+TEST_CASE("ladders: scales read as drawings write them, and stamps show whole") {
+    Gallery g = measured();
+    g.setViews(0b111);
+    g.setView(GeoViewLadders);
+    g.layout();
+    usize stamps = 0;
+    const std::string& text = g.display().textBuffer();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind != GeoItemText || item.font_size != 10.0f || item.weight != 600) {
+            continue;
+        }
+        const std::string s = text.substr(item.text, item.text_length);
+        if (s.find(':') == std::string::npos) {
+            continue;
+        }
+        ++stamps;
+        CAPTURE(s);
+        CHECK(s.find("\xE2\x80\xA6") == std::string::npos); // not cut
+        // 1:n or n:1 with n one of 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten.
+        const std::string n = s.substr(0, 6) == "larger" ? s.substr(s.find(' ') + 1) : s;
+        const std::string left = n.substr(0, n.find(':')), right = n.substr(n.find(':') + 1);
+        const double v = std::stod(left == "1" ? right : left);
+        double lead = v;
+        while (lead >= 10.0) {
+            lead /= 10.0;
+        }
+        CHECK((lead == 1.0 || lead == 1.5 || lead == 2.0 || lead == 2.5 || lead == 3.0 ||
+               lead == 4.0 || lead == 5.0 || lead == 6.0 || lead == 8.0));
+    }
+    CHECK(stamps >= 4);
+}

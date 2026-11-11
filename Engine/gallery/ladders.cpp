@@ -56,28 +56,38 @@ struct Scale {
     std::string label = "1:1";
 };
 
-/// The drafting scale at or below `mm` millimetres a point: 8:1 … 1:800000, in steps of 1, 1.5, 2,
-/// 2.5, 3, 4, 5, 6 and 8.
+/// The drafting scale at or below `mm` millimetres a point: enlargements 80:1 … 1.5:1, 1:1, then
+/// reductions 1:1.5 … 1:800000, each a round number of 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 × 10ⁿ.
 Scale snap(double mm) {
     constexpr double nice[] = {1, 1.5, 2, 2.5, 3, 4, 5, 6, 8};
     const double want = kPointMm / std::max(mm, 1e-9); // the ratio that would fit exactly
-    // Ratios largest first: 80:1 down to 1:800000.
-    for (int e = 1; e >= -5; --e) {
+    struct Ratio {
+        double r;
+        std::string label;
+    };
+    std::vector<Ratio> ratios;
+    for (const int e : {1, 0}) {
         for (int i = 8; i >= 0; --i) {
             const double r = nice[i] * std::pow(10.0, double(e));
-            if (r <= want * 1.0001) {
-                Scale s;
-                s.mm = kPointMm / r;
-                s.label = r >= 1.0 ? std::format("{}:1", number(r))
-                                   : std::format("1:{}", number(1.0 / r));
-                return s;
+            ratios.push_back({r, number(r) + ":1"});
+        }
+    }
+    for (int e = 0; e <= 5; ++e) {
+        for (const double n : nice) {
+            const double d = n * std::pow(10.0, double(e));
+            if (d > 1.0) {
+                // 1:2.5 and 1:40 as written, 1:1000 without a separator, as drawings write them.
+                ratios.push_back(
+                    {1.0 / d, "1:" + (d < 10.0 ? number(d) : std::format("{}", u64(d)))});
             }
         }
     }
-    Scale s;
-    s.mm = kPointMm / 1.25e-6;
-    s.label = "1:800000";
-    return s;
+    for (const Ratio& r : ratios) {
+        if (r.r <= want * 1.0001) {
+            return {kPointMm / r.r, r.label};
+        }
+    }
+    return {kPointMm / ratios.back().r, ratios.back().label};
 }
 
 std::string signedMm(double v) {
@@ -454,14 +464,14 @@ public:
             if (stamp.empty()) {
                 continue;
             }
-            const float w = std::round(textWidth(stamp, kStamp) + 10.0f);
+            const float w = std::ceil(textWidth(stamp, kStamp) + 10.0f);
             const bool soft = i == 1; // the larger files' scale, quieter
             // The box aligns on nothing; the stamps' texts on one baseline.
             out.group(0);
             out.rect(sx, stampTop, w, 17.5f, 0, soft ? palette.faint : palette.on, 1.25f, 3.0f);
             out.group(headGroups[4]);
             out.text(stamp, kStamp, soft ? palette.muted : palette.on, sx + 5.0f,
-                     inBox(stampTop, 17.5f, kStamp), w - 10.0f);
+                     inBox(stampTop, 17.5f, kStamp), w - 9.0f);
             sx += w + 6.0f;
         }
         out.group(0);
