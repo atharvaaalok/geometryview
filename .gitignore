@@ -1,5 +1,6 @@
 # Build output
-/build/
+/build
+/build.noindex/
 /out/
 # Every model the tests used, gathered for hand testing (see test-models/README.md there)
 /test-models/
@@ -26,7 +27,8 @@ __pycache__/
 Launcher/dist/
 Launcher/web/
 iOS/Shell/*.xcodeproj/
-iOS/Shell/build/
+iOS/Shell/build
+iOS/Shell/build.noindex/
 iOS/Shell/.team
 iOS/Shell/Info.plist
 
