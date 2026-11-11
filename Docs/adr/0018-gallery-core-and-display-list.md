@@ -214,3 +214,13 @@ and time, without reading anything.
   each spread drawn once its pictures have come.
 - A poster too large to draw is drawn smaller, not refused: 60 million pixels at most, 32,767 a
   side, and PDF pages of 14,400 points at most.
+
+**23. Peek turns a part from pictures, not from a live view.**
+- The file in Peek gets a turntable: 24 pictures turned about the upright at one scale, drawn by
+  the same picture service as the gallery's (the library's `turn`, the browser's picture worker),
+  first in line. The Mac keeps them with the pictures.
+- The core knows only that Peek can turn (`geo_gallery_set_peek_turnable`): it then lays the
+  picture area out as a `GeoItemTurn` picture with its hint, and ← → become `GeoActionTurn`. The
+  frames, the angle and the drag are the front ends'.
+- A live 3D view inside Peek would need the file opened in the viewer's engine for every part
+  peeked at; pictures cost a second and turn on the iPhone too.
