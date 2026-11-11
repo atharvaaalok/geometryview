@@ -3,9 +3,10 @@ import Foundation
 /// Where the shell's web files come from, shared by both ways of serving them: the pages' own files
 /// from the app bundle, under /viewer/, /census/ and /spike/; generated test files from Caches,
 /// under /files/; documents the person opened in the shell, under /open/<id>/<name>; and the
-/// folders they connected, a file in one under /open/<folder id>/<path inside it> and a folder's
-/// listing under /list/<folder id>/<path inside it>. Nothing else is served, and nothing outside a
-/// connected folder is reached through it.
+/// folders they connected, a file in one under /open/<folder id>/<path inside it>, a folder's
+/// listing under /list/<folder id>/<path inside it>, and a walk of one for the gallery under
+/// /scan/<folder id>/<path inside it>. Nothing else is served, and nothing outside a connected
+/// folder is reached through it.
 struct WebFiles: Sendable {
     let bundle: URL
     let files: URL
@@ -74,6 +75,107 @@ struct WebFiles: Sendable {
         }
         return try? JSONSerialization.data(withJSONObject: items)
     }
+
+    /// A connected folder walked for the gallery, as NDJSON, the answer to
+    /// /scan/<folder id>/<path inside it>?depth=<n>&limit=<n>: a line for each folder and each
+    /// STEP or STL file under it, at most `depth` levels down (1 is the folder's own entries, 32 at
+    /// most) and `limit` files (20,000 at most), then a last line with how many and whether a
+    /// limit stopped the walk. One endpoint serves both the gallery's tree and its walk.
+    ///
+    ///   {"path": "motors/nema17.step", "kind": "file", "bytes": 120331, "modified": 1731000000000}
+    ///   {"path": "motors", "kind": "folder"}
+    ///   {"done": true, "files": 1, "folders": 1, "truncated": false}
+    ///
+    /// Paths are relative to the folder walked, and times in milliseconds since 1970. A file that
+    /// lives only in iCloud is marked "cloud": reading it would download it, so the gallery imports
+    /// it only when it is in view and the person says so. Hidden files and folders and the insides
+    /// of packages are left out, and links are not followed.
+    func scan(_ path: String, query: String?) -> Data? {
+        guard path.hasPrefix("/scan/") else {
+            return nil
+        }
+        let rest = path.dropFirst("/scan/".count)
+        let id = String(rest.prefix(while: { $0 != "/" }))
+        guard let grant = opened.grant(for: id), grant.isFolder else {
+            return nil
+        }
+        let inner = String(rest.dropFirst(min(rest.count, id.count + 1))).removingPercentEncoding ?? ""
+        guard let folder = inner.isEmpty ? grant.url : Self.inside(grant.url, inner) else {
+            return nil
+        }
+        let items = URLComponents(string: "scan?" + (query ?? ""))?.queryItems ?? []
+        let number = { (name: String, fallback: Int, most: Int) -> Int in
+            let value = items.first(where: { $0.name == name })?.value.flatMap(Int.init) ?? fallback
+            return min(max(value, 1), most)
+        }
+        let depth = number("depth", 32, 32)
+        let limit = number("limit", 20_000, 20_000)
+        let keys: [URLResourceKey] = [
+            .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey,
+            .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+        ]
+        guard
+            let walk = FileManager.default.enumerator(
+                at: folder, includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else {
+            return nil
+        }
+        let base = folder.standardizedFileURL.path + "/"
+        var out = Data()
+        var files = 0
+        var folders = 0
+        var truncated = false
+        let line = { (object: [String: Any]) in
+            if let json = try? JSONSerialization.data(
+                withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) {
+                out.append(json)
+                out.append(0x0A)
+            }
+        }
+        while let entry = walk.nextObject() as? URL {
+            if walk.level > depth {
+                walk.skipDescendants()
+                truncated = true
+                continue
+            }
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)),
+                values.isSymbolicLink != true
+            else {
+                continue
+            }
+            let full = entry.standardizedFileURL.path
+            let relative = full.hasPrefix(base) ? String(full.dropFirst(base.count)) : entry.lastPathComponent
+            if values.isDirectory == true {
+                if walk.level == depth {
+                    walk.skipDescendants()
+                }
+                line(["path": relative, "kind": "folder"])
+                folders += 1
+                continue
+            }
+            guard Self.modelExtensions.contains(entry.pathExtension.lowercased()) else {
+                continue
+            }
+            if files == limit {
+                truncated = true
+                break
+            }
+            var object: [String: Any] = [
+                "path": relative, "kind": "file", "bytes": values.fileSize ?? 0,
+                "modified": Int64((values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000),
+            ]
+            if values.isUbiquitousItem == true && values.ubiquitousItemDownloadingStatus != .current {
+                object["cloud"] = true
+            }
+            line(object)
+            files += 1
+        }
+        line(["done": true, "files": files, "folders": folders, "truncated": truncated])
+        return out
+    }
+
+    private static let modelExtensions: Set<String> = ["step", "stp", "stl"]
 
     /// `inner` within `root`, or nil if it would lead outside it.
     static func inside(_ root: URL, _ inner: String) -> URL? {

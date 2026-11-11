@@ -90,8 +90,22 @@ final class LoopbackServer: @unchecked Sendable {
         let line = String(decoding: head.prefix(while: { $0 != 13 }), as: UTF8.self)
         let parts = line.split(separator: " ")
         var path = parts.count >= 2 ? String(parts[1]) : "/"
-        if let query = path.firstIndex(of: "?") {
-            path = String(path[..<query])
+        var query: String?
+        if let mark = path.firstIndex(of: "?") {
+            query = String(path[path.index(after: mark)...])
+            path = String(path[..<mark])
+        }
+        if let scan = files.scan(path, query: query) {
+            var headers = WebFiles.isolation
+            headers["Content-Type"] = "application/x-ndjson"
+            headers["Connection"] = "close"
+            headers["Content-Length"] = String(scan.count)
+            let text = (["HTTP/1.1 200 OK"] + headers.map { "\($0.key): \($0.value)" })
+                .joined(separator: "\r\n") + "\r\n\r\n"
+            connection.send(content: Data(text.utf8) + scan, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return
         }
         if let listing = files.listing(path) {
             var headers = WebFiles.isolation

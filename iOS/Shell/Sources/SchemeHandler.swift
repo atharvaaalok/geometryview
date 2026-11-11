@@ -25,6 +25,12 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         guard let url = task.request.url else {
             return
         }
+        if let scan = files.scan(url.path, query: url.query) {
+            respond(task, status: 200, type: "application/x-ndjson", length: scan.count)
+            task.didReceive(scan)
+            task.didFinish()
+            return
+        }
         if let listing = files.listing(url.path) {
             respond(task, status: 200, type: "application/json", length: listing.count)
             task.didReceive(listing)
