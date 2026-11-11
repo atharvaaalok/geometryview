@@ -17,6 +17,8 @@ enum LibraryEvent: Sendable {
     case picture(path: String, png: String, picture: GeoGalleryPicture)
     case progress(path: String, done: UInt32, total: UInt32)
     case failed(path: String, message: String)
+    /// A frame of Peek's turntable: `frame` of `frames`.
+    case turnFrame(path: String, frame: Int, frames: Int, png: String, picture: GeoGalleryPicture)
 }
 
 /// The gallery's library service (library.h) on the Swift side: files wanted, in bands, become facts
@@ -105,6 +107,12 @@ final class LibraryHandle {
 
     func setPrefetch(_ allowed: Bool) {
         geo_library_set_prefetch(library, allowed)
+    }
+
+    /// Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly
+    /// about the upright at one scale, ahead of any other; nil stops it.
+    func turn(path: String?, frames: Int, pixels: Int) {
+        geo_library_turn(library, path, UInt32(frames), UInt32(pixels))
     }
 
     /// Lists a folder's STEP and STL files and folders, off the main thread, keeping the listing.
@@ -204,7 +212,7 @@ private func receiveLibraryEvent(
                 )
             )
         )
-    case GeoLibraryPicture:
+    case GeoLibraryPicture, GeoLibraryTurnFrame:
         let p = event.picture
         let picture = GeoGalleryPicture(
             width: p.width,
@@ -218,7 +226,20 @@ private func receiveLibraryEvent(
                 Float(p.ink_rect.0), Float(p.ink_rect.1), Float(p.ink_rect.2), Float(p.ink_rect.3)
             )
         )
-        box.deliver(.picture(path: path, png: String(cString: p.png_path), picture: picture))
+        let png = String(cString: p.png_path)
+        if event.kind == GeoLibraryTurnFrame {
+            box.deliver(
+                .turnFrame(
+                    path: path,
+                    frame: Int(event.done),
+                    frames: Int(event.total),
+                    png: png,
+                    picture: picture
+                )
+            )
+        } else {
+            box.deliver(.picture(path: path, png: png, picture: picture))
+        }
     case GeoLibraryProgress:
         box.deliver(.progress(path: path, done: event.done, total: event.total))
     case GeoLibraryFailed:

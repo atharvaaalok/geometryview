@@ -255,6 +255,13 @@ final class GalleryHandle {
         return file == UInt32.max ? nil : file
     }
 
+    /// Whether the file in Peek can turn: its turntable's frames have come.
+    func setPeekTurnable(_ turnable: Bool) {
+        geo_gallery_set_peek_turnable(gallery, turnable)
+    }
+
+    var peekTurnable: Bool { geo_gallery_peek_turnable(gallery) }
+
     func peek(_ file: UInt32?) {
         geo_gallery_peek(gallery, file ?? UInt32.max)
     }

@@ -26,6 +26,13 @@ final class GalleryController {
     private var reloadScheduled = false
     private var wantScheduled = false
     private var picturesPending = 0
+    /// Peek's turntable: the file it is for, and its frames as they are decoded, with their notes.
+    private var turnFile: UInt32?
+    private var turnPath = ""
+    private var turnImages: [CGImage?] = []
+    private var turnPictures: [GeoGalleryPicture?] = []
+    static let turnFrames = 24
+    static let turnPixels = 1024
     private var styleRaw: UInt32 = 0
 
     /// Asked to open a file in the viewer.
@@ -339,6 +346,7 @@ final class GalleryController {
             )
         }
         library.want(wants)
+        updateTurn()
     }
 
     private func receive(_ event: LibraryEvent) {
@@ -373,8 +381,91 @@ final class GalleryController {
                 return
             }
             gallery.setReading(file, Float(done) / Float(total))
+        case .turnFrame(let path, let frame, let frames, let png, let picture):
+            receiveTurnFrame(path: path, frame: frame, frames: frames, png: png, picture: picture)
+            return
         }
         scheduleReload()
+    }
+
+    // MARK: Peek's turntable
+
+    /// Asks for the turntable of the file in Peek, if it changed, and puts the last one away.
+    private func updateTurn() {
+        let peeking = gallery.peeking
+        guard peeking != turnFile else {
+            return
+        }
+        turnFile = peeking
+        turnImages = []
+        turnPictures = []
+        view.setTurntable(nil)
+        guard let library, let root, let file = peeking else {
+            turnPath = ""
+            library?.turn(path: nil, frames: 0, pixels: 0)
+            return
+        }
+        turnPath = root.appendingPathComponent(gallery.path(of: file)).path
+        turnImages = Array(repeating: nil, count: Self.turnFrames)
+        turnPictures = Array(repeating: nil, count: Self.turnFrames)
+        library.turn(path: turnPath, frames: Self.turnFrames, pixels: Self.turnPixels)
+    }
+
+    /// A frame of the turntable: decoded off the main thread; once all have come, Peek can turn.
+    private func receiveTurnFrame(
+        path: String,
+        frame: Int,
+        frames: Int,
+        png: String,
+        picture: GeoGalleryPicture
+    ) {
+        guard path == turnPath, frames == turnImages.count, frame < frames else {
+            return  // an earlier Peek's
+        }
+        Task.detached(priority: .userInitiated) {
+            let image = CGImageSourceCreateWithURL(URL(fileURLWithPath: png) as CFURL, nil).flatMap
+            {
+                CGImageSourceCreateImageAtIndex(
+                    $0,
+                    0,
+                    [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                )
+            }
+            let sendable = UncheckedImage(image: image)
+            await MainActor.run { [weak self] in
+                guard let self, path == turnPath, frame < turnImages.count,
+                    let image = sendable.image, let file = turnFile
+                else {
+                    return
+                }
+                turnImages[frame] = image
+                turnPictures[frame] = picture
+                guard !turnImages.contains(where: { $0 == nil }) else {
+                    return
+                }
+                // Every frame fitted alike: by the box holding all their ink.
+                var union = CGRect.null
+                for p in turnPictures.compactMap({ $0 }) {
+                    union = union.union(
+                        CGRect(
+                            x: CGFloat(p.ink.0),
+                            y: CGFloat(p.ink.1),
+                            width: CGFloat(p.ink.2),
+                            height: CGFloat(p.ink.3)
+                        )
+                    )
+                }
+                view.setTurntable(
+                    GalleryView.Turntable(
+                        file: file,
+                        frames: turnImages.compactMap { $0 },
+                        ink: union
+                    )
+                )
+                gallery.setPeekTurnable(true)
+                view.reload()
+            }
+        }
     }
 
     /// Decodes a picture off the main thread, then paints it on the file at `path`, wherever the
@@ -453,6 +544,7 @@ final class GalleryController {
         default:
             break
         }
+        updateTurn()  // Peek opened, closed or moved: its turntable follows
     }
 
     static func relative(_ url: URL, to root: URL) -> String? {

@@ -295,6 +295,22 @@ final class GalleryCheck {
         peek["fixedLayers"] = view.fixedLayers
         out["peek"] = peek
         snapshot("gallery-peek.png")
+        // Peek's turntable: its frames come, then → turns the part a frame at a time.
+        let turnStart = Date()
+        while !gallery.peekTurnable, Date().timeIntervalSince(turnStart) < 30 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        var turn = measure()
+        turn["seconds"] = Date().timeIntervalSince(turnStart)
+        turn["turnable"] = gallery.peekTurnable
+        snapshot("gallery-peek-turn-0.png")
+        for _ in 0..<6 {
+            view.press(GeoKeyRight)  // a quarter turn, at 24 frames
+        }
+        turn["frameAfterSix"] = view.turnFrameShown
+        turn["peekingStill"] = gallery.peeking.map { gallery.path(of: $0) } ?? ""
+        snapshot("gallery-peek-turn-6.png")
+        out["peekTurn"] = turn
         view.press(GeoKeyEscape)
         // A switch from Plates to Sheet, which shows more: its transition and tracks, and the
         // animations playing. Parts in both fly; those new to Sheet fade in.
