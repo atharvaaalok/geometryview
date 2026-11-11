@@ -34,6 +34,15 @@ final class GalleryCheck {
         return (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)
     }
     static var isLayout: Bool { CommandLine.arguments.contains("--gallery-layout") }
+    /// `--gallery-watch <file>`: shows the file's folder, says when it is ready, and waits for the
+    /// file to change on disk, to see it re-ink alone.
+    static var watchFile: String? {
+        let arguments = CommandLine.arguments
+        guard let at = arguments.firstIndex(of: "--gallery-watch"), at + 1 < arguments.count else {
+            return nil
+        }
+        return arguments[at + 1]
+    }
 
     private let controller: GalleryController
     private let engine: EngineHandle
@@ -74,6 +83,13 @@ final class GalleryCheck {
                 NSApp.terminate(nil)
                 return
             }
+        }
+
+        if let watched = Self.watchFile {
+            report["watch"] = await watch(root: root, file: URL(fileURLWithPath: watched))
+            write(report, to: "gallery-check.json")
+            NSApp.terminate(nil)
+            return
         }
 
         // The folder, then its first subfolders, once the scan has listed them.
@@ -280,6 +296,93 @@ final class GalleryCheck {
             try? await Task.sleep(for: .milliseconds(600))
         }
         return out
+    }
+
+    /// A file changed on disk, with its folder in view in Sheet: how long until its Δ shows and its
+    /// new picture comes, whether anything else moved, and how many files were imported again.
+    private func watch(root: URL, file url: URL) async -> [String: Any] {
+        let gallery = controller.gallery
+        controller.show(root: root, folder: url.deletingLastPathComponent())
+        let scanStart = Date()
+        while controller.scanning, Date().timeIntervalSince(scanStart) < 60 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        controller.setView(GeoViewSheet.rawValue)
+        try? await Task.sleep(for: .milliseconds(600))
+        _ = await settle()
+        guard let path = GalleryController.relative(url, to: root),
+            let file = gallery.file(at: path)
+        else {
+            return ["error": "not in the gallery"]
+        }
+        // Every item but a Δ's, by kind and place.
+        let delta = "\u{0394}"
+        func layout() -> [String] {
+            let items = gallery.items
+            var out: [String] = []
+            for (index, item) in items.enumerated() {
+                if item.kind == GeoItemText.rawValue, gallery.text(of: item) == delta {
+                    continue
+                }
+                // A Δ's chip is the rectangle right before its text.
+                if index + 1 < items.count, items[index + 1].kind == GeoItemText.rawValue,
+                    gallery.text(of: items[index + 1]) == delta
+                {
+                    continue
+                }
+                out.append(
+                    String(
+                        format: "%u %u %.2f %.2f %.2f %.2f",
+                        item.kind,
+                        item.file,
+                        item.x,
+                        item.y,
+                        item.width,
+                        item.height
+                    )
+                )
+            }
+            return out
+        }
+        func marked() -> Bool {
+            gallery.items.contains {
+                $0.kind == GeoItemText.rawValue && gallery.text(of: $0) == delta
+            }
+        }
+        func stale() -> Bool {
+            gallery.items.contains { $0.flags & GeoItemStale.rawValue != 0 }
+        }
+        let before = layout()
+        let importsBefore = controller.stats()?.imports ?? 0
+        print("gallery-watch: ready")
+        fflush(stdout)
+        let start = Date()
+        var markedAfter: Double?
+        var staleSeen = false
+        var inkedAfter: Double?
+        while Date().timeIntervalSince(start) < 120 {
+            try? await Task.sleep(for: .milliseconds(50))
+            if markedAfter == nil, marked() {
+                markedAfter = Date().timeIntervalSince(start)
+            }
+            staleSeen = staleSeen || stale()
+            if markedAfter != nil, !stale(), controller.waitingInView == 0 {
+                inkedAfter = Date().timeIntervalSince(start)
+                break
+            }
+        }
+        try? await Task.sleep(for: .milliseconds(400))
+        controller.view.reload()
+        let after = layout()
+        let moved = zip(before, after).filter { $0 != $1 }.count + abs(before.count - after.count)
+        snapshot("gallery-watch.png")
+        return [
+            "file": path, "fileIndex": Int(file), "marked": markedAfter != nil,
+            "secondsToMark": markedAfter ?? -1, "fadedWhileDrawn": staleSeen,
+            "secondsToReink": inkedAfter ?? -1, "itemsCompared": before.count,
+            "itemsMoved": moved, "markStill": marked(),
+            "importsAgain": Int((controller.stats()?.imports ?? 0) - importsBefore),
+        ]
     }
 
     /// Waits for the pictures in view, at most two minutes. Returns the seconds waited.
