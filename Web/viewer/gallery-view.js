@@ -9,7 +9,7 @@
 // The core says what a layout plays against the one before (gallery-core.js, transition and
 // tracks); this plays it with Web Animations, the old view a copy fading out beneath the new.
 
-import { Actions, cssColour, Flags, Kinds, Targets, TrackKinds, Transitions } from "./gallery-core.js";
+import { Actions, cssColour, Flags, Kinds, Targets, TrackKinds, Transitions, Views } from "./gallery-core.js";
 
 const kAscent = 1.025, kLine = 1.3; // IBM Plex Mono, in ems, as the core reckons
 const kFaded = 0.22; // what a search did not find
@@ -88,6 +88,18 @@ export class GalleryView {
     });
     // A lane scrolls sideways: a sideways wheel or a shifted one over it, or a drag along it.
     this.#clip.addEventListener("wheel", (e) => {
+      if (this.#core.view === Views.Atlas) {
+        // The map: a modified wheel or a pinch zooms about the pointer, a plain one pans.
+        e.preventDefault();
+        const { x, y } = this.#point(e);
+        if (e.ctrlKey || e.metaKey || e.altKey || e.deltaMode === 1) {
+          this.#core.atlasZoom(Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.002)), x, y);
+        } else {
+          this.#core.atlasPan(-e.deltaX, -e.deltaY);
+        }
+        this.#atlasMoved();
+        return;
+      }
       const lane = this.#laneAt(this.#point(e));
       if (!lane) return;
       const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey;
@@ -96,12 +108,27 @@ export class GalleryView {
       this.#scrollLane(lane, (this.#laneScroll.get(lane.id) ?? 0) + (e.deltaX || e.deltaY));
     }, { passive: false });
     this.#clip.addEventListener("pointerdown", (e) => {
+      if (this.#core.view === Views.Atlas && e.button === 0) {
+        this.#drag = { atlas: true, x: e.clientX, y: e.clientY, moved: false };
+        return;
+      }
       const lane = this.#laneAt(this.#point(e));
       this.#drag = lane && e.button === 0 ? { lane, x: e.clientX, from: this.#laneScroll.get(lane.id) ?? 0, moved: false } : null;
     });
     this.#clip.addEventListener("pointermove", (e) => {
       const d = this.#drag;
       if (!d || !(e.buttons & 1)) return;
+      if (d.atlas) {
+        // A drag pans the map.
+        const dx = e.clientX - d.x, dy = e.clientY - d.y;
+        if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+        d.moved = true;
+        d.x = e.clientX;
+        d.y = e.clientY;
+        this.#core.atlasPan(dx, dy);
+        this.#atlasMoved();
+        return;
+      }
       if (!d.moved && Math.abs(e.clientX - d.x) < 4) return;
       d.moved = true;
       this.#scrollLane(d.lane, d.from - (e.clientX - d.x));
@@ -786,9 +813,22 @@ export class GalleryView {
     this.#clip.style.cursor = pointing ? "pointer" : "";
   }
 
+  // The map moved: drawn again from the camera, the toolbar told of its level.
+  #atlasMoved() {
+    this.#painted = null;
+    this.reload();
+    this.#on.atlasMoved?.();
+    this.#on.viewChanged?.();
+  }
+
   #click(e, twice) {
     const { x, y } = this.#point(e);
     const hit = this.#core.hit(x, y);
+    if (twice && hit.kind === Targets.None && this.#core.view === Views.Atlas) {
+      this.#core.atlasZoom(2.2, x, y); // a double-click on the map goes a level in
+      this.#atlasMoved();
+      return;
+    }
     this.act(this.#core.click(hit.kind, hit.target, twice));
   }
 

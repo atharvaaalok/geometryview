@@ -53,6 +53,7 @@ export class Gallery {
     this.view = new GalleryView(this.core, {
       action: (action) => this.#act(action),
       viewChanged: () => this.#scheduleWant(),
+      atlasMoved: () => this.#on.changed?.(),
     }, { probes });
     this.view.element.hidden = true;
     this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(), version: engine.cacheVersion, phone }, {
@@ -100,7 +101,7 @@ export class Gallery {
   /** The view in use, those enabled, Sheet's controls and the style: what the toolbar shows. */
   get state() {
     return { view: this.core.view, views: this.core.views, sheet: { ...this.#sheet }, style: this.#style,
-             ladders: { ...this.#ladders } };
+             ladders: { ...this.#ladders }, atlasLevel: this.core.atlasCamera.level };
   }
 
   /** Shows a view, if enabled: parts in both fly to their places. */
@@ -135,6 +136,16 @@ export class Gallery {
   }
 
   get poster() { return this.core.poster; }
+
+  /** Atlas: { level } goes to a level, { step } a level in (1) or out (−1). */
+  atlas({ level, step }) {
+    const now = this.core.atlasCamera.level;
+    this.core.atlasLevel(level ?? Math.min(2, Math.max(0, now + (step ?? 0))));
+    this.view.repaint();
+    this.view.reload();
+    this.#changed();
+    this.#scheduleWant();
+  }
 
   /** Ladders' scale: { shared }. */
   setLadders(change) {
@@ -272,6 +283,11 @@ export class Gallery {
                    Enter: Keys.Enter, " ": Keys.Space, Escape: Keys.Escape };
     let key = keys[e.key];
     if (e.key === "ArrowUp" && mod) key = Keys.FolderUp;
+    // In Atlas, + and − go a level in and out, while nothing is being searched.
+    if (this.core.view === 3 && !mod && !this.core.search && (e.key === "+" || e.key === "=" || e.key === "-")) {
+      this.atlas({ step: e.key === "-" ? -1 : 1 });
+      return true;
+    }
     if (key === undefined) {
       if (e.key === "Backspace" && !mod) {
         this.setSearch(Array.from(this.core.search).slice(0, -1).join(""));

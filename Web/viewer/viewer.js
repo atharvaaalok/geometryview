@@ -159,6 +159,7 @@ const galleryToolbar = new GalleryToolbar({
   view: (view) => gallery?.setView(view),
   sheet: (change) => gallery?.setSheet(change),
   ladders: (change) => gallery?.setLadders(change),
+  atlas: (change) => gallery?.atlas(change),
   look: () => toggleCard(lookCard),
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
@@ -1418,8 +1419,8 @@ async function runGalleryTest() {
     return { groupsChecked: result.checked, over: result.over, painted: lines.filter((v) => !Number.isNaN(v)).length,
              maxDeviation: Math.round(off * 1000) / 1000 };
   };
-  // The views built so far: Atlas and Catalogue come in G7 and G8.
-  const views = params.get("views") === "all" ? [0, 1, 2] : [0, 1];
+  // The views built so far: Catalogue comes in G8.
+  const views = params.get("views") === "all" ? [0, 1, 2, 3] : [0, 1];
   // scrollOnly skips the styles' runs, for timing a scroll alone.
   for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);

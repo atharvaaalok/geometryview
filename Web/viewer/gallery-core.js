@@ -133,6 +133,18 @@ export class GalleryCore {
     const v = new Float32Array(this.#m.HEAPU8.buffer, this.#scratch, 2);
     return { lane: v[0], x: v[1] };
   }
+  /** Atlas's camera: { k, x, y, fit, level }, view points = map units × k + (x, y). */
+  get atlasCamera() {
+    this.#m._gv_gallery_atlas_camera(this.#g, this.#scratch);
+    const v = new Float32Array(this.#m.HEAPU8.buffer, this.#scratch, 4);
+    const [k, x, y, fit] = v;
+    return { k, x, y, fit, level: k < fit * 1.55 ? 0 : k < fit * 3.3 ? 1 : 2 };
+  }
+  /** Zooms the map by `factor` about a point of the view; pans it; or goes to a level (0–2). */
+  atlasZoom(factor, x, y) { this.#m._gv_gallery_atlas_zoom(this.#g, factor, x, y); }
+  atlasPan(dx, dy) { this.#m._gv_gallery_atlas_pan(this.#g, dx, dy); }
+  atlasLevel(level) { this.#m._gv_gallery_atlas_level(this.#g, level); }
+
   /** Ladders' scale: each strip its own, or one shared. */
   setLadders(shared) { this.#m._gv_gallery_set_ladders(this.#g, shared ? 1 : 0); }
 
