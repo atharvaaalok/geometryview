@@ -234,9 +234,31 @@ public:
         return s.x + s.w >= 0 && s.y + s.h >= 0 && s.x <= in.width && s.y <= in.height;
     }
 
-    /// Up to `n` typical parts spread across a set's sizes.
+    /// Up to `n` typical parts spread across a set's sizes: collections of many parts and the far
+    /// larger ones left out, so no one giant or assembly stands for the lot.
     std::vector<u32> landmarks(const std::vector<u32>& files, usize n) const {
-        const std::vector<u32> sorted = bySize(tree, drawable(tree, files));
+        std::vector<u32> ok = drawable(tree, files);
+        std::vector<u32> counts;
+        for (const u32 f : ok) {
+            const File& file = tree.file(f);
+            counts.push_back(file.facts ? std::max<u32>(1, file.facts->parts) : 1);
+        }
+        if (!counts.empty()) {
+            std::vector<u32> sortedCounts = counts;
+            std::sort(sortedCounts.begin(), sortedCounts.end());
+            const u32 median = sortedCounts[(sortedCounts.size() - 1) / 2];
+            std::vector<u32> few;
+            for (usize i = 0; i < ok.size(); ++i) {
+                if (counts[i] <= median) {
+                    few.push_back(ok[i]);
+                }
+            }
+            if (!few.empty()) {
+                ok = std::move(few);
+            }
+        }
+        const FamilyScale family = familyScale(tree, ok, 1.0f, 1.0f);
+        const std::vector<u32> sorted = bySize(tree, family.normal.empty() ? ok : family.normal);
         if (sorted.size() <= n) {
             return sorted;
         }
@@ -247,35 +269,37 @@ public:
         return out;
     }
 
-    /// Parts standing side by side, at one scale that fits them in `area` (view points).
-    void standing(const std::vector<u32>& files, const Rect& area) {
+    /// Parts standing side by side at one scale, their ink no taller than `cap`, centred in `area`
+    /// (view points), their shadows on one line.
+    void standing(const std::vector<u32>& files, const Rect& area, float cap) {
         if (files.empty() || area.w < 12.0f || area.h < 12.0f) {
             return;
         }
-        double totalW = 0, maxH = 0;
+        double totalW = 0, tallest = 0;
         for (const u32 f : files) {
             const Drawn d = *drawnOf(tree.file(f));
-            totalW += d.w;
-            maxH = std::max(maxH, d.h + d.below);
+            totalW += d.w + d.left + d.right;
+            tallest = std::max(tallest, d.above + d.h + d.below);
         }
         const float gap = 10.0f;
+        const float room = area.w - gap * float(files.size() - 1);
         const double mm =
-            std::max(totalW / std::max(1.0, double(area.w - gap * float(files.size() - 1))),
-                     maxH / double(area.h));
+            std::max(totalW / std::max(1.0, double(room)), tallest / double(std::min(area.h, cap)));
         float x = area.x + (area.w - float(totalW / mm) - gap * float(files.size() - 1)) / 2.0f;
-        const float bottom = area.y + area.h / 2.0f + float(maxH / mm) / 2.0f;
+        const float baseline = area.y + (area.h + float(tallest / mm)) / 2.0f;
         const u32 g = newGroup();
         for (const u32 f : files) {
             const Drawn d = *drawnOf(tree.file(f));
+            const float left = x + float(d.left / mm);
             out.target(GeoTargetFile, f);
             out.key(keyOf("part", f));
-            part(f, x, bottom - float(d.below / mm), mm, g);
-            lastLine(bottom); // its ink on the shared line, whatever its shadow's depth
-            result.parts.push_back({GeoTargetFile, f, x, bottom - float((d.h + d.below) / mm),
+            part(f, left, baseline - float(d.below / mm), mm, g);
+            lastLine(baseline); // its ink on the shared line, whatever its shadow's depth
+            result.parts.push_back({GeoTargetFile, f, left, baseline - float((d.h + d.below) / mm),
                                     float(d.w / mm), float((d.h + d.below) / mm)});
             out.target(GeoTargetNone, 0);
             out.key(0);
-            x += float(d.w / mm) + gap;
+            x += float((d.w + d.left + d.right) / mm) + gap;
         }
     }
 
@@ -321,7 +345,7 @@ public:
         } else {
             if (region && level == 0) {
                 // Far out: a few landmarks stand for the region.
-                standing(landmarks(filesOf(p), 5), inset(s, 26.0f, 54.0f));
+                standing(landmarks(filesOf(p), 5), inset(s, 26.0f, 54.0f), 150.0f);
             }
             for (const Place& c : p.children) {
                 drawPlace(c, level);
@@ -345,7 +369,7 @@ public:
         const Rect area = screen(p.inner);
         if (level < 2) {
             // Landmarks, far out; a district's covers in the middle.
-            standing(landmarks(p.files, level == 0 ? 5 : 7), area);
+            standing(landmarks(p.files, level == 0 ? 5 : 7), area, level == 0 ? 150.0f : 110.0f);
             pins(p);
             return;
         }
