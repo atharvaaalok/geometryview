@@ -233,6 +233,32 @@ std::array<u32, 2> dispatchSize(u64 count) {
     return {x, x == 0 ? 0 : u32((groups + x - 1) / x)};
 }
 
+// An offscreen frame on its way back: the buffer it is copied into, and its layout.
+struct OffscreenCopy {
+    wgpu::Buffer buffer;
+    u32 width = 0, height = 0, stride = 0;
+    bool swap = false; // RGBA in the buffer, BGRA wanted
+};
+
+// BGRA pixels from a mapped offscreen copy, which it unmaps.
+std::vector<u8> decodeOffscreen(const OffscreenCopy& r) {
+    const usize size = usize(r.buffer.GetSize());
+    const auto* bytes = static_cast<const u8*>(r.buffer.GetConstMappedRange(0, size));
+    std::vector<u8> pixels(usize(r.width) * r.height * 4);
+    for (u32 y = 0; y < r.height; ++y) {
+        for (u32 x = 0; x < r.width; ++x) {
+            const u8* from = bytes + usize(y) * r.stride + usize(x) * 4;
+            u8* to = pixels.data() + (usize(y) * r.width + x) * 4;
+            to[0] = r.swap ? from[2] : from[0];
+            to[1] = from[1];
+            to[2] = r.swap ? from[0] : from[2];
+            to[3] = from[3];
+        }
+    }
+    r.buffer.Unmap();
+    return pixels;
+}
+
 } // namespace
 
 struct Renderer::State {
@@ -1939,6 +1965,39 @@ struct Renderer::State {
                           });
     }
 
+    // Draws the offscreen frame and copies it into a buffer to map.
+    OffscreenCopy encodeOffscreen(const render::ViewState& view, const render::Overlay* overlay,
+                                  bool inSteps) {
+        if (!offscreen) {
+            offscreen = texture(width, height, outputFormat,
+                                Usage::RenderAttachment | Usage::CopySrc, "offscreen");
+        }
+        if (inSteps) {
+            for (u32 step = 0; step < 4; ++step) {
+                encodeFrame(offscreen, view, 1, overlay, step);
+            }
+        } else {
+            encodeFrame(offscreen, view, 4, overlay);
+        }
+        OffscreenCopy r;
+        r.width = width;
+        r.height = height;
+        r.stride = (width * 4 + 255) & ~255u;
+        r.swap = outputFormat == Format::RGBA8Unorm;
+        r.buffer = buffer(u64(r.stride) * height, U::MapRead | U::CopyDst, "readback");
+        wgpu::TexelCopyTextureInfo source{};
+        source.texture = offscreen;
+        wgpu::TexelCopyBufferInfo destination{};
+        destination.buffer = r.buffer;
+        destination.layout.bytesPerRow = r.stride;
+        const wgpu::Extent3D extent = {width, height, 1};
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        encoder.CopyTextureToBuffer(&source, &destination, &extent);
+        const wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+        return r;
+    }
+
     // Blocks until `future` completes. Only native hosts may.
     void wait(const wgpu::Future& future) { instance.WaitAny(future, UINT64_MAX); }
 
@@ -2238,47 +2297,28 @@ std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
 std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
                                           const render::Overlay* overlay, bool inSteps) {
     State& s = *state_;
-    if (!s.offscreen) {
-        s.offscreen = s.texture(s.width, s.height, s.outputFormat,
-                                Usage::RenderAttachment | Usage::CopySrc, "offscreen");
-    }
-    if (inSteps) {
-        for (u32 step = 0; step < 4; ++step) {
-            s.encodeFrame(s.offscreen, view, 1, overlay, step);
-        }
-    } else {
-        s.encodeFrame(s.offscreen, view, 4, overlay);
-    }
-    const u32 stride = (s.width * 4 + 255) & ~255u;
-    wgpu::Buffer readback = s.buffer(u64(stride) * s.height, U::MapRead | U::CopyDst, "readback");
-    wgpu::TexelCopyTextureInfo source{};
-    source.texture = s.offscreen;
-    wgpu::TexelCopyBufferInfo destination{};
-    destination.buffer = readback;
-    destination.layout.bytesPerRow = stride;
-    const wgpu::Extent3D extent = {s.width, s.height, 1};
-    wgpu::CommandEncoder encoder = s.device.CreateCommandEncoder();
-    encoder.CopyTextureToBuffer(&source, &destination, &extent);
-    const wgpu::CommandBuffer commands = encoder.Finish();
-    s.queue.Submit(1, &commands);
-    const usize size = usize(readback.GetSize());
-    s.wait(readback.MapAsync(wgpu::MapMode::Read, 0, size, wgpu::CallbackMode::WaitAnyOnly,
+    const OffscreenCopy r = s.encodeOffscreen(view, overlay, inSteps);
+    s.wait(r.buffer.MapAsync(wgpu::MapMode::Read, 0, usize(r.buffer.GetSize()),
+                             wgpu::CallbackMode::WaitAnyOnly,
                              [](wgpu::MapAsyncStatus, wgpu::StringView) {}));
-    const auto* bytes = static_cast<const u8*>(readback.GetConstMappedRange(0, size));
-    std::vector<u8> pixels(usize(s.width) * s.height * 4);
-    const bool swap = s.outputFormat == Format::RGBA8Unorm;
-    for (u32 y = 0; y < s.height; ++y) {
-        for (u32 x = 0; x < s.width; ++x) {
-            const u8* from = bytes + usize(y) * stride + usize(x) * 4;
-            u8* to = pixels.data() + (usize(y) * s.width + x) * 4;
-            to[0] = swap ? from[2] : from[0];
-            to[1] = from[1];
-            to[2] = swap ? from[0] : from[2];
-            to[3] = from[3];
-        }
-    }
-    readback.Unmap();
-    return pixels;
+    return decodeOffscreen(r);
+}
+
+void Renderer::renderOffscreenAsync(const render::ViewState& view, const render::Overlay* overlay,
+                                    std::function<void(std::vector<u8>)> done) {
+    State& s = *state_;
+    OffscreenCopy r = s.encodeOffscreen(view, overlay, false);
+    const usize size = usize(r.buffer.GetSize());
+    wgpu::Buffer buffer = r.buffer;
+    buffer.MapAsync(
+        wgpu::MapMode::Read, 0, size, State::kCallbacks,
+        [r = std::move(r), done = std::move(done), alive = std::weak_ptr<int>(s.lifetime)](
+            wgpu::MapAsyncStatus status, wgpu::StringView) mutable {
+            if (!alive.lock()) {
+                return;
+            }
+            done(status == wgpu::MapAsyncStatus::Success ? decodeOffscreen(r) : std::vector<u8>{});
+        });
 }
 
 } // namespace geo::webgpu

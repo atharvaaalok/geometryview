@@ -731,6 +731,40 @@ std::vector<u8> Renderer::renderOffscreen(const render::ViewState& view,
     return pixels;
 }
 
+std::optional<std::array<u32, 4>> Renderer::drawnBounds() const {
+    const Targets& t = state_->targets;
+    if (!t.pickIdBuffer) {
+        return std::nullopt;
+    }
+    const auto* rows = static_cast<const u8*>(t.pickIdBuffer.contents);
+    u32 left = t.width, top = t.height, right = 0, bottom = 0;
+    for (u32 y = 0; y < t.height; ++y) {
+        const auto* ids = reinterpret_cast<const u32*>(rows + usize(y) * t.pickIdRowBytes);
+        for (u32 x = 0; x < t.width; ++x) {
+            if (ids[x] != 0) {
+                left = std::min(left, x);
+                right = std::max(right, x + 1);
+                top = std::min(top, y);
+                bottom = y + 1;
+            }
+        }
+    }
+    if (right <= left) {
+        return std::nullopt;
+    }
+    return std::array<u32, 4>{left, top, right - left, bottom - top};
+}
+
+void Renderer::releaseScene() {
+    State& s = *state_;
+    s.tables.sync(s.context, s.retirement, scene::Scene{});
+    // What the last frame read retires with it.
+    const bool finished = [s.context.frameFinished waitUntilSignaledValue:s.context.frameCount
+                                                                timeoutMS:kFrameTimeoutMs * 10];
+    GEO_ASSERT(finished);
+    s.retirement.releaseFinished(s.context);
+}
+
 std::optional<PixelHit> Renderer::readPixel(int x, int y, const render::DepthDecoder& depth) const {
     const Targets& t = state_->targets;
     if (x < 0 || y < 0 || u32(x) >= t.width || u32(y) >= t.height || !t.pickIdBuffer) {

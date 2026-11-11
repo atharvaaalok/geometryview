@@ -79,8 +79,17 @@ bool prepareOffscreen(render::Backend& backend,
         bounds = model::visibleBounds(out.scene, state).value_or(bounds);
     }
     backend.syncState(state);
+    const float pixelsPerPoint =
+        options.pixels_per_point > 0.0f ? std::clamp(options.pixels_per_point, 0.25f, 8.0f) : 2.0f;
     LookState looks;
     looks.set(lookSettings(options.look));
+    looks.setRaster(
+        {.pixelsPerPoint = pixelsPerPoint,
+         .lineScale = options.line_scale > 0.0f ? std::min(options.line_scale, 4.0f) : 1.0f,
+         .sheetAlpha = options.transparent ? 0.0f : 1.0f});
+    if (options.first_color >= 0) {
+        looks.setFirstColors({u32(options.first_color)});
+    }
     looks.apply(backend, out.scene);
 
     const nav::Viewport viewport{double(width), double(height)};
@@ -93,6 +102,10 @@ bool prepareOffscreen(render::Backend& backend,
     camera.perspective = options.perspective;
     camera.lookAt(bounds.center() + direction, bounds.center(), simd_make_double3(0.0, 0.0, 1.0));
     nav::fit(camera, bounds, viewport, kFitMargin);
+    if (options.world_per_pixel > 0.0 && !options.perspective) {
+        camera.orthoHalfHeight = options.world_per_pixel * double(height) * 0.5;
+    }
+    out.worldPerPixel = 2.0 * camera.halfHeightAt(camera.focusDistance) / double(height);
 
     out.view = render::makeView(camera, viewport, bounds);
     out.view.uniforms.aoRadius = float(0.025 * simd_length(bounds.max - bounds.min));
@@ -108,13 +121,14 @@ bool prepareOffscreen(render::Backend& backend,
     if (geo_style_on_dark(options.look.style)) {
         layout.ink = render::kOverlayInkOnDark;
     }
-    out.overlay = render::makeOverlay(camera, viewport, out.view.uniforms.viewRotation, 2.0f,
-                                      backend.glyphAdvance(), 0, layout);
+    out.overlay = render::makeOverlay(camera, viewport, out.view.uniforms.viewRotation,
+                                      pixelsPerPoint, backend.glyphAdvance(), 0, layout);
     return true;
 }
 
 } // namespace geo::engine
 
 GeoRenderOptions geo_default_render_options(void) {
-    return {1600, 1000, 35.0, 25.0, false, true, geo_default_look(), {}, nullptr};
+    return {1600, 1000,    35.0, 25.0, false, true,  geo_default_look(),
+            {},   nullptr, 2.0f, 1.0f, -1,    false, 0.0};
 }

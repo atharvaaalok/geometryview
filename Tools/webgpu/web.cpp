@@ -378,8 +378,87 @@ EMSCRIPTEN_KEEPALIVE void bench_capture() {
 EMSCRIPTEN_KEEPALIVE const u8* bench_capture_bytes() { return app.capture.data(); }
 EMSCRIPTEN_KEEPALIVE u32 bench_format() { return u32(app.format); }
 
+// ---- Thumbnails, as the gallery draws them -----------------------------------------------------
+
+struct Thumbnails {
+    std::vector<u8> bytes; // the cache file, read afresh for each picture
+    u32 count = 0, pixels = 0, style = 0, done = 0;
+    std::vector<double> prepare, total;
+    double coverage = 0; // the share of pixels drawn, summed over pictures
+    std::unique_ptr<engine::OffscreenView> frame;
+};
+Thumbnails thumbs;
+
+void finishThumbnails() {
+    app.results = std::format(
+        "{{\"adapter\": \"{}\", \"thumbnails\": {{\"count\": {}, \"pixels\": {}, \"style\": {}, "
+        "\"prepareMs\": {{\"p50\": {:.3f}, \"p90\": {:.3f}}}, "
+        "\"totalMs\": {{\"first\": {:.3f}, \"p50\": {:.3f}, \"p90\": {:.3f}}}, "
+        "\"coverage\": {:.3f}, \"bufferMB\": {:.1f}, \"targetMB\": {:.1f}}}}}",
+        app.adapterName, thumbs.count, thumbs.pixels, thumbs.style, percentile(thumbs.prepare, 0.5),
+        percentile(thumbs.prepare, 0.9), thumbs.total.front(), percentile(thumbs.total, 0.5),
+        percentile(thumbs.total, 0.9), thumbs.coverage / double(std::max(thumbs.done, 1u)),
+        double(app.renderer->memoryBytes()[0]) / 1048576.0,
+        double(app.renderer->memoryBytes()[1]) / 1048576.0);
+    app.state = 5;
+}
+
+// One picture: the file read and framed, drawn on a clear sheet, and handed back without waiting;
+// then the next.
+void nextThumbnail() {
+    if (thumbs.done == thumbs.count) {
+        finishThumbnails();
+        return;
+    }
+    const double started = emscripten_get_now();
+    std::vector<std::shared_ptr<scene::Segment>> segments;
+    std::string error;
+    if (!scene::readCacheFile(thumbs.bytes, segments, error)) {
+        fail(error);
+        return;
+    }
+    GeoRenderOptions options = geo_default_render_options();
+    options.width = options.height = thumbs.pixels;
+    options.overlay = false;
+    options.elevation_degrees = 30.0;
+    options.look.style = GeoStyle(std::min(thumbs.style, u32(GeoStyleStudio)));
+    options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
+    options.line_scale = 0.5f;
+    options.first_color = int32_t(thumbs.done % 4);
+    options.transparent = true;
+    thumbs.frame = std::make_unique<engine::OffscreenView>();
+    if (!engine::prepareOffscreen(*app.renderer, std::move(segments), options, *thumbs.frame,
+                                  error)) {
+        fail(error);
+        return;
+    }
+    thumbs.prepare.push_back(emscripten_get_now() - started);
+    app.renderer->renderOffscreenAsync(
+        thumbs.frame->view, nullptr, [started](std::vector<u8> pixels) {
+            thumbs.total.push_back(emscripten_get_now() - started);
+            usize drawn = 0;
+            for (usize p = 3; p < pixels.size(); p += 4) {
+                drawn += pixels[p] != 0 ? 1 : 0;
+            }
+            thumbs.coverage += double(drawn) / double(pixels.size() / 4 + 1);
+            ++thumbs.done;
+            nextThumbnail();
+        });
+}
+
 // Edges and the cast shadow left out, as the engine draws heavy scenes in motion.
 EMSCRIPTEN_KEEPALIVE void bench_reduced(int reduced) { app.renderer->setReducedDetail(reduced != 0); }
+
+// Draws the cache file `count` times as `pixels`-square pictures, one after another, as the gallery
+// will; bench_state() turns 5 when they are done and bench_results() holds their timings.
+EMSCRIPTEN_KEEPALIVE void bench_thumbnails(const u8* bytes, u32 size, u32 count, u32 pixels,
+                                           u32 style) {
+    thumbs.bytes.assign(bytes, bytes + size);
+    thumbs.count = std::max(count, 1u);
+    thumbs.pixels = std::clamp(pixels, 32u, 2048u);
+    thumbs.style = style;
+    nextThumbnail();
+}
 
 EMSCRIPTEN_KEEPALIVE void bench_start(u32 burst, double phaseSeconds) {
     app.burst = std::max(burst, 1u);

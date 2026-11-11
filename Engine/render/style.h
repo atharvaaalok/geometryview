@@ -130,9 +130,30 @@ struct LookSettings {
     float wobble = 0.0f; // hand-drawn wobble in points, 0 to 7
 };
 
-/// The style's uniforms for shaders, at a display scale.
+/// How a frame is rasterised, apart from the look: the display's scale, and how heavy lines are
+/// against it.
+struct Raster {
+    float pixelsPerPoint = 2.0f;
+    /// Scales the ink's widths (outlines, creases, highlights, wobble) and soft shadows, but not
+    /// paper grain or the drafting grid. Below 1 for small pictures, whose lines would otherwise
+    /// swamp the part: the gallery uses clamp(cell / 320 pt, 0.5, 1).
+    float lineScale = 1.0f;
+    /// The sheet's opacity. At 0 the background is left clear and the frame comes out with
+    /// premultiplied alpha: the part, its lines and its cast shadow, to stand on another sheet.
+    float sheetAlpha = 1.0f;
+
+    bool operator==(const Raster&) const = default;
+};
+
+/// The style's uniforms for shaders, rasterised as `raster` says.
 StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
-                                float pixelsPerPoint);
+                                const Raster& raster);
+
+/// The style's uniforms at a display scale, with lines at their full weight.
+inline StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
+                                       float pixelsPerPoint) {
+    return makeStyleUniforms(style, settings, Raster{.pixelsPerPoint = pixelsPerPoint});
+}
 
 /// Whether a style's composite looks for outlines: silhouettes, part lines or folds.
 inline bool drawsOutlines(const StyleUniforms& style) {

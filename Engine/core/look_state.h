@@ -6,6 +6,9 @@
 #include "render/style.h"
 #include "scene/scene.h"
 
+#include <optional>
+#include <vector>
+
 namespace geo::render {
 class Backend;
 }
@@ -18,12 +21,21 @@ render::LookSettings lookSettings(const GeoLook& look);
 class LookState {
 public:
     void set(const render::LookSettings& settings);
-    void setScale(float pixelsPerPoint);
+    void setRaster(const render::Raster& raster);
     /// Occurrences were added or removed, so every body's look must be decided again, and which
     /// are shell.
     void sceneChanged() {
         looksDirty_ = true;
         shells_.clear();
+    }
+
+    /// Where each document's colours start in the cycle, indexed by document; a document without
+    /// one counts on from the documents before it.
+    void setFirstColors(std::vector<std::optional<u32>> firstColors) {
+        if (firstColors != firstColors_) {
+            firstColors_ = std::move(firstColors);
+            looksDirty_ = true;
+        }
     }
 
     /// Marks which occurrences are the see-through shell, one flag each in global order.
@@ -49,7 +61,8 @@ private:
     render::LookSettings settings_;
     render::LookAssignment looks_;
     std::vector<u8> shells_;
-    float pixelsPerPoint_ = 2.0f;
+    std::vector<std::optional<u32>> firstColors_;
+    render::Raster raster_;
     bool looksDirty_ = true;
     bool paletteDirty_ = true;
     bool styleDirty_ = true;

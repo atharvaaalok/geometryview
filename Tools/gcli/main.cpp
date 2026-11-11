@@ -3,6 +3,7 @@
 #include "engine.h"
 #include "format/blob.h"
 #include "import.h"
+#include "sheet.h"
 
 #include <algorithm>
 #include <array>
@@ -411,6 +412,9 @@ int main(int argc, const char** argv) {
     if (command == "tree" && argc == 3) {
         return treeCommand(argv[2]);
     }
+    if (command == "sheet") {
+        return gcli::sheetCommand(argc, argv);
+    }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
@@ -419,5 +423,8 @@ int main(int argc, const char** argv) {
     std::println(stderr, "       gcli render <metallib> <blob> <png> [width height azimuth "
                          "elevation ortho|perspective style colour section plain|overlay "
                          "isolate]");
+    std::println(stderr,
+                 "       gcli sheet <metallib> <png> [--cell 192] [--columns N] [--style S] "
+                 "[--colour C] [--same-scale] [--title text] < tiles.jsonl");
     return 2;
 }

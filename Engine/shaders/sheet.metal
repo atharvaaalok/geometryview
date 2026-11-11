@@ -49,10 +49,13 @@ fragment float4 sheetFragment(SheetVertex in [[stage_in]],
                               constant StyleUniforms& style [[buffer(kBufferStyle)]],
                               texture2d<float> shadow [[texture(kTextureShadow)]]) {
     const float2 px = in.position.xy;
-    float3 color = sheetColor(px, frame, style);
+    const float3 color = sheetColor(px, frame, style);
+    float shade = 0.0;
     if (style.shadowOn != 0 && frame.shadowVisibility > 0.0) {
-        color = mix(color, style.shadowColor,
-                    style.shadowAlpha * frame.shadowVisibility * shadowAt(px, shadow, style));
+        shade = style.shadowAlpha * frame.shadowVisibility * shadowAt(px, shadow, style);
     }
-    return float4(color, 1.0);
+    // The shadow over the sheet, premultiplied: on an opaque sheet a plain mix, on a clear one the
+    // shadow alone.
+    const float sheet = style.sheetAlpha * (1.0 - shade);
+    return float4(color * sheet + style.shadowColor * shade, sheet + shade);
 }

@@ -614,7 +614,8 @@ kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile
         const half ghost = t.ink.g * half(style.ghostLineAlpha) * ink;
         const half cover = 1.0h - (1.0h - solid) * (1.0h - ghost);
         if (cover > 0.0h) {
-            t.color.rgb = mix(t.color.rgb, half3(style.ink), cover);
+            // Over a clear background the ink brings its own coverage, premultiplied.
+            t.color = mix(t.color, half4(half3(style.ink), 1.0h), cover);
             tile.write(t, pixel, s, imageblock_data_rate::sample);
         }
     }

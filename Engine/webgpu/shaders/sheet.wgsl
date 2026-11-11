@@ -52,10 +52,12 @@ fn shadowAt(px: vec2f) -> f32 {
 @fragment
 fn sheetFragment(in: ScreenVertex) -> @location(0) vec4f {
     let px = in.position.xy;
-    var color = sheetColor(px);
+    let color = sheetColor(px);
+    var shade = 0.0;
     if (style.shadowOn != 0u && frame.shadowVisibility > 0.0) {
-        color = mix(color, style.shadowColor,
-                    style.shadowAlpha * frame.shadowVisibility * shadowAt(px));
+        shade = style.shadowAlpha * frame.shadowVisibility * shadowAt(px);
     }
-    return vec4f(color, 1.0);
+    // As sheet.metal: the shadow over the sheet, premultiplied.
+    let sheet = style.sheetAlpha * (1.0 - shade);
+    return vec4f(color * sheet + style.shadowColor * shade, sheet + shade);
 }

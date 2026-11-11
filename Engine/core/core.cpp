@@ -574,7 +574,7 @@ void Core::resize(u32 width, u32 height, float pixelsPerPoint) {
     viewport_ = {double(width), double(height)};
     pointer_.setPixelsPerPoint(pixelsPerPoint);
     pixelsPerPoint_ = pixelsPerPoint;
-    look_.setScale(pixelsPerPoint);
+    look_.setRaster({.pixelsPerPoint = pixelsPerPoint});
     applyInsets();
     renderer_.resize(width, height);
     orbit_.navigated();

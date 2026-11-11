@@ -531,8 +531,10 @@ u32 swatch(const Style& style, const Look& look) {
 }
 
 StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings,
-                                float pixelsPerPoint) {
-    const float px = pixelsPerPoint;
+                                const Raster& raster) {
+    const float px = raster.pixelsPerPoint;
+    // Ink widths are in pixels of the line's weight; grain, grid and sampling steps are not.
+    const float line = px * std::max(raster.lineScale, 0.0f);
     StyleUniforms u{};
     u.sheetTop = style.sheet.top;
     u.sheetBottom = style.sheet.bottom;
@@ -559,18 +561,18 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.gridPitch = style.sheet.gridPitch * px;
     u.grain = style.sheet.grain ? std::clamp(settings.grain, 0.0f, 1.0f) : 0.0f;
     u.inkAlpha = style.ink.alpha;
-    u.silhouette = style.ink.silhouette * px;
-    u.partLine = style.ink.part * px;
-    u.crease = style.ink.crease * px;
-    u.highlight = style.ink.highlight * px;
+    u.silhouette = style.ink.silhouette * line;
+    u.partLine = style.ink.part * line;
+    u.crease = style.ink.crease * line;
+    u.highlight = style.ink.highlight * line;
     u.ghostInk = 0.4f;
     u.ghostAlpha = style.ghostAlpha;
     u.ghostLineAlpha = style.ghostLineAlpha;
     u.hoverAmount = style.hoverAmount;
     u.ao = style.ao;
     u.shadowAlpha = style.shadow.alpha;
-    u.shadowSoft = style.shadow.soft <= 1.0f ? 1.0f : style.shadow.soft * px; // 1 is crisp
-    u.wobble = style.wobble ? std::clamp(settings.wobble, 0.0f, 7.0f) * px * 0.7f : 0.0f;
+    u.shadowSoft = style.shadow.soft <= 1.0f ? 1.0f : std::max(style.shadow.soft * line, 1.5f);
+    u.wobble = style.wobble ? std::clamp(settings.wobble, 0.0f, 7.0f) * line * 0.7f : 0.0f;
     u.wobblePeriod = 36.0f * px;
     u.pixelsPerPoint = px;
     u.sharpness = style.studio.sharpness;
@@ -581,7 +583,8 @@ StyleUniforms makeStyleUniforms(const Style& style, const LookSettings& settings
     u.capInk = style.capInk;
     u.metalDiffuse = style.studio.metalDiffuse;
     u.fold = style.ink.fold;
-    u.ghostLine = style.ink.ghost * px;
+    u.ghostLine = style.ink.ghost * line;
+    u.sheetAlpha = std::clamp(raster.sheetAlpha, 0.0f, 1.0f);
     return u;
 }
 

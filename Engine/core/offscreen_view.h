@@ -19,6 +19,7 @@ struct OffscreenView {
     scene::Scene scene;
     render::ViewState view;
     render::Overlay overlay;
+    double worldPerPixel = 0.0; // the scale drawn at, model units per pixel at the focus
 };
 
 /// Adds a finished cache file's segments to `out.scene`, brings `backend` up to date with it,

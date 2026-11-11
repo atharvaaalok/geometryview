@@ -5,8 +5,10 @@
 // folds in front of itself, a step in depth within one body. Ghosts get a faint outline of their
 // own. Everything is sampled through the hand-drawn wobble, so outlines wobble with the edges.
 //
-// The result blends as ink + colour * alpha, so outlines go over the colour, and print texture
-// darkens both.
+// The result blends with two sources: ink, premultiplied, plus the colour beneath times the second
+// source, so outlines go over the colour, occlusion and print texture darken it, and its alpha is
+// covered by the ink's. On an opaque frame that is the colour it always was; on a clear one the
+// alpha comes out premultiplied.
 #include "noise.h"
 #include "shared/gpu_types.h"
 #include <metal_stdlib>
@@ -48,7 +50,12 @@ static inline float lineCover(float width, float distance) {
     return 1.0 - smoothstep(0.5 * width - 0.5, 0.5 * width + 0.5, distance);
 }
 
-fragment float4 compositeFragment(float4 position [[position]],
+struct CompositeOut {
+    float4 ink [[color(0), index(0)]];
+    float4 keep [[color(0), index(1)]]; // what is kept of the colour beneath, per channel
+};
+
+fragment CompositeOut compositeFragment(float4 position [[position]],
                                   constant FrameUniforms& frame [[buffer(kBufferFrame)]],
                                   constant StyleUniforms& style [[buffer(kBufferStyle)]],
                                   texture2d<float> depths [[texture(kTexturePickDepths)]],
@@ -157,5 +164,6 @@ fragment float4 compositeFragment(float4 position [[position]],
         const float blotch = valueNoise(px / (90.0 * style.pixelsPerPoint));
         print = mix(1.0, (0.955 + 0.07 * fine) * (0.975 + 0.05 * blotch), style.grain);
     }
-    return float4(style.ink * ink * print, (1.0 - ink) * shade * print);
+    return {float4(style.ink * ink * print, ink),
+            float4(float3((1.0 - ink) * shade * print), 1.0 - ink)};
 }

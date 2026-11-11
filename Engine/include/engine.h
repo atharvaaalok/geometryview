@@ -121,6 +121,26 @@ bool geo_style_casts_shadow(GeoStyle style);
 /// Whether a style draws on a dark sheet, where the interface over it reads in light ink.
 bool geo_style_on_dark(GeoStyle style);
 
+/// A style's sheet, for drawing it outside the engine, as the gallery does behind pictures drawn on
+/// a clear sheet. Colours are sRGB, 0 to 1. The engine draws it as a vertical wash from top to
+/// bottom; darkened by `1 - vignette * smoothstep(0.3, 1, r)`, r the distance from the middle in
+/// view heights; a drafting grid of `grid_pitch` points with heavier lines every five; and, where
+/// the style has grain, paper tooth toward `grain_tint`.
+typedef struct GeoSheet {
+    float top[3];
+    float bottom[3];
+    float vignette;
+    float grid[3];
+    float grid_alpha;
+    float grid_pitch; // points, or 0 for no grid
+    float grain_tint[3];
+    bool grain;
+    float ink[3]; // the style's lines
+    bool on_dark;
+} GeoSheet;
+
+GeoSheet geo_style_sheet(GeoStyle style);
+
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {
     GeoActionFit = 0,
@@ -363,9 +383,10 @@ void geo_engine_report_latency(GeoEngine* engine);
 /// Prints current and peak memory footprint to stderr when GEOMETRYVIEW_TRACE is set.
 void geo_trace_memory(const char* label);
 
-/// How to render a cache file headlessly.
+/// How to render a cache file headlessly. Start from geo_default_render_options, since fields are
+/// added over time.
 typedef struct GeoRenderOptions {
-    uint32_t width, height; // pixels, drawn as for a 2x display
+    uint32_t width, height; // pixels
     double azimuth_degrees; // the view direction
     double elevation_degrees;
     bool perspective;
@@ -375,16 +396,64 @@ typedef struct GeoRenderOptions {
     // Comma-separated part names: only parts whose names contain one of them, ignoring ASCII case,
     // are drawn, and the view frames them. Null draws everything.
     const char* isolate;
+    float pixels_per_point; // the display scale lines, grain and the overlay are drawn for: 2
+    float line_scale;       // the weight of lines against it: 1, less for small pictures
+    // Where a file's colours start in the cycle of part colours (0 mustard, 1 mint, 2 tomato,
+    // 3 blush, ...), or -1 to start at the first.
+    int32_t first_color;
+    // Leaves the background clear: the part, its lines and its shadow, with premultiplied alpha.
+    bool transparent;
+    // A fixed scale for an orthographic view, in model units per pixel, so pictures of different
+    // files compare; 0 frames the file to fit.
+    double world_per_pixel;
 } GeoRenderOptions;
 
-/// The options gcli render starts from: 1600 by 1000, from the front right and above, with the
-/// overlay and the default look.
+/// The options gcli render starts from: 1600 by 1000 pixels at 2 per point, from the front right
+/// and above, framed to fit, with the overlay and the default look on an opaque sheet.
 GeoRenderOptions geo_default_render_options(void);
 
 /// Renders a cache file to a PNG, framed to fit, for tests and `gcli render`. Returns false and
 /// prints why on failure, including when nothing matches `isolate`.
 bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_path,
                             const char* png_path, const GeoRenderOptions* options);
+
+/// Renders cache files to pictures with one renderer kept for all of them, for the gallery: far
+/// cheaper per picture than geo_render_blob_to_png, which sets a renderer up for each. Holds at
+/// most the last file it drew. Use from one thread at a time.
+typedef struct GeoThumbnailer GeoThumbnailer;
+
+/// A rendered picture.
+typedef struct GeoThumbnail {
+    uint8_t* bgra; // BGRA pixels, premultiplied when drawn on a clear sheet
+    uint32_t width, height;
+    bool premultiplied;
+    double world_per_pixel; // the scale drawn at, model units per pixel
+    // The pixels holding the part itself, as x, y, width and height: without its cast shadow or
+    // the outer half of its outline, so pictures stand on a baseline by it. Zero if none.
+    uint32_t part_rect[4];
+    // Every pixel drawn, the shadow included; the whole frame on an opaque sheet.
+    uint32_t ink_rect[4];
+} GeoThumbnail;
+
+/// Returns null if the device cannot run the renderer, printing why.
+GeoThumbnailer* geo_thumbnailer_create(const char* shader_library_path);
+
+/// Renders a finished cache file as `options` say. On failure returns false with the reason in
+/// `error`, and `out` is left empty.
+bool geo_thumbnailer_render(GeoThumbnailer* thumbnailer, const char* blob_path,
+                            const GeoRenderOptions* options, GeoThumbnail* out, char* error,
+                            uint32_t error_capacity);
+
+/// Lets go of the last file drawn, so an idle thumbnailer holds no geometry.
+void geo_thumbnailer_trim(GeoThumbnailer* thumbnailer);
+
+void geo_thumbnailer_destroy(GeoThumbnailer* thumbnailer);
+
+/// Writes a picture to a PNG, with its alpha if it has one.
+bool geo_thumbnail_write_png(const GeoThumbnail* thumbnail, const char* path);
+
+/// Frees a picture's pixels and empties it.
+void geo_thumbnail_free(GeoThumbnail* thumbnail);
 
 #ifdef __cplusplus
 }

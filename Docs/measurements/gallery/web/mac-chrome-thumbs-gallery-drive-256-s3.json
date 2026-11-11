@@ -1,0 +1,30 @@
+{
+  "label": "mac-chrome-thumbs-gallery-drive-256-s3",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "model": "gallery-drive",
+  "style": 3,
+  "size": 256,
+  "count": 60,
+  "fileKB": 304,
+  "wallMs": 174,
+  "perPictureMs": 2.9,
+  "heapMB": 16,
+  "adapter": "apple metal-3",
+  "thumbnails": {
+    "count": 60,
+    "pixels": 256,
+    "style": 3,
+    "prepareMs": {
+      "p50": 0.135,
+      "p90": 0.17
+    },
+    "totalMs": {
+      "first": 26.71,
+      "p50": 2.165,
+      "p90": 2.68
+    },
+    "coverage": 0.267,
+    "bufferMB": 1.1,
+    "targetMB": 2.2
+  }
+}

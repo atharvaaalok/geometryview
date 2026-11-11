@@ -201,7 +201,8 @@ public:
     }
 
     // Outlines and print texture, over the resolved image: each pixel's result is premultiplied
-    // ink plus what remains of the colour beneath, so it blends as ink + colour * alpha.
+    // ink plus the colour beneath times the second source, what remains of it. Alpha blends the
+    // same way, so a frame on a clear sheet comes out premultiplied.
     id<MTLRenderPipelineState> composite(bool outlines) {
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
         [constants setConstantValue:&outlines type:MTLDataTypeBool atIndex:kConstantOutlines];
@@ -212,9 +213,9 @@ public:
         color.pixelFormat = kColorFormat;
         color.blendingState = MTL4BlendStateEnabled;
         color.sourceRGBBlendFactor = MTLBlendFactorOne;
-        color.destinationRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        color.destinationRGBBlendFactor = MTLBlendFactorSource1Color;
         color.sourceAlphaBlendFactor = MTLBlendFactorOne;
-        color.destinationAlphaBlendFactor = MTLBlendFactorSourceAlpha;
+        color.destinationAlphaBlendFactor = MTLBlendFactorSource1Alpha;
         return build(descriptor, "Could not create the composite pipeline");
     }
 

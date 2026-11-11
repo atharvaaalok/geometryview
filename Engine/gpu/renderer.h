@@ -9,6 +9,7 @@
 #include "math/geometry.h"
 #include "render/backend.h"
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <span>
@@ -72,6 +73,15 @@ public:
 
     /// A glyph's advance in the overlay atlas, in atlas pixels.
     float glyphAdvance() const override;
+
+    /// The pixels the most recent frame drew a body on, as x, y, width and height, from its ids in
+    /// CPU-visible memory: the part itself, without its cast shadow or the outer half of its
+    /// outline. Nothing if it drew none.
+    std::optional<std::array<u32, 4>> drawnBounds() const;
+
+    /// Lets go of the scene, waiting for the GPU, so a renderer kept for many files holds none of
+    /// them between renders.
+    void releaseScene();
 
     /// Reads the most recent frame's ID and depth from CPU-visible memory. No GPU round trip.
     /// Pixels outside the viewport, or with nothing drawn, return nothing.
