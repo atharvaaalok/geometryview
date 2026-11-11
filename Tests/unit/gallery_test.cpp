@@ -637,3 +637,33 @@ TEST_CASE("back up from a folder shown as a sheet, it still shrinks into its pla
     CHECK(t.rect[0] == plate.x);
     CHECK(t.rect[2] == plate.w);
 }
+
+TEST_CASE("in the sheet, every part's shadow stays above its labels") {
+    for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+        CAPTURE(scale);
+        Gallery g = measured();
+        g.setView(GeoViewSheet);
+        g.setSheet(scale, 128.0f, GeoSortName);
+        g.layout();
+        const std::vector<GeoGalleryItem>& items = g.display().items();
+        usize checked = 0;
+        for (usize i = 0; i < items.size(); ++i) {
+            if (items[i].kind != GeoItemPicture) {
+                continue;
+            }
+            const Picture& p = *g.tree().file(items[i].file).picture;
+            const float k = items[i].width / float(p.width);
+            const float inkBottom = items[i].y + (p.ink[1] + p.ink[3]) * k;
+            // The file's label is the next text with its target.
+            for (usize j = i + 1; j < items.size(); ++j) {
+                if (items[j].kind == GeoItemText && items[j].target == items[i].file) {
+                    CHECK(inkBottom <= items[j].baseline - 1.025f * 10.5f + 0.01f);
+                    ++checked;
+                    break;
+                }
+            }
+        }
+        CHECK(checked > 20);
+        checkAligned(g);
+    }
+}

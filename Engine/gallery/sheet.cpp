@@ -148,7 +148,8 @@ public:
             files = bySize(tree, files);
         }
         const std::vector<u32> ok = drawable(tree, files);
-        const FamilyScale family = familyScale(tree, ok, cw - 14.0f, picH - 8.0f, 1.0, 2.0);
+        const FamilyScale family =
+            familyScale(tree, ok, cw - 14.0f, picH - 8.0f, 1.0, 2.0, /*shadows=*/true);
         std::optional<double> mm;
         if (in.sheetScale == GeoScaleFolder) {
             mm = family.mmPerPoint;
@@ -192,10 +193,20 @@ public:
         const float ch = picH + 32.0f;
         for (usize start = 0; start < shown; start += columns) {
             const u32 partGroup = newGroup(), line1 = newGroup(), line2 = newGroup();
+            // The row's parts stand on one line, raised by its deepest shadow, so every shadow
+            // stays above the labels.
+            float below = 0.0f;
+            for (usize c = 0; c < columns && start + c < shown; ++c) {
+                const File& f = tree.file(files[start + c]);
+                if (const std::optional<Drawn> d = drawnOf(f)) {
+                    below = std::max(below, float(d->below / scaleOf(f, *d, cw, picH, mm).first));
+                }
+            }
             for (usize c = 0; c < columns && start + c < shown; ++c) {
                 const u32 file = files[start + c];
                 const float cx = kContentLeft + float(c) * (cw + kGap);
-                cell(file, cx, y, cw, picH, ch, mm, partGroup, line1, line2, columnGroups[c]);
+                cell(file, cx, y, cw, picH, ch, mm, below, partGroup, line1, line2,
+                     columnGroups[c]);
             }
             y += ch + kRowGap;
         }
@@ -210,8 +221,35 @@ public:
         return y + 20.0f;
     }
 
+    /// The scale a file is drawn at in its cell, and the stamp that says it is not the folder's:
+    /// the scale that fits it and its shadow, no finer than its picture's pixels allow.
+    std::pair<double, std::string> scaleOf(const File& f, const Drawn& d, float cw, float picH,
+                                           std::optional<double> mm) const {
+        double fit = std::max(d.w / double(cw - 10.0f), (d.h + d.below) / double(picH - 4.0f));
+        if (f.picture && f.picture->mmPerPixel > 0) {
+            fit = std::max(fit, f.picture->mmPerPixel / kMaxPointsPerPixel);
+        }
+        double scale = mm.value_or(fit);
+        std::string stamp;
+        if (mm && scale < fit) {
+            scale = fit;
+            stamp = "SMALLER";
+        }
+        if (in.sheetScale == GeoScaleTrue && mm && stamp.empty() && largest(d) / scale < 10.0) {
+            // Too small to see at true scale: drawn larger, the drawing office's way.
+            for (const int n : {2, 5, 10, 20, 50, 100}) {
+                if (largest(d) / scale * n >= 18.0 || n == 100) {
+                    scale = std::max(fit, scale / n);
+                    stamp = std::format("DETAIL {}:1", n);
+                    break;
+                }
+            }
+        }
+        return {scale, stamp};
+    }
+
     void cell(u32 file, float x, float y, float cw, float picH, float ch, std::optional<double> mm,
-              u32 partGroup, u32 line1, u32 line2, u32 column) {
+              float below, u32 partGroup, u32 line1, u32 line2, u32 column) {
         const File& f = tree.file(file);
         const bool hovered = in.hoverKind == GeoTargetFile && in.hover == file;
         const bool selected = in.selected == file;
@@ -239,30 +277,11 @@ public:
         }
         const u32 fade = faded ? u32(GeoItemFading) : 0u;
         const usize first = out.items().size();
-        const float baseline = y + 4.0f + picH - 4.0f;
+        const float baseline = y + picH - below;
         std::string stamp;
         if (const std::optional<Drawn> d = drawnOf(f)) {
-            // The scale that fits the cell, no finer than the picture's own pixels allow.
-            double fit = std::max(d->w / double(cw - 10.0f), d->h / double(picH - 4.0f));
-            if (f.picture && f.picture->mmPerPixel > 0) {
-                fit = std::max(fit, f.picture->mmPerPixel / kMaxPointsPerPixel);
-            }
-            double scale = mm.value_or(fit);
-            if (mm && scale < fit) {
-                scale = fit;
-                stamp = "SMALLER";
-            }
-            if (in.sheetScale == GeoScaleTrue && mm && stamp.empty() &&
-                largest(*d) / scale < 10.0) {
-                // Too small to see at true scale: drawn larger, the drawing office's way.
-                for (const int n : {2, 5, 10, 20, 50, 100}) {
-                    if (largest(*d) / scale * n >= 18.0 || n == 100) {
-                        scale = std::max(fit, scale / n);
-                        stamp = std::format("DETAIL {}:1", n);
-                        break;
-                    }
-                }
-            }
+            const auto [scale, why] = scaleOf(f, *d, cw, picH, mm);
+            stamp = why;
             const float w = float(d->w / scale);
             part(file, x + 4.0f + (cw - 8.0f - w) / 2.0f, baseline, scale, grouped(partGroup));
         } else {

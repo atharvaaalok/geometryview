@@ -735,7 +735,7 @@ public:
 } // namespace
 
 FamilyScale familyScale(const Tree& tree, const std::vector<u32>& files, float w, float h,
-                        double fraction, double over) {
+                        double fraction, double over, bool shadows) {
     FamilyScale out;
     std::vector<double> sizes;
     for (const u32 f : files) {
@@ -759,7 +759,7 @@ FamilyScale familyScale(const Tree& tree, const std::vector<u32>& files, float w
         }
         out.normal.push_back(f);
         if (d) {
-            need.push_back(std::max(d->w / w, d->h / h));
+            need.push_back(std::max(d->w / w, (d->h + (shadows ? d->below : 0.0)) / h));
         }
     }
     std::sort(need.begin(), need.end());

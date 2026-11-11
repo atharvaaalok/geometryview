@@ -59,13 +59,14 @@ LayoutResult layoutPlates(const LayoutInput& input, Display& display);
 LayoutResult layoutSheet(const LayoutInput& input, Display& display);
 
 /// A group of files at one scale: millimetres per point that fit a typical one in w × h, and those
-/// far larger than the rest (more than `over` times the median), drawn apart.
+/// far larger than the rest (more than `over` times the median), drawn apart. With `shadows`, a
+/// part's shadow below it must fit too.
 struct FamilyScale {
     double mmPerPoint = 1.0;
     std::vector<u32> normal, oversize;
 };
 FamilyScale familyScale(const Tree& tree, const std::vector<u32>& files, float w, float h,
-                        double fraction = 0.8, double over = 3.0);
+                        double fraction = 0.8, double over = 3.0, bool shadows = false);
 
 /// A scale bar's length in millimetres: 1, 2 or 5 × 10ⁿ, at least 40 points long.
 double scaleBarLength(double mmPerPoint);
