@@ -1,0 +1,30 @@
+{
+  "label": "mac-chrome-thumbs-gallery-motor-128-s2",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "model": "gallery-motor",
+  "style": 2,
+  "size": 128,
+  "count": 60,
+  "fileKB": 128,
+  "wallMs": 192,
+  "perPictureMs": 3.2,
+  "heapMB": 16,
+  "adapter": "apple metal-3",
+  "thumbnails": {
+    "count": 60,
+    "pixels": 128,
+    "style": 2,
+    "prepareMs": {
+      "p50": 0.08,
+      "p90": 0.1
+    },
+    "totalMs": {
+      "first": 42.455,
+      "p50": 2.265,
+      "p90": 2.65
+    },
+    "coverage": 0.403,
+    "bufferMB": 0.4,
+    "targetMB": 0.6
+  }
+}
