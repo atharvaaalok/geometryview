@@ -88,55 +88,34 @@ final class GalleryCheck {
             folders.append(root.appendingPathComponent(sub))
         }
         var runs: [[String: Any]] = []
-        var worst: Float = 0
-        var worstDeviation: Float = 0
-        var failures = 0
+        let names = ["plates", "sheet", "ladders", "atlas", "catalogue"]
+        let views = (0..<5).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
         for style in [GeoStyleIllustration, GeoStyleBlueprint, GeoStyleStudio] {
             useStyle(style)
-            for path in folders {
-                controller.show(root: root, folder: path)
-                let waited = await settle()
-                if path == folders.first {
-                    snapshot("gallery-\(style.rawValue).png")
-                }
-                let (lines, columns) = controller.view.measured()
-                let result = controller.gallery.check(
-                    lines: lines,
-                    columns: columns,
-                    tolerance: 0.5
-                )
-                let over = result.over.map {
-                    [
-                        "group": $0.group, "column": $0.column, "spread": Double($0.spread),
-                        "items": $0.items,
-                    ]
-                        as [String: Any]
-                }
-                let painted = lines.filter { !$0.isNaN }.count
-                // How far each item was painted from where the core laid it.
-                var deviation: Float = 0
-                for (index, item) in controller.gallery.items.enumerated() {
-                    if !lines[index].isNaN {
-                        deviation = max(deviation, abs(lines[index] - item.line))
+            for view in views {
+                for path in folders {
+                    // A folder shows the view it last showed: the view is chosen once in it.
+                    controller.show(root: root, folder: path)
+                    controller.setView(view)
+                    try? await Task.sleep(for: .milliseconds(600))  // past any move
+                    let waited = await settle()
+                    if path == folders.first {
+                        snapshot("gallery-\(names[Int(view)])-\(style.rawValue).png")
                     }
-                    if item.column != 0, !columns[index].isNaN {
-                        deviation = max(deviation, abs(columns[index] - item.column_line))
-                    }
+                    var run = measure()
+                    run["style"] = Int(style.rawValue)
+                    run["view"] = Int(view)
+                    run["folder"] = controller.gallery.folder
+                    run["waitedSeconds"] = waited
+                    run["waitingInView"] = controller.waitingInView
+                    runs.append(run)
+                    print(
+                        "gallery-check: style \(style.rawValue) \(names[Int(view)]) \(controller.gallery.folder.isEmpty ? "/" : controller.gallery.folder): \(run["groupsChecked"] ?? 0) groups, \((run["over"] as? [Any])?.count ?? 0) over 0.5 pt, waited \(String(format: "%.1f", waited)) s"
+                    )
                 }
-                worstDeviation = max(worstDeviation, deviation)
-                worst = max(worst, result.over.map(\.spread).max() ?? 0)
-                failures += result.over.count
-                runs.append([
-                    "style": Int(style.rawValue), "folder": controller.gallery.folder,
-                    "groupsChecked": Int(result.checked), "over": over, "itemsPainted": painted,
-                    "waitedSeconds": waited, "waitingInView": controller.waitingInView,
-                    "maxDeviation": Double(deviation),
-                ])
-                print(
-                    "gallery-check: style \(style.rawValue) \(controller.gallery.folder.isEmpty ? "/" : controller.gallery.folder): \(result.checked) groups, \(result.over.count) over 0.5 pt, waited \(String(format: "%.1f", waited)) s"
-                )
             }
         }
+        report["g3"] = await motionChecks(root: root, folder: folder, folders: folders)
         // No 3D frames while the gallery covers the view.
         let before = engine.stats().frames_rendered
         try? await Task.sleep(for: .seconds(3))
@@ -157,6 +136,150 @@ final class GalleryCheck {
             "gallery-check: \(failures) groups over 0.5 pt, \(after - before) 3D frames while covered"
         )
         NSApp.terminate(nil)
+    }
+
+    private var worst: Float = 0
+    private var worstDeviation: Float = 0
+    private var failures = 0
+
+    /// Every alignment group as painted, and how far each item was painted from where the core
+    /// laid it.
+    private func measure() -> [String: Any] {
+        let (lines, columns) = controller.view.measured()
+        let result = controller.gallery.check(lines: lines, columns: columns, tolerance: 0.5)
+        let over = result.over.map {
+            [
+                "group": $0.group, "column": $0.column, "spread": Double($0.spread),
+                "items": $0.items,
+            ]
+                as [String: Any]
+        }
+        var deviation: Float = 0
+        for (index, item) in controller.gallery.items.enumerated() {
+            if !lines[index].isNaN {
+                deviation = max(deviation, abs(lines[index] - item.line))
+            }
+            if item.column != 0, !columns[index].isNaN {
+                deviation = max(deviation, abs(columns[index] - item.column_line))
+            }
+        }
+        worstDeviation = max(worstDeviation, deviation)
+        worst = max(worst, result.over.map(\.spread).max() ?? 0)
+        failures += result.over.count
+        return [
+            "groupsChecked": Int(result.checked), "over": over,
+            "itemsPainted": lines.filter { !$0.isNaN }.count, "maxDeviation": Double(deviation),
+        ]
+    }
+
+    /// G3's checks: a heading of Sheet's stays at the top as its block scrolls under it; a search
+    /// fades what it did not find; Peek is painted over the view and aligned; and each move plays
+    /// for as long as the spec says, the selection kept.
+    private func motionChecks(root: URL, folder: URL, folders: [URL]) async -> [String: Any] {
+        var out: [String: Any] = [:]
+        let view = controller.view
+        let gallery = controller.gallery
+        // Sticky headings, in Sheet at the top, scrolled a third of the way.
+        controller.show(root: root, folder: folder)
+        controller.setView(GeoViewSheet.rawValue)
+        try? await Task.sleep(for: .milliseconds(600))
+        _ = await settle()
+        view.scroll(to: ((gallery.contentHeight - view.contentArea.height) / 3).rounded())
+        var sticky: [String: Any] = measure()
+        snapshot("gallery-sticky.png")
+        if let stuck = view.stuckHeading() {
+            sticky["stickyTop"] = Double(stuck.top)
+            sticky["fromViewTop"] = Double(stuck.fromViewTop)
+        }
+        out["sticky"] = sticky
+        view.scroll(to: 0)
+        // A search: what it did not find painted at 22%.
+        let first = gallery.wanted().first.map { gallery.path(of: $0.file) } ?? ""
+        let probe = String((first as NSString).lastPathComponent.prefix(3))
+        controller.search(probe)
+        var search = measure()
+        search["query"] = probe
+        search["found"] = gallery.matches.map { Int($0) } ?? -1
+        search["fadedLayers"] = view.fadedLayers
+        out["search"] = search
+        controller.search("")
+        // Peek over the first file of the first subfolder, in Sheet, where → selects a file.
+        controller.show(root: root, folder: folders.dropFirst().first ?? folder)
+        controller.setView(GeoViewSheet.rawValue)
+        try? await Task.sleep(for: .milliseconds(600))
+        _ = await settle()
+        view.press(GeoKeyRight)
+        view.press(GeoKeySpace)
+        var peek = measure()
+        peek["file"] = gallery.peeking.map { gallery.path(of: $0) } ?? ""
+        peek["fixedLayers"] = view.fixedLayers
+        out["peek"] = peek
+        snapshot("gallery-peek.png")
+        view.press(GeoKeyEscape)
+        // A switch from Plates to Sheet, which shows more: its transition and tracks, and the
+        // animations playing. Parts in both fly; those new to Sheet fade in.
+        controller.setView(GeoViewPlates.rawValue)
+        try? await Task.sleep(for: .milliseconds(700))
+        let selected = gallery.selected
+        controller.setView(GeoViewSheet.rawValue)
+        let t = gallery.transition
+        let tracks = gallery.tracks
+        out["switch"] =
+            [
+                "transition": [
+                    "kind": Int(t.kind), "duration": Double(t.duration),
+                    "fadeOut": Double(t.fade_out),
+                ],
+                "fly": tracks.filter { $0.kind == GeoTrackFly.rawValue }.count,
+                "fadeIn": tracks.filter { $0.kind == GeoTrackFadeIn.rawValue }.count,
+                "flyTiming": Array(
+                    Set(
+                        tracks.filter { $0.kind == GeoTrackFly.rawValue }.map {
+                            "\(Int($0.delay))+\(Int($0.duration))"
+                        }
+                    )
+                ),
+                "fadeTiming": Array(
+                    Set(
+                        tracks.filter { $0.kind == GeoTrackFadeIn.rawValue }.map {
+                            "\(Int($0.delay.rounded()))+\(Int($0.duration.rounded()))"
+                        }
+                    )
+                ),
+                "animations": Array(Set(view.animations())).sorted(),
+                "selectionKept": selected != nil && gallery.selected == selected,
+            ] as [String: Any]
+        try? await Task.sleep(for: .milliseconds(700))
+        // Into a folder from its plate, and back out.
+        controller.show(root: root, folder: folder)
+        controller.setView(GeoViewPlates.rawValue)
+        try? await Task.sleep(for: .milliseconds(600))
+        _ = await settle()
+        if let plate = gallery.items.first(where: { $0.target_kind == GeoTargetFolder.rawValue }) {
+            view.click(kind: GeoTargetFolder.rawValue, target: plate.target)
+            let into = gallery.transition
+            let playing = Array(Set(view.animations())).sorted()
+            try? await Task.sleep(for: .milliseconds(600))
+            view.press(GeoKeyEscape)
+            let back = gallery.transition
+            let rect = { (t: GeoGalleryTransition) in
+                [t.rect.0, t.rect.1, t.rect.2, t.rect.3].map { Int($0.rounded()) }
+            }
+            out["zoom"] =
+                [
+                    "into": [
+                        "kind": Int(into.kind), "duration": Double(into.duration),
+                        "rect": rect(into),
+                    ],
+                    "out": [
+                        "kind": Int(back.kind), "duration": Double(back.duration),
+                        "rect": rect(back),
+                    ],
+                    "animations": playing,
+                ] as [String: Any]
+            try? await Task.sleep(for: .milliseconds(600))
+        }
+        return out
     }
 
     /// Waits for the pictures in view, at most two minutes. Returns the seconds waited.
