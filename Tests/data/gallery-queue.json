@@ -1,0 +1,166 @@
+{
+  "about": "What the gallery's import queue does, step by step. The Mac's library::Queue (Tests/unit/queue_test.cpp) and the browser's ImportQueue (Web/viewer/test/import-queue.test.mjs) both run these cases. A job is [id, band, order] or [id, band, order, bytes]; bands are open, visible, near and prefetch. Each step does one thing and checks what it returns: want replaces what is wanted; next starts the best job (null when none may start); finish ends a job; stopped ends a cancelled one, which waits again if still wanted; cancel lists running jobs to cancel now; waiting and running list jobs in order.",
+  "cases": [
+    {
+      "name": "jobs start by band, then order",
+      "slots": 2,
+      "steps": [
+        {"want": [["p", "prefetch", 0], ["v2", "visible", 2], ["v1", "visible", 1], ["n", "near", 0]]},
+        {"next": "v1"},
+        {"next": "v2"},
+        {"next": null},
+        {"finish": "v1"},
+        {"next": "n"},
+        {"finish": "v2"},
+        {"next": "p"},
+        {"next": null}
+      ]
+    },
+    {
+      "name": "ties start in the order they were wanted",
+      "slots": 3,
+      "steps": [
+        {"want": [["b", "visible", 0], ["a", "visible", 0], ["c", "visible", 0]]},
+        {"waiting": ["b", "a", "c"]},
+        {"next": "b"},
+        {"next": "a"},
+        {"next": "c"}
+      ]
+    },
+    {
+      "name": "a job no longer wanted is dropped before it starts",
+      "slots": 1,
+      "steps": [
+        {"want": [["a", "visible", 0], ["b", "visible", 1]]},
+        {"next": "a"},
+        {"want": [["a", "visible", 0]]},
+        {"waiting": []},
+        {"finish": "a"},
+        {"next": null}
+      ]
+    },
+    {
+      "name": "a running job no longer wanted runs on until a visible job needs its slot",
+      "slots": 1,
+      "steps": [
+        {"want": [["a", "near", 0]]},
+        {"next": "a"},
+        {"want": [["b", "near", 0]]},
+        {"cancel": []},
+        {"want": [["b", "near", 0], ["c", "visible", 0]]},
+        {"cancel": ["a"]},
+        {"cancel": []},
+        {"next": null},
+        {"stopped": "a"},
+        {"waiting": ["c", "b"]},
+        {"next": "c"}
+      ]
+    },
+    {
+      "name": "a visible job cancels the furthest running job, never another visible one",
+      "slots": 3,
+      "steps": [
+        {"want": [["a", "visible", 0], ["n", "near", 5], ["p", "prefetch", 9]]},
+        {"next": "a"},
+        {"next": "n"},
+        {"next": "p"},
+        {"want": [["a", "visible", 0], ["n", "near", 5], ["p", "prefetch", 9], ["c", "visible", 1]]},
+        {"cancel": ["p"]},
+        {"stopped": "p"},
+        {"next": "c"},
+        {"waiting": ["p"]},
+        {"want": [["a", "visible", 0], ["n", "near", 5], ["p", "prefetch", 9], ["c", "visible", 1], ["d", "visible", 2], ["e", "visible", 3]]},
+        {"cancel": ["n"]},
+        {"stopped": "n"},
+        {"next": "d"},
+        {"next": null},
+        {"waiting": ["e", "n", "p"]}
+      ]
+    },
+    {
+      "name": "a file being opened cancels anything but another open",
+      "slots": 2,
+      "steps": [
+        {"want": [["a", "visible", 0], ["b", "visible", 1]]},
+        {"next": "a"},
+        {"next": "b"},
+        {"want": [["o", "open", 0], ["a", "visible", 0], ["b", "visible", 1]]},
+        {"cancel": ["b"]},
+        {"stopped": "b"},
+        {"next": "o"},
+        {"want": [["o", "open", 0], ["o2", "open", 1], ["a", "visible", 0], ["b", "visible", 1]]},
+        {"cancel": ["a"]}
+      ]
+    },
+    {
+      "name": "a running job's band follows what is wanted",
+      "slots": 1,
+      "steps": [
+        {"want": [["a", "prefetch", 0]]},
+        {"next": "a"},
+        {"want": [["a", "visible", 0], ["b", "visible", 1]]},
+        {"cancel": []},
+        {"running": ["a"]}
+      ]
+    },
+    {
+      "name": "prefetch waits while it is off, and files over 300 MB are never prefetched",
+      "slots": 2,
+      "prefetch": false,
+      "steps": [
+        {"want": [["p", "prefetch", 0], ["big", "prefetch", 1, 400000000], ["n", "near", 0]]},
+        {"next": "n"},
+        {"next": null},
+        {"prefetch": true},
+        {"next": "p"},
+        {"finish": "p"},
+        {"next": null},
+        {"waiting": ["big"]},
+        {"want": [["big", "visible", 0, 400000000], ["n", "near", 0]]},
+        {"next": "big"}
+      ]
+    },
+    {
+      "name": "fewer slots, as memory runs short, let running jobs finish",
+      "slots": 3,
+      "steps": [
+        {"want": [["a", "visible", 0], ["b", "visible", 1], ["c", "visible", 2], ["d", "visible", 3]]},
+        {"next": "a"},
+        {"next": "b"},
+        {"next": "c"},
+        {"slots": 1},
+        {"cancel": []},
+        {"finish": "a"},
+        {"next": null},
+        {"finish": "b"},
+        {"next": null},
+        {"finish": "c"},
+        {"next": "d"}
+      ]
+    },
+    {
+      "name": "a style change draws visible pictures first",
+      "slots": 1,
+      "steps": [
+        {"want": [["far", "near", 0], ["seen", "visible", 4], ["first", "visible", 0]]},
+        {"next": "first"},
+        {"finish": "first"},
+        {"next": "seen"},
+        {"finish": "seen"},
+        {"next": "far"}
+      ]
+    },
+    {
+      "name": "a finished job wanted again starts again",
+      "slots": 1,
+      "steps": [
+        {"want": [["a", "visible", 0]]},
+        {"next": "a"},
+        {"finish": "a"},
+        {"next": null},
+        {"want": [["a", "visible", 0]]},
+        {"next": "a"}
+      ]
+    }
+  ]
+}

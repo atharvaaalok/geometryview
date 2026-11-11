@@ -65,7 +65,7 @@ endif()
 
 # The Mac platform: Metal, the engine thread and display link, and the import helper processes.
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
-    ipc/*.cpp gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
+    ipc/*.cpp library/*.cpp library/*.mm gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
 add_library(engine STATIC ${engine_sources})
 target_include_directories(engine PUBLIC include PRIVATE .)
 target_include_directories(engine SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
