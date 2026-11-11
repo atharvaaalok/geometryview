@@ -30,6 +30,7 @@ typedef enum GeoGalleryItemFlags {
     GeoItemFading = 8,  // drawn at 22%: not what a search found
     GeoItemFixed = 16,  // placed in the view, not the content: it does not scroll (Peek)
     GeoItemSheet = 32,  // a rectangle filled with the drawing style's own sheet, as the gallery's
+    GeoItemStale = 64,  // drawn at 45%: a picture being drawn again, its file changed
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -260,6 +261,13 @@ void geo_gallery_set_search(GeoGallery* gallery, const char* query);
 const char* geo_gallery_search(const GeoGallery* gallery);
 /// Files in the folder that the search found, or UINT32_MAX with no search.
 uint32_t geo_gallery_matches(const GeoGallery* gallery);
+
+/// A file being read: how far, from 0 to 1, shown as a mustard bar on its measured box; negative
+/// once it is not. A picture ends it.
+void geo_gallery_set_reading(GeoGallery* gallery, uint32_t file, float fraction);
+/// A file changed on disk: a Δ marks it until it is seen (hovered, selected, peeked or opened), and
+/// its picture shows faded until a new one arrives. Nothing else moves.
+void geo_gallery_set_changed(GeoGallery* gallery, uint32_t file, bool changed);
 
 /// Shows a file large, with its measured size, parts, triangles and file, over the view; UINT32_MAX
 /// closes it.

@@ -240,6 +240,18 @@ float geo_gallery_reveal(const GeoGallery* gallery) {
     return gallery->gallery.reveal();
 }
 
+void geo_gallery_set_reading(GeoGallery* gallery, uint32_t file, float fraction) {
+    if (file < gallery->gallery.tree().fileCount()) {
+        gallery->gallery.setReading(file, fraction);
+    }
+}
+
+void geo_gallery_set_changed(GeoGallery* gallery, uint32_t file, bool changed) {
+    if (file < gallery->gallery.tree().fileCount()) {
+        gallery->gallery.setChanged(file, changed);
+    }
+}
+
 GeoGalleryTransition geo_gallery_transition(const GeoGallery* gallery) {
     return gallery->gallery.transition();
 }

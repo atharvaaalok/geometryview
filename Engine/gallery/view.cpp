@@ -29,7 +29,37 @@ void Gallery::setFacts(u32 file, Facts facts) {
 
 void Gallery::setPicture(u32 file, const Picture& picture) {
     tree_.setPicture(file, picture);
+    File& f = tree_.file(file);
+    f.reading = -1.0f;
+    f.stale = false;
     dirty_ = true;
+}
+
+void Gallery::setReading(u32 file, float fraction) {
+    File& f = tree_.file(file);
+    // A layout for each sixteenth read at most: the bar moves in steps it can show.
+    const float next =
+        fraction < 0.0f ? -1.0f : std::floor(std::min(fraction, 1.0f) * 16.0f) / 16.0f;
+    if (next != f.reading) {
+        f.reading = next;
+        dirty_ = true;
+    }
+}
+
+void Gallery::setChanged(u32 file, bool changed) {
+    File& f = tree_.file(file);
+    if (f.changed != changed) {
+        f.changed = changed;
+        f.stale = changed && f.picture.has_value();
+        dirty_ = true;
+    }
+}
+
+void Gallery::seen(u32 file) {
+    if (file < tree_.fileCount() && tree_.file(file).changed) {
+        tree_.file(file).changed = false;
+        dirty_ = true;
+    }
 }
 
 void Gallery::setFailure(u32 file, std::string message) {
@@ -256,6 +286,7 @@ void Gallery::peek(u32 file) {
     const u32 next = file < tree_.fileCount() ? file : kNone;
     if (next != peek_) {
         peek_ = next;
+        seen(next);
         dirty_ = true;
     }
 }
@@ -490,6 +521,9 @@ bool Gallery::hover(u32 kind, u32 index) {
     }
     hoverKind_ = kind;
     hover_ = index;
+    if (kind == GeoTargetFile) {
+        seen(index);
+    }
     dirty_ = true;
     return true;
 }
@@ -542,6 +576,7 @@ GeoGalleryAction Gallery::click(u32 kind, u32 index, bool twice) {
     case GeoTargetFolder:
         return enter(index);
     case GeoTargetFile:
+        seen(index);
         if (twice) {
             return {GeoActionOpenFile, index};
         }
@@ -638,6 +673,7 @@ GeoGalleryAction Gallery::key(u32 key) {
             if (peek_ != kNone && selected_ != kNone) {
                 peek_ = selected_; // Peek follows the selection, file to file
             }
+            seen(selected_);
             dirty_ = true;
             return {GeoActionHandled, 0};
         }

@@ -3,7 +3,7 @@
 // carries it across; this reads the items from the module's memory.
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
-export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32 });
+export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64 });
 export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5 });
 export const Keys = Object.freeze({ Left: 0, Right: 1, Up: 2, Down: 3, Enter: 4, Space: 5, Escape: 6, FolderUp: 7 });
@@ -103,6 +103,10 @@ export class GalleryCore {
     this.#string(message || "This file could not be read.", (p) => this.#m._gv_gallery_set_failure(this.#g, file, p));
   }
 
+  /** A file being read, 0 to 1, or negative once it is not. */
+  setReading(file, fraction) { this.#m._gv_gallery_set_reading(this.#g, file, fraction); }
+  /** A file changed on disk: a Δ until seen, its picture faded until a new one comes. */
+  setChanged(file, changed) { this.#m._gv_gallery_set_changed(this.#g, file, changed ? 1 : 0); }
   setStyle(style) { this.#m._gv_gallery_set_style(this.#g, style); }
   setViewport(width, height) { this.#m._gv_gallery_set_viewport(this.#g, width, height); }
   setScroll(top) { this.#m._gv_gallery_set_scroll(this.#g, top); }

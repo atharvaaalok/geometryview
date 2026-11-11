@@ -53,6 +53,9 @@ struct File {
     std::optional<Facts> facts;
     std::optional<Picture> picture;
     std::string failure; // why it could not be read, or empty
+    float reading = -1.0f; // how far it has been read, 0 to 1, while it is; else negative
+    bool changed = false;  // changed on disk, not seen since: marked with a Δ
+    bool stale = false;    // its picture is from before it changed
 
     bool failed() const { return !failure.empty(); }
     /// Its largest side in millimetres, or 0 when unknown.

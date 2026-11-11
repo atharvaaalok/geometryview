@@ -390,7 +390,10 @@ final class GalleryView: NSView {
             let pool = isFixed ? fixedPool : contentPool
             // Headings stay above what scrolls under them.
             let z = CGFloat(isSticky ? items.count + index : index)
-            let fade: Float = item.flags & GeoItemFading.rawValue != 0 ? 0.22 : 1
+            // What a search did not find, at 22%; a picture being drawn again, at 45%.
+            let fade: Float =
+                (item.flags & GeoItemFading.rawValue != 0 ? 0.22 : 1)
+                * (item.flags & GeoItemStale.rawValue != 0 ? 0.45 : 1)
             var layers: [CALayer] = []
             switch item.kind {
             case GeoItemRect.rawValue:

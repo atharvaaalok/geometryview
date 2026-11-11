@@ -503,7 +503,7 @@ public:
             for (usize i = 0; i < all.size() && shown < fit; i += step, ++shown) {
                 const Drawn d = *drawnOf(tree.file(all[i]));
                 const double mmTiny = std::max(d.w / 13.0, d.h / 13.0);
-                const auto size = part(all[i], sx, stripY + 15.0f, mmTiny, g);
+                const auto size = part(all[i], sx, stripY + 15.0f, mmTiny, g, /*marks=*/false);
                 sx += size[0] + 2.0f;
             }
             out.group(0);

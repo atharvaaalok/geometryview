@@ -79,6 +79,15 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_set_failure(GeoGallery* gallery, uint32_t f
     geo_gallery_set_failure(gallery, file, message);
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_reading(GeoGallery* gallery, uint32_t file,
+                                                 float fraction) {
+    geo_gallery_set_reading(gallery, file, fraction);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_changed(GeoGallery* gallery, uint32_t file, int changed) {
+    geo_gallery_set_changed(gallery, file, changed != 0);
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_style(GeoGallery* gallery, uint32_t style) {
     geo_gallery_set_style(gallery, style);
 }

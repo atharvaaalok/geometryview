@@ -46,7 +46,9 @@ public:
     u32 newGroup() { return ++result.groups; }
     /// A file's part, its bottom at `bottom`, its left edge at `x`, at `mmPerPoint`: its picture,
     /// or its measured box in construction lines. Returns its size in points.
-    std::array<float, 2> part(u32 file, float x, float bottom, double mmPerPoint, u32 group);
+    /// With `marks`, a file being read shows its bar and a changed one its Δ.
+    std::array<float, 2> part(u32 file, float x, float bottom, double mmPerPoint, u32 group,
+                              bool marks = true);
     void lastLine(float line) { out.last().line = line; }
     /// A scale bar: its length above an ink bracket. Returns its width; the number stands on
     /// `baseline`, centred in it.
