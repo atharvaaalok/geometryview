@@ -59,6 +59,7 @@ typedef enum GeoLibraryEventKind {
     GeoLibraryProgress = 2,
     GeoLibraryFailed = 3,
     GeoLibraryTurnFrame = 4, // a turntable's frame: `done` of `total`, in `picture`
+    GeoLibraryDetail = 5,    // a detail picture, twice the pixels, of a file drawn large
 } GeoLibraryEventKind;
 
 typedef struct GeoLibraryEvent {
@@ -90,7 +91,8 @@ typedef struct GeoPictureSpec {
     GeoColorMode color_mode;
     uint32_t pixels; // the picture's side
     float pixels_per_point;
-    float line_scale; // clamp(cell / 320, 0.5, 1)
+    float line_scale;     // clamp(cell / 320, 0.5, 1)
+    uint32_t supersample; // drawn this many times as large and averaged down: 2, or 0 / 1 for none
 } GeoPictureSpec;
 
 /// Returns null if the caches cannot be made.
@@ -102,6 +104,14 @@ void geo_library_destroy(GeoLibrary* library);
 void geo_library_want(GeoLibrary* library, const GeoLibraryWant* wants, uint32_t count);
 void geo_library_set_picture(GeoLibrary* library, const GeoPictureSpec* spec);
 void geo_library_set_prefetch(GeoLibrary* library, bool allowed);
+/// The files the gallery draws large (geo_gallery_details): each gets a detail picture, twice the
+/// pixels at twice the pixels a point (the same picture, sharper), drawn after the pictures in
+/// view, kept, and told as a GeoLibraryDetail. Replaces the last set; none stops them.
+void geo_library_detail(GeoLibrary* library, const char* const* paths, uint32_t count);
+/// Forgets what it has told of each file: those wanted next are looked up again and their facts,
+/// pictures and failures told again, from the caches, without importing. For a gallery that has
+/// dropped what it knew, as on showing another connected folder.
+void geo_library_reset(GeoLibrary* library);
 /// Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly about
 /// the upright at one scale, ahead of any other picture, each told as a GeoLibraryTurnFrame.
 /// 0 frames, or a null path, stops it.
