@@ -9,6 +9,7 @@
 #include "gallery/view.h"
 
 #include <doctest/doctest.h>
+#include <cmath>
 #include <format>
 #include <map>
 #include <string>
