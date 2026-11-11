@@ -11,7 +11,7 @@ target_link_libraries(geo_format PUBLIC geo_base PRIVATE geo_warnings)
 # The engine's logic and the layers under it, the same on every platform: no Metal, no threads of
 # its own, no processes. The Mac engine and the universal viewer each add a platform around it.
 file(GLOB_RECURSE engine_core_sources CONFIGURE_DEPENDS
-    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp core/*.cpp)
+    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp core/*.cpp gallery/*.cpp)
 add_library(engine_core STATIC ${engine_core_sources})
 target_include_directories(engine_core PUBLIC include PUBLIC .)
 target_include_directories(engine_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")

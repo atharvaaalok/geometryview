@@ -2,7 +2,7 @@ if(GEO_TARGET STREQUAL "wasm")
     # The portable unit tests, run by Node. Tests of Metal, the import processes and the engine
     # thread stay native.
     set(portable_tests
-        blob camera core edges face_state facts flight indexed_mesh interaction json name_index overlay packer
+        blob camera core edges face_state facts flight gallery indexed_mesh interaction json name_index overlay packer
         parallel parallel_sort part21 pointer_controller refinement segment shell slice_ladder spsc_ring
         step_structure stl_reader style)
     list(TRANSFORM portable_tests PREPEND unit/)
