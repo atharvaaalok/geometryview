@@ -148,7 +148,7 @@ TEST_CASE("plates lay out with every row and column on one line, in every style"
         g.setViewport(1080.0f, 720.0f);
         REQUIRE(g.layout());
         CHECK_FALSE(g.layout()); // nothing changed
-        CHECK(g.result().plates.size() == 4);
+        CHECK(g.result().plates.size() == 3); // drafts holds nothing, so has no plate
         CHECK(g.result().parts.size() == 2); // the root's own files, on a shelf
         CHECK(g.result().covers.size() > 4);
         checkAligned(g);
@@ -311,4 +311,32 @@ TEST_CASE("the C interface lays out and reports alignment as painted") {
     }
     CHECK(geo_gallery_check(g, lines.data(), columns.data(), 0.5f, over, 8, &checked) == 1);
     geo_gallery_destroy(g);
+}
+
+TEST_CASE("a gallery with nothing in it says so") {
+    Gallery g;
+    g.setViewport(800.0f, 600.0f);
+    CHECK(g.layout());
+    CHECK(g.display().textBuffer().find("No STEP or STL files here.") != std::string::npos);
+    CHECK(g.wanted().empty());
+    CHECK(g.key(GeoKeyEscape).kind == GeoActionLeave);
+    GeoGallery* c = geo_gallery_create();
+    geo_gallery_layout(c);
+    CHECK(geo_gallery_item_count(c) == 3);
+    CHECK(std::string(geo_gallery_folder(c)).empty());
+    geo_gallery_destroy(c);
+}
+
+TEST_CASE("an empty folder says so") {
+    Gallery g;
+    const std::vector<Entry> entries = library();
+    g.setEntries("Parts", entries);
+    REQUIRE(g.setFolder("drafts"));
+    g.setViewport(900.0f, 600.0f);
+    g.layout();
+    bool said = false;
+    const std::string& text = g.display().textBuffer();
+    said = text.find("No STEP or STL files here.") != std::string::npos &&
+           text.find("DRAFTS") != std::string::npos;
+    CHECK(said);
 }

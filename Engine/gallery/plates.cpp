@@ -862,6 +862,20 @@ public:
         return y;
     }
 
+    // A folder with nothing to draw says so, in the Library's own words.
+    float empty(u32 folder, float y, float width, float height) {
+        const float h = std::max(160.0f, height * 0.5f);
+        out.rect(kContentLeft + 22.0f, y + 22.0f, width - 44.0f, h - 44.0f, 0, palette.rule, 1.5f,
+                 10.0f, GeoItemDashed);
+        constexpr TextStyle kHeading{12.5f, 600, 0.06f, true};
+        const float middle = y + h / 2.0f;
+        out.text(tree.titleOf(folder) + " \xC2\xB7 0 files", kHeading, palette.on, kContentLeft,
+                 middle - 2.0f, width, 1);
+        out.text("No STEP or STL files here.", kSectionMeta, palette.muted, kContentLeft,
+                 middle + 16.0f, width, 1);
+        return y + h;
+    }
+
     const LayoutInput& in;
     const Tree& tree;
     Display& out;
@@ -927,16 +941,25 @@ LayoutResult layoutPlates(const LayoutInput& input, Display& display) {
     const float width = input.width - kContentLeft - kContentRight;
     float y = kContentTop;
     const u32 leftGroup = painter.newGroup();
-    if (!folder.folders.empty()) {
+    // Folders with nothing to draw get no plate; entered, they say so.
+    std::vector<u32> plated;
+    for (const u32 f : folder.folders) {
+        if (tree.folder(f).count > 0) {
+            plated.push_back(f);
+        }
+    }
+    if (!plated.empty()) {
         const float gridHeight =
             folder.files.empty() ? input.height - 34.0f : std::min(input.height * 0.48f, 360.0f);
-        y = painter.plates(folder.folders, y, width, gridHeight, leftGroup);
+        y = painter.plates(plated, y, width, gridHeight, leftGroup);
         if (!folder.files.empty()) {
             y += 26.0f;
             y = painter.files(input.folder, y, width, leftGroup);
         }
     } else if (!folder.files.empty()) {
         y = painter.files(input.folder, y, width, leftGroup);
+    } else {
+        y = painter.empty(input.folder, y, width, input.height);
     }
     result.contentHeight = y + kContentBottom;
     return result;

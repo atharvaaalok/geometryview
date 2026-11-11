@@ -73,6 +73,9 @@ struct Folder {
 
 class Tree {
 public:
+    /// An empty tree: its root and nothing in it.
+    Tree() { build("", {}); }
+
     /// Builds the tree from a scan: folders from the paths of files and of folders listed alone.
     /// Folders and files are ordered as names read, numbers by value.
     void build(std::string_view title, std::span<const Entry> entries);

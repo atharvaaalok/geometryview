@@ -306,6 +306,16 @@ std::vector<GeoGalleryWant> Gallery::wanted() const {
             }
         }
     }
+    // A plate in view wants a sample of its files, spread through them, before any is measured:
+    // its cover is drawn from those.
+    for (const LayoutResult::Place& p : result_.plates) {
+        const bool inView = p.y + p.h >= top && p.y <= bottom;
+        const std::vector<u32> under = tree_.filesUnder(p.index);
+        const usize n = std::min<usize>(under.size(), 12);
+        for (usize i = 0; i < n; ++i) {
+            add(under[i * under.size() / n], inView ? 1 : 2, std::fabs(p.y - middle) + double(i));
+        }
+    }
     // Files not drawn yet in this folder's own shelf are in view too, so they get their facts.
     for (const u32 f : tree_.folder(folder_).files) {
         add(f, 2, 1e6 + double(f));
