@@ -10,6 +10,7 @@
 
 #include <doctest/doctest.h>
 #include <format>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -757,6 +758,86 @@ TEST_CASE("a poster prints the view on one sheet, its title above and a rule bel
                 // Every folder holding files is a plate: bearing, the hex nuts and motor. The top's
                 // own files, beside its folders, get none.
                 CHECK(g.result().plates.size() == 3);
+            }
+        }
+    }
+}
+
+TEST_CASE("on a phone, plates stand two abreast, the sheet three, and Peek fits") {
+    Gallery g = measured();
+    g.setViewport(374.0f, 620.0f); // a 390 pt phone, less 8 each side
+    g.layout();
+    REQUIRE(g.result().plates.size() >= 2);
+    CHECK(g.result().plates[0].y == g.result().plates[1].y); // two abreast
+    for (const auto& p : g.result().plates) {
+        CHECK(p.x + p.w <= 374.0f);
+    }
+    g.setView(GeoViewSheet);
+    g.layout();
+    std::map<float, usize> rows;
+    for (const auto& p : g.result().parts) {
+        ++rows[p.y];
+        CHECK(p.x + p.w <= 374.0f);
+    }
+    usize widest = 0;
+    for (const auto& [y, n] : rows) {
+        widest = std::max(widest, n);
+    }
+    CHECK(widest == 3);
+    g.click(GeoTargetFile, g.result().parts[0].index, false);
+    g.key(GeoKeySpace);
+    g.layout();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if ((item.flags & GeoItemFixed) != 0) {
+            CHECK(item.x >= 0.0f);
+            CHECK(item.x + item.width <= 374.0f + 0.01f);
+            CHECK(item.y + item.height <= 620.0f + 0.01f);
+        }
+    }
+    checkAligned(g);
+}
+
+TEST_CASE("no two texts on one line overlap, from a phone's width to a wide window") {
+    for (const float width : {374.0f, 500.0f, 1080.0f, 1800.0f}) {
+        for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet)}) {
+            for (const char* folder : {"", "bearing", "motor"}) {
+                CAPTURE(width);
+                CAPTURE(view);
+                CAPTURE(folder);
+                Gallery g = measured();
+                g.setViewport(width, 720.0f);
+                REQUIRE(g.setFolder(folder));
+                g.setView(view);
+                g.layout();
+                struct Span {
+                    float baseline, left, right;
+                    std::string text;
+                };
+                std::vector<Span> spans;
+                const std::string& buffer = g.display().textBuffer();
+                for (const GeoGalleryItem& item : g.display().items()) {
+                    if (item.kind != GeoItemText) {
+                        continue;
+                    }
+                    const std::string text = buffer.substr(item.text, item.text_length);
+                    const float used =
+                        float(characters(text)) * (0.6f * item.font_size + item.tracking);
+                    const float left = item.align == 1   ? item.x + (item.width - used) / 2.0f
+                                       : item.align == 2 ? item.x + item.width - used
+                                                         : item.x;
+                    spans.push_back({item.baseline, left, left + used, text});
+                }
+                for (usize a = 0; a < spans.size(); ++a) {
+                    for (usize b = a + 1; b < spans.size(); ++b) {
+                        if (std::fabs(spans[a].baseline - spans[b].baseline) > 0.5f) {
+                            continue;
+                        }
+                        CAPTURE(spans[a].text);
+                        CAPTURE(spans[b].text);
+                        CHECK((spans[a].right <= spans[b].left + 0.5f ||
+                               spans[b].right <= spans[a].left + 0.5f));
+                    }
+                }
             }
         }
     }
