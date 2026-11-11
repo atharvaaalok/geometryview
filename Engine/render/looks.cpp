@@ -61,7 +61,8 @@ u32 groupOf(const format::SegmentView& model, u32 node) {
 
 } // namespace
 
-LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode) {
+LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode,
+                           std::span<const std::optional<u32>> firstColors) {
     LookAssignment out;
     out.ofOccurrence.reserve(scene.occurrenceCount());
     LookTable table;
@@ -73,6 +74,11 @@ LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode) {
             continue;
         }
         const format::SegmentView& model = document.model();
+        // A document with a first colour counts on its own from there.
+        const std::optional<u32> first = d < firstColors.size() ? firstColors[d] : std::nullopt;
+        u32 ownGroups = first.value_or(0), ownParts = first.value_or(0);
+        u32& groupCount = first ? ownGroups : groups;
+        u32& partCount = first ? ownParts : parts;
         // Names repeat across instances, so each node is read once.
         std::vector<i32> materialOfNode(model.nodes.size(), -2); // -2 unread, -1 none
         std::vector<u32> numberOfNode(model.nodes.size(), ~0u);
@@ -104,7 +110,7 @@ LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode) {
                 break;
             case ColorMode::Parts:
                 look.kind = Look::Kind::Cycle;
-                look.index = numberOf(partOf(model, node), parts) % kCyclePeriod;
+                look.index = numberOf(partOf(model, node), partCount) % kCyclePeriod;
                 break;
             case ColorMode::Material: {
                 i32 material = materialOf(node);
@@ -117,7 +123,7 @@ LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode) {
                 } else {
                     look.kind = Look::Kind::Cycle;
                     look.byGroup = true;
-                    look.index = numberOf(groupOf(model, node), groups) % kCyclePeriod;
+                    look.index = numberOf(groupOf(model, node), groupCount) % kCyclePeriod;
                 }
                 break;
             }

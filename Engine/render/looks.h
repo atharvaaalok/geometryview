@@ -5,6 +5,7 @@
 #include "render/style.h"
 #include "scene/scene.h"
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -21,7 +22,13 @@ struct LookAssignment {
 /// Material mode reads names, a body's and then its part's, and otherwise cycles colours per
 /// top-level sub-assembly, so neighbouring groups differ. Parts mode cycles per part. File mode
 /// uses stored colours, and mono gives every body the same neutral look.
-LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode);
+///
+/// Cycle numbers count across documents, so two files shown together differ, except for a
+/// document given a first colour in `firstColors` (indexed by document): its numbering starts at
+/// that place in the cycle and leaves the shared count alone. The gallery uses it to give a file
+/// its folder's colour.
+LookAssignment assignLooks(const scene::Scene& scene, ColorMode mode,
+                           std::span<const std::optional<u32>> firstColors = {});
 
 /// Three palette texels for each look under a style, in look order.
 std::vector<u32> paletteTexels(const Style& style, std::span<const Look> looks);

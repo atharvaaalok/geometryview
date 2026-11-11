@@ -19,7 +19,7 @@ namespace {
 struct Drive {
     scene::Scene scene;
 
-    Drive() {
+    explicit Drive(u32 documents = 1) {
         import::ModelData model;
         const auto node = [&](u32 parent, u32 end, u32 first, u32 last, NodeKind kind,
                               std::string_view name) {
@@ -47,15 +47,17 @@ struct Drive {
         import::BlobStream stream(fd, nullptr);
         REQUIRE(stream.writeModel(model));
         REQUIRE(stream.finish({}));
-        std::vector<std::shared_ptr<scene::Segment>> segments;
-        std::string error;
-        REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+        for (u32 d = 0; d < documents; ++d) {
+            std::vector<std::shared_ptr<scene::Segment>> segments;
+            std::string error;
+            REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+            scene::Document& document = scene.document(scene.addDocument());
+            for (auto& segment : segments) {
+                REQUIRE(document.add(std::move(segment), error));
+            }
+        }
         close(fd);
         unlink(path);
-        scene::Document& document = scene.document(scene.addDocument());
-        for (auto& segment : segments) {
-            REQUIRE(document.add(std::move(segment), error));
-        }
     }
 
     Look lookOf(const LookAssignment& assignment, u32 occurrence) const {
@@ -185,6 +187,34 @@ TEST_CASE("parts, file and mono modes") {
 
     const LookAssignment mono = assignLooks(drive.scene, ColorMode::Mono);
     CHECK(mono.looks.size() == 1);
+}
+
+TEST_CASE("a document given a first colour starts the cycle there, leaving the count alone") {
+    const Drive drive(3);
+    const std::array<std::optional<u32>, 3> first = {std::nullopt, 2u, std::nullopt};
+    const LookAssignment parts = assignLooks(drive.scene, ColorMode::Parts, first);
+    REQUIRE(parts.ofOccurrence.size() == 12);
+    for (u32 o = 0; o < 4; ++o) {
+        CHECK(drive.lookOf(parts, o).index == o);         // counting from 0
+        CHECK(drive.lookOf(parts, 4 + o).index == 2 + o); // its own count, from tomato
+        CHECK(drive.lookOf(parts, 8 + o).index == 4 + o); // on from the first document
+    }
+    // A one-part file with a first colour is drawn in that colour of the cycle: tomato.
+    CHECK(swatch(styleNamed(StyleName::Illustration), drive.lookOf(parts, 4)) ==
+          swatch(styleNamed(StyleName::Illustration), Look{Look::Kind::Cycle, {}, false, 2}));
+
+    // Material mode's fallback counts groups the same way; names still win.
+    const LookAssignment material = assignLooks(drive.scene, ColorMode::Material, first);
+    CHECK(drive.lookOf(material, 5).index == 2);
+    CHECK(drive.lookOf(material, 6).index == 3);
+    CHECK(drive.lookOf(material, 9).index == 2); // groups 2 and 3, after the first document's
+    CHECK(drive.lookOf(material, 4).material == MaterialClass::LaminationCool);
+
+    // File and mono modes have no cycle to start.
+    const LookAssignment mono = assignLooks(drive.scene, ColorMode::Mono, first);
+    CHECK(mono.looks.size() == 1);
+    const LookAssignment file = assignLooks(drive.scene, ColorMode::File, first);
+    CHECK(drive.lookOf(file, 7).color == 0xFF00FF00u);
 }
 
 TEST_CASE("swatches follow each occurrence's look and the style") {

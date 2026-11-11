@@ -39,7 +39,7 @@ void LookState::setScale(float pixelsPerPoint) {
 void LookState::apply(render::Backend& renderer, const scene::Scene& scene) {
     const render::Style& style = render::styleNamed(settings_.style);
     if (looksDirty_) {
-        looks_ = render::assignLooks(scene, settings_.colorMode);
+        looks_ = render::assignLooks(scene, settings_.colorMode, firstColors_);
         looksDirty_ = false;
         paletteDirty_ = true;
         swatchesDirty_ = true;
