@@ -94,6 +94,7 @@ struct Command {
         SetMouse,
         Snapshot,
         RequestFrame,
+        SetCovered,
         Stop
     };
     Kind kind;
@@ -137,6 +138,8 @@ struct GeoEngine final : engine::Host {
     id<MTLDevice> device = nil;
     std::unique_ptr<gpu::Renderer> renderer;
     gpu::DisplayLinkFrameSource frames;
+    bool framesWanted = false;
+    bool covered = false;
     std::unique_ptr<engine::Core> core;
 
     ipc::ImportPaths importPaths;
@@ -193,7 +196,11 @@ struct GeoEngine final : engine::Host {
         return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
     }
 
-    void runFrames(bool running) override { frames.setRunning(running); }
+    // The core asks for frames; they run only while the view is not covered, as by the gallery.
+    void runFrames(bool running) override {
+        framesWanted = running;
+        frames.setRunning(running && !covered);
+    }
 
     void scheduleRefinement(double delaySeconds) override {
         if (refineTimer != nullptr) {
@@ -387,6 +394,13 @@ struct GeoEngine final : engine::Host {
                 break;
             case Command::Kind::RequestFrame:
                 core->requestFrame();
+                break;
+            case Command::Kind::SetCovered:
+                covered = command->shown;
+                frames.setRunning(framesWanted && !covered);
+                if (!covered) {
+                    core->requestFrame(); // what changed meanwhile
+                }
                 break;
             case Command::Kind::Stop:
                 stopping = true;
@@ -697,6 +711,13 @@ uint32_t geo_engine_swatch(GeoEngine* engine, uint32_t document, uint32_t occurr
     }
     const u64 global = u64(engine->swatchBases[document]) + occurrence;
     return global < engine->publishedSwatches.size() ? engine->publishedSwatches[global] : 0;
+}
+
+void geo_engine_set_covered(GeoEngine* engine, bool covered) {
+    Command command{};
+    command.kind = Command::Kind::SetCovered;
+    command.shown = covered;
+    engine->post(command);
 }
 
 void geo_engine_request_frame(GeoEngine* engine) {
