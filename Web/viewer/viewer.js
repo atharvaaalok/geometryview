@@ -46,7 +46,8 @@ async function isolate() {
 }
 await isolate();
 const canvas = document.getElementById("viewport");
-const phone = /iPhone|iPad|Android/.test(navigator.userAgent) ||
+// A phone, or a check asking to be one (?phone=1).
+const phone = params.get("phone") === "1" || /iPhone|iPad|Android/.test(navigator.userAgent) ||
               (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 document.body.classList.toggle("phone", phone);
 
@@ -160,6 +161,11 @@ const galleryToolbar = new GalleryToolbar({
   look: () => toggleCard(lookCard),
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
+  // On a phone the Library is a sheet raised from the toolbar.
+  library: () => {
+    panelOpen = !panelOpen;
+    showLibrary(true);
+  },
 });
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
@@ -434,6 +440,11 @@ function galleryFor() {
 
 async function showGallery(root, path) {
   const g = galleryFor();
+  if (phone && panelOpen) {
+    // Chosen in the Library's sheet: the sheet goes down over the gallery.
+    panelOpen = false;
+    showLibrary(true);
+  }
   enterGallery();
   await g.show(root, path);
 }
@@ -1483,7 +1494,10 @@ async function runGalleryTest() {
                scroll: { folder: tall, height: Math.round(height), frames: 120, ms: scrollMs, longTasks,
                          items: g.core.items.length,
                          longest: Math.max(0, ...longTasks) },
-               framesWhileCovered, ...(g3 ? { g3 } : {}) });
+               framesWhileCovered, ...(g3 ? { g3 } : {}),
+               // Nothing scrolls sideways, the page or the gallery, at any width.
+               overflowX: { page: document.scrollingElement.scrollWidth - innerWidth,
+                            gallery: clip.scrollWidth - clip.clientWidth, width: innerWidth } });
 }
 
 // G3's checks in the page: a heading of Sheet's stays at the top as its block scrolls under it; a

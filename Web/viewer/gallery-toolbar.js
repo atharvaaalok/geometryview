@@ -52,8 +52,13 @@ export class GalleryToolbar {
     this.#look = pill({ icon: icons.palette, title: Styles[0].title, help: "Look", onPress: () => on.look() });
     this.#poster = pill({ icon: icons.poster, title: "Poster", help: "Show it off: the view as a poster (⌥P)",
                           onPress: () => on.poster() });
+    this.#poster.classList.add("desktop-only");
+    this.#sheet.classList.add("desktop-only");
+    // On a phone: the Library's sheet, raised from here.
+    const library = pill({ icon: icons.parts, help: "Library", onPress: () => on.library?.() });
+    library.classList.add("phone-only");
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
-                      [views, this.#sheet, el("span.rule"), this.#poster, this.#look]);
+                      [library, views, this.#sheet, el("span.rule.desktop-only"), this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
@@ -67,7 +72,7 @@ export class GalleryToolbar {
       button.classList.toggle("on", i === view);
       button.setAttribute("aria-selected", i === view ? "true" : "false");
     });
-    this.#sheet.hidden = view !== 1;
+    this.#sheet.classList.toggle("off", view !== 1);
     this.#scale.selected = sheet.scale;
     if (Number(this.#size.value) !== sheet.cell) this.#size.value = String(sheet.cell);
     this.#sort.selected = sheet.sort;

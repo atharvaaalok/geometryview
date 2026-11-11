@@ -9,7 +9,9 @@
 // A page that asks for a screenshot (GET /shot?name=...) gets one, through Chrome's DevTools,
 // written to build/fixtures/out/<name>.png.
 //
-// Chrome is GEOMETRYVIEW_CHROME, or Google Chrome's usual place on a Mac.
+// Chrome is GEOMETRYVIEW_CHROME, or Google Chrome's usual place on a Mac. Its window is 1440 × 900,
+// or GEOMETRYVIEW_WINDOW ("390,844" for a phone's). Chrome makes no window narrower than 500, so a
+// narrower one is a phone's screen emulated through DevTools: 3 pixels a point, touch, mobile.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -31,6 +33,7 @@ const profile = mkdtempSync(join(tmpdir(), "geometryview-report-"));
 let chrome = null;
 
 const finish = (code) => {
+  emulation?.close();
   chrome?.kill("SIGKILL");
   server.kill();
   rmSync(profile, { recursive: true, force: true });
@@ -50,8 +53,14 @@ server.stdout.on("data", (text) => {
     const chromePath = process.env.GEOMETRYVIEW_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     chrome = spawn(chromePath, ["--headless=new", `--user-data-dir=${profile}`, "--no-first-run",
                                 `--remote-debugging-port=${devtools}`,
-                                "--enable-unsafe-webgpu", "--window-size=1440,900",
-                                `http://127.0.0.1:${port}${page}`], { stdio: "ignore" });
+                                "--enable-unsafe-webgpu", `--window-size=${Math.max(500, screenSize[0])},${screenSize[1]}`,
+                                emulated ? "about:blank" : `http://127.0.0.1:${port}${page}`], { stdio: "ignore" });
+    if (emulated) {
+      emulate(`http://127.0.0.1:${port}${page}`).catch((error) => {
+        process.stderr.write(`emulation failed: ${error.message}\n`);
+        finish(1);
+      });
+    }
   }
   for (const line of text.split("\n")) {
     const match = /^report: (.+\.json)$/.exec(line.trim());
@@ -67,6 +76,45 @@ server.stdout.on("data", (text) => {
     }
   }
 });
+
+const screenSize = (process.env.GEOMETRYVIEW_WINDOW ?? "1440,900").split(",").map(Number);
+const emulated = screenSize[0] < 500;
+let emulation = null; // the DevTools session holding the emulation, kept open for the run
+
+// Opens the page on an emulated phone screen.
+async function emulate(url) {
+  let target = null;
+  for (let i = 0; i < 100 && !target; i++) {
+    try {
+      target = (await (await fetch(`http://127.0.0.1:${devtools}/json/list`)).json()).find((p) => p.type === "page");
+    } catch {
+      // Chrome is still starting.
+    }
+    if (!target) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!target) throw new Error("no page");
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve;
+    socket.onerror = reject;
+  });
+  let id = 0;
+  const send = (method, params) => new Promise((resolve) => {
+    const mine = ++id;
+    const listen = ({ data }) => {
+      if (JSON.parse(data).id !== mine) return;
+      socket.removeEventListener("message", listen);
+      resolve();
+    };
+    socket.addEventListener("message", listen);
+    socket.send(JSON.stringify({ id: mine, method, params }));
+  });
+  await send("Emulation.setDeviceMetricsOverride",
+             { width: screenSize[0], height: screenSize[1], deviceScaleFactor: 3, mobile: true });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await send("Page.navigate", { url });
+  emulation = socket;
+}
 
 // A screenshot of the page, through Chrome's DevTools protocol.
 async function screenshot(name) {
