@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 const fixtures = process.env.GEOMETRYVIEW_FIXTURES ??
                  fileURLToPath(new URL("../../test-models/", import.meta.url));
 const model = join(fixtures, "models/u8ii_kv100_motor.step");
+const folder = join(fixtures, "models");
 
 let server;
 let nextId = 1;
@@ -53,10 +54,10 @@ test("it introduces itself in the client's protocol version", async () => {
   server.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 });
 
-test("it lists its four tools with schemas", async () => {
+test("it lists its five tools with schemas", async () => {
   const { result } = await call("tools/list", {});
   assert.deepEqual(result.tools.map((tool) => tool.name).sort(),
-                   ["get_structure", "open_in_viewer", "open_model", "render_view"]);
+                   ["get_structure", "open_in_viewer", "open_model", "render_view", "view_folder"]);
   for (const tool of result.tools) {
     assert.equal(tool.inputSchema.type, "object");
   }
@@ -114,4 +115,27 @@ test("it opens a model, lists its parts and pictures one alone", { skip: !exists
   });
   assert.equal(nothing.result.isError, true);
   assert.match(nothing.result.content[0].text, /No part's name contains/);
+});
+
+test("it pictures a folder on one sheet, with a numbered index", { skip: !existsSync(model) }, async () => {
+  const sheet = await call("tools/call", {
+    name: "view_folder",
+    arguments: { path: folder, filter: "motor", sort: "size", cell: 128 },
+  });
+  assert.notEqual(sheet.result.isError, true, sheet.result.content.at(-1).text);
+  const image = sheet.result.content.find((item) => item.type === "image");
+  assert.equal(Buffer.from(image.data, "base64").subarray(1, 4).toString(), "PNG");
+  const text = sheet.result.content.find((item) => item.type === "text").text;
+  assert.match(text, /^1 of \d+ STEP and STL files .* matching "motor"/);
+  assert.match(text, /1\. u8ii_kv100_motor\.step: 87\.1 × 87\.1 × 29\.1 mm, 19 parts/);
+
+  const none = await call("tools/call", {
+    name: "view_folder",
+    arguments: { path: folder, filter: "no such file" },
+  });
+  assert.match(none.result.content[0].text, /No STEP or STL files matching "no such file"/);
+
+  const notFolder = await call("tools/call", { name: "view_folder", arguments: { path: model } });
+  assert.equal(notFolder.result.isError, true);
+  assert.match(notFolder.result.content[0].text, /is not a folder/);
 });

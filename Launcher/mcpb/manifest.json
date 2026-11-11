@@ -23,6 +23,7 @@
     { "name": "open_model", "description": "Open a STEP or STL file and summarise it." },
     { "name": "get_structure", "description": "List the assemblies and parts." },
     { "name": "render_view", "description": "Render a picture: any view, style, parts alone, sections." },
+    { "name": "view_folder", "description": "Picture a folder of models on one sheet, with an index." },
     { "name": "open_in_viewer", "description": "Show the model to you, in the app or the browser." }
   ],
   "compatibility": {
