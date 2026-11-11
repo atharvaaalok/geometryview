@@ -23,6 +23,16 @@ final class GalleryCheck {
         return arguments[at + 1]
     }
     static var isCheck: Bool { CommandLine.arguments.contains("--gallery-check") }
+    /// The views the gallery may show: Plates and Sheet, or all five with `--gallery-views all`.
+    static var views: UInt32 {
+        let arguments = CommandLine.arguments
+        if let at = arguments.firstIndex(of: "--gallery-views"), at + 1 < arguments.count,
+            arguments[at + 1] == "all"
+        {
+            return 0b11111
+        }
+        return (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)
+    }
     static var isLayout: Bool { CommandLine.arguments.contains("--gallery-layout") }
 
     private let controller: GalleryController
