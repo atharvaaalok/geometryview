@@ -166,6 +166,8 @@ public:
                 const float left = cx + (it.slot - it.w) / 2.0f;
                 const bool hovered = in.hoverKind == GeoTargetFile && in.hover == it.file;
                 const bool selected = in.selected == it.file;
+                const bool faded = in.matches && !in.matches->contains(it.file);
+                const usize firstItem = out.items().size();
                 out.target(GeoTargetFile, it.file);
                 out.key(keyOf("part", it.file));
                 if (hovered && !selected) {
@@ -219,6 +221,11 @@ public:
                     }
                     out.group(0);
                     lineBaseline += 12.0f;
+                }
+                if (faded) {
+                    for (usize i = firstItem; i < out.items().size(); ++i) {
+                        out.item(i).flags |= GeoItemFading;
+                    }
                 }
                 out.offset(0.0f, 0.0f);
                 out.target(GeoTargetNone, 0);
@@ -416,10 +423,23 @@ public:
         const Folder& f = tree.folder(folder);
         const bool hovered = in.hoverKind == GeoTargetFolder && in.hover == folder;
         const bool focused = in.focused == folder;
-        const bool lifted = hovered || focused;
+        // A search marks the plates holding what it found, and fades the rest.
+        u64 found = 0;
+        if (in.matches) {
+            for (const u32 file : tree.filesUnder(folder)) {
+                found += in.matches->contains(file) ? 1 : 0;
+            }
+        }
+        const bool marked = in.matches && found > 0;
+        const bool quiet = in.matches && found == 0;
+        const bool lifted = (hovered || focused) && !marked;
+        const usize firstItem = out.items().size();
         out.target(GeoTargetFolder, folder);
         out.key(keyOf("plate", folder));
-        if (lifted) {
+        if (marked) {
+            out.rect(x, y, w, h, palette.wash, palette.washLine, 1.5f, 12.0f, GeoItemSticker,
+                     palette.washLine);
+        } else if (lifted) {
             out.offset(-1.0f, -2.0f);
             out.rect(x, y, w, h, palette.lift, palette.liftLine, 1.5f, 12.0f, GeoItemSticker,
                      palette.liftLine);
@@ -489,6 +509,20 @@ public:
             out.group(0);
             const std::string more = grouped(f.count) + " in all";
             out.text(more, kStripMore, palette.faint, x + 14.0f, stripY + 11.0f, w - 28.0f, 2);
+        }
+        if (marked) {
+            // How many it found, top right.
+            constexpr TextStyle kBadge{10.5f, 500, 0.0f, false};
+            const std::string badge = grouped(found) + " match";
+            const float bw = textWidth(badge, kBadge) + 14.0f;
+            out.rect(x + w - 12.0f - bw, y + 5.5f, bw, 19.0f, hex(0xF7F5EE), hex(0x231E16), 1.5f,
+                     9.5f, GeoItemSticker, hex(0x231E16));
+            out.text(badge, kBadge, hex(0x231E16), x + w - 12.0f - bw, y + 5.5f + 13.0f, bw, 1);
+        }
+        if (quiet) {
+            for (usize i = firstItem; i < out.items().size(); ++i) {
+                out.item(i).flags |= GeoItemFading;
+            }
         }
         out.offset(0.0f, 0.0f);
         out.target(GeoTargetNone, 0);

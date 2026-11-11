@@ -8,6 +8,7 @@
 
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace geo::gallery {
@@ -22,6 +23,12 @@ struct LayoutInput {
     u32 selected = kNone;                            // a file
     u32 focused = kNone;                             // a subfolder, moved to with the arrows
     const std::set<std::string>* expanded = nullptr; // size bands shown whole
+    // Sheet's controls.
+    u32 sheetScale = GeoScaleFolder;
+    float sheetCell = 128.0f;
+    u32 sort = GeoSortName;
+    /// What a search found in the folder, or null with no search.
+    const std::unordered_set<u32>* matches = nullptr;
 };
 
 /// What a layout found out, beside its items: where things are, for keys and wanted pictures.
@@ -48,6 +55,8 @@ inline constexpr float kContentBottom = 30.0f;
 inline constexpr float kMaxPointsPerPixel = 0.625f;
 
 LayoutResult layoutPlates(const LayoutInput& input, Display& display);
+/// Sheet: every file once, folder by folder under headings that stay put while scrolling.
+LayoutResult layoutSheet(const LayoutInput& input, Display& display);
 
 /// A group of files at one scale: millimetres per point that fit a typical one in w × h, and those
 /// far larger than the rest (more than `over` times the median), drawn apart.

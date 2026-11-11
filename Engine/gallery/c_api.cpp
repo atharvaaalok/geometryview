@@ -193,3 +193,60 @@ uint32_t geo_gallery_check(const GeoGallery* gallery, const float* lines, const 
     }
     return over;
 }
+
+void geo_gallery_set_views(GeoGallery* gallery, uint32_t mask) {
+    gallery->gallery.setViews(mask);
+}
+
+uint32_t geo_gallery_views(const GeoGallery* gallery) {
+    return gallery->gallery.views();
+}
+
+bool geo_gallery_set_view(GeoGallery* gallery, uint32_t view) {
+    return gallery->gallery.setView(view);
+}
+
+uint32_t geo_gallery_view(const GeoGallery* gallery) {
+    return gallery->gallery.view();
+}
+
+void geo_gallery_set_sheet(GeoGallery* gallery, uint32_t scale, float cell, uint32_t sort) {
+    gallery->gallery.setSheet(scale, cell, sort);
+}
+
+void geo_gallery_set_search(GeoGallery* gallery, const char* query) {
+    gallery->gallery.setSearch(query != nullptr ? query : "");
+}
+
+const char* geo_gallery_search(const GeoGallery* gallery) {
+    return gallery->gallery.search().c_str();
+}
+
+uint32_t geo_gallery_matches(const GeoGallery* gallery) {
+    const auto& matches = gallery->gallery.matches();
+    return matches ? uint32_t(matches->size()) : UINT32_MAX;
+}
+
+void geo_gallery_peek(GeoGallery* gallery, uint32_t file) {
+    gallery->gallery.peek(file);
+}
+
+uint32_t geo_gallery_peeking(const GeoGallery* gallery) {
+    return gallery->gallery.peeking();
+}
+
+float geo_gallery_reveal(const GeoGallery* gallery) {
+    return gallery->gallery.reveal();
+}
+
+GeoGalleryTransition geo_gallery_transition(const GeoGallery* gallery) {
+    return gallery->gallery.transition();
+}
+
+uint32_t geo_gallery_tracks(const GeoGallery* gallery, GeoGalleryTrack* out, uint32_t capacity) {
+    const std::vector<GeoGalleryTrack>& tracks = gallery->gallery.tracks();
+    if (out != nullptr) {
+        std::copy_n(tracks.begin(), std::min<usize>(capacity, tracks.size()), out);
+    }
+    return uint32_t(tracks.size());
+}

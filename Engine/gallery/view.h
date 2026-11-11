@@ -6,8 +6,12 @@
 #include "gallery/plates.h"
 #include "gallery/tree.h"
 
+#include <array>
+#include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace geo::gallery {
@@ -43,8 +47,30 @@ public:
 
     std::vector<GeoGalleryWant> wanted() const;
 
+    // ---- Views and what they share ----
+
+    void setViews(u32 mask);
+    u32 views() const { return views_; }
+    bool setView(u32 view);
+    u32 view() const { return view_; }
+    void setSheet(u32 scale, float cell, u32 sort);
+    void setSearch(std::string_view query);
+    const std::string& search() const { return search_; }
+    /// Files in the folder the search found, or nothing with no search.
+    const std::optional<std::unordered_set<u32>>& matches() const { return matches_; }
+    void peek(u32 file);
+    u32 peeking() const { return peek_; }
+    /// Where to scroll so the selection shows, or negative if it shows already.
+    float reveal() const;
+    const GeoGalleryTransition& transition() const { return transition_; }
+    const std::vector<GeoGalleryTrack>& tracks() const { return tracks_; }
+
 private:
     GeoGalleryAction enter(u32 folder);
+    /// Remembers where pictures were in the view, before a change that moves them.
+    void beginMotion(u32 kind, std::optional<std::array<float, 4>> rect = std::nullopt);
+    void findMatches();
+    void layoutPeek();
     // The place nearest the one at `from` in a direction, or none.
     static std::optional<usize> nearest(const std::vector<LayoutResult::Place>& places, usize from,
                                         int dx, int dy);
@@ -56,6 +82,21 @@ private:
     u32 hoverKind_ = GeoTargetNone, hover_ = 0;
     u32 selected_ = kNone, focused_ = kNone;
     std::set<std::string> expanded_;
+    u32 views_ = (1u << GeoViewPlates) | (1u << GeoViewSheet);
+    u32 view_ = GeoViewPlates;
+    std::unordered_map<u32, u32> viewOf_; // the view each folder last showed
+    u32 sheetScale_ = GeoScaleFolder;
+    float sheetCell_ = 128.0f;
+    u32 sort_ = GeoSortName;
+    std::string search_;
+    std::optional<std::unordered_set<u32>> matches_;
+    u32 peek_ = kNone;
+    // Motion: what the next layout should play, and what the last one did.
+    u32 pendingMotion_ = GeoTransitionNone;
+    std::optional<std::array<float, 4>> pendingRect_;
+    std::unordered_map<u32, std::array<float, 4>> before_; // a file's picture, in the view
+    GeoGalleryTransition transition_{};
+    std::vector<GeoGalleryTrack> tracks_;
     bool dirty_ = true;
     Display display_;
     LayoutResult result_;
