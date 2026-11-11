@@ -1,0 +1,292 @@
+{
+  "label": "mac-chrome-phone-g4-gallery-designlib",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 3,
+  "errors": [],
+  "folder": "designlib",
+  "files": 166,
+  "runs": [
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "",
+      "waited": 18.579,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 55,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 3.671,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 99,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.402,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 34,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "",
+      "waited": 0.908,
+      "groupsChecked": 36,
+      "over": [],
+      "painted": 143,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.404,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 152,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "",
+      "waited": 0.417,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 55,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 0.908,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 99,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 34,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "",
+      "waited": 0.404,
+      "groupsChecked": 36,
+      "over": [],
+      "painted": 143,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 152,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.401,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "",
+      "waited": 0.401,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 55,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 0.907,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 99,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 10,
+      "over": [],
+      "painted": 34,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "",
+      "waited": 0.404,
+      "groupsChecked": 36,
+      "over": [],
+      "painted": 143,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 152,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.021
+    }
+  ],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0.027,
+  "scroll": {
+    "folder": "review",
+    "height": 0,
+    "frames": 120,
+    "ms": 1998,
+    "longTasks": [],
+    "items": 52,
+    "longest": 0
+  },
+  "framesWhileCovered": 0,
+  "g3": {
+    "sticky": {
+      "stickyTop": 322.739990234375,
+      "scroll": 2381,
+      "fromViewTop": -0.006,
+      "layoutTop": 322.734,
+      "aligned": {
+        "groupsChecked": 32,
+        "over": [],
+        "painted": 202,
+        "maxDeviation": 0.026
+      }
+    },
+    "search": {
+      "query": "600",
+      "found": 29,
+      "fadedNodes": 48,
+      "aligned": {
+        "groupsChecked": 36,
+        "over": [],
+        "painted": 143,
+        "maxDeviation": 0.027
+      }
+    },
+    "peek": {
+      "file": "gallery/assembly/belt_axis/all-sizes.step",
+      "fixedNodes": 19,
+      "aligned": {
+        "groupsChecked": 42,
+        "over": [],
+        "painted": 171,
+        "maxDeviation": 0.026
+      }
+    },
+    "switch": {
+      "transition": {
+        "kind": 1,
+        "duration": 520,
+        "fadeOut": 260
+      },
+      "fly": 25,
+      "fadeIn": 60,
+      "flyTiming": [
+        "0+520"
+      ],
+      "fadeTiming": [
+        "182+338"
+      ],
+      "animations": 36,
+      "animationTimings": [
+        "0+520",
+        "182+338",
+        "0+160",
+        "0+260"
+      ],
+      "selectionKept": true
+    },
+    "zoom": {
+      "into": {
+        "kind": 2,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          167,
+          346
+        ]
+      },
+      "out": {
+        "kind": 3,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          167,
+          346
+        ]
+      },
+      "animations": 2,
+      "animationTimings": [
+        "0+420"
+      ]
+    }
+  },
+  "overflowX": {
+    "page": 0,
+    "gallery": 0,
+    "width": 390
+  }
+}
