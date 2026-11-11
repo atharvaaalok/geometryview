@@ -726,7 +726,7 @@ final class MainWindow: NSWindow {
         case #selector(togglePoster(_:)):
             item.state = galleryController.gallery.poster ? .on : .off
             return inGallery
-        case #selector(exportPoster(_:)):
+        case #selector(exportPoster(_:)), #selector(exportPDF(_:)):
             return inGallery
         case #selector(chooseGalleryView(_:)):
             let enabled = galleryController.gallery.views & (1 << UInt32(item.tag)) != 0
@@ -866,6 +866,38 @@ final class MainWindow: NSWindow {
             dismissCard()
         }
         galleryController.setPoster(poster)
+    }
+
+    /// Export as PDF… (⌥⇧⌘E): the view as a poster, or in Catalogue the whole book, saved where
+    /// the person chooses.
+    @objc func exportPDF(_ sender: Any?) {
+        guard inGallery else {
+            return
+        }
+        let wasPoster = galleryController.gallery.poster
+        if !wasPoster {
+            setPoster(true)
+        }
+        let book = galleryController.gallery.view == GeoViewCatalogue.rawValue
+        Task { @MainActor in
+            let data = await galleryController.posterPDF()
+            if !wasPoster {
+                setPoster(false)
+            }
+            guard let data else {
+                return
+            }
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.pdf]
+            panel.nameFieldStringValue =
+                "\(galleryController.title) \(book ? "catalogue" : "poster").pdf"
+            panel.beginSheetModal(for: self) { response in
+                guard response == .OK, let url = panel.url else {
+                    return
+                }
+                try? data.write(to: url)
+            }
+        }
     }
 
     /// Export Poster as PNG… (⇧⌘E): the view as a poster, saved where the person chooses.

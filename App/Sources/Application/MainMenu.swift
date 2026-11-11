@@ -207,6 +207,13 @@ enum MainMenu {
         )
         export.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(export)
+        let pdf = NSMenuItem(
+            title: "Export as PDF\u{2026}",
+            action: #selector(MainWindow.exportPDF(_:)),
+            keyEquivalent: "e"
+        )
+        pdf.keyEquivalentModifierMask = [.command, .option, .shift]
+        menu.addItem(pdf)
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Close",

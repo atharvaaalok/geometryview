@@ -362,7 +362,7 @@ final class GalleryCheck {
         return out
     }
 
-    /// The folder as a poster in Plates and in Sheet: aligned as painted, and saved as PNG, with the
+    /// The folder as a poster in each view enabled: aligned as painted, and saved as PNG, with the
     /// picture's size.
     private func posters(root: URL, folder: URL) async -> [[String: Any]] {
         controller.show(root: root, folder: folder)
@@ -371,8 +371,11 @@ final class GalleryCheck {
             try? await Task.sleep(for: .milliseconds(100))
         }
         var out: [[String: Any]] = []
-        for (view, name) in [(GeoViewPlates, "plates"), (GeoViewSheet, "sheet")] {
-            controller.setView(view.rawValue)
+        let names = ["plates", "sheet", "ladders", "atlas", "catalogue"]
+        let views = (0..<5).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
+        for view in views {
+            let name = names[Int(view)]
+            controller.setView(view)
             usePoster?(true)
             try? await Task.sleep(for: .milliseconds(600))
             _ = await settle()
@@ -386,6 +389,17 @@ final class GalleryCheck {
                 )
                 try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
                     .write(to: output)
+            }
+            // Its PDF too: a page, or in Catalogue the book, a spread a page.
+            let pdfStart = Date()
+            if let pdf = await controller.posterPDF() {
+                run["pdfBytes"] = pdf.count
+                run["pdfSeconds"] = Date().timeIntervalSince(pdfStart)
+                try? pdf.write(
+                    to: FileManager.default.temporaryDirectory.appendingPathComponent(
+                        "gallery-poster-\(name).pdf"
+                    )
+                )
             }
             out.append(run)
             usePoster?(false)

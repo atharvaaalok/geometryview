@@ -86,6 +86,33 @@ final class GalleryController {
         scheduleWant()
     }
 
+    /// The view as a PDF: the poster on one page, or in Catalogue the whole book, a spread a page,
+    /// each drawn once its pictures have come (20 s at most a spread).
+    func posterPDF() async -> Data? {
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+            let context = CGContext(consumer: consumer, mediaBox: nil, nil)
+        else {
+            return nil
+        }
+        if gallery.view == GeoViewCatalogue.rawValue {
+            let open = gallery.catalogue.spread
+            for spread in 0..<gallery.catalogue.spreads {
+                catalogue(spread: spread)
+                let start = Date()
+                while waitingInView > 0, Date().timeIntervalSince(start) < 20 {
+                    try? await Task.sleep(for: .milliseconds(150))
+                }
+                view.posterPage(into: context)
+            }
+            catalogue(spread: open)
+        } else {
+            view.posterPage(into: context)
+        }
+        context.closePDF()
+        return data as Data
+    }
+
     /// Catalogue: turns a spread (`step`), goes to one (`spread`), or to the index (neither).
     func catalogue(step: Int? = nil, spread: Int? = nil) {
         if let step {

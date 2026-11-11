@@ -900,6 +900,58 @@ final class GalleryView: NSView {
     /// as the poster runs, whichever is taller. The live view's content is lent to a page of its own
     /// for the drawing and handed back before anything shows.
     func posterImage(scale: CGFloat = 2) -> CGImage? {
+        var image: CGImage?
+        drawPoster { size in
+            guard
+                let context = CGContext(
+                    data: nil,
+                    width: Int(size.width * scale),
+                    height: Int(size.height * scale),
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            else {
+                return nil
+            }
+            context.scaleBy(x: scale, y: scale)
+            return context
+        } finish: { context in
+            image = context.makeImage()
+        }
+        return image
+    }
+
+    /// The poster as a page of a PDF, its size in points: the text and lines drawn as text and
+    /// lines, the pictures as pictures. `context` is a PDF context; a page is begun and ended.
+    func posterPage(into context: CGContext) {
+        drawPoster { size in
+            // The page's box, as Core Graphics takes it: the rectangle's bytes.
+            var box = CGRect(origin: .zero, size: size)
+            let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size) as CFData
+            context.beginPDFPage([kCGPDFContextMediaBox as String: boxData] as CFDictionary)
+            return context
+        } finish: { context in
+            context.endPDFPage()
+        }
+    }
+
+    /// The poster's size in points, as `posterImage` and `posterPage` draw it.
+    var posterSize: CGSize {
+        CGSize(
+            width: bounds.width,
+            height: max(bounds.height, area.minY + gallery.contentHeight + contentInsets.bottom)
+        )
+    }
+
+    /// Paints everything, asks `begin` for a context the poster's size in points (scaled already
+    /// for pixels, if any), draws the sheet and the content into it, hands it to `finish`, and
+    /// gives the content back to the view.
+    private func drawPoster(
+        begin: (CGSize) -> CGContext?,
+        finish: (CGContext) -> Void
+    ) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -910,27 +962,12 @@ final class GalleryView: NSView {
         paint()
         paintEverything = false
         painted = nil
-        let size = CGSize(
-            width: bounds.width,
-            height: max(bounds.height, area.minY + gallery.contentHeight + contentInsets.bottom)
-        )
-        guard let sheetPicture = sheetImage(size, scale: scale),
-            let context = CGContext(
-                data: nil,
-                width: Int(size.width * scale),
-                height: Int(size.height * scale),
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            )
-        else {
-            return nil
+        let size = posterSize
+        guard let sheetPicture = sheetImage(size, scale: 2), let context = begin(size) else {
+            paint()
+            return
         }
-        context.draw(
-            sheetPicture,
-            in: CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale)
-        )
+        context.draw(sheetPicture, in: CGRect(origin: .zero, size: size))
         // A page laid out top down, as this view is, holding the content where the view shows it.
         let page = CALayer()
         page.anchorPoint = .zero
@@ -957,14 +994,16 @@ final class GalleryView: NSView {
         )
         // Laid out top down, as the view is: the page's geometry is turned over, and the context
         // with it, so the layers' contents stand upright.
-        context.translateBy(x: 0, y: size.height * scale)
-        context.scaleBy(x: scale, y: -scale)
+        context.saveGState()
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
         page.render(in: context)
+        context.restoreGState()
+        finish(context)
         lent.removeFromSuperlayer()
         clip.addSublayer(lent)
         lent.frame = frame
         paint()
-        return context.makeImage()
     }
 
     // MARK: For the checks
