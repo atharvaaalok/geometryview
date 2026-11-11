@@ -363,9 +363,10 @@ void geo_engine_report_latency(GeoEngine* engine);
 /// Prints current and peak memory footprint to stderr when GEOMETRYVIEW_TRACE is set.
 void geo_trace_memory(const char* label);
 
-/// How to render a cache file headlessly.
+/// How to render a cache file headlessly. Start from geo_default_render_options, since fields are
+/// added over time.
 typedef struct GeoRenderOptions {
-    uint32_t width, height; // pixels, drawn as for a 2x display
+    uint32_t width, height; // pixels
     double azimuth_degrees; // the view direction
     double elevation_degrees;
     bool perspective;
@@ -375,10 +376,20 @@ typedef struct GeoRenderOptions {
     // Comma-separated part names: only parts whose names contain one of them, ignoring ASCII case,
     // are drawn, and the view frames them. Null draws everything.
     const char* isolate;
+    float pixels_per_point; // the display scale lines, grain and the overlay are drawn for: 2
+    float line_scale;       // the weight of lines against it: 1, less for small pictures
+    // Where a file's colours start in the cycle of part colours (0 mustard, 1 mint, 2 tomato,
+    // 3 blush, ...), or -1 to start at the first.
+    int32_t first_color;
+    // Leaves the background clear: the part, its lines and its shadow, with premultiplied alpha.
+    bool transparent;
+    // A fixed scale for an orthographic view, in model units per pixel, so pictures of different
+    // files compare; 0 frames the file to fit.
+    double world_per_pixel;
 } GeoRenderOptions;
 
-/// The options gcli render starts from: 1600 by 1000, from the front right and above, with the
-/// overlay and the default look.
+/// The options gcli render starts from: 1600 by 1000 pixels at 2 per point, from the front right
+/// and above, framed to fit, with the overlay and the default look on an opaque sheet.
 GeoRenderOptions geo_default_render_options(void);
 
 /// Renders a cache file to a PNG, framed to fit, for tests and `gcli render`. Returns false and

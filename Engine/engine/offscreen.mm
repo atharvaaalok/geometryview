@@ -47,7 +47,9 @@ bool geo_render_blob_to_png(const char* shader_library_path, const char* blob_pa
         }
         const std::vector<u8> pixels =
             renderer->renderOffscreen(frame.view, options->overlay ? &frame.overlay : nullptr);
-        if (!engine::writePng(png_path, pixels, options->width, options->height)) {
+        const engine::Alpha alpha =
+            options->transparent ? engine::Alpha::Premultiplied : engine::Alpha::Ignore;
+        if (!engine::writePng(png_path, pixels, options->width, options->height, alpha)) {
             std::fprintf(stderr, "Could not write %s.\n", png_path);
             return false;
         }

@@ -104,20 +104,21 @@ struct Difference {
     double changed = 0.0; // share of pixels with a channel more than 12 levels off
 };
 
-Difference compare(const std::vector<u8>& a, const std::vector<u8>& b) {
+// Compares colour, or colour and alpha.
+Difference compare(const std::vector<u8>& a, const std::vector<u8>& b, usize channels = 3) {
     Difference d;
     const usize pixels = a.size() / 4;
     u64 total = 0, changed = 0;
     for (usize p = 0; p < pixels; ++p) {
         int worst = 0;
-        for (usize c = 0; c < 3; ++c) {
+        for (usize c = 0; c < channels; ++c) {
             const int delta = std::abs(int(a[p * 4 + c]) - int(b[p * 4 + c]));
             total += u64(delta);
             worst = std::max(worst, delta);
         }
         changed += worst > 12 ? 1 : 0;
     }
-    d.mean = double(total) / double(pixels * 3);
+    d.mean = double(total) / double(pixels * channels);
     d.changed = double(changed) / double(pixels);
     return d;
 }
@@ -168,7 +169,7 @@ TEST_CASE("every WGSL module compiles") {
 TEST_CASE("the WGSL uniforms are laid out as the C++ ones") {
     Dawn dawn = makeDawn();
     const std::string code = std::string(webgpu::wgsl::kCommon) + R"wgsl(
-@group(1) @binding(0) var<storage, read_write> fields: array<f32, 20>;
+@group(1) @binding(0) var<storage, read_write> fields: array<f32, 21>;
 @compute @workgroup_size(1)
 fn readFields() {
     fields[0] = frame.halfWidth;
@@ -191,6 +192,7 @@ fn readFields() {
     fields[17] = style.metalDiffuse;
     fields[18] = style.fold;
     fields[19] = style.ghostLine;
+    fields[20] = style.sheetAlpha;
 }
 )wgsl";
     FrameUniforms frame{};
@@ -215,9 +217,10 @@ fn readFields() {
     style.metalDiffuse = 0.375f;
     style.fold = 0.625f;
     style.ghostLine = 2.5f;
-    const float expected[20] = {1.5f, 7,      20,   12,     -0.9f,  -3.25f, 0.75f,
-                                4.5f, 1,      0.6f, 0.5f,   9,      0.4f,   0.25f,
-                                0.125f, 1,    0.375f, 0.375f, 0.625f, 2.5f};
+    style.sheetAlpha = 0.875f;
+    const float expected[21] = {1.5f,   7, 20,     12,     -0.9f,  -3.25f, 0.75f,
+                                4.5f,   1, 0.6f,   0.5f,   9,      0.4f,   0.25f,
+                                0.125f, 1, 0.375f, 0.375f, 0.625f, 2.5f,   0.875f};
 
     const wgpu::Device& device = dawn.device;
     const auto makeBuffer = [&](u64 size, wgpu::BufferUsage usage) {
@@ -324,6 +327,45 @@ TEST_CASE("the WebGPU renderer draws every style as Metal does") {
                 CHECK(d.mean < 1.0);
                 CHECK(d.changed < 0.005);
             }
+        }
+        unlink(blob.c_str());
+    }
+}
+
+// The gallery's pictures: small, with light lines, on a clear sheet, in colour and alpha.
+TEST_CASE("the WebGPU renderer draws small pictures on a clear sheet as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importDrive(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        for (u32 style = 0; style < render::kStyleCount; ++style) {
+            CAPTURE(style);
+            GeoRenderOptions options = geo_default_render_options();
+            options.width = 256;
+            options.height = 256;
+            options.overlay = false;
+            options.elevation_degrees = 30.0;
+            options.look.style = GeoStyle(style);
+            options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
+            options.look.color_mode = GeoColorParts;
+            options.line_scale = 0.4f;
+            options.first_color = 1;
+            options.transparent = true;
+            const std::vector<u8> expected = renderWith(*metal, blob, options);
+            const std::vector<u8> image = renderWith(*web, blob, options);
+            REQUIRE(image.size() == expected.size());
+            CHECK(expected[3] == 0); // a clear corner
+            const Difference d = compare(image, expected, 4);
+            CAPTURE(d.mean);
+            CAPTURE(d.changed);
+            CHECK(d.mean < 1.0);
+            CHECK(d.changed < 0.005);
         }
         unlink(blob.c_str());
     }
