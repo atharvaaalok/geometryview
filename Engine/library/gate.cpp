@@ -73,6 +73,7 @@ void ImportGate::returned(u32 workers, bool open) {
 }
 
 void ImportGate::notify() {
+    std::lock_guard calling(calling_);
     std::vector<std::function<void()>> calls;
     {
         std::lock_guard lock(mutex_);
@@ -93,6 +94,7 @@ u64 ImportGate::listen(std::function<void()> changed) {
 }
 
 void ImportGate::unlisten(u64 id) {
+    std::lock_guard calling(calling_);
     std::lock_guard lock(mutex_);
     std::erase_if(listeners_, [id](const auto& entry) { return entry.first == id; });
 }

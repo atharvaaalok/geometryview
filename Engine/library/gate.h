@@ -51,7 +51,7 @@ public:
 
     /// Called, on the thread that released it, whenever a ticket is returned or an open begins, so
     /// whoever is waiting to enter can try again, or cancel what a file being opened needs. The
-    /// returned id removes it.
+    /// returned id removes it; once `unlisten` returns, it is not called again.
     u64 listen(std::function<void()> changed);
     void unlisten(u64 id);
 
@@ -65,6 +65,8 @@ private:
 
     const u32 cap_;
     mutable std::mutex mutex_;
+    // Held while listeners are called, so one removed is never called after.
+    std::recursive_mutex calling_;
     u32 held_ = 0;
     u32 opens_ = 0;
     u64 nextListener_ = 1;
