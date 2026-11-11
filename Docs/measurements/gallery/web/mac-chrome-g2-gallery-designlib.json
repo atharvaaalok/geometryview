@@ -1,5 +1,5 @@
 {
-  "label": "mac-chrome-g2-gallery-none",
+  "label": "mac-chrome-g2-gallery-designlib",
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
   "devicePixelRatio": 1,
   "errors": [],
@@ -11,7 +11,7 @@
       "folder": "",
       "groupsChecked": 11,
       "over": [],
-      "waited": 11.213,
+      "waited": 10.722,
       "painted": 77,
       "maxDeviation": 0.024
     },
@@ -20,7 +20,7 @@
       "folder": "gallery",
       "groupsChecked": 23,
       "over": [],
-      "waited": 3.683,
+      "waited": 2.663,
       "painted": 140,
       "maxDeviation": 0.026
     },
@@ -38,17 +38,17 @@
       "folder": "",
       "groupsChecked": 11,
       "over": [],
-      "waited": 1.405,
+      "waited": 1.162,
       "painted": 89,
-      "maxDeviation": 0.025
+      "maxDeviation": 0.024
     },
     {
       "style": 3,
       "folder": "gallery",
       "groupsChecked": 23,
       "over": [],
-      "waited": 1.42,
-      "painted": 140,
+      "waited": 0.911,
+      "painted": 143,
       "maxDeviation": 0.026
     },
     {
@@ -65,7 +65,7 @@
       "folder": "",
       "groupsChecked": 11,
       "over": [],
-      "waited": 1.155,
+      "waited": 1.163,
       "painted": 89,
       "maxDeviation": 0.024
     },
@@ -74,8 +74,8 @@
       "folder": "gallery",
       "groupsChecked": 23,
       "over": [],
-      "waited": 1.421,
-      "painted": 140,
+      "waited": 0.905,
+      "painted": 143,
       "maxDeviation": 0.026
     },
     {
@@ -83,7 +83,7 @@
       "folder": "review",
       "groupsChecked": 4,
       "over": [],
-      "waited": 0.401,
+      "waited": 0.402,
       "painted": 35,
       "maxDeviation": 0.019
     }
@@ -95,8 +95,9 @@
     "folder": "review",
     "height": 0,
     "frames": 120,
-    "ms": 1995,
+    "ms": 2000,
     "longTasks": [],
+    "items": 35,
     "longest": 0
   },
   "framesWhileCovered": 0

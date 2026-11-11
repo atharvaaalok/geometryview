@@ -1337,7 +1337,8 @@ async function runGalleryTest() {
     .filter((p) => listing.some((e) => !e.folder && e.path.startsWith(`${p}/`))).sort().slice(0, 3);
   const runs = [];
   let worst = 0, over = 0, deviation = 0;
-  for (const style of [0, 3, 5]) {
+  // scrollOnly skips the styles' runs, for timing a scroll alone.
+  for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
     next.choose(style);
     applyLook(next, { remember: false });
@@ -1369,6 +1370,11 @@ async function runGalleryTest() {
   const tall = params.get("scroll") ?? subfolders.at(-1) ?? "";
   await g.show(root, tall);
   await settle();
+  if (params.has("expand")) {
+    // Every size band shown whole: "show all" on each, then their pictures.
+    for (let band = 0; band < 12; band++) g.view.act(g.core.click(3, band, false));
+    await settle();
+  }
   const longTasks = [];
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) longTasks.push(Math.round(entry.duration));
@@ -1395,6 +1401,7 @@ async function runGalleryTest() {
   await post({ folder: dir, files: listing.filter((e) => !e.folder).length, runs, groupsOver: over,
                worstSpread: worst, maxDeviation: Math.round(deviation * 1000) / 1000,
                scroll: { folder: tall, height: Math.round(height), frames: 120, ms: scrollMs, longTasks,
+                         items: g.core.items.length,
                          longest: Math.max(0, ...longTasks) },
                framesWhileCovered });
 }
