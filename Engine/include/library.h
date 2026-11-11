@@ -79,8 +79,8 @@ typedef struct GeoLibraryDescriptor {
     const char* cache_directory;
     GeoLibraryCallback callback;
     void* context;
-    uint32_t slots;   // imports at once, or 0 for max(2, performance cores / 3)
-    uint32_t workers; // OCCT workers each, or 0 for 3
+    uint32_t slots;   // imports at once, or 0 for max(2, performance cores / 2)
+    uint32_t workers; // OCCT workers each, or 0 for 2
 } GeoLibraryDescriptor;
 
 /// How pictures are drawn: from the front right and above, on a clear sheet.

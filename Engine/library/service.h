@@ -91,7 +91,7 @@ struct ServiceConfig {
     ipc::ImportPaths paths;       // the helper and the import cache
     std::string galleryDirectory; // facts, thumbs and roots under it
     u32 slots = 2;                // imports at once
-    u32 workers = 3;              // OCCT workers each
+    u32 workers = 2;              // OCCT workers each
     ImportGate* gate = nullptr;   // the process's, when null
     u64 blobBudget = 0;           // the import cache's budget; ipc::cacheBudget when zero
     u64 pictureBudget = 0;        // min(free space / 100, 2 GB) when zero

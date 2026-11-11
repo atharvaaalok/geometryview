@@ -192,9 +192,12 @@ GeoLibrary* geo_library_create(const GeoLibraryDescriptor* descriptor) {
     library::ServiceConfig config;
     config.paths = {descriptor->import_helper_path, descriptor->cache_directory};
     config.galleryDirectory = std::string(descriptor->cache_directory) + "/gallery";
+    // Measured on 496 CADBench files (Docs/measurements/gallery/g1-foundation.md): throughput
+    // rises with imports at once, since most files have too few slices to keep many workers busy,
+    // and two workers each keep a large file from taking one worker's time.
     config.slots =
-        descriptor->slots != 0 ? descriptor->slots : std::max(2u, library::performanceCores() / 3);
-    config.workers = descriptor->workers != 0 ? descriptor->workers : 3;
+        descriptor->slots != 0 ? descriptor->slots : std::max(2u, library::performanceCores() / 2);
+    config.workers = descriptor->workers != 0 ? descriptor->workers : 2;
     // Pictures are drawn again when the engine draws differently.
     config.pictureVersion = std::format("{}|1", geo_engine_version());
     if (access(config.paths.cacheDirectory.c_str(), W_OK) != 0) {
