@@ -431,6 +431,12 @@ function galleryFor() {
     folderChanged: () => refreshMasthead(),
     changed: () => galleryToolbar.show(gallery.state),
     leavePoster: (toggle = false) => setGalleryPoster(toggle ? !gallery.poster : false),
+    // Permission asked again from the lost card's Reconnect, in its click.
+    reconnect: async (root) => {
+      if (!root || !(await libraryStore.folders.reconnect(root.id))) return;
+      await library.refresh();
+      await gallery.reconnected();
+    },
     search: (query, found) => library.showSearch(galleryShown, query, found),
   });
   canvas.after(gallery.view.element);
@@ -1432,6 +1438,42 @@ async function runGalleryTest() {
         runs.push({ style, view, folder: path, waited, ...measure() });
       }
     }
+  }
+  if (params.has("lost")) {
+    // The folder drawn, then unreadable, as when the browser's permission lapses: shown again from
+    // what was kept, faded, with Reconnect; then readable again.
+    g.setView(0);
+    await g.show(root, "");
+    await settle();
+    await sleep(2500); // past the listing being kept
+    const folders = libraryStore.folders;
+    const { walk, file } = folders;
+    const denied = () => { throw new DOMException("The folder cannot be read.", "NotAllowedError"); };
+    folders.walk = async function* () { denied(); };
+    folders.file = async () => denied();
+    g.root = null;
+    await g.show(root, "");
+    await sleep(3000);
+    g.view.repaint();
+    await new Promise(requestAnimationFrame);
+    const items = g.core.items;
+    const pictures = items.filter((i) => i.kind === 2 && !(i.flags & 16));
+    const shown = [...g.view.element.querySelectorAll(".gallery-content img.g-picture:not([hidden])")]
+      .filter((img) => img.style.visibility !== "hidden" && img.src).length;
+    const lost = { items: items.length, faded: items.filter((i) => i.flags & 128).length,
+                   card: items.filter((i) => i.flags & 16).length, pictures: pictures.length, picturesShown: shown,
+                   ...measure() };
+    if (params.has("shots")) {
+      await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-lost`)}`);
+      await sleep(1500);
+    }
+    folders.walk = walk;
+    folders.file = file;
+    await g.reconnected();
+    await settle();
+    const back = { faded: g.core.items.filter((i) => i.flags & 128).length, items: g.core.items.length };
+    await post({ folder: dir, lost, back });
+    return;
   }
   if (params.has("poster")) {
     // The folder as a poster in each view: aligned as painted, and drawn as PNG.

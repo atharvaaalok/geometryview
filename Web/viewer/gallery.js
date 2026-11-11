@@ -50,6 +50,7 @@ export class Gallery {
     this.view.element.hidden = true;
     this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(), version: engine.cacheVersion, phone }, {
       facts: (path, facts) => this.#receiveFacts(path, facts),
+      measured: (path, bytes, modified) => this.#measured(path, bytes, modified),
       reading: (path, fraction) => {
         const file = this.core.fileAt(path);
         if (file === null) return;
@@ -146,16 +147,65 @@ export class Gallery {
 
   async #walk(root) {
     const entries = [];
+    let unreadable = false;
     try {
       for await (const entry of this.#store.folders.walk(root.id, "")) {
         entries.push({ path: entry.path, folder: entry.kind === "folder", bytes: entry.bytes ?? 0,
                        modified: entry.modified ?? 0 });
       }
     } catch {
-      // A folder that cannot be read shows what was found.
+      unreadable = entries.length === 0;
     }
-    if (this.root?.id === root.id) this.#load(entries);
+    if (this.root?.id === root.id) {
+      // A folder that cannot be read shows as last seen, faded, with Reconnect; else what was found.
+      const kept = unreadable ? keptListing(root.id) : null;
+      this.#setLost(Boolean(kept));
+      if (kept) {
+        this.#load(kept);
+      } else {
+        // Sizes and times already known stay with the new listing.
+        const known = new Map((keptListing(root.id) ?? []).map((e) => [e.path, e]));
+        for (const e of entries) {
+          const k = known.get(e.path);
+          if (k && !e.bytes) Object.assign(e, { bytes: k.bytes, modified: k.modified });
+        }
+        this.#load(entries);
+        this.#scheduleKeep();
+      }
+    }
     this.#walking = null;
+  }
+
+  #lost = false;
+  #setLost(lost) {
+    this.#lost = lost;
+    this.core.setLost(lost);
+    this.#library.setLost(lost);
+  }
+
+  /** Permission given again: the folder is walked afresh. */
+  async reconnected() {
+    const root = this.root, folder = this.core.folder;
+    if (!root) return;
+    this.#setLost(false);
+    this.root = null;
+    await this.show(root, folder);
+  }
+
+  #measured(path, bytes, modified) {
+    const entry = this.#entries.get(path);
+    if (!entry || (entry.bytes === bytes && entry.modified === modified)) return;
+    Object.assign(entry, { bytes, modified });
+    this.#scheduleKeep();
+  }
+
+  // The listing, with every size and time known, kept for when the folder cannot be read.
+  #keepScheduled = null;
+  #scheduleKeep() {
+    if (this.#lost || !this.root) return;
+    clearTimeout(this.#keepScheduled);
+    const id = this.root.id;
+    this.#keepScheduled = setTimeout(() => keepListing(id, [...this.#entries.values()]), 2000);
   }
 
   setStyle(style) {
@@ -254,7 +304,9 @@ export class Gallery {
       this.#wantScheduled = false;
       this.#library.want(this.core.wanted().map((w) => {
         const path = this.core.path(w.file);
-        return { path, band: w.band, order: w.order, folderColor: w.folderColor, bytes: this.#entries.get(path)?.bytes ?? 0 };
+        const entry = this.#entries.get(path);
+        return { path, band: w.band, order: w.order, folderColor: w.folderColor, bytes: entry?.bytes ?? 0,
+                 modified: entry?.modified ?? 0 };
       }));
     });
   }
@@ -315,6 +367,29 @@ export class Gallery {
       case 5:
         this.#on.leave?.();
         break;
+      case 6: // Reconnect: asked in the click itself, as the browser wants
+        this.#on.reconnect?.(this.root);
+        break;
     }
+  }
+}
+
+// A root's last listing, in this browser's storage: [path, folder, bytes, modified] for each entry.
+// A listing past 2 MB is not kept.
+function keepListing(id, entries) {
+  try {
+    const text = JSON.stringify(entries.map((e) => [e.path, e.folder ? 1 : 0, e.bytes ?? 0, e.modified ?? 0]));
+    if (text.length < 2_000_000) localStorage.setItem(`gallery.listing.${id}`, text);
+  } catch {
+    // Kept for this visit only.
+  }
+}
+
+function keptListing(id) {
+  try {
+    const rows = JSON.parse(localStorage.getItem(`gallery.listing.${id}`) ?? "null");
+    return rows?.map(([path, folder, bytes, modified]) => ({ path, folder: folder === 1, bytes, modified })) ?? null;
+  } catch {
+    return null;
   }
 }
