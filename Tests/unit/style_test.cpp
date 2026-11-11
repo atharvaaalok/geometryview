@@ -1,4 +1,5 @@
 #include "cache/blob_writer.h"
+#include "engine.h"
 #include "render/looks.h"
 #include "render/style.h"
 #include "scene/scene.h"
@@ -116,6 +117,22 @@ TEST_CASE("style uniforms are in pixels at the display's scale") {
     const StyleUniforms metal = makeStyleUniforms(styleNamed(StyleName::Metal), settings, 2.0f);
     CHECK(metal.grain == 0.0f);
     CHECK(metal.wobble == 0.0f);
+}
+
+TEST_CASE("a style's sheet can be drawn outside the engine") {
+    const GeoSheet blueprint = geo_style_sheet(GeoStyleBlueprint);
+    CHECK(blueprint.on_dark);
+    CHECK(blueprint.grid_pitch == 24.0f);
+    CHECK(blueprint.grid_alpha > 0.0f);
+    CHECK(blueprint.top[2] == doctest::Approx(0x79 / 255.0f));
+    CHECK(blueprint.grain); // a paper sheet, blue
+    CHECK_FALSE(geo_style_sheet(GeoStyleMetal).grain);
+    const GeoSheet paper = geo_style_sheet(GeoStyleIllustration);
+    CHECK(paper.grain);
+    CHECK(paper.vignette == 0.0f);
+    CHECK(paper.ink[0] == doctest::Approx(0x23 / 255.0f));
+    CHECK(geo_style_sheet(GeoStyleStudio).vignette > 0.0f);
+    CHECK(geo_style_sheet(GeoStyleClay).bottom[0] < geo_style_sheet(GeoStyleClay).top[0]);
 }
 
 TEST_CASE("a line scale thins the ink and soft shadows, but not grain, grid or sampling") {

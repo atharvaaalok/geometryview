@@ -89,3 +89,26 @@ bool geo_style_casts_shadow(GeoStyle style) {
 bool geo_style_on_dark(GeoStyle style) {
     return styleOf(style).dark;
 }
+
+GeoSheet geo_style_sheet(GeoStyle style) {
+    const geo::render::Style& s = styleOf(style);
+    // The grain's tint is derived where the shaders get it.
+    const StyleUniforms u = geo::render::makeStyleUniforms(s, {}, 1.0f);
+    const auto copy = [](geo::render::Rgb c, float* out) {
+        out[0] = c.x;
+        out[1] = c.y;
+        out[2] = c.z;
+    };
+    GeoSheet sheet{};
+    copy(s.sheet.top, sheet.top);
+    copy(s.sheet.bottom, sheet.bottom);
+    sheet.vignette = s.sheet.vignette;
+    copy(s.sheet.gridColor, sheet.grid);
+    sheet.grid_alpha = s.sheet.gridAlpha;
+    sheet.grid_pitch = s.sheet.gridPitch;
+    copy(u.grainTint, sheet.grain_tint);
+    sheet.grain = s.sheet.grain;
+    copy(s.ink.color, sheet.ink);
+    sheet.on_dark = s.dark;
+    return sheet;
+}

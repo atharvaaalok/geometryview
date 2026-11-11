@@ -121,6 +121,26 @@ bool geo_style_casts_shadow(GeoStyle style);
 /// Whether a style draws on a dark sheet, where the interface over it reads in light ink.
 bool geo_style_on_dark(GeoStyle style);
 
+/// A style's sheet, for drawing it outside the engine, as the gallery does behind pictures drawn on
+/// a clear sheet. Colours are sRGB, 0 to 1. The engine draws it as a vertical wash from top to
+/// bottom; darkened by `1 - vignette * smoothstep(0.3, 1, r)`, r the distance from the middle in
+/// view heights; a drafting grid of `grid_pitch` points with heavier lines every five; and, where
+/// the style has grain, paper tooth toward `grain_tint`.
+typedef struct GeoSheet {
+    float top[3];
+    float bottom[3];
+    float vignette;
+    float grid[3];
+    float grid_alpha;
+    float grid_pitch; // points, or 0 for no grid
+    float grain_tint[3];
+    bool grain;
+    float ink[3]; // the style's lines
+    bool on_dark;
+} GeoSheet;
+
+GeoSheet geo_style_sheet(GeoStyle style);
+
 /// Actions the app can invoke. Keys reach these through a table the settings UI can edit.
 typedef enum GeoAction {
     GeoActionFit = 0,
