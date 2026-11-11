@@ -1,5 +1,6 @@
 module GeometryViewEngine {
     header "engine.h"
     header "library.h"
+    header "gallery.h"
     export *
 }

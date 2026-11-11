@@ -135,6 +135,11 @@ final class EngineHandle {
         geo_engine_set_section(engine, &copy)
     }
 
+    /// The gallery covers the viewport: no frames are drawn until it is uncovered.
+    func setCovered(_ covered: Bool) {
+        geo_engine_set_covered(engine, covered)
+    }
+
     func setLook(_ look: Look) {
         var engineLook = look.engineLook
         geo_engine_set_look(engine, &engineLook)
