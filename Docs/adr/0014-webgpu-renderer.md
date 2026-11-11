@@ -113,3 +113,11 @@ setup pass) was not built. It is worth trying only if edges become the bottlenec
   looks are the likely cost, but it is not yet profiled (P7).
 - **The overlay's text comes from the host** (`setOverlayAtlas`). The Mac draws it with Core Text.
   The web runtime will draw it with Canvas2D.
+
+
+## Addendum: pictures for the gallery (2026-11-11, ADR 0017)
+
+The renderer carries alpha through the sheet and the composite, as Metal does, and draws
+offscreen pictures without waiting (`renderOffscreenAsync`), since the browser cannot wait. The
+gallery's pictures are drawn by a module of their own, `geometryview-thumbs-web`, in a worker
+with its own device.

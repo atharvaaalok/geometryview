@@ -1,0 +1,35 @@
+{
+  "label": "mac-chrome-g1-thumbs-none",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "files": [
+    "gallery-drive",
+    "gallery-motor"
+  ],
+  "count": 60,
+  "size": 256,
+  "style": 0,
+  "firstMs": 1680,
+  "p50Ms": 4.54,
+  "p90Ms": 5.43,
+  "maxHeapMB": 16,
+  "recycled": 0,
+  "firstPicture": {
+    "width": 256,
+    "partRect": [
+      55,
+      56,
+      146,
+      150
+    ],
+    "inkRect": [
+      48,
+      55,
+      155,
+      183
+    ],
+    "worldPerPixel": 0.5467779179213452,
+    "pngBytes": 38697
+  }
+}

@@ -52,13 +52,30 @@ private:
     std::shared_ptr<State> state_;
 };
 
+/// How an import runs, beyond what it reads.
+struct ImportOptions {
+    /// OCCT workers at most; zero uses one per performance core.
+    u32 workers = 0;
+};
+
 /// Imports `sourcePath`, or reads it from the cache. Either way the listener receives the same
 /// segments, so a hit and a miss share one path. Blocks, so it runs off the engine thread.
 ///
 /// The helper writes to a temporary file, which is renamed only after it succeeds. Reading the
 /// final name therefore never sees a partial file, and mappings of the temporary one stay valid.
 ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
-                         ImportListener& listener, ImportCancel* cancel = nullptr);
+                         ImportListener& listener, ImportCancel* cancel = nullptr,
+                         const ImportOptions& options = {});
+
+/// Whether `importFile` would find `sourcePath` in the cache, without reading it.
+bool isCached(const std::string& sourcePath, const ImportPaths& paths);
+
+/// Reads only a STEP file's structure: the listener receives its model, with each body's box
+/// estimated, and no geometry. Nothing is cached; the result is a moment's look, for a gallery to
+/// lay the file out while it waits its turn to import. Fails for a file that only a whole read can
+/// open, and for a mesh, which has no structure to read apart from its geometry.
+ImportOutcome readStructure(const std::string& sourcePath, const ImportPaths& paths,
+                            ImportListener& listener, ImportCancel* cancel = nullptr);
 
 /// Imports some definitions again at a finer level, as segments that replace their coarser
 /// geometry. Each result is cached beside the file's own, and `importFile` brings it back.

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <format>
 #include <map>
 #include <string>

@@ -22,8 +22,8 @@ const reportsFor = (label) => {
   if (label.includes("-p7-sweep")) return join(root, "build/fixtures/out");
   if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
-  // The gallery's pictures, drawn as the browser will draw them.
-  if (label.includes("-thumbs-")) return join(root, "Docs/measurements/gallery/web");
+  // The gallery's pictures, drawn as the browser will draw them, and its other checks.
+  if (label.includes("-thumbs-") || label.includes("-g1-")) return join(root, "Docs/measurements/gallery/web");
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
   return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 };

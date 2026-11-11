@@ -8,8 +8,11 @@
 //           for this visit only.
 //
 // Nothing is read until it is shown: a folder is listed when it is opened, by names alone, and a
-// file is read when it is opened. The recent files are kept in IndexedDB everywhere.
+// file is read when it is opened. A gallery walks a folder with walk(), which yields its folders
+// and STEP and STL files, by names first wherever the browser allows. The recent files are kept in
+// IndexedDB everywhere.
 
+import { keptImport } from "./kept.js";
 import { keptFile } from "./library.js";
 import { remember as rememberIn } from "./library-rows.js";
 
@@ -41,6 +44,10 @@ async function store(name, mode, work) {
 const all = (name) => store(name, "readonly", (s) => s.getAll()).catch(() => []);
 const put = (name, value) => store(name, "readwrite", (s) => s.put(value)).catch(() => {});
 const remove = (name, key) => store(name, "readwrite", (s) => s.delete(key)).catch(() => {});
+
+// What a gallery shows, and how far a walk goes, as on the Mac (Engine/library/scan.h).
+export const isModelName = (name) => /\.(step|stp|stl)$/i.test(name);
+export const kWalkLimits = { depth: 32, files: 20000 };
 
 const kModelTypes = [{ description: "STEP, STL or cache files",
                        accept: { "application/octet-stream": [".step", ".stp", ".stl", ".geoblob"] } }];
@@ -118,6 +125,28 @@ class AccessFolders {
     const parts = path.split("/");
     const name = parts.pop();
     return (await this.#directory(id, parts.join("/"))).getFileHandle(name);
+  }
+
+  // A gallery's walk, by names alone: { path, kind, handle } for each folder and STEP or STL file.
+  // A file's size and time come from handle.getFile(), asked for when its tile is in view.
+  async *walk(id, path = "", { depth = kWalkLimits.depth, files = kWalkLimits.files } = {}) {
+    const start = await this.#directory(id, path);
+    const pending = [[start, path, 0]];
+    let found = 0;
+    while (pending.length > 0) {
+      const [directory, at, level] = pending.shift();
+      for await (const [name, handle] of directory.entries()) {
+        if (name.startsWith(".")) continue;
+        const inner = at ? `${at}/${name}` : name;
+        if (handle.kind === "directory") {
+          yield { path: inner, kind: "folder", handle };
+          if (level + 1 < depth) pending.push([handle, inner, level + 1]);
+        } else if (isModelName(name)) {
+          if (found++ === files) return;
+          yield { path: inner, kind: "file", handle };
+        }
+      }
+    }
   }
 
   async file(id, path) {
@@ -227,6 +256,48 @@ class VisitFolders {
   }
 
   pickFiles() { return Promise.resolve(undefined); } // the page's own file input instead
+
+  // A gallery's walk: { path, kind, file? }, files with their File where the folder came whole.
+  async *walk(id, path = "", { depth = kWalkLimits.depth, files = kWalkLimits.files } = {}) {
+    const folder = this.#folders.find((f) => f.id === id);
+    if (!folder) throw new Error("That folder is no longer connected.");
+    let found = 0;
+    if (folder.files) {
+      const prefix = path ? `${path}/` : "";
+      const folders = new Set();
+      for (const [inner, file] of folder.files) {
+        if (!inner.startsWith(prefix)) continue;
+        const parts = inner.slice(prefix.length).split("/");
+        if (parts.some((part) => part.startsWith(".")) || parts.length > depth) continue;
+        for (let i = 1; i < parts.length; i++) {
+          const dir = prefix + parts.slice(0, i).join("/");
+          if (!folders.has(dir)) {
+            folders.add(dir);
+            yield { path: dir, kind: "folder" };
+          }
+        }
+        if (!isModelName(inner)) continue;
+        if (found++ === files) return;
+        yield { path: inner, kind: "file", file };
+      }
+      return;
+    }
+    const pending = [[path, 0]];
+    while (pending.length > 0) {
+      const [at, level] = pending.shift();
+      for (const entry of await this.list(id, at)) {
+        if (entry.name.startsWith(".")) continue;
+        const inner = at ? `${at}/${entry.name}` : entry.name;
+        if (entry.kind === "folder") {
+          yield { path: inner, kind: "folder" };
+          if (level + 1 < depth) pending.push([inner, level + 1]);
+        } else if (isModelName(entry.name)) {
+          if (found++ === files) return;
+          yield { path: inner, kind: "file" };
+        }
+      }
+    }
+  }
 }
 
 // ---- The iPhone shell ------------------------------------------------------------------------
@@ -260,6 +331,20 @@ class ShellFolders {
 
   async file(id, path) {
     return this.#fetchFile(`/open/${id}/${encodePath(path)}`, path.split("/").pop());
+  }
+
+  // A gallery's walk, from the shell's /scan, which walks the folder natively: { path, kind, bytes,
+  // modified, cloud }, a file that lives only in iCloud marked cloud.
+  async *walk(id, path = "", { depth = kWalkLimits.depth, files = kWalkLimits.files } = {}) {
+    const response = await fetch(`/scan/${id}/${encodePath(path)}?depth=${depth}&limit=${files}`);
+    if (!response.ok) throw new Error("This folder could not be read.");
+    const prefix = path ? `${path}/` : "";
+    for (const line of (await response.text()).split("\n")) {
+      if (!line) continue;
+      const entry = JSON.parse(line);
+      if (entry.done) return;
+      yield { ...entry, path: prefix + entry.path };
+    }
   }
 
   async #fetchFile(url, name) {
@@ -357,7 +442,8 @@ export class LibraryStore {
     }
     const permission = await entry.handle?.queryPermission?.({ mode: "read" }).catch(() => "denied");
     if (permission === "granted") return { file: await entry.handle.getFile() };
-    const cache = await keptFile(entry.name).catch(() => null);
+    const cache = (entry.cacheKey ? (await keptImport(entry.cacheKey))?.blob : null) ??
+                  await keptFile(entry.name).catch(() => null);
     if (cache) return { cache };
     if (entry.handle && (await entry.handle.requestPermission({ mode: "read" }).catch(() => "denied")) === "granted") {
       return { file: await entry.handle.getFile() };

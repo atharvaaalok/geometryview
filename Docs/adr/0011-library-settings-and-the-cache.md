@@ -75,3 +75,18 @@ decide the rows alike; `library-rows.js` has tests.
 Measured in headless Chrome (`test=library`): a file from a connected folder imports in 475 ms and
 reopens from Recent in 5 ms, from the kept import; with the Library showing, 0 frames are drawn
 while nothing happens, with either way of reaching folders.
+
+
+## Addendum: the gallery's caches (2026-11-11, ADR 0017)
+
+- Eviction counts any suffixes it is given and groups a key's files: a cache file with its
+  refinements, or a file's pictures with their notes. An entry's use is its main file's time, or
+  else its newest file's.
+- Partial files from interrupted writes are swept at start once two hours old.
+- The gallery keeps facts, pictures and folder listings in `gallery/` beside the import cache, each
+  with a budget of its own. Cache files it imports are dated a year back, so they go before any
+  file opened.
+- In the browser, imports are kept under keys of where a file came from (`library2/`, OPFS v2), and
+  evicted least recently used to a share of the quota. A file leaving Recent no longer takes its
+  import with it, since a gallery may show it. When it is removed from Recent by hand, its import
+  goes too.

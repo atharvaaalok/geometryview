@@ -176,3 +176,11 @@ large one in an assembly 20 m across, and require nothing of it to show through.
 offset, 864 pixels did. The definition's lift is one more float in its record, already read for
 each segment; the edge pass costs what it did, and the flatness check costs the importer nothing
 measurable (it stops at the first curved face).
+
+
+## Addendum: a clear sheet (2026-11-11, ADR 0017)
+
+The composite writes two sources: ink, and the colour beneath times what is kept of it. Blending
+with them leaves every opaque frame as it was, and with the sheet's alpha at 0 a frame comes out
+premultiplied: the part, its lines and its cast shadow, for the gallery to lay on its own sheet.
+The 20 goldens did not change.

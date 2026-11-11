@@ -32,6 +32,7 @@ namespace {
 
 constexpr int kSourceFd = 3;
 constexpr int kOutputFd = 4;
+constexpr int kFirstHighFd = 10; // above every number the helper's descriptors take
 
 // Closes a file descriptor when it goes out of scope.
 class ScopedFd {
@@ -72,11 +73,21 @@ bool readExactly(int fd, void* data, usize size) {
 // process has open.
 bool spawnHelper(const std::string& helper, const std::vector<std::string>& options, int sourceFd,
                  int outputFd, int resultFd, pid_t& pid, std::string& error) {
+    // The descriptors are duplicated above the numbers they become first: if one were already 3
+    // or 4, an earlier dup2 would overwrite it before it was moved, and the helper would write its
+    // cache file into the source.
+    const ScopedFd highSource(fcntl(sourceFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    const ScopedFd highOutput(fcntl(outputFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    const ScopedFd highResult(fcntl(resultFd, F_DUPFD_CLOEXEC, kFirstHighFd));
+    if (highSource.get() < 0 || highOutput.get() < 0 || highResult.get() < 0) {
+        error = std::format("The import helper could not start: {}.", std::strerror(errno));
+        return false;
+    }
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, sourceFd, kSourceFd);
-    posix_spawn_file_actions_adddup2(&actions, outputFd, kOutputFd);
-    posix_spawn_file_actions_adddup2(&actions, resultFd, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, highSource.get(), kSourceFd);
+    posix_spawn_file_actions_adddup2(&actions, highOutput.get(), kOutputFd);
+    posix_spawn_file_actions_adddup2(&actions, highResult.get(), STDOUT_FILENO);
     posix_spawn_file_actions_addinherit_np(&actions, STDERR_FILENO);
 
     posix_spawnattr_t attributes;
@@ -286,7 +297,8 @@ ImportOutcome runHelper(const std::string& sourcePath, const std::string& blobPa
 } // namespace
 
 ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths,
-                         ImportListener& listener, ImportCancel* cancel) {
+                         ImportListener& listener, ImportCancel* cancel,
+                         const ImportOptions& options) {
     ImportOutcome outcome;
     const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
     if (blobPath.empty()) {
@@ -311,7 +323,37 @@ ImportOutcome importFile(const std::string& sourcePath, const ImportPaths& paths
     for (const std::string& refinement : refinementsOf(blobPath)) {
         unlink(refinement.c_str());
     }
-    return runHelper(sourcePath, blobPath, paths, {}, listener, cancel);
+    std::vector<std::string> flags;
+    if (options.workers != 0) {
+        flags = {"--workers", std::to_string(options.workers)};
+    }
+    return runHelper(sourcePath, blobPath, paths, flags, listener, cancel);
+}
+
+bool isCached(const std::string& sourcePath, const ImportPaths& paths) {
+    std::string error;
+    const std::string blobPath = cachePathFor(sourcePath, paths, error);
+    struct stat info{};
+    return !blobPath.empty() && stat(blobPath.c_str(), &info) == 0;
+}
+
+ImportOutcome readStructure(const std::string& sourcePath, const ImportPaths& paths,
+                            ImportListener& listener, ImportCancel* cancel) {
+    ImportOutcome outcome;
+    const std::string blobPath = cachePathFor(sourcePath, paths, outcome.message);
+    if (blobPath.empty()) {
+        return outcome;
+    }
+    // Beside the file's own entry, so eviction counts it with it, and removed once read: its
+    // segments stay mapped.
+    const std::string stem =
+        blobPath.substr(0, blobPath.size() - std::string_view(".geoblob").size());
+    const std::string structurePath = stem + ".structure.geoblob";
+    outcome = runHelper(sourcePath, structurePath, paths, {"--structure", "--workers", "1"},
+                        listener, cancel);
+    unlink(structurePath.c_str());
+    outcome.blobPath.clear();
+    return outcome;
 }
 
 ImportOutcome refineFile(const std::string& sourcePath, const ImportPaths& paths, u32 level,

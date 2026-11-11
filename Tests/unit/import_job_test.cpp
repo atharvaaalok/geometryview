@@ -1,6 +1,8 @@
 #include "ipc/import_job.h"
 
+#include "drive_fixture.h"
 #include "format/blob.h"
+#include "scene/facts.h"
 
 #include <cstdlib>
 #include <doctest/doctest.h>
@@ -173,3 +175,48 @@ TEST_CASE("a helper that cannot start is reported") {
     CHECK(outcome.message.starts_with("The import helper could not start"));
     CHECK(workspace.cacheEntries() == 0);
 }
+
+TEST_CASE("a structure pass reads a STEP file's model alone, and caches nothing") {
+    Workspace workspace;
+    const std::string source = workspace.write("drive.step", test::driveStep().c_str());
+    CHECK_FALSE(isCached(source, workspace.paths));
+    Collector collector;
+    const ImportOutcome outcome = readStructure(source, workspace.paths, collector);
+    REQUIRE_MESSAGE(outcome.ok, outcome.message);
+    CHECK(outcome.blobPath.empty());
+    CHECK(workspace.cacheEntries() == 0);
+    // The model, with nothing to draw yet.
+    const scene::Facts facts = scene::measure(collector.segments);
+    CHECK(facts.estimated);
+    CHECK(facts.bodies == 6);
+    CHECK(facts.name == "drive");
+    for (const auto& segment : collector.segments) {
+        CHECK(segment->view().definitions.empty());
+    }
+    CHECK_FALSE(isCached(source, workspace.paths));
+}
+
+TEST_CASE("a structure pass refuses a mesh, which has none apart from its geometry") {
+    Workspace workspace;
+    Collector collector;
+    const ImportOutcome outcome =
+        readStructure(workspace.write("part.stl", kTriangle), workspace.paths, collector);
+    CHECK_FALSE(outcome.ok);
+    CHECK(outcome.message.starts_with("A mesh has no structure"));
+    CHECK(workspace.cacheEntries() == 0);
+}
+
+#ifdef GEO_TEST_WORKER_PATH
+TEST_CASE("an import can be held to fewer OCCT workers") {
+    Workspace workspace;
+    const std::string source = workspace.write("drive.step", test::driveStep().c_str());
+    Collector collector;
+    ImportOptions options;
+    options.workers = 1;
+    const ImportOutcome outcome =
+        geo::ipc::importFile(source, workspace.paths, collector, nullptr, options);
+    REQUIRE_MESSAGE(outcome.ok, outcome.message);
+    CHECK(isCached(source, workspace.paths));
+    CHECK_FALSE(scene::measure(collector.segments).estimated);
+}
+#endif

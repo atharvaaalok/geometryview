@@ -392,7 +392,14 @@ bool importStep(std::span<const u8> file, int outputFd, SegmentListener* listene
             error = "This file cannot be refined.";
             return false;
         }
+        if (options.structureOnly) {
+            error = "This file's structure can only be read with its geometry.";
+            return false;
+        }
         return importWholeFile(outputFd, listener, options, hashContents(file), stats, error);
+    }
+    if (options.structureOnly) {
+        return import.finishStructure(error);
     }
     const double start = nowSeconds();
     const usize jobs = import.scheduler().start();

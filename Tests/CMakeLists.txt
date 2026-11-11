@@ -2,7 +2,7 @@ if(GEO_TARGET STREQUAL "wasm")
     # The portable unit tests, run by Node. Tests of Metal, the import processes and the engine
     # thread stay native.
     set(portable_tests
-        blob camera core edges face_state flight indexed_mesh interaction name_index overlay packer
+        blob camera core edges face_state facts flight indexed_mesh interaction json name_index overlay packer
         parallel parallel_sort part21 pointer_controller refinement segment shell slice_ladder spsc_ring
         step_structure stl_reader style)
     list(TRANSFORM portable_tests PREPEND unit/)
@@ -37,7 +37,8 @@ target_compile_definitions(geo_tests PRIVATE
     GEO_SANITIZED=${geo_sanitized}
     GEO_TEST_HELPER_PATH="$<TARGET_FILE:geometryview-import>"
     GEO_TEST_SHADER_LIBRARY="${GEO_METALLIB}"
-    GEO_TEST_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/Tests/golden")
+    GEO_TEST_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/Tests/golden"
+    GEO_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/Tests/data")
 target_link_libraries(geo_tests PRIVATE engine import_core doctest geo_warnings)
 set_target_properties(geo_tests PROPERTIES GEO_ALLOW_EXCEPTIONS ON)
 if(TARGET geometryview-occt-worker)

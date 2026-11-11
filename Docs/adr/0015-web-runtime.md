@@ -97,3 +97,15 @@ the page, and DPR 2 on phones.
   show as they go; STEP files refine in the browser from a source kept in the library
   (`p7/p7-hardening.md`).*
 - **The Mac app keeps its behaviour**, with its tests, `--exercise` and `--chrome-check` as before.
+
+
+## Addendum: the gallery's runtime (2026-11-11, ADR 0017)
+
+- Imports go through `importers.js`, in place of one promise chain. A live lane holds files
+  opened, one at a time, and refinements; a file being opened cancels a refinement running. A
+  gallery lane follows `ImportQueue` (`import-queue.js`, the same cases as the Mac's queue).
+- The import worker takes `cancel` and `structure`.
+- Kept imports are named by keys (`kept.js`, OPFS v2).
+- Folders are walked by name for the gallery (`walk()`); the iPhone shell walks natively at
+  `/scan`.
+- Pictures are drawn in `thumbs-worker.js`, which is replaced once its heap passes 256 MB.

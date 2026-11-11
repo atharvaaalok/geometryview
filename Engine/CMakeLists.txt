@@ -59,13 +59,23 @@ if(GEO_TARGET STREQUAL "wasm")
             -sEXPORTED_FUNCTIONS=_malloc,_free
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,UTF8ToString,stringToUTF8,lengthBytesUTF8
             -sENVIRONMENT=web -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createGeometryView)
+
+        # The gallery's pictures, in a worker with a device of its own. See browser/web_thumbs.cpp.
+        add_executable(geometryview-thumbs-web browser/web_thumbs.cpp)
+        target_link_libraries(geometryview-thumbs-web PRIVATE engine_webgpu engine_core geo_warnings)
+        set_target_properties(geometryview-thumbs-web PROPERTIES SUFFIX ".mjs")
+        target_link_options(geometryview-thumbs-web PRIVATE
+            -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
+            -sEXPORTED_FUNCTIONS=_malloc,_free
+            -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,UTF8ToString
+            -sENVIRONMENT=worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createThumbs)
     endif()
     return()
 endif()
 
 # The Mac platform: Metal, the engine thread and display link, and the import helper processes.
 file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
-    ipc/*.cpp gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
+    ipc/*.cpp library/*.cpp library/*.mm gpu/*.mm gpu/*.cpp engine/*.cpp engine/*.mm)
 add_library(engine STATIC ${engine_sources})
 target_include_directories(engine PUBLIC include PRIVATE .)
 target_include_directories(engine SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")

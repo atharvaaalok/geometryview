@@ -3,6 +3,8 @@
 #include "engine.h"
 #include "format/blob.h"
 #include "import.h"
+#include "library_command.h"
+#include "scene/facts.h"
 #include "sheet.h"
 
 #include <algorithm>
@@ -290,6 +292,18 @@ int statsCommand(const char* path) {
     return 0;
 }
 
+// Prints what the gallery knows of a file, as JSON: its box in millimetres, its parts and name.
+int factsCommand(const char* path) {
+    scene::Facts facts;
+    std::string error;
+    if (!scene::measureCacheFile(path, facts, error)) {
+        std::println(stderr, "{}", error);
+        return 1;
+    }
+    std::println("{}", facts.toJson().write());
+    return 0;
+}
+
 // Prints a string as a JSON string literal.
 void printJsonString(std::string_view text) {
     std::print("\"");
@@ -409,20 +423,29 @@ int main(int argc, const char** argv) {
     if (command == "render" && argc >= 5) {
         return renderCommand(argc, argv);
     }
+    if (command == "facts" && argc == 3) {
+        return factsCommand(argv[2]);
+    }
     if (command == "tree" && argc == 3) {
         return treeCommand(argv[2]);
     }
     if (command == "sheet") {
         return gcli::sheetCommand(argc, argv);
     }
+    if (command == "library") {
+        return gcli::libraryCommand(argc, argv);
+    }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
     std::println(stderr, "       gcli stats <blob>");
+    std::println(stderr, "       gcli facts <blob>");
     std::println(stderr, "       gcli tree <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> [width height azimuth "
                          "elevation ortho|perspective style colour section plain|overlay "
                          "isolate]");
+    std::println(stderr, "       gcli library <metallib> <helper> <cache> <folder> [--slots S] "
+                         "[--workers W] [--style N] [--pixels P] [--limit N] [--prefetch]");
     std::println(stderr,
                  "       gcli sheet <metallib> <png> [--cell 192] [--columns N] [--style S] "
                  "[--colour C] [--same-scale] [--title text] < tiles.jsonl");

@@ -12,6 +12,9 @@ import { LibraryCard, cachedImport, forgetKept, keptFile, keptSource, libraryEnt
          setCacheVersion } from "./library.js";
 import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
+import { Importers } from "./importers.js";
+import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
+         keyOf as keptKeyOf, persistOnce } from "./kept.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
          ShortcutsSheet, StatusCard, Styles, Toolbar } from "./chrome.js";
 import { el } from "./ui.js";
@@ -444,6 +447,7 @@ async function connectFolder() {
 }
 
 async function showConnected(ids) {
+  persistOnce(); // what is kept of a connected folder's files should outlast storage pressure
   await library.refresh();
   for (const id of ids) library.expand(id);
   if (!phone) panelOpen = true;
@@ -481,6 +485,7 @@ async function rememberOpened(name) {
   if (!name) return;
   const source = sources.get(name) ?? {};
   const entry = { key: name, name, where: source.where ?? "Kept in this browser", openedAt: Date.now() };
+  if (keys.has(name)) entry.cacheKey = keys.get(name);
   for (const field of ["handle", "root", "path"]) if (source[field]) entry[field] = source[field];
   try {
     const dropped = await libraryStore.remember(entry);
@@ -493,8 +498,12 @@ async function rememberOpened(name) {
 }
 
 async function forgetRecent(key) {
+  const entry = (await libraryStore.recent()).find((r) => r.key === key);
   await libraryStore.forget(key);
-  if (!names.includes(key)) await forgetKept(key);
+  if (!names.includes(key)) {
+    await forgetKept(key);
+    if (entry?.cacheKey) await forgetKeptKey(entry.cacheKey);
+  }
 }
 
 // The Library's keys of what is shown: names, and paths in connected folders.
@@ -551,11 +560,34 @@ async function openFiles(files, adding) {
 // ---- Importing --------------------------------------------------------------------------------
 
 // The importer runs in a worker, with its own pool of OCCT workers, one file at a time. Phones
-// get two OCCT workers, as P2 measured best; desktops one per core, less two for the page.
+// get two OCCT workers, as P2 measured best; desktops one per core, less two for the page. What is
+// opened goes through the importers' live lane: one at a time, in the order asked, and a file being
+// opened cancels a refinement running; the gallery's imports have a lane of their own.
 let importer = null;
-let importing = Promise.resolve();
+const importers = new Importers({ shared: phone });
+let importing = Promise.resolve(); // the latest file asked for, for the scripted checks
+let nextJob = 1;
 const stepSources = new Map(); // STEP files imported this visit, by name, for refinement
+const keys = new Map(); // names of files imported this visit, to their kept imports' keys
 const importWorkers = phone ? 2 : Math.max(2, Math.min(12, (navigator.hardwareConcurrency ?? 4) - 2));
+
+// Where a file came from, for its kept import's key: a connected folder's name and its path there,
+// or "file" and its name for one opened on its own.
+function originOf(file) {
+  const source = sources.get(file.name);
+  return source?.root ? { source: library.folderName(source.root) || source.root, path: source.path }
+                      : { source: "file", path: file.name };
+}
+
+async function keyFor(file) {
+  return keptKeyOf({ ...originOf(file), size: file.size, modified: file.lastModified, version: engine.cacheVersion });
+}
+
+// Keeps what is kept within its budget, sparing what is open, after an import adds to it.
+function evictKept() {
+  const open = new Set(names.map((name) => keys.get(name)).filter(Boolean));
+  evictImports(open).catch(() => {});
+}
 
 // What importing an STL file takes at its peak. A binary file, read in pieces, is never held
 // whole, and the importer's heap stays under 300 MB and 115 bytes a triangle: 0.46 GB for 2
@@ -572,8 +604,11 @@ const kPhoneImportBudget = 1.2 * 1024 ** 3;
 
 function importFile(file, add) {
   if (!/\.stl$/i.test(file.name)) stepSources.set(file.name, file);
-  importing = importing.then(async () => {
-    const cached = await cachedImport(file);
+  importing = importers.live(`open-${nextJob++}`, async (signal) => {
+    const key = await keyFor(file);
+    keys.set(file.name, key);
+    // Kept before by key, or by name before keys were kept.
+    const cached = (await keptImport(key, engine.cacheVersion))?.blob ?? await cachedImport(file);
     if (cached) {
       openCache(cached, file.name, add);
       return { type: "cached" };
@@ -617,8 +652,12 @@ function importFile(file, add) {
         }
       };
       worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
-      worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name,
-                           workers: importWorkers, threads: stl, progressive: !stl });
+      signal.addEventListener("abort", () => worker.postMessage({ type: "cancel" }));
+      // A file in a connected folder can be read from there again, so its source is not kept.
+      const fromFolder = Boolean(sources.get(file.name)?.root);
+      worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name, key,
+                           keepSource: !stl && !fromFolder, workers: importWorkers, threads: stl,
+                           progressive: !stl });
     });
     if (stl) worker.terminate();
     lastImport = result;
@@ -628,7 +667,8 @@ function importFile(file, add) {
       return result;
     }
     if (token !== null) engine.finishImport(token);
-    else openCache(await keptFile(file.name), file.name, add);
+    else openCache((await keptImport(key))?.blob, file.name, add);
+    evictKept();
     return result;
   });
   return importing;
@@ -638,22 +678,40 @@ function importFile(file, add) {
 
 // The engine asks for finer geometry where the settled view is close, as on the Mac: the STEP
 // file's definitions it names are imported again at a finer level, and their segments join the
-// document. The file is the one imported this visit, or the one the library kept beside its cache.
-// Refinements wait their turn behind imports, in the same worker and its warm OCCT pool.
+// document. The file is the one imported this visit, the one in its connected folder, or the one
+// the library kept beside its cache. Refinements wait their turn behind files being opened, in the
+// same worker and its warm OCCT pool, and one running is cancelled for a file being opened.
 let refinement = null;
 
+// A STEP file's source again, for refining: from this visit, its folder, or what was kept.
+async function sourceFor(name) {
+  const visit = stepSources.get(name);
+  if (visit) return visit;
+  const where = sources.get(name);
+  if (where?.root && library.readyFolders.has(where.root)) {
+    const file = await libraryStore.folders.file(where.root, where.path).catch(() => null);
+    if (file) return file;
+  }
+  const key = keys.get(name);
+  return (key ? await keptSourceOf(key) : null) ?? await keptSource(name);
+}
+
 function refineDocument(token, name, level, definitions) {
-  const job = { cancelled: false };
+  const job = { cancelled: false, id: `refine-${nextJob++}` };
   refinement = job;
   const asked = performance.now();
-  importing = importing.then(async () => {
+  importers.live(job.id, async (signal) => {
     let ok = false;
     const started = performance.now();
     let note = "";
     let made = null, segments = 0, refused = 0;
+    signal.addEventListener("abort", () => {
+      job.cancelled = true;
+      importer?.postMessage({ type: "cancel" });
+    });
     try {
-      const file = job.cancelled ? null : stepSources.get(name) ?? await keptSource(name);
-      if (!file) return;
+      const file = job.cancelled ? null : await sourceFor(name);
+      if (!file || job.cancelled) return;
       importer ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" });
       const result = await new Promise((resolve) => {
         importer.onmessage = ({ data }) => {
@@ -674,7 +732,7 @@ function refineDocument(token, name, level, definitions) {
                  coarserFaces: result.coarserFaces, crashedWorkers: result.crashedWorkers };
       }
       // The view keeps the geometry it has, so a failure is only worth a note for diagnosing.
-      if (!ok) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
+      if (!ok && !job.cancelled) console.warn(`Refining ${name} to level ${level} failed: ${result.message}`);
     } finally {
       refinements.push({ name, level, definitions: definitions.length, waitedMs: Math.round(started - asked),
                          ms: Math.round(performance.now() - started), ok, cancelled: job.cancelled, note,
@@ -682,21 +740,26 @@ function refineDocument(token, name, level, definitions) {
       if (!job.cancelled) engine.finishRefinement(token, ok);
       if (refinement === job) refinement = null;
     }
-  });
+  }, { band: "visible" });
 }
 
 // Each refinement job, as the scripted check reports them.
 const refinements = [];
 
 function cancelRefinement() {
-  if (refinement) refinement.cancelled = true;
+  if (!refinement) return;
+  refinement.cancelled = true;
+  importers.cancel(refinement.id);
 }
 
 let lastImport = null;
 let importStarted = 0;
 
-// Removes a kept import, so the next open imports again.
-const forgetImport = (name) => forgetKept(name);
+// Removes what was kept of a file by its name, so the next open imports again.
+async function forgetImport(name) {
+  await forgetKept(name);
+  await forgetNamed(name);
+}
 
 // Dropping files: holding ⌘ adds them to what is shown.
 let dragDepth = 0;
@@ -805,6 +868,8 @@ if (params.has("token")) {
 if (params.get("test") === "import") runImportTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "library") runLibraryTest().catch((error) => post({ error: error.message }));
 else if (params.get("test") === "refine") runRefineTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "thumbs") runThumbsTest().catch((error) => post({ error: error.message }));
+else if (params.get("test") === "worker") runWorkerTest().catch((error) => post({ error: error.message }));
 else if (params.has("test")) runTest().catch((error) => post({ error: error.message }));
 
 // ---- The launcher's bridge ---------------------------------------------------------------------
@@ -967,7 +1032,9 @@ function bridgeHandlers() {
 function testLabel() {
   // A report's name is a file's, so an imported fixture's folder joins it with a dash.
   const name = (model ?? params.get("file") ?? "none").replaceAll("/", "-");
-  return `${params.get("label") ?? "unlabelled"}-p4-${params.get("test")}-${name}`;
+  // The gallery's checks are reported with its measurements.
+  const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1" : "p4";
+  return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
 async function post(report) {
@@ -1017,7 +1084,7 @@ async function runImportTest() {
 // is left, so the first open shows whether it lasted.
 async function runLibraryTest() {
   const name = params.get("file") ?? "pack.step";
-  if (!params.has("keep")) await forgetKept(name);
+  if (!params.has("keep")) await forgetImport(name);
   const keptBefore = (await libraryEntries()).map((e) => e.name);
   let id;
   if (libraryStore.kind === "shell") {
@@ -1040,6 +1107,9 @@ async function runLibraryTest() {
   }
   await showConnected([id]);
   const listed = (await libraryStore.folders.list(id, "")).map((e) => e.name).sort();
+  // A gallery's walk: its folders and model files, by path.
+  const walked = [];
+  for await (const entry of libraryStore.folders.walk(id)) walked.push(`${entry.kind}:${entry.path}`);
 
   lastImport = null;
   const opened = performance.now();
@@ -1074,11 +1144,92 @@ async function runLibraryTest() {
     const opfs = await navigator.storage.getDirectory();
     await opfs.removeEntry("library-test", { recursive: true }).catch(() => {});
   }
-  await post({ backend: libraryStore.kind, origin: location.origin, keptBefore, listed, firstMs, imported,
+  await post({ backend: libraryStore.kind, origin: location.origin, keptBefore, listed, walked, firstMs, imported,
                stayedOnLibrary, stillOnLibrary: !library.element.hidden || phone,
                recentFirst: recent[0]?.key,
                recentWhere: recent[0]?.where, reopenMs, reopenedFromCache,
                idleFrames: idle.frames - settled.frames, looping: idle.looping, rows });
+}
+
+// Draws fixtures' pictures in the gallery's picture worker, one after another as the gallery
+// will, and reports how long each took, the most memory the worker held and how often it was
+// replaced; the first eight go on a sheet, kept as a PNG.
+async function runThumbsTest() {
+  const { Thumbnailer } = await import("./thumbs.js");
+  const files = (params.get("files") ?? "gallery-drive,gallery-motor").split(",");
+  const count = Number(params.get("count") ?? 40);
+  const thumbnailer = new Thumbnailer({ recycleMB: Number(params.get("recycle") ?? 256) });
+  const blobs = await Promise.all(files.map(async (f) => (await fetch(`${fixtures}${f}.geoblob`)).blob()));
+  const spec = { pixels: Number(params.get("size") ?? 256), style: Number(params.get("style") ?? 0),
+                 colorMode: 1, pixelsPerPoint: 2, lineScale: 0.5 };
+  const times = [];
+  let firstMs = 0, maxHeapMB = 0, firstPicture = null;
+  const kept = [];
+  for (let i = 0; i < count; i++) {
+    const started = performance.now();
+    const picture = await thumbnailer.draw(blobs[i % blobs.length], spec, i % 4);
+    const ms = performance.now() - started;
+    if (i === 0) firstMs = ms;
+    else times.push(ms);
+    maxHeapMB = Math.max(maxHeapMB, thumbnailer.heapMB);
+    firstPicture ??= { width: picture.width, partRect: picture.partRect, inkRect: picture.inkRect,
+                       worldPerPixel: picture.worldPerPixel, pngBytes: picture.png.size };
+    if (kept.length < 8) kept.push(picture.bitmap);
+    else picture.bitmap.close();
+  }
+  thumbnailer.close();
+  const sheet = new OffscreenCanvas(spec.pixels * kept.length, spec.pixels);
+  const context = sheet.getContext("2d");
+  context.fillStyle = "#f2ead8";
+  context.fillRect(0, 0, sheet.width, sheet.height);
+  kept.forEach((bitmap, i) => context.drawImage(bitmap, i * spec.pixels, 0));
+  const png = await sheet.convertToBlob({ type: "image/png" });
+  await fetch(`/png?label=${encodeURIComponent(testLabel())}`, { method: "POST", body: png }).catch(() => {});
+  times.sort((a, b) => a - b);
+  const at = (q) => Math.round(times[Math.min(times.length - 1, Math.floor(q * times.length))] * 100) / 100;
+  await post({ files, count, size: spec.pixels, style: spec.style, firstMs: Math.round(firstMs),
+               p50Ms: at(0.5), p90Ms: at(0.9), maxHeapMB, recycled: thumbnailer.recycled, firstPicture });
+}
+
+// The import worker's gallery messages: a STEP file's structure alone, as one model segment; and
+// an import cancelled soon after it starts, which stops with its slices out.
+async function runWorkerTest() {
+  const name = params.get("file") ?? "pack.step";
+  const file = new File([await (await fetch(`${fixtures}step/${name}`)).blob()], name);
+  const worker = new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" });
+  const ask = (message, onSegment = () => {}) => new Promise((resolve) => {
+    worker.onmessage = ({ data }) => {
+      if (data.type === "segment") onSegment(data.bytes);
+      else if (data.type !== "progress") resolve(data);
+    };
+    worker.postMessage(message);
+  });
+  let started = performance.now();
+  const segments = [];
+  const structure = await ask({ type: "structure", file }, (bytes) => segments.push(bytes.length));
+  const structureMs = Math.round(performance.now() - started);
+
+  started = performance.now();
+  let progressed = false;
+  const cancelled = new Promise((resolve) => {
+    worker.onmessage = ({ data }) => {
+      if (data.type === "progress" && data.done > 0 && !progressed) {
+        progressed = true;
+        worker.postMessage({ type: "cancel" });
+      } else if (data.type === "done" || data.type === "failed") {
+        resolve(data);
+      }
+    };
+  });
+  worker.postMessage({ type: "import", file, kind: "step", name, key: "worker-test", keepSource: false,
+                       workers: importWorkers, threads: false, progressive: false });
+  const outcome = await cancelled;
+  const cancelMs = Math.round(performance.now() - started);
+  worker.terminate();
+  await forgetKeptKey("worker-test");
+  await post({ file: name, structure: structure.type, structureMs, structureSegments: segments,
+               cancelOutcome: outcome.type, cancelled: outcome.cancelled ?? false, cancelMs,
+               message: outcome.message ?? "" });
 }
 
 // Waits for an imported file's scene, zooms in on the middle of the view, and reports how many

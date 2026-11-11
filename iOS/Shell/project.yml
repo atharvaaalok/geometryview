@@ -56,10 +56,11 @@ targets:
             rm -rf "$spike/fixtures/step"
             cp -R "${SRCROOT}/../../build/fixtures/step" "$spike/fixtures/step"
           fi
-          # The viewer: its engine and fonts. It opens fixtures from the spike's folder.
+          # The viewer: its engine, its picture worker's renderer and fonts. It opens fixtures from
+          # the spike's folder.
           viewer="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/viewer"
           mkdir -p "$viewer/build" "$viewer/fonts"
-          cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometryview-web."{mjs,wasm} "$viewer/build/"
+          cp "${SRCROOT}/../../build/wasm-webgpu/Engine/geometryview-"{web,thumbs-web}"."{mjs,wasm} "$viewer/build/"
           cp "${SRCROOT}/../../ThirdParty/ibm-plex-mono/"*.ttf "$viewer/fonts/"
           # Its importers: the supervisor, single- and multi-threaded, and OCCT for its workers.
           mkdir -p "$viewer/occt" "$viewer/occt-threads"

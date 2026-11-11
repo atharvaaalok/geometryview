@@ -18,6 +18,10 @@ struct StepOptions {
     u32 level = 0;        // tessellation level; each is twice as fine as the one before
     /// Definitions to import, for refinement. Empty imports everything, with the model.
     std::vector<u32> definitions;
+    /// Writes the model alone, with each body's box estimated, and no geometry: what a gallery
+    /// needs to lay a file out before it is drawn. Fails for a file that only a whole read can
+    /// open.
+    bool structureOnly = false;
 };
 
 struct StepStats {
