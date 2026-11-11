@@ -26,6 +26,10 @@ export class GalleryToolbar {
   #laddersScale;
   #atlas;
   #atlasLevels;
+  #catalogue;
+  #pages;
+  #contents;
+  #index;
   /** While a poster shows: Save PNG and Done, over its top margin. */
   posterBar;
 
@@ -68,17 +72,28 @@ export class GalleryToolbar {
       pill({ title: "\u2212", help: "Zoom out a level (\u2212)", onPress: () => on.atlas?.({ step: -1 }) }),
       this.#atlasLevels.element,
       pill({ title: "+", help: "Zoom in a level (+)", onPress: () => on.atlas?.({ step: 1 }) })]);
+    // Catalogue: turn the book, the pages in view, the contents and the index.
+    this.#pages = el("span.tlabel.pages", { text: "" });
+    this.#catalogue = el("div.group", {}, [el("span.rule"),
+      pill({ title: "\u2039", help: "Turn back (\u2190)", onPress: () => on.catalogue?.({ step: -1 }) }),
+      this.#pages,
+      pill({ title: "\u203a", help: "Turn on (\u2192)", onPress: () => on.catalogue?.({ step: 1 }) }),
+      this.#contents = pill({ title: "Contents", help: "The contents", onPress: () => on.catalogue?.({ spread: 1 }) }),
+      this.#index = pill({ title: "Index", help: "The index", onPress: () => on.catalogue?.({ index: true }) })]);
+    // Short of room, the view switch drops its keys, then Poster and Look their titles (.fold).
+    addEventListener("resize", () => this.#fit());
     this.#look = pill({ icon: icons.palette, title: Styles[0].title, help: "Look", onPress: () => on.look() });
     this.#poster = pill({ icon: icons.poster, title: "Poster", help: "Show it off: the view as a poster (⌥P)",
                           onPress: () => on.poster() });
-    this.#poster.classList.add("desktop-only");
+    this.#poster.classList.add("desktop-only", "fold");
+    this.#look.classList.add("fold");
     this.#sheet.classList.add("desktop-only");
     // On a phone: the Library's sheet, raised from here.
     const library = pill({ icon: icons.parts, help: "Library", onPress: () => on.library?.() });
     library.classList.add("phone-only");
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
-                      [library, views, this.#sheet, this.#ladders, this.#atlas, el("span.rule.desktop-only"), this.#poster,
-                       this.#look]);
+                      [library, views, this.#sheet, this.#ladders, this.#atlas, this.#catalogue, el("span.rule.desktop-only"),
+                       this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
@@ -86,7 +101,14 @@ export class GalleryToolbar {
   }
 
   /** Shows the view in use among those enabled (a bit each), Sheet's controls, and the style. */
-  show({ view, views, sheet, style, ladders = { shared: false }, atlasLevel = 0 }) {
+  show({ view, views, sheet, style, ladders = { shared: false }, atlasLevel = 0,
+          catalogue = { spread: 0, spreads: 1, index: 0 } }) {
+    this.#catalogue.classList.toggle("off", view !== 4);
+    this.#contents.classList.toggle("on", catalogue.spread === 1);
+    this.#index.classList.toggle("on", catalogue.spread > 0 && catalogue.spread >= catalogue.index);
+    const pages = catalogue.spreads * 2;
+    this.#pages.textContent = catalogue.spread === 0 ? `Cover \u00b7 ${pages - 2} pages`
+      : `Pages ${catalogue.spread * 2}\u2013${catalogue.spread * 2 + 1} of ${pages - 1}`;
     this.#atlas.classList.toggle("off", view !== 3);
     this.#atlasLevels.selected = atlasLevel;
     this.#ladders.classList.toggle("off", view !== 2);
@@ -102,5 +124,16 @@ export class GalleryToolbar {
     if (Number(this.#size.value) !== sheet.cell) this.#size.value = String(sheet.cell);
     this.#sort.selected = sheet.sort;
     this.#look.querySelector("span").textContent = Styles[style]?.title ?? "";
+    this.#fit();
+  }
+
+  /** Fits the toolbar into its room, as the Mac's does: keys go first, then two titles. */
+  #fit() {
+    const bar = this.element;
+    bar.classList.remove("tight", "tighter");
+    for (const step of ["tight", "tighter"]) {
+      if (bar.scrollWidth <= bar.clientWidth) break;
+      bar.classList.add(step);
+    }
   }
 }

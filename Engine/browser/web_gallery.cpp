@@ -136,6 +136,19 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_atlas_level(GeoGallery* gallery, uint32_t l
     geo_gallery_atlas_level(gallery, level);
 }
 
+/// Catalogue: the spread in view and how many there are, written to `out`.
+EMSCRIPTEN_KEEPALIVE void gv_gallery_catalogue(GeoGallery* gallery, uint32_t* out) {
+    geo_gallery_catalogue(gallery, out);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_catalogue_spread(GeoGallery* gallery, uint32_t spread) {
+    geo_gallery_set_catalogue_spread(gallery, spread);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_catalogue_index(GeoGallery* gallery) {
+    geo_gallery_catalogue_index(gallery);
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_ladders(GeoGallery* gallery, int shared) {
     geo_gallery_set_ladders(gallery, shared != 0);
 }

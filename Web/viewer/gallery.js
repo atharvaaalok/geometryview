@@ -101,7 +101,7 @@ export class Gallery {
   /** The view in use, those enabled, Sheet's controls and the style: what the toolbar shows. */
   get state() {
     return { view: this.core.view, views: this.core.views, sheet: { ...this.#sheet }, style: this.#style,
-             ladders: { ...this.#ladders }, atlasLevel: this.core.atlasCamera.level };
+             ladders: { ...this.#ladders }, atlasLevel: this.core.atlasCamera.level, catalogue: this.core.catalogue };
   }
 
   /** Shows a view, if enabled: parts in both fly to their places. */
@@ -142,6 +142,15 @@ export class Gallery {
     const now = this.core.atlasCamera.level;
     this.core.atlasLevel(level ?? Math.min(2, Math.max(0, now + (step ?? 0))));
     this.view.repaint();
+    this.view.reload();
+    this.#changed();
+    this.#scheduleWant();
+  }
+
+  /** Catalogue: { step } turns a spread, { spread } goes to one, { index } to the index. */
+  catalogue({ step, spread, index }) {
+    if (index) this.core.catalogueIndex();
+    else this.core.setCatalogueSpread(spread ?? Math.max(0, this.core.catalogue.spread + (step ?? 0)));
     this.view.reload();
     this.#changed();
     this.#scheduleWant();
@@ -301,6 +310,7 @@ export class Gallery {
     }
     this.view.key(key);
     this.#syncSearch();
+    this.#on.changed?.(); // a turned page, a level: the toolbar says so
     return true;
   }
 
@@ -404,6 +414,9 @@ export class Gallery {
         break;
       case 5:
         this.#on.leave?.();
+        break;
+      case 1: // handled: a page turned from the book itself
+        if (this.core.view === 4) this.#on.changed?.();
         break;
       case 6: // Reconnect: asked in the click itself, as the browser wants
         this.#on.reconnect?.(this.root);

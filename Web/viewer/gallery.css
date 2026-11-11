@@ -46,6 +46,8 @@
 .g-picture { image-rendering: auto; }
 
 /* The gallery's toolbar (gallery-toolbar.js), in the viewer toolbar's place. */
+/* One line: the bar is sized from its contents, and a label that could wrap would narrow it. */
+.gallery-toolbar { white-space: nowrap; }
 .gallery-toolbar .group { display: flex; align-items: center; gap: 8px; }
 .gallery-toolbar .group.off, .gallery-toolbar .views button[hidden] { display: none; }
 .gallery-toolbar .tlabel {
@@ -61,6 +63,10 @@
 .gallery-toolbar .views button .k { font-size: 9.5px; font-weight: 500; color: var(--faint); }
 .gallery-toolbar .views button.on .k { color: var(--muted); }
 .gallery-toolbar .slider { width: 110px; }
+/* Short of room (gallery-toolbar.js #fit): the view switch's keys go, then two pills' titles. */
+.gallery-toolbar.tight .views button .k { display: none; }
+.gallery-toolbar.tighter .pill.fold > span { display: none; }
+.gallery-toolbar.tighter .pill.fold { padding: 0 9.5px; }
 body.phone .gallery-toolbar .nm, body.phone .gallery-toolbar .k, body.phone .gallery-toolbar .tlabel { display: none; }
 
 /* While a poster shows: its two buttons in the top right margin, outside the printed picture. */

@@ -160,6 +160,7 @@ const galleryToolbar = new GalleryToolbar({
   sheet: (change) => gallery?.setSheet(change),
   ladders: (change) => gallery?.setLadders(change),
   atlas: (change) => gallery?.atlas(change),
+  catalogue: (change) => gallery?.catalogue(change),
   look: () => toggleCard(lookCard),
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
@@ -1177,7 +1178,7 @@ function testLabel() {
     .replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
   const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
-    : params.get("test") === "gallery" ? "g7" : "p4";
+    : params.get("test") === "gallery" ? "g8" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
@@ -1408,19 +1409,31 @@ async function runGalleryTest() {
     const { lines, columns } = g.view.measured();
     const result = g.core.check(lines, columns, 0.5);
     const items = g.core.items;
-    let off = 0;
+    let off = 0, worstItem = null;
     for (let i = 0; i < items.length; i++) {
-      if (!Number.isNaN(lines[i])) off = Math.max(off, Math.abs(lines[i] - items[i].line));
-      if (items[i].column && !Number.isNaN(columns[i])) off = Math.max(off, Math.abs(columns[i] - items[i].columnLine));
+      const it = items[i];
+      const d = Math.max(Number.isNaN(lines[i]) ? 0 : Math.abs(lines[i] - it.line),
+                         it.column && !Number.isNaN(columns[i]) ? Math.abs(columns[i] - it.columnLine) : 0);
+      if (d > off) {
+        off = d;
+        // The item furthest off, to look into: what it is, where laid and where painted.
+        worstItem = { kind: it.kind, flags: it.flags, x: it.x, y: it.y, width: it.width, height: it.height,
+                      line: it.line, painted: lines[i], column: it.columnLine, paintedColumn: columns[i],
+                      lineWidth: it.lineWidth, fontSize: it.fontSize, group: it.group };
+      }
     }
     deviation = Math.max(deviation, off);
     worst = Math.max(worst, ...result.over.map((o) => o.spread), 0);
     over += result.over.length;
+    // The toolbar fits its room: folded as it must be, never cut off.
+    const bar = galleryToolbar.element;
     return { groupsChecked: result.checked, over: result.over, painted: lines.filter((v) => !Number.isNaN(v)).length,
-             maxDeviation: Math.round(off * 1000) / 1000 };
+             maxDeviation: Math.round(off * 1000) / 1000, ...(off > 0.1 ? { worstItem } : {}), toolbarCut: Math.max(0, bar.scrollWidth - bar.clientWidth),
+             toolbarFold: bar.classList.contains("tighter") ? 2 : bar.classList.contains("tight") ? 1 : 0 };
   };
-  // The views built so far: Catalogue comes in G8.
-  const views = params.get("views") === "all" ? [0, 1, 2, 3] : [0, 1];
+  // checkViews (a list, "4" or "0,4") runs only those, for looking into one.
+  const views = params.has("checkViews") ? params.get("checkViews").split(",").map(Number)
+    : params.get("views") === "all" ? [0, 1, 2, 3, 4] : [0, 1];
   // scrollOnly skips the styles' runs, for timing a scroll alone.
   for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
@@ -1439,6 +1452,20 @@ async function runGalleryTest() {
           await sleep(1500);
         }
         runs.push({ style, view, folder: path, waited, ...measure() });
+        if (view === 4) {
+          // Catalogue's other spreads: the contents, a plate and its table, the index.
+          const { spreads } = g.core.catalogue;
+          for (const spread of [...new Set([1, 2, 3, Math.floor(spreads / 2), spreads - 1])].filter((s) => s > 0 && s < spreads)) {
+            g.catalogue({ spread });
+            await sleep(200);
+            await settle();
+            if (params.has("shots") && path === "") {
+              await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-${dir.replaceAll("/", "-")}-catalogue-${style}-s${spread}`)}`);
+              await sleep(1500);
+            }
+            runs.push({ style, view, spread, folder: path, waited: 0, ...measure() });
+          }
+        }
         if (view === 3) {
           // Atlas closer in: the districts, then every part named.
           for (const level of [1, 2]) {
