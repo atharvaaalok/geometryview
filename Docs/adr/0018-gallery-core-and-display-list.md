@@ -200,3 +200,17 @@ and time, without reading anything.
   drops the view switch's keys (they stay in its tooltips), then Poster and the Look pill drop
   their titles. The Mac and the browser fold by the same rule, and both checks record any part of
   the bar that is still cut off.
+
+## Addendum (2026-11-11): G9, posters for every view, and PDF
+
+**22. Every view prints, and a print is laid out by the core.**
+- A poster is a layout of its own, not a picture of the screen: Ladders wraps every strip on one
+  plate at one scale, framed, with a drafting title block; Atlas fits its whole map in a frame
+  beside a cartouche, laid out at a scale its district names fit; Catalogue's is its open spread.
+  Plates and Sheet keep G4's head and foot. `posterHead` takes an origin, for a head in a frame.
+- Each front end draws a poster as it paints the view. The Mac draws its own layers into a PDF
+  context, so text and lines stay vector; the browser draws the display list on a canvas and keeps
+  each page as a JPEG in a PDF of its own writing (`pdf.js`). A Catalogue's PDF is the whole book,
+  each spread drawn once its pictures have come.
+- A poster too large to draw is drawn smaller, not refused: 60 million pixels at most, 32,767 a
+  side, and PDF pages of 14,400 points at most.

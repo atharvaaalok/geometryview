@@ -233,7 +233,7 @@ of G6 to G8.
 | **G4** | States, FSEvents, phones, a poster PNG, MCP `view_folder` | iPhone ≤600 MB on test-models; no horizontal scroll at 390 px; a changed file re-inks alone; five tools | Review (2026-11-11); the iPhone's memory is still to measure |
 | **G5** | Release 0.2.0: Plates and Sheet | | |
 | **G6–G8** | Ladders, Atlas, Catalogue | Each reviewed | At review (2026-11-11) |
-| **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | |
+| **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | Posters and PDF at review (2026-11-11); turnable Peek to come |
 
 **Spikes** (pass/fail, recorded in ADRs):
 
