@@ -29,6 +29,19 @@ Launchpad or the Dock, and double-clicking a STEP or STL file opens it (unless y
 app for those files). Run it again after a build to update the installed copy. From a terminal,
 `open -a GeometryView part.step` opens a file in it.
 
+Every preset builds its own copy of the app, and Spotlight lists each one beside the installed app.
+Spotlight skips folders whose names end in `.noindex` (it ignores `.metadata_never_index`), so keep
+the build tree in one and link to it:
+
+```sh
+mv build build.noindex && ln -s build.noindex build
+mv iOS/Shell/build iOS/Shell/build.noindex && ln -s build.noindex iOS/Shell/build
+```
+
+Every path stays the same. A copy you have opened is also offered under Open With; `lsregister -u`
+(in `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support`)
+with its path takes it off.
+
 ## The browser viewer
 
 ```sh
