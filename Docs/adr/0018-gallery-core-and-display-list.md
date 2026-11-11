@@ -144,3 +144,28 @@ and time, without reading anything.
   ran to zero had meant "no limit"; a test now holds every line's texts apart from 374 to 1800 pt.
 - The browser's checks run at an emulated 390 × 844 screen through DevTools, since Chrome makes no
   narrower window.
+
+## Addendum (2026-11-11): G6, Ladders and lanes
+
+**16. A lane is a band of the content that scrolls sideways on its own.**
+- Ladders' strips can run to thousands of points, so each strip's parts sit in a lane. Its items
+  carry the lane's id (a new item field; items are 116 bytes); the layout lists each lane's rect and
+  content width.
+- A painter clips each lane and moves its items by the lane's scroll: the Mac with a layer whose
+  bounds' origin is the scroll, the browser with a clipped box holding a moved one. It paints a
+  lane's width either side of what shows.
+- The core is told each lane's scroll (`geo_gallery_set_lane_scroll`). Hits within the lane, the
+  pictures wanted first, and the comparison card's place take it into account. After a key,
+  `geo_gallery_reveal_lane` scrolls the selection's lane to it.
+
+**17. A ruler is one item.**
+- A strip's ruler is a rectangle flagged `Ruler`: its line, minor ticks every `radius` points,
+  major ones every `tracking`. Each painter draws the ticks itself, so a 30,000-point strip is one
+  item, not thousands. Its numbers are ordinary text. Painters measure a ruler on its line.
+
+**18. Ladders follows the board.**
+- Scales snap to drafting ratios written as drawings write them (2:1, 1:2.5, 1:40, 1:1000), each
+  strip its own or one shared.
+- A strip's few far larger parts go after a divider at a scale of their own.
+- Parts stand by their ink on the ruler; that line is their alignment group.
+- Hover shows calipers; with a part chosen, a card gives the difference.

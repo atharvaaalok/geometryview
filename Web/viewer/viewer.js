@@ -1176,7 +1176,7 @@ function testLabel() {
     .replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
   const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
-    : params.get("test") === "gallery" ? "g4" : "p4";
+    : params.get("test") === "gallery" ? "g6" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
