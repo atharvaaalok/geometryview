@@ -1,5 +1,7 @@
 #include "gallery/display.h"
 
+#include <algorithm>
+
 namespace geo::gallery {
 
 Palette paletteOf(u32 style) {
@@ -103,7 +105,7 @@ void Display::line(float x0, float y0, float x1, float y1, u32 stroke, float wid
     item.stroke = stroke;
     item.line_width = width;
     item.flags = flags;
-    item.line = item.y;
+    item.line = std::min(y0, y1) + dy_; // its top, where painters measure a line not level
 }
 
 float Display::text(std::string_view text, const TextStyle& style, u32 colour, float x,
