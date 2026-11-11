@@ -2,10 +2,12 @@
 // display list of the view laid out. The C interface (gallery.h) is a thin layer over it.
 #pragma once
 
+#include "gallery/atlas.h"
 #include "gallery/display.h"
 #include "gallery/plates.h"
 #include "gallery/tree.h"
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <set>
@@ -35,6 +37,26 @@ public:
             dirty_ = true;
         }
     }
+    /// Atlas's camera: fitted to the view until moved, and again for a new folder or view size.
+    AtlasCamera atlasCamera() const {
+        return atlas_ && atlasFor_ == std::pair{width_, height_} ? *atlas_
+                                                                 : atlasFit(width_, height_);
+    }
+    void setAtlasCamera(float k, float x, float y) {
+        AtlasCamera cam = atlasFit(width_, height_);
+        cam.k = std::clamp(k, cam.fit * 0.6f, cam.fit * 12.0f);
+        cam.x = x;
+        cam.y = y;
+        atlas_ = cam;
+        atlasFor_ = {width_, height_};
+        dirty_ = true;
+    }
+    void resetAtlasCamera() {
+        atlas_.reset();
+        dirty_ = true;
+    }
+    float viewWidth() const { return width_; }
+    float viewHeight() const { return height_; }
     void setLadders(bool shared) {
         if (shared != laddersShared_) {
             laddersShared_ = shared;
@@ -128,6 +150,8 @@ private:
     bool poster_ = false;
     bool lost_ = false;
     bool laddersShared_ = false;
+    std::optional<AtlasCamera> atlas_;
+    std::pair<float, float> atlasFor_;
     std::unordered_map<u32, float> laneScroll_;
     void layoutLost();
     std::string posterDate_;

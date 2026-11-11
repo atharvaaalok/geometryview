@@ -150,6 +150,7 @@ bool Gallery::setFolder(std::string_view path) {
         hoverKind_ = GeoTargetNone;
         peek_ = kNone;
         scroll_ = 0.0f;
+        atlas_.reset();
         findMatches();
         dirty_ = true;
     }
@@ -201,6 +202,9 @@ bool Gallery::layout() {
         break;
     case GeoViewLadders:
         result_ = layoutLadders(input, display_, [this](u32 lane) { return laneScroll(lane); });
+        break;
+    case GeoViewAtlas:
+        result_ = layoutAtlas(input, display_, atlasCamera());
         break;
     default:
         result_ = layoutPlates(input, display_);
@@ -366,8 +370,8 @@ void Gallery::peek(u32 file) {
 }
 
 float Gallery::reveal() const {
-    if (selected_ == kNone) {
-        return -1.0f;
+    if (selected_ == kNone || view_ == GeoViewAtlas) {
+        return -1.0f; // the map pans; it does not scroll
     }
     for (const auto* places : {&result_.parts, &result_.covers}) {
         for (const LayoutResult::Place& p : *places) {
@@ -592,9 +596,10 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
         // Peek's items cover everything; the lost card's cover the content beneath it. Fixed items
         // are in the view's points.
         const bool fixed = (it->flags & GeoItemFixed) != 0;
-        const bool reachable = peeking ? fixed
-                                       : !fixed || it->target_kind == GeoTargetReconnect ||
-                                             (lost_ && it->target_kind == GeoTargetPeek);
+        const bool reachable =
+            peeking ? fixed
+                    : !fixed || it->target_kind == GeoTargetReconnect ||
+                          ((lost_ || view_ == GeoViewAtlas) && it->target_kind == GeoTargetPeek);
         if (it->target_kind == GeoTargetNone || !reachable) {
             continue;
         }
@@ -692,6 +697,7 @@ GeoGalleryAction Gallery::enter(u32 folder) {
     hoverKind_ = GeoTargetNone;
     peek_ = kNone;
     scroll_ = 0.0f;
+    atlas_.reset();
     findMatches();
     dirty_ = true;
     return {GeoActionEnterFolder, folder};

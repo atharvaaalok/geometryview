@@ -270,6 +270,42 @@ bool geo_gallery_reveal_lane(const GeoGallery* gallery, uint32_t* lane, float* x
     return true;
 }
 
+void geo_gallery_atlas_camera(const GeoGallery* gallery, float* out) {
+    const gallery::AtlasCamera cam = gallery->gallery.atlasCamera();
+    out[0] = cam.k;
+    out[1] = cam.x;
+    out[2] = cam.y;
+    out[3] = cam.fit;
+}
+
+void geo_gallery_set_atlas_camera(GeoGallery* gallery, float k, float x, float y) {
+    gallery->gallery.setAtlasCamera(k, x, y);
+}
+
+void geo_gallery_atlas_zoom(GeoGallery* gallery, float factor, float x, float y) {
+    const gallery::AtlasCamera cam = gallery->gallery.atlasCamera();
+    const float k = std::clamp(cam.k * factor, cam.fit * 0.6f, cam.fit * 12.0f);
+    gallery->gallery.setAtlasCamera(k, x - (x - cam.x) * k / cam.k, y - (y - cam.y) * k / cam.k);
+}
+
+void geo_gallery_atlas_pan(GeoGallery* gallery, float dx, float dy) {
+    const gallery::AtlasCamera cam = gallery->gallery.atlasCamera();
+    gallery->gallery.setAtlasCamera(cam.k, cam.x + dx, cam.y + dy);
+}
+
+void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level) {
+    const gallery::AtlasCamera cam = gallery->gallery.atlasCamera();
+    if (level == 0) {
+        gallery->gallery.resetAtlasCamera();
+        return;
+    }
+    const float stops[3] = {1.0f, 2.2f, 5.0f};
+    const float k = cam.fit * stops[std::min<uint32_t>(level, 2)];
+    const float cx = gallery->gallery.viewWidth() / 2.0f, cy = gallery->gallery.viewHeight() / 2.0f;
+    gallery->gallery.setAtlasCamera(k, cx - (cx - cam.x) * k / cam.k,
+                                    cy - (cy - cam.y) * k / cam.k);
+}
+
 void geo_gallery_set_ladders(GeoGallery* gallery, bool shared) {
     gallery->gallery.setLadders(shared);
 }
