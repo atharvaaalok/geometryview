@@ -3,10 +3,16 @@
 // Untrusted files are parsed here, in a process of its own, so a malformed file can only crash this
 // process, its memory returns to the system when it exits, and the viewer never links a parser.
 //
-// Usage: geometryview-import <source-fd> <output-fd> [--level <n> --definitions <i,j,...>]. The
-// options refine a STEP file: only those definitions, at that level, without the model. Results are
-// framed messages on stdout, in format/helper_messages.h. OCCT runs in a further process, next to
-// this executable.
+// Usage: geometryview-import <source-fd> <output-fd> [options], where the options, in any order,
+// are:
+//   --level <n> --definitions <i,j,...>  refine a STEP file: only those definitions, at that
+//                                        level, without the model;
+//   --workers <n>                        use at most n OCCT workers, rather than one per
+//                                        performance core;
+//   --structure                          write a STEP file's model alone, with no geometry;
+//                                        refused for a mesh.
+// Results are framed messages on stdout, in format/helper_messages.h. OCCT runs in a further
+// process, next to this executable.
 #include "format/helper_messages.h"
 #include "import.h"
 
@@ -15,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <sys/mman.h>
@@ -84,6 +91,47 @@ bool parseList(std::string_view text, std::vector<u32>& values) {
     return !values.empty();
 }
 
+bool parseNumber(std::string_view text, u32& value) {
+    const auto [end, status] = std::from_chars(text.data(), text.data() + text.size(), value);
+    return status == std::errc() && end == text.data() + text.size();
+}
+
+struct Options {
+    u32 level = 0;
+    std::vector<u32> definitions;
+    u32 workers = 0;
+    bool structure = false;
+};
+
+// The options after the two descriptors. Refining needs both a level and definitions.
+bool parseOptions(std::span<const char*> arguments, Options& options) {
+    bool hasLevel = false;
+    for (usize i = 0; i < arguments.size(); ++i) {
+        const std::string_view flag = arguments[i];
+        const bool hasValue = i + 1 < arguments.size();
+        if (flag == "--structure") {
+            options.structure = true;
+        } else if (flag == "--level" && hasValue) {
+            hasLevel = parseNumber(arguments[++i], options.level);
+            if (!hasLevel) {
+                return false;
+            }
+        } else if (flag == "--definitions" && hasValue) {
+            if (!parseList(arguments[++i], options.definitions)) {
+                return false;
+            }
+        } else if (flag == "--workers" && hasValue) {
+            if (!parseNumber(arguments[++i], options.workers) || options.workers == 0) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    return hasLevel == !options.definitions.empty() &&
+           !(options.structure && !options.definitions.empty());
+}
+
 std::string siblingPath(const char* executable, std::string_view name) {
     std::string path(executable);
     const usize slash = path.rfind('/');
@@ -101,19 +149,14 @@ int fail(MessageWriter& writer, std::string_view message) {
 
 int main(int argc, const char** argv) {
     MessageWriter writer;
-    if (argc != 3 && argc != 7) {
+    if (argc < 3) {
         return fail(writer, "The helper was started incorrectly.");
     }
     const int sourceFd = std::atoi(argv[1]);
     const int outputFd = std::atoi(argv[2]);
-    u32 level = 0;
-    std::vector<u32> definitions;
-    if (argc == 7) {
-        if (std::string_view(argv[3]) != "--level" ||
-            std::string_view(argv[5]) != "--definitions" || !parseList(argv[6], definitions)) {
-            return fail(writer, "The helper was started incorrectly.");
-        }
-        level = u32(std::atoi(argv[4]));
+    Options options;
+    if (!parseOptions(std::span(argv + 3, usize(argc - 3)), options)) {
+        return fail(writer, "The helper was started incorrectly.");
     }
 
     struct stat info{};
@@ -130,16 +173,20 @@ int main(int argc, const char** argv) {
     std::string error;
     std::vector<std::string> warnings;
     if (import::looksLikeStep(file)) {
-        import::StepOptions options;
-        options.workerPath = siblingPath(argv[0], "geometryview-occt-worker");
-        options.sourceFd = sourceFd;
-        options.level = level;
-        options.definitions = std::move(definitions);
+        import::StepOptions step;
+        step.workerPath = siblingPath(argv[0], "geometryview-occt-worker");
+        step.sourceFd = sourceFd;
+        step.level = options.level;
+        step.definitions = std::move(options.definitions);
+        step.maxWorkers = options.workers;
+        step.structureOnly = options.structure;
         import::StepStats stats;
-        if (!import::importStep(file, outputFd, &writer, options, stats, error)) {
+        if (!import::importStep(file, outputFd, &writer, step, stats, error)) {
             return fail(writer, error);
         }
         warnings = std::move(stats.warnings);
+    } else if (options.structure) {
+        return fail(writer, "A mesh has no structure to read apart from its geometry.");
     } else {
         import::ImportResult result;
         if (!import::importMesh(file, outputFd, &writer, result, error)) {

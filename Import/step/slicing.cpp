@@ -642,6 +642,14 @@ bool StepImport::finish(StepStats& stats, std::string& error) {
     return true;
 }
 
+bool StepImport::finishStructure(std::string& error) {
+    if (!stream_->finish(hashContents(file_))) {
+        error = stream_->error();
+        return false;
+    }
+    return true;
+}
+
 bool looksLikeStep(std::span<const u8> file) {
     usize first = 0;
     while (

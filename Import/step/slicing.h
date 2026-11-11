@@ -153,6 +153,8 @@ public:
     const step::Part21& index() const { return index_; }
     /// After every job: records what they did and completes the cache file.
     bool finish(StepStats& stats, std::string& error);
+    /// Instead of any job: completes the cache file with the model alone.
+    bool finishStructure(std::string& error);
 
 private:
     std::span<const u8> file_;
