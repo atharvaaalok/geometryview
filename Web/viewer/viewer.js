@@ -14,6 +14,7 @@ import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
 import { Gallery } from "./gallery.js";
+import { GalleryToolbar } from "./gallery-toolbar.js";
 import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
          keyOf as keptKeyOf, persistOnce } from "./kept.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
@@ -127,6 +128,7 @@ const library = new LibraryCard(libraryStore, {
   switch: (show) => showLibrary(show),
   forget: (key) => forgetRecent(key),
   showFolder: (root, path) => showGallery(root, path),
+  search: (query) => gallery?.setSearch(query),
 });
 const selection = new SelectionCard((action) => engine.perform(action));
 const lookCard = new LookCard(look, (next) => applyLook(next));
@@ -151,6 +153,11 @@ const toolbar = new Toolbar({
     showLibrary(names.length === 0);
   },
 });
+const galleryToolbar = new GalleryToolbar({
+  view: (view) => gallery?.setView(view),
+  sheet: (change) => gallery?.setSheet(change),
+  look: () => toggleCard(lookCard),
+});
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
 const dropZone = new DropZone();
@@ -162,6 +169,7 @@ picker.addEventListener("change", () => {
 });
 document.body.append(masthead.element, structure.element, library.element, selection.element,
                      lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, toolbar.moreMenu,
+                     galleryToolbar.element,
                      holdHint.element,
                      hoverChip.element, dropZone.element, shortcuts.element, picker);
 
@@ -406,10 +414,14 @@ function applyLook(next, { remember = true } = {}) {
 // meanwhile. A file opened from it opens in the viewer, and Esc there comes back.
 function galleryFor() {
   if (gallery) return gallery;
-  gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery" }, {
+  // Plates and Sheet ship first; ?views=all shows the views still being built.
+  const views = params.get("views") === "all" ? 0b11111 : 0b11;
+  gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery", views }, {
     open: (root, path) => openFromGallery(root, path),
     leave: () => leaveGallery(),
     folderChanged: () => refreshMasthead(),
+    changed: () => galleryToolbar.show(gallery.state),
+    search: (query, found) => library.showSearch(galleryShown, query, found),
   });
   canvas.after(gallery.view.element);
   gallery.setStyle(look.engineLook.style);
@@ -428,6 +440,9 @@ function enterGallery() {
   engine.setCovered(true);
   status.hide();
   toolbar.element.hidden = true;
+  galleryToolbar.element.hidden = false;
+  galleryToolbar.show(gallery.state);
+  library.showSearch(true, gallery.core.search, gallery.core.matches);
   selection.element.hidden = true;
   if (!phone) {
     panelOpen = true;
@@ -442,6 +457,8 @@ function leaveGallery() {
   gallery.view.element.hidden = true;
   engine.setCovered(false);
   toolbar.element.hidden = false;
+  galleryToolbar.element.hidden = true;
+  library.showSearch(false);
   if (names.length === 0) showEmpty();
   refreshMasthead();
 }

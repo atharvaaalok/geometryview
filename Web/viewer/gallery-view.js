@@ -3,11 +3,18 @@
 // GalleryView.swift. Everything it draws was placed by the layout core, so the Mac draws the same.
 //
 // Items are absolutely positioned elements, reused from one paint to the next by kind, and only
-// those within a screen of the view are painted; scrolling within that moves nothing.
+// those within a screen of the view are painted; scrolling within that moves nothing but the
+// headings that stay at the top. Items fixed in the view (Peek) are painted over the content.
+//
+// The core says what a layout plays against the one before (gallery-core.js, transition and
+// tracks); this plays it with Web Animations, the old view a copy fading out beneath the new.
 
-import { Actions, cssColour, Flags, Kinds, Targets } from "./gallery-core.js";
+import { Actions, cssColour, Flags, Kinds, Targets, TrackKinds, Transitions } from "./gallery-core.js";
 
 const kAscent = 1.025, kLine = 1.3; // IBM Plex Mono, in ems, as the core reckons
+const kFaded = 0.22; // what a search did not find
+const kEase = "cubic-bezier(0.3, 0.7, 0.2, 1)";
+const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
 /** Where the content shows in the window: right of the Library card, above the toolbar. */
 export const kContentInsets = Object.freeze({ top: 96, left: 340, bottom: 84, right: 18 });
@@ -17,12 +24,19 @@ export class GalleryView {
   #core;
   #on;
   #sheet;
+  #stage;
   #clip;
   #content;
+  #fixed;
+  #ghost = null;
+  #sheetBackground = "";
   #images = new Map(); // file -> object URL
   #painted = null; // { top, bottom } of what is painted
-  #pools = { rect: [], text: [], picture: [], line: [] };
+  #shownTop = 0; // the scroll last painted, where a copy of the old view is taken from
+  #layers;
   #frames = new Map(); // item index -> element painted for it
+  #sticky = []; // { node, item } of headings that stay at the top
+  #lifted = new Map(); // item index -> how far a heading is moved down
   #style = 0;
   #insets = kContentInsets;
   #probes = false;
@@ -37,10 +51,15 @@ export class GalleryView {
     this.#probes = probes;
     this.element = el("div", "gallery");
     this.#sheet = el("div", "gallery-sheet");
+    this.#stage = el("div", "gallery-stage");
     this.#clip = el("div", "gallery-clip");
     this.#content = el("div", "gallery-content");
+    this.#fixed = el("div", "gallery-fixed");
     this.#clip.append(this.#content);
-    this.element.append(this.#sheet, this.#clip);
+    this.#stage.append(this.#clip, this.#fixed);
+    this.element.append(this.#sheet, this.#stage);
+    const pools = () => ({ rect: [], text: [], picture: [], line: [] });
+    this.#layers = { content: { node: this.#content, pools: pools() }, fixed: { node: this.#fixed, pools: pools() } };
     this.#clip.addEventListener("scroll", () => {
       this.#core.setScroll(this.#clip.scrollTop);
       this.#paint();
@@ -61,8 +80,8 @@ export class GalleryView {
   }
 
   #place() {
-    Object.assign(this.#clip.style, { left: `${this.#insets.left}px`, top: `${this.#insets.top}px`,
-                                      right: `${this.#insets.right}px`, bottom: `${this.#insets.bottom}px` });
+    Object.assign(this.#stage.style, { left: `${this.#insets.left}px`, top: `${this.#insets.top}px`,
+                                       right: `${this.#insets.right}px`, bottom: `${this.#insets.bottom}px` });
   }
 
   get contentArea() {
@@ -94,15 +113,31 @@ export class GalleryView {
     this.#painted = null;
   }
 
-  /** Lays out again if anything changed, and paints what is in view. */
-  reload() {
+  /**
+   * Lays out again if anything changed, and paints what is in view, playing what the change asks.
+   * With `reveal`, scrolls first so the selection shows: after a key or a switch of views.
+   */
+  reload({ reveal = false } = {}) {
     const { width, height } = this.contentArea;
     if (width === 0 || height === 0) return;
     this.#core.setViewport(width, height);
     const changed = this.#core.layout();
-    if (changed) this.#painted = null;
+    let motion = null;
+    if (changed) {
+      this.#painted = null;
+      const transition = this.#core.transition;
+      if (transition.kind !== Transitions.None && !reduceMotion()) {
+        motion = { transition, tracks: this.#core.tracks, ghost: this.#copyOfShown() };
+      }
+    }
     this.#content.style.height = `${Math.max(this.#core.contentHeight, height)}px`;
+    const top = reveal ? this.#core.reveal : null;
+    if (top !== null) {
+      this.#clip.scrollTop = top;
+      this.#core.setScroll(this.#clip.scrollTop);
+    }
     this.#paint();
+    if (motion) this.#play(motion);
     if (changed) this.#on.viewChanged?.();
   }
 
@@ -131,7 +166,8 @@ export class GalleryView {
     }
     if (s.vignette > 0) layers.push(`radial-gradient(circle at 50% 50%, transparent 30%, rgb(0 0 0 / ${s.vignette}) 100%)`);
     layers.push(`linear-gradient(${rgb(s.top)}, ${rgb(s.bottom)})`);
-    this.#sheet.style.background = layers.join(", ");
+    this.#sheetBackground = layers.join(", ");
+    this.#sheet.style.background = this.#sheetBackground;
     this.element.dataset.dark = s.dark ? "true" : "false";
   }
 
@@ -140,61 +176,91 @@ export class GalleryView {
   #paint() {
     const { height } = this.contentArea;
     const top = this.#clip.scrollTop, bottom = top + height;
+    this.#shownTop = top;
+    this.#placeSticky(top);
     if (this.#painted && this.#painted.top <= top && this.#painted.bottom >= bottom) return;
     const window = { top: top - height, bottom: bottom + height };
     this.#painted = window;
-    const used = { rect: 0, text: 0, picture: 0, line: 0 };
+    for (const layer of Object.values(this.#layers)) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
     this.#frames.clear();
+    this.#sticky = [];
     const items = this.#core.items;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const low = Math.min(item.y, item.y + item.height), high = Math.max(item.y, item.y + item.height);
-      if (high < window.top - 8 || low > window.bottom + 8) continue;
+      const fixed = (item.flags & Flags.Fixed) !== 0;
+      const sticky = !fixed && (item.stickyTop !== 0 || item.stickyUntil !== 0);
+      if (!fixed) {
+        // A heading that stays at the top is painted wherever its block shows.
+        const low = Math.min(item.y, item.y + item.height);
+        const high = Math.max(item.y, item.y + item.height) + (sticky ? item.stickyUntil : 0);
+        if (high < window.top - 8 || low > window.bottom + 8) continue;
+      }
+      const layer = fixed ? this.#layers.fixed : this.#layers.content;
       let node;
       switch (item.kind) {
         case Kinds.Rect:
-          node = this.#reuse("rect", used, "g-rect");
+          node = this.#reuse(layer, "rect", "g-rect");
           this.#paintRect(node, item);
           break;
         case Kinds.Text:
-          node = this.#reuse("text", used, "g-text");
+          node = this.#reuse(layer, "text", "g-text");
           this.#paintText(node, item);
           break;
         case Kinds.Picture:
-          node = this.#reuse("picture", used, "g-picture", "img");
+          node = this.#reuse(layer, "picture", "g-picture", "img");
           node.src = this.#images.get(item.file) ?? "";
           node.style.visibility = this.#images.has(item.file) ? "" : "hidden";
+          node.dataset.file = String(item.file);
           setBox(node, item.x, item.y, item.width, item.height);
           break;
         case Kinds.Line:
-          node = this.#reuse("line", used, "g-line");
+          node = this.#reuse(layer, "line", "g-line");
           this.#paintLine(node, item);
           break;
         default:
           continue;
       }
-      node.style.zIndex = String(i);
+      const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
+      const opacity = base * (item.flags & Flags.Fading ? kFaded : 1);
+      node.style.opacity = opacity === 1 ? "" : String(opacity);
+      // Headings stay above what scrolls under them.
+      node.style.zIndex = String(sticky ? items.length + i : i);
+      node.style.transform = "";
+      if (sticky) this.#sticky.push({ node, item, index: i });
       this.#frames.set(i, node);
     }
-    for (const kind of Object.keys(this.#pools)) {
-      const pool = this.#pools[kind];
-      for (let i = used[kind]; i < pool.length; i++) pool[i].hidden = true;
+    for (const layer of Object.values(this.#layers)) {
+      for (const kind of Object.keys(layer.pools)) {
+        const pool = layer.pools[kind];
+        for (let i = layer.used[kind]; i < pool.length; i++) pool[i].hidden = true;
+      }
+    }
+    this.#placeSticky(top);
+  }
+
+  // Moves each heading down by how far the view has scrolled past it, until the next takes over.
+  #placeSticky(top) {
+    this.#lifted.clear();
+    for (const { node, item, index } of this.#sticky) {
+      const dy = Math.min(Math.max(top - item.stickyTop, 0), item.stickyUntil);
+      node.style.transform = dy > 0 ? `translateY(${dy}px)` : "";
+      if (dy > 0) this.#lifted.set(index, dy);
     }
   }
 
-  #reuse(kind, used, className, tag = "div") {
-    const pool = this.#pools[kind];
-    if (used[kind] === pool.length) {
+  #reuse(layer, kind, className, tag = "div") {
+    const pool = layer.pools[kind];
+    if (layer.used[kind] === pool.length) {
       const node = el(tag, className);
       if (tag === "img") {
         node.alt = "";
         node.draggable = false;
         node.decoding = "async";
       }
-      this.#content.append(node);
+      layer.node.append(node);
       pool.push(node);
     }
-    const node = pool[used[kind]++];
+    const node = pool[layer.used[kind]++];
     node.hidden = false;
     return node;
   }
@@ -207,10 +273,10 @@ export class GalleryView {
     s.boxShadow = item.flags & Flags.Sticker && item.shadow ? `3px 3px 0 ${cssColour(item.shadow)}` : "none";
     if (item.flags & Flags.Hatched) {
       s.background = `repeating-linear-gradient(45deg, ${cssColour(item.stroke)} 0 1px, transparent 1px 7px)`;
-      s.opacity = "0.8";
+    } else if (item.flags & Flags.Sheet) {
+      s.background = this.#sheetBackground;
     } else {
       s.background = item.fill ? cssColour(item.fill) : "transparent";
-      s.opacity = "";
     }
   }
 
@@ -270,6 +336,83 @@ export class GalleryView {
     }
   }
 
+  // ---- Motion ----
+
+  // A copy of the view as last painted, beneath the content, for the old view's part in a move.
+  #copyOfShown() {
+    this.#ghost?.remove();
+    const ghost = el("div", "gallery-ghost");
+    const inner = el("div", "gallery-ghost-inner");
+    const content = this.#content.cloneNode(true);
+    for (const node of content.querySelectorAll("[hidden]")) node.remove();
+    content.style.transform = `translateY(${-this.#shownTop}px)`;
+    inner.append(content);
+    ghost.append(inner);
+    this.#stage.insertBefore(ghost, this.#clip);
+    this.#ghost = ghost;
+    return ghost;
+  }
+
+  #play({ transition: t, tracks, ghost }) {
+    const inner = ghost.firstChild;
+    const done = () => {
+      ghost.remove();
+      if (this.#ghost === ghost) this.#ghost = null;
+    };
+    const { width: W, height: H } = this.contentArea;
+    const [px, py, pw, ph] = t.rect;
+    // The transform that puts the whole view into the plate, and the one that blows the plate up
+    // to fill the view, keeping proportions.
+    const into = () => {
+      const s = Math.min(pw / W, ph / H);
+      return `translate(${px + (pw - W * s) / 2}px, ${py + (ph - H * s) / 2}px) scale(${s})`;
+    };
+    const outOf = () => {
+      const s = Math.min(W / pw, H / ph);
+      return `translate(${(W - pw * s) / 2 - px * s}px, ${(H - ph * s) / 2 - py * s}px) scale(${s})`;
+    };
+    const timing = { duration: t.duration, easing: kEase };
+    if (t.kind === Transitions.Into) {
+      // The folder grows out of its plate; the plates around it rush past.
+      this.#clip.animate([{ transformOrigin: "0 0", transform: into(), opacity: 0 }, { opacity: 1, offset: 0.4 },
+                          { transformOrigin: "0 0", transform: "none", opacity: 1 }], timing);
+      inner.animate([{ transformOrigin: "0 0", transform: "none" }, { transformOrigin: "0 0", transform: outOf() }],
+                    timing).onfinish = done;
+      return;
+    }
+    if (t.kind === Transitions.Out) {
+      // The folder shrinks back into its plate; the plates around it settle.
+      this.#clip.animate([{ transformOrigin: "0 0", transform: outOf(), opacity: 0.3 },
+                          { transformOrigin: "0 0", transform: "none", opacity: 1 }], timing);
+      inner.animate([{ transformOrigin: "0 0", transform: "none" }, { transformOrigin: "0 0", transform: into() }],
+                    timing).onfinish = done;
+      return;
+    }
+    // A switch: parts in both views fly from where they were, the rest fade in, the old view fades.
+    const items = this.#core.items;
+    const top = this.#clip.scrollTop;
+    for (const track of tracks) {
+      const node = this.#frames.get(track.item);
+      const item = items[track.item];
+      if (!node || !item) continue;
+      if (track.kind === TrackKinds.Fly) {
+        const [fx, fy, fw] = track.from;
+        const dx = fx - item.x, dy = fy - (item.y - top), s = item.width > 0 ? fw / item.width : 1;
+        node.animate([{ transformOrigin: "0 0", transform: `translate(${dx}px, ${dy}px) scale(${s})` },
+                      { transformOrigin: "0 0", transform: "none" }],
+                     { duration: track.duration, delay: track.delay, easing: kEase, fill: "backwards" });
+        for (const old of inner.querySelectorAll(`img[data-file="${item.file}"]`)) old.style.visibility = "hidden";
+      } else {
+        const end = Number(node.style.opacity || 1);
+        node.animate([{ opacity: 0 }, { opacity: end }],
+                     { duration: track.duration, delay: track.delay, easing: "ease-out", fill: "backwards" });
+      }
+    }
+    this.#clip.animate([{ opacity: 0.001 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
+    inner.animate([{ opacity: 1 }, { opacity: 0 }], { duration: t.fadeOut, easing: "ease-out", fill: "forwards" })
+      .onfinish = done;
+  }
+
   // ---- Checks ----
 
   /**
@@ -278,16 +421,21 @@ export class GalleryView {
    */
   measured() {
     const items = this.#core.items;
-    const origin = this.#content.getBoundingClientRect();
+    const contentOrigin = this.#content.getBoundingClientRect();
+    const fixedOrigin = this.#fixed.getBoundingClientRect();
     const lines = new Float32Array(items.length).fill(NaN);
     const columns = new Float32Array(items.length).fill(NaN);
     for (const [i, node] of this.#frames) {
       const item = items[i];
+      // In the layout's points: fixed items from the view's corner, headings less how far they
+      // were moved down to stay at the top.
+      const origin = item.flags & Flags.Fixed ? fixedOrigin : contentOrigin;
+      const lifted = this.#lifted.get(i) ?? 0;
       const box = node.getBoundingClientRect();
-      const top = box.top - origin.top, left = box.left - origin.left;
+      const top = box.top - origin.top - lifted, left = box.left - origin.left;
       if (item.kind === Kinds.Text) {
         const probe = node.querySelector(".g-probe");
-        lines[i] = probe ? probe.getBoundingClientRect().bottom - origin.top : top + kAscent * item.fontSize;
+        lines[i] = probe ? probe.getBoundingClientRect().bottom - origin.top - lifted : top + kAscent * item.fontSize;
       } else if (item.kind === Kinds.Picture) {
         const fraction = item.height ? (item.line - item.y) / item.height : 1;
         lines[i] = top + fraction * box.height;
@@ -305,11 +453,14 @@ export class GalleryView {
 
   /** Where each item was painted, in content points, for comparing with the Mac's. */
   paintedBoxes() {
-    const origin = this.#content.getBoundingClientRect();
+    const items = this.#core.items;
+    const contentOrigin = this.#content.getBoundingClientRect();
+    const fixedOrigin = this.#fixed.getBoundingClientRect();
     const boxes = new Map();
     for (const [i, node] of this.#frames) {
+      const origin = items[i].flags & Flags.Fixed ? fixedOrigin : contentOrigin;
       const box = node.getBoundingClientRect();
-      boxes.set(i, { x: box.left - origin.left, y: box.top - origin.top, w: box.width, h: box.height });
+      boxes.set(i, { x: box.left - origin.left, y: box.top - origin.top - (this.#lifted.get(i) ?? 0), w: box.width, h: box.height });
     }
     return boxes;
   }
@@ -325,7 +476,9 @@ export class GalleryView {
     const { x, y } = this.#point(e);
     const hit = this.#core.hit(x, y);
     if (this.#core.hover(hit.kind, hit.target)) this.reload();
-    this.#clip.style.cursor = hit.kind !== Targets.None ? "pointer" : "";
+    const pointing = hit.kind === Targets.Folder || hit.kind === Targets.File || hit.kind === Targets.More ||
+      (hit.kind === Targets.Peek && hit.target === 1);
+    this.#clip.style.cursor = pointing ? "pointer" : "";
   }
 
   #click(e, twice) {
@@ -335,20 +488,27 @@ export class GalleryView {
   }
 
   /** Acts on what a click or key asked: lays out again, and tells the page. */
-  act(action) {
+  act(action, { reveal = false } = {}) {
     if (action.kind === Actions.None) return;
     if (action.kind === Actions.EnterFolder) {
       this.scrollToTop();
       this.reload();
-    } else if (action.kind === Actions.Handled) {
-      this.reload();
+    } else if (action.kind === Actions.Handled || action.kind === Actions.Peek) {
+      this.reload({ reveal });
     }
     this.#on.action?.(action);
   }
 
-  /** Scrolls so a file's place shows. */
+  /** A key: what it asks, and the selection scrolled into view. */
   key(key) {
-    this.act(this.#core.key(key));
+    this.act(this.#core.key(key), { reveal: true });
+  }
+
+  /** Shows another view, if enabled, flying what both views show; the selection kept in view. */
+  setView(view) {
+    if (!this.#core.setView(view)) return false;
+    this.reload({ reveal: true });
+    return true;
   }
 }
 

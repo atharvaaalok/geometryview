@@ -23,7 +23,8 @@ test("the icons the chrome uses are all there", async () => {
   const { iconMarkup } = await import(source.href);
   for (const name of ["eye", "eyeSlash", "ghost", "scope", "undo", "redo", "seeThrough", "scissors",
                       "palette", "cube", "fit", "chevron", "assembly", "search", "folder",
-                      "folderPlus", "file", "plus", "close", "parts"]) {
+                      "folderPlus", "file", "plus", "close", "parts", "plates", "sheet", "ladders",
+                      "atlas", "catalogue"]) {
     assert.ok(iconMarkup[name], name);
   }
 });

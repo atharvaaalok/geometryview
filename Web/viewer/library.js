@@ -109,7 +109,11 @@ export class LibraryCard {
   #open = new Set();
 
   // `on` takes: open({ root, path, name }, add), reopen(entry, add), choose(), connect(), switch(show),
-  // showFolder(root, path)
+  // showFolder(root, path), search(query) while the gallery shows
+  #search;
+  #searchBox;
+  #found;
+
   constructor(store, on) {
     this.#store = store;
     this.#on = on;
@@ -125,11 +129,28 @@ export class LibraryCard {
     connect.hidden = !store.canConnect;
     this.#list = new VirtualList({ role: "tree", rowHeight, count: () => this.#rows.length,
                                    row: (index) => this.#row(this.#rows[index]) });
+    // While the gallery shows: search the folder in view. Typing in the gallery searches too.
+    this.#search = el("input.search", { type: "search", placeholder: "Search this folder",
+                                        "aria-label": "Search this folder" });
+    this.#search.addEventListener("input", () => on.search?.(this.#search.value));
+    this.#found = el("span.match");
+    this.#searchBox = el("label.searchbox", { hidden: true },
+                         [el("span.glyph", { html: icons.search(14) }), this.#search, this.#found]);
     this.element = el("section.card.structure.library", { hidden: true, "aria-label": "Library" }, [
       el("div.header", {}, [this.switcher.element, el("span.grow"), add, connect]),
+      this.#searchBox,
       this.#list.element,
     ]);
   }
+
+  /** Shows the gallery's search, with its query and how many files it found (null: no search). */
+  showSearch(shown, query = "", found = null) {
+    this.#searchBox.hidden = !shown;
+    if (this.#search.value !== query) this.#search.value = query;
+    this.#found.textContent = found === null ? "" : `${found} found`;
+  }
+
+  get searchInput() { return this.#search; }
 
   // Reads the folders and recent files again; `kept` are the imports this browser kept, which
   // fill Recent on a first visit.
