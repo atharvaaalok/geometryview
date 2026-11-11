@@ -29,6 +29,7 @@ typedef enum GeoGalleryItemFlags {
     GeoItemSticker = 4, // a rectangle lifted under the pointer: 3 pt shadow down and right
     GeoItemFading = 8,  // drawn at 22%: not what a search found
     GeoItemFixed = 16,  // placed in the view, not the content: it does not scroll (Peek)
+    GeoItemSheet = 32,  // a rectangle filled with the drawing style's own sheet, as the gallery's
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -37,6 +38,7 @@ typedef enum GeoGalleryTargetKind {
     GeoTargetFolder = 1,
     GeoTargetFile = 2,
     GeoTargetMore = 3, // "show all" of a size band cut short
+    GeoTargetPeek = 4, // Peek's card (0), where a click does nothing, or its close button (1)
 } GeoGalleryTargetKind;
 
 typedef struct GeoGalleryItem {
@@ -80,6 +82,7 @@ typedef struct GeoGalleryFacts {
     bool estimated;
     uint32_t parts;
     const char* product; // the name inside the file, or null
+    uint64_t triangles;  // as drawn, 0 when not known
 } GeoGalleryFacts;
 
 typedef struct GeoGalleryPicture {

@@ -62,6 +62,7 @@ void geo_gallery_set_facts(GeoGallery* gallery, uint32_t file, const GeoGalleryF
     f.estimated = facts->estimated;
     f.parts = facts->parts;
     f.product = facts->product != nullptr ? facts->product : "";
+    f.triangles = facts->triangles;
     gallery->gallery.setFacts(file, std::move(f));
 }
 

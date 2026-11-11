@@ -1,6 +1,7 @@
 #include "gallery/view.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <unordered_set>
 
@@ -278,73 +279,178 @@ float Gallery::reveal() const {
     return -1.0f;
 }
 
-// Peek: the file large, with its measured size, parts, triangles and file, on a card over the
-// view, in the chrome's own paper and ink whatever the style.
+namespace {
+
+// A count as Peek writes it: 1,234 up to ten thousand, then 12.3k and 4.56M.
+std::string compactCount(u64 n) {
+    if (n < 10000) {
+        return grouped(n);
+    }
+    return n < 1000000 ? number(double(n) / 1e3) + "k" : number(double(n) / 1e6) + "M";
+}
+
+} // namespace
+
+// Peek: the file large over the view, as the design's card has it. A scrim over the view, then the
+// card, in the chrome's own paper and ink whatever the style: the name and where the file is, the
+// part on the style's sheet, its measured size, parts, triangles and file, and Open.
 void Gallery::layoutPeek() {
     const File& f = tree_.file(peek_);
-    const u32 ink = hex(0x231E16), muted = hex(0x6F685C), paper = hex(0xF7F5EE);
-    const float w = std::min(560.0f, width_ - 80.0f), h = std::min(480.0f, height_ - 60.0f);
-    const float x = (width_ - w) / 2.0f, y = (height_ - h) / 2.0f;
+    const Palette palette = paletteOf(style_);
+    const u32 ink = hex(0x231E16), muted = hex(0x6F685C), paper = hex(0xF7F5EE),
+              rule = hex(0xDDD6C8);
+    constexpr float kPad = 18.0f, kTop = 16.0f, kGap = 12.0f, kPill = 30.0f;
+    constexpr TextStyle kName{15.0f, 600, 0.0f, false};
+    constexpr TextStyle kNameSub{15.0f, 400, 0.0f, false};
+    constexpr TextStyle kWhere{11.5f, 400, 0.0f, false};
+    constexpr TextStyle kStat{20.0f, 600, 0.0f, false};
+    constexpr TextStyle kStatFirst{17.0f, 600, 0.0f, false};
+    constexpr TextStyle kUnit{10.5f, 400, 0.04f, false};
+    constexpr TextStyle kPillText{11.5f, 500, 0.0f, false};
     const usize first = display_.items().size();
     display_.key(keyOf("peek", peek_));
-    display_.rect(x, y, w, h, paper, ink, 1.5f, 14.0f, GeoItemSticker, ink);
-    const float artW = w - 48.0f, artH = h - 170.0f;
-    if (const std::optional<std::array<double, 2>> size = f.drawnSize();
-        size && f.picture && f.picture->mmPerPixel > 0) {
+    display_.group(0);
+
+    // The scrim: a click on it closes Peek.
+    display_.target(GeoTargetNone, 0);
+    display_.rect(0.0f, 0.0f, width_, height_,
+                  palette.dark ? rgba(10, 18, 36, 0.55f) : rgba(242, 239, 231, 0.62f), 0, 0.0f);
+
+    const float headH = lineHeightOf(kName) + 2.0f + lineHeightOf(kWhere);
+    const float statsH = lineHeightOf(kStat) + lineHeightOf(kUnit);
+    const float rest = kTop + headH + kGap + kGap + statsH + kGap + kPill + kTop;
+    const float w = std::max(240.0f, std::min(780.0f, width_ - 32.0f));
+    const float picH = std::clamp(height_ - 48.0f - rest, 120.0f, 390.0f);
+    const float h = rest + picH;
+    const float x = std::round((width_ - w) / 2.0f);
+    const float y = std::round(std::max(8.0f, (height_ - h) / 2.0f));
+    const float inner = w - 2.0f * kPad;
+    display_.target(GeoTargetPeek, 0);
+    display_.rect(x, y, w, h, paper, ink, 1.5f, 12.0f, GeoItemSticker, ink);
+
+    // The name, the name inside it, and where the file is; the close button beside them.
+    const float nameBaseline = y + kTop + ascentOf(kName);
+    const float nameRoom = inner - kPill - 12.0f;
+    const float nameW = display_.text(f.names.label, kName, ink, x + kPad, nameBaseline, nameRoom);
+    const float subX = x + kPad + nameW + textWidth("  ", kNameSub);
+    if (!f.names.sub.empty() && x + kPad + nameRoom - subX > textWidth("    ", kNameSub)) {
+        display_.text(f.names.sub, kNameSub, muted, subX, nameBaseline, x + kPad + nameRoom - subX);
+    }
+    std::vector<std::string> trail;
+    for (u32 at = f.folder; at != kNone; at = tree_.folder(at).parent) {
+        trail.push_back(tree_.folder(at).parent == kNone ? tree_.title() : tree_.folder(at).name);
+    }
+    std::string where;
+    for (auto it = trail.rbegin(); it != trail.rend(); ++it) {
+        where += (where.empty() ? "" : " / ") + *it;
+    }
+    where += (where.empty() ? "" : " \xC2\xB7 ") + f.name;
+    display_.text(where, kWhere, muted, x + kPad,
+                  y + kTop + lineHeightOf(kName) + 2.0f + ascentOf(kWhere), nameRoom);
+    const float cx = x + w - kPad - kPill, cy = y + kTop;
+    constexpr TextStyle kClose{17.0f, 400, 0.0f, false};
+    display_.target(GeoTargetPeek, 1);
+    display_.rect(cx, cy, kPill, kPill, paper, ink, 1.5f, kPill / 2.0f);
+    display_.text("\xC3\x97", kClose, ink, cx,
+                  cy + (kPill - lineHeightOf(kClose)) / 2.0f + ascentOf(kClose), kPill, 1);
+    display_.target(GeoTargetPeek, 0);
+
+    // The part on the style's sheet, as large as its picture shows sharply.
+    const float px = x + kPad, py = y + kTop + headH + kGap;
+    display_.rect(px, py, inner, picH, 0, rule, 1.0f, 8.0f, GeoItemSheet);
+    const auto centred = [&](std::string_view text) {
+        display_.text(text, kWhere, palette.muted, px, py + picH / 2.0f, inner, 1);
+    };
+    if (f.picture && f.picture->mmPerPixel > 0 && f.picture->ink[2] > 0 && f.picture->ink[3] > 0) {
         const Picture& p = *f.picture;
-        double mm = std::max((*size)[0] / artW, (*size)[1] / artH);
-        mm = std::max(mm, p.mmPerPixel / kMaxPointsPerPixel);
-        const float k = float(p.mmPerPixel / mm);
-        const float partW = p.part[2] * k, partH = p.part[3] * k;
-        const float px = x + (w - partW) / 2.0f, bottom = y + 24.0f + (artH + partH) / 2.0f;
-        display_.picture(peek_, px - p.part[0] * k, bottom - (p.part[1] + p.part[3]) * k,
-                         float(p.width) * k, float(p.height) * k);
+        const float k =
+            std::min({(inner - 48.0f) / p.ink[2], (picH - 48.0f) / p.ink[3], kMaxPointsPerPixel});
+        const float midX = px + inner / 2.0f, midY = py + picH / 2.0f;
+        display_.picture(peek_, midX - (p.ink[0] + p.ink[2] / 2.0f) * k,
+                         midY - (p.ink[1] + p.ink[3] / 2.0f) * k, float(p.width) * k,
+                         float(p.height) * k);
+    } else if (f.failed()) {
+        centred(f.failure);
+    } else {
+        centred(f.facts ? "Drawing\xE2\x80\xA6" : "Not measured yet");
     }
-    constexpr TextStyle kName{15.0f, 600, 0.0f, false};
-    constexpr TextStyle kRow{11.5f, 400, 0.0f, false};
-    constexpr TextStyle kRowLabel{10.5f, 600, 0.12f, true};
-    float baseline = y + h - 128.0f;
-    display_.text(f.names.label, kName, ink, x + 24.0f, baseline, w - 48.0f);
-    baseline += 18.0f;
-    if (!f.names.sub.empty()) {
-        display_.text(f.names.sub, kRow, muted, x + 24.0f, baseline, w - 48.0f);
-    }
-    std::vector<std::pair<std::string, std::string>> rows;
+
+    // Size, parts, triangles and file, each a number over what it counts, on two baselines.
+    const float sy = py + picH + kGap;
+    const float statBaseline = sy + ascentOf(kStat);
+    const float unitBaseline = sy + lineHeightOf(kStat) + ascentOf(kUnit);
+    const u32 numbers = ++result_.groups, units = ++result_.groups;
+    const std::string none = "\xE2\x80\x94"; // —
+    std::string size = none;
     if (f.facts && f.facts->hasBox) {
-        const double sides[3] = {f.facts->size[0], f.facts->size[1], f.facts->size[2]};
-        rows.push_back({"Size", dimensions(sides)});
+        size = number(f.facts->size[0]) + " \xC3\x97 " + number(f.facts->size[1]) + " \xC3\x97 " +
+               number(f.facts->size[2]);
     }
-    if (f.facts) {
-        rows.push_back({"Parts", count(f.facts->parts, "part")});
+    std::string ext = f.name.substr(std::min(f.name.size(), f.name.rfind('.')));
+    std::ranges::transform(ext, ext.begin(), [](char c) { return char(std::tolower(c)); });
+    const u64 parts = f.facts ? f.facts->parts : 0;
+    const std::string bytes = f.bytes == 0 ? none
+                              : f.bytes >= 1000000
+                                  ? number(double(f.bytes) / 1e6) + " MB"
+                                  : number(double(std::max<u64>(f.bytes, 100)) / 1e3) + " KB";
+    struct Stat {
+        std::string value, unit;
+        float share;
+    };
+    const Stat stats[4] = {
+        {size,
+         f.facts && f.facts->estimated ? "mm, x \xC2\xB7 y \xC2\xB7 z, estimated"
+                                       : "mm, x \xC2\xB7 y \xC2\xB7 z",
+         1.9f},
+        {f.facts ? grouped(parts) : none, parts == 1 ? "part" : "parts", 1.0f},
+        {f.facts && f.facts->triangles > 0 ? compactCount(f.facts->triangles) : none, "triangles",
+         1.0f},
+        {bytes, ext.empty() ? "file" : ext + " file", 1.0f},
+    };
+    float sx = px;
+    const float shares = 4.9f, room = inner - 3.0f * 8.0f;
+    for (usize i = 0; i < 4; ++i) {
+        const float cw = room * stats[i].share / shares;
+        display_.group(numbers);
+        display_.text(stats[i].value, i == 0 ? kStatFirst : kStat, ink, sx, statBaseline, cw);
+        display_.last().line = statBaseline;
+        display_.group(units);
+        display_.text(stats[i].unit, kUnit, muted, sx, unitBaseline, cw);
+        display_.last().line = unitBaseline;
+        sx += cw + 8.0f;
     }
-    std::string fileRow = f.name;
-    if (f.bytes > 0) {
-        fileRow += " Â· " + (f.bytes >= 1000000 ? number(double(f.bytes) / 1e6) + " MB"
-                                                : number(double(f.bytes) / 1e3) + " KB");
-    }
-    rows.push_back({"File", fileRow});
-    if (f.failed()) {
-        rows.push_back({"Couldn't read", f.failure});
-    }
-    baseline += 24.0f;
-    for (const auto& [label, value] : rows) {
-        display_.text(label, kRowLabel, muted, x + 24.0f, baseline, 110.0f);
-        display_.text(value, kRow, ink, x + 140.0f, baseline, w - 164.0f);
-        baseline += 18.0f;
-    }
+    display_.group(0);
+
+    // Open, as ⏎ does.
+    const float ay = sy + statsH + kGap;
+    const std::string open = "Open  \xE2\x8F\x8E";
+    const float openW = std::round(textWidth(open, kPillText) + 21.0f);
+    display_.target(GeoTargetFile, peek_);
+    display_.rect(px, ay, openW, kPill, ink, ink, 1.5f, kPill / 2.0f);
+    display_.text(open, kPillText, paper, px + 10.5f,
+                  ay + (kPill - lineHeightOf(kPillText)) / 2.0f + ascentOf(kPillText), openW);
+    display_.target(GeoTargetNone, 0);
+    display_.text("Space or Esc closes", kWhere, muted, px + openW + 12.0f,
+                  ay + (kPill - lineHeightOf(kWhere)) / 2.0f + ascentOf(kWhere),
+                  inner - openW - 12.0f);
+
     display_.key(0);
     for (usize i = first; i < display_.items().size(); ++i) {
         display_.item(i).flags |= GeoItemFixed;
-        display_.item(i).group = 0;
     }
 }
 
 GeoGalleryHit Gallery::hit(float x, float y) const {
     GeoGalleryHit hit{GeoTargetNone, 0, 0};
-    // The topmost item with a target under the point; text and pictures by their boxes.
+    // The topmost item with a target under the point; text and pictures by their boxes. Peek's
+    // card covers the view: only what is on it, in the view's points, can be hit.
     const std::vector<GeoGalleryItem>& items = display_.items();
+    const bool peeking = peek_ != kNone;
+    if (peeking) {
+        y -= scroll_;
+    }
     for (auto it = items.rbegin(); it != items.rend(); ++it) {
-        if (it->target_kind == GeoTargetNone || (it->flags & GeoItemFixed) != 0) {
+        if (it->target_kind == GeoTargetNone || ((it->flags & GeoItemFixed) != 0) != peeking) {
             continue;
         }
         float x0 = it->x, y0 = it->y, x1 = it->x + it->width, y1 = it->y + it->height;
@@ -357,6 +463,9 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
         if (x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2) {
             return {it->target_kind, it->target, it->key};
         }
+    }
+    if (peeking) {
+        return hit;
     }
     // A plate is wholly its folder's, between its items too.
     for (const LayoutResult::Place& p : result_.plates) {
@@ -386,7 +495,8 @@ bool Gallery::hover(u32 kind, u32 index) {
 }
 
 GeoGalleryAction Gallery::enter(u32 folder) {
-    // Into a folder from its plate: it grows out of the plate. Up: it shrinks back into it.
+    // Into a folder from its plate: it grows out of the plate. Up: it shrinks back into its plate,
+    // where the folder above shows plates.
     const bool up = tree_.folder(folder_).parent == folder;
     std::optional<std::array<float, 4>> rect;
     for (const LayoutResult::Place& p : result_.plates) {
@@ -394,16 +504,18 @@ GeoGalleryAction Gallery::enter(u32 folder) {
             rect = std::array<float, 4>{p.x, p.y - scroll_, p.w, p.h};
         }
     }
-    if (view_ == GeoViewPlates && (rect || up)) {
-        beginMotion(up ? GeoTransitionOut : GeoTransitionInto, rect);
-    }
     // A folder shows the view it last showed; one not seen keeps the view in use.
-    viewOf_[folder_] = view_;
-    folder_ = folder;
+    u32 next = view_;
     if (const auto it = viewOf_.find(folder);
         it != viewOf_.end() && (views_ & (1u << it->second))) {
-        view_ = it->second;
+        next = it->second;
     }
+    if (up ? next == GeoViewPlates : view_ == GeoViewPlates && rect) {
+        beginMotion(up ? GeoTransitionOut : GeoTransitionInto, rect);
+    }
+    viewOf_[folder_] = view_;
+    folder_ = folder;
+    view_ = next;
     selected_ = focused_ = kNone;
     hoverKind_ = GeoTargetNone;
     peek_ = kNone;
@@ -415,8 +527,15 @@ GeoGalleryAction Gallery::enter(u32 folder) {
 
 GeoGalleryAction Gallery::click(u32 kind, u32 index, bool twice) {
     if (peek_ != kNone) {
-        // A click anywhere closes Peek.
+        // On the card nothing happens; Open opens; anywhere else closes Peek.
+        if (kind == GeoTargetPeek && index == 0) {
+            return {GeoActionNone, 0};
+        }
+        const u32 file = peek_;
         peek(kNone);
+        if (kind == GeoTargetFile && index == file) {
+            return {GeoActionOpenFile, file};
+        }
         return {GeoActionHandled, 0};
     }
     switch (kind) {
@@ -512,9 +631,12 @@ GeoGalleryAction Gallery::key(u32 key) {
                 selected_ = result_.parts.front().index;
             } else if (const auto next = nearest(result_.parts, *at, dx, dy)) {
                 selected_ = result_.parts[*next].index;
-            } else if (dy < 0 && !result_.plates.empty()) {
+            } else if (dy < 0 && !result_.plates.empty() && peek_ == kNone) {
                 selected_ = kNone;
                 focused_ = result_.plates.back().index;
+            }
+            if (peek_ != kNone && selected_ != kNone) {
+                peek_ = selected_; // Peek follows the selection, file to file
             }
             dirty_ = true;
             return {GeoActionHandled, 0};

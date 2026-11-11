@@ -3,12 +3,19 @@
 // carries it across; this reads the items from the module's memory.
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
-export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8 });
-export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3 });
+export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32 });
+export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5 });
 export const Keys = Object.freeze({ Left: 0, Right: 1, Up: 2, Down: 3, Enter: 4, Space: 5, Escape: 6, FolderUp: 7 });
+export const Views = Object.freeze({ Plates: 0, Sheet: 1, Ladders: 2, Atlas: 3, Catalogue: 4 });
+export const ViewNames = Object.freeze(["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]);
+export const Scales = Object.freeze({ Fit: 0, Folder: 1, True: 2 });
+export const Sorts = Object.freeze({ Name: 0, Size: 1 });
+export const Transitions = Object.freeze({ None: 0, Switch: 1, Into: 2, Out: 3 });
+export const TrackKinds = Object.freeze({ Fly: 0, FadeIn: 1 });
 
-const kItemSize = 104; // GeoGalleryItem: 26 four-byte fields
+const kItemSize = 112; // GeoGalleryItem: 28 four-byte fields
+const kNone = 0xffffffff;
 
 /** A colour from the core: straight sRGB, red in the low byte, as CSS. */
 export function cssColour(rgba) {
@@ -77,11 +84,11 @@ export class GalleryCore {
     return file === 0xffffffff ? null : file;
   }
 
-  /** Facts as the library measured them: { size: [x, y, z], hasBox, estimated, parts, product }. */
+  /** Facts as the library measured them: { size: [x, y, z], hasBox, estimated, parts, product, triangles }. */
   setFacts(file, f) {
     this.#string(f.product ?? "", (p) =>
       this.#m._gv_gallery_set_facts(this.#g, file, f.size[0], f.size[1], f.size[2], f.hasBox ? 1 : 0,
-                                    f.estimated ? 1 : 0, f.parts ?? 0, p));
+                                    f.estimated ? 1 : 0, f.parts ?? 0, p, f.triangles ?? 0));
   }
 
   /** A picture's note: { width, height, mmPerPixel, part: [x, y, w, h], ink: [x, y, w, h] }. */
@@ -133,6 +140,7 @@ export class GalleryCore {
         text: u(11), textLength: u(12), fontSize: f(13), tracking: f(14), weight: u(15), align: u(16),
         baseline: f(17), file: u(18), targetKind: u(19), target: u(20), key: u(21),
         group: u(22), line: f(23), column: u(24), columnLine: f(25),
+        stickyTop: f(26), stickyUntil: f(27),
       };
       end = Math.max(end, items[i].text + items[i].textLength);
     }
@@ -167,6 +175,69 @@ export class GalleryCore {
 
   key(key) {
     return this.#action((out) => this.#m._gv_gallery_key(this.#g, key, out));
+  }
+
+  // ---- Views, search, Peek and motion ----
+
+  /** The views that may be shown, a bit each (1 << Views.Plates ...). */
+  setViews(mask) { this.#m._gv_gallery_set_views(this.#g, mask); }
+  get views() { return this.#m._gv_gallery_views(this.#g) >>> 0; }
+  /** Shows a view if it is enabled; the folder in view remembers it. */
+  setView(view) { return this.#m._gv_gallery_set_view(this.#g, view) !== 0; }
+  get view() { return this.#m._gv_gallery_view(this.#g); }
+  /** Sheet's scale (Scales), cell size in points and order (Sorts). */
+  setSheet(scale, cell, sort) { this.#m._gv_gallery_set_sheet(this.#g, scale, cell, sort); }
+
+  setSearch(query) { this.#string(query, (p) => this.#m._gv_gallery_set_search(this.#g, p)); }
+  get search() { return this.#m.UTF8ToString(this.#m._gv_gallery_search(this.#g)); }
+  /** How many files the search found, or null with no search. */
+  get matches() {
+    const n = this.#m._gv_gallery_matches(this.#g) >>> 0;
+    return n === kNone ? null : n;
+  }
+
+  peek(file) { this.#m._gv_gallery_peek(this.#g, file ?? kNone); }
+  get peeking() {
+    const file = this.#m._gv_gallery_peeking(this.#g) >>> 0;
+    return file === kNone ? null : file;
+  }
+
+  /** The selected file, or null. */
+  get selected() {
+    const file = this.#m._gv_gallery_selected(this.#g) >>> 0;
+    return file === kNone ? null : file;
+  }
+
+  /** Where to scroll so the selection shows, or null if it shows already. */
+  get reveal() {
+    const top = this.#m._gv_gallery_reveal(this.#g);
+    return top < 0 ? null : top;
+  }
+
+  /** What the last layout plays against the one before: { kind, rect: [x, y, w, h], duration, fadeOut }. */
+  get transition() {
+    const m = this.#m;
+    m._gv_gallery_transition(this.#g, this.#scratch);
+    const v = new Float32Array(m.HEAPU8.buffer, this.#scratch, 7);
+    return { kind: v[0], rect: [v[1], v[2], v[3], v[4]], duration: v[5], fadeOut: v[6] };
+  }
+
+  /** The last layout's tracks: [{ item, kind, from: [x, y, w, h], delay, duration }]. */
+  get tracks() {
+    const m = this.#m;
+    const n = m._gv_gallery_tracks(this.#g, 0, 0);
+    if (n === 0) return [];
+    const out = m._malloc(n * 32);
+    m._gv_gallery_tracks(this.#g, out, n);
+    const v = new Float32Array(m.HEAPU8.buffer, out, n * 8).slice();
+    m._free(out);
+    const tracks = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const o = i * 8;
+      tracks[i] = { item: v[o], kind: v[o + 1], from: [v[o + 2], v[o + 3], v[o + 4], v[o + 5]],
+                    delay: v[o + 6], duration: v[o + 7] };
+    }
+    return tracks;
   }
 
   /** The files to draw, in the library's bands: [{ file, band, order, folderColor }]. */

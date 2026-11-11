@@ -277,7 +277,7 @@ TEST_CASE("the C interface lays out and reports alignment as painted") {
     CHECK(geo_gallery_file_count(g) == 3);
     const uint32_t two = geo_gallery_file_at(g, "a/two.step");
     REQUIRE(two != UINT32_MAX);
-    const GeoGalleryFacts facts{{10, 8, 6}, true, false, 1, "Two"};
+    const GeoGalleryFacts facts{{10, 8, 6}, true, false, 1, "Two", 1200};
     for (uint32_t f = 0; f < 3; ++f) {
         geo_gallery_set_facts(g, f, &facts);
     }
@@ -537,7 +537,9 @@ TEST_CASE("a search marks what it found, and Esc steps back: Peek, search, selec
         fixed += (item.flags & GeoItemFixed) != 0 ? 1 : 0;
     }
     CHECK(fixed > 4);
-    CHECK(countText(g, "PARTS") == 1);
+    CHECK(countText(g, "triangles") == 1);
+    CHECK(countText(g, "Open  \xE2\x8F\x8E") == 1);
+    CHECK(countText(g, "\xC3\x82") == 0); // no text decoded twice
     g.setSearch("nema");
     CHECK(g.key(GeoKeyEscape).kind == GeoActionHandled); // Peek
     CHECK(g.peeking() == kNone);
@@ -565,4 +567,73 @@ TEST_CASE("arrows move the selection through the sheet's cells") {
     g.layout();
     CHECK(g.selected() != second);
     CHECK(g.reveal() < 0.0f); // it shows
+}
+
+TEST_CASE("Peek: the card stays, Open opens, anywhere else closes, and arrows move it") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 first = g.result().parts[0].index;
+    g.click(GeoTargetFile, first, false);
+    REQUIRE(g.key(GeoKeySpace).kind == GeoActionPeek);
+    g.layout();
+    // Only Peek's own items can be hit; the parts under the scrim cannot.
+    const GeoGalleryHit scrim = g.hit(1.0f, 1.0f);
+    CHECK(scrim.target_kind == GeoTargetNone);
+    const GeoGalleryHit card = g.hit(540.0f, 360.0f);
+    CHECK((card.target_kind == GeoTargetPeek || card.target_kind == GeoTargetFile));
+    CHECK(g.click(GeoTargetPeek, 0, false).kind == GeoActionNone);
+    CHECK(g.peeking() == first);
+    // Arrows move the selection, and Peek with it.
+    g.key(GeoKeyRight);
+    g.layout();
+    CHECK(g.selected() != first);
+    CHECK(g.peeking() == g.selected());
+    const u32 second = g.selected();
+    // Open opens the file in Peek.
+    const GeoGalleryAction open = g.click(GeoTargetFile, second, false);
+    CHECK(open.kind == GeoActionOpenFile);
+    CHECK(open.target == second);
+    CHECK(g.peeking() == kNone);
+    // Anywhere else closes it.
+    g.key(GeoKeySpace);
+    CHECK(g.click(GeoTargetNone, 0, false).kind == GeoActionHandled);
+    CHECK(g.peeking() == kNone);
+}
+
+TEST_CASE("Peek's stats share their baselines, and its card fits the view") {
+    for (const float height : {420.0f, 720.0f, 1200.0f}) {
+        CAPTURE(height);
+        Gallery g = measured();
+        g.setViewport(1080.0f, height);
+        REQUIRE(g.setFolder("motor"));
+        g.layout();
+        g.click(GeoTargetFile, g.result().parts[0].index, false);
+        g.key(GeoKeySpace);
+        g.layout();
+        checkAligned(g);
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if ((item.flags & GeoItemFixed) != 0) {
+                CHECK(item.y >= 0.0f);
+                CHECK(item.y + item.height <= height + 0.01f);
+            }
+        }
+    }
+}
+
+TEST_CASE("back up from a folder shown as a sheet, it still shrinks into its plate") {
+    Gallery g = measured();
+    g.layout();
+    const LayoutResult::Place plate = g.result().plates[0];
+    g.click(GeoTargetFolder, plate.index, false);
+    REQUIRE(g.layout());
+    REQUIRE(g.setView(GeoViewSheet));
+    g.layout();
+    g.key(GeoKeyEscape);
+    REQUIRE(g.layout());
+    CHECK(g.view() == GeoViewPlates);
+    const GeoGalleryTransition t = g.transition();
+    CHECK(t.kind == GeoTransitionOut);
+    CHECK(t.rect[0] == plate.x);
+    CHECK(t.rect[2] == plate.w);
 }

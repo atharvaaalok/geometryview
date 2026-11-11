@@ -8,6 +8,7 @@ struct LibraryFacts: Sendable {
     let estimated: Bool
     let parts: UInt32
     let product: String
+    let triangles: UInt64
 }
 
 /// What the library reports, on the main thread.
@@ -198,7 +199,8 @@ private func receiveLibraryEvent(
                     hasBox: f.has_box,
                     estimated: f.estimated,
                     parts: f.parts,
-                    product: f.name.map { String(cString: $0) } ?? ""
+                    product: f.name.map { String(cString: $0) } ?? "",
+                    triangles: f.triangles
                 )
             )
         )
