@@ -165,6 +165,7 @@ struct Service::FileState {
     bool painting = false;
     i32 folderColor = -1;
     u64 bytes = 0;
+    double modified = 0.0;
 };
 
 struct Service::Event {
@@ -339,8 +340,9 @@ void Service::waitIdle() {
 
 std::string Service::pictureKey(const PictureSpec& spec, i32 firstColor,
                                 const std::string& version) {
-    const std::string text = std::format("{}|{}|{}|{:.4f}|{}|{}", spec.style, spec.colorMode,
-                                         spec.pixels, spec.lineScale, firstColor, version);
+    const std::string text =
+        std::format("{}|{}|{}|{:.3f}|{:.4f}|{}|{}", spec.style, spec.colorMode, spec.pixels,
+                    spec.pixelsPerPoint, spec.lineScale, firstColor, version);
     return std::format("{:016x}", XXH3_64bits(text.data(), text.size()));
 }
 
@@ -411,7 +413,8 @@ void Service::apply(Event& event) {
             const FileWant& want = wants_[i];
             wantIndex_[want.path] = i;
             FileState& state = files_[want.path];
-            if (state.bytes != want.bytes && state.bytes != 0) {
+            if ((state.bytes != want.bytes && state.bytes != 0) ||
+                (state.modified != want.modified && state.modified != 0.0)) {
                 // The file changed: everything about it is looked up again.
                 state.looked = false;
                 state.failed = false;
@@ -421,6 +424,7 @@ void Service::apply(Event& event) {
                 state.structured = false;
             }
             state.bytes = want.bytes;
+            state.modified = want.modified;
             if (state.folderColor != want.folderColor) {
                 state.folderColor = want.folderColor;
                 state.pictureCurrent = false;

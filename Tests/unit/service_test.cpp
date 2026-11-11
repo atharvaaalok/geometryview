@@ -122,7 +122,7 @@ struct Workspace {
 std::vector<FileWant> wantAll(const std::vector<std::string>& paths, Band band = Band::Visible) {
     std::vector<FileWant> wants;
     for (usize i = 0; i < paths.size(); ++i) {
-        wants.push_back({paths[i], band, double(i), fs::file_size(paths[i]), -1});
+        wants.push_back({paths[i], band, double(i), fs::file_size(paths[i]), -1, 0.0});
     }
     return wants;
 }

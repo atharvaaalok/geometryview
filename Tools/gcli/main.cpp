@@ -3,6 +3,7 @@
 #include "engine.h"
 #include "format/blob.h"
 #include "import.h"
+#include "library_command.h"
 #include "scene/facts.h"
 #include "sheet.h"
 
@@ -431,6 +432,9 @@ int main(int argc, const char** argv) {
     if (command == "sheet") {
         return gcli::sheetCommand(argc, argv);
     }
+    if (command == "library") {
+        return gcli::libraryCommand(argc, argv);
+    }
     std::println(stderr, "gcli {}", geo_engine_version());
     std::println(stderr, "usage: gcli import <source> <blob> [occt-worker [level]]");
     std::println(stderr, "       gcli verify <blob>");
@@ -440,6 +444,8 @@ int main(int argc, const char** argv) {
     std::println(stderr, "       gcli render <metallib> <blob> <png> [width height azimuth "
                          "elevation ortho|perspective style colour section plain|overlay "
                          "isolate]");
+    std::println(stderr, "       gcli library <metallib> <helper> <cache> <folder> [--slots S] "
+                         "[--workers W] [--style N] [--pixels P] [--limit N] [--prefetch]");
     std::println(stderr,
                  "       gcli sheet <metallib> <png> [--cell 192] [--columns N] [--style S] "
                  "[--colour C] [--same-scale] [--title text] < tiles.jsonl");

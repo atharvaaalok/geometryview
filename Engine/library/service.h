@@ -38,6 +38,7 @@ struct PictureSpec {
     u32 style = 0;     // a GeoStyle
     u32 colorMode = 1; // a GeoColorMode
     u32 pixels = 256;  // the picture's side
+    float pixelsPerPoint = 2.0f;
     float lineScale = 0.5f;
 
     bool operator==(const PictureSpec&) const = default;
@@ -106,6 +107,8 @@ struct FileWant {
     u64 bytes = 0;
     /// The colour a one-part file starts from (its folder's), or -1 for the cycle's own.
     i32 folderColor = -1;
+    /// When the file last changed, from a scan; a change, or one of size, looks it up again.
+    double modified = 0.0;
 };
 
 enum class Pressure : u8 { Normal, Warning, Critical };
