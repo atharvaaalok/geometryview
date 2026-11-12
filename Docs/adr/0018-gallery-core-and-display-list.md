@@ -111,3 +111,36 @@ Two front ends laying out on their own would drift apart, and every rule would b
 **11. Painting order is the list's order.** Layers reused from one paint to the next are put back
 in the display list's order among their siblings, not only given a z position. Whatever draws the
 tree, a snapshot included, shows the same covering.
+
+## Addendum (2026-11-11): G4, the states, the poster and the phone
+
+**12. The states every view shares are drawn by the core's part drawing.** Both views get them:
+- Reading: a mustard bar on the measured box, filling as the file is read.
+- A file changed: a Δ until seen, its picture at 45% (`Stale`) until the new one comes.
+- Tiny beside huge: a detail bubble on a shelf at one scale.
+
+  Nothing else moves for any of them. The Mac watches a gallery's root with FSEvents and scans it
+  again after a burst; a file whose time changed re-inks alone. The browser has no such events and
+  re-reads a folder when it is shown again.
+
+**13. A folder that can no longer be read is a state, not an error.** In the browser a connected
+folder's permission can lapse. The page keeps each root's last listing, with the size and time
+learned for each file drawn. A lapsed folder shows that listing faded (`Lost`) under a card with
+Reconnect, which the core hits over the content. Its pictures are found among those kept by size
+and time, without reading anything.
+
+**14. The poster is a layout, not a screenshot.**
+- `geo_gallery_set_poster` prints the view on one sheet: a head with the title, a foot with the
+  path, the style and the date the front end passes. Plates shows every folder holding files as a
+  plate; Sheet shows smaller cells and keeps no heading at the top.
+- The Mac renders its own layers to a PNG, every item painted, not only those near the view. The
+  browser draws the display list on a canvas, as its elements paint it. Both are checked for
+  alignment like any view.
+
+**15. The phone is a width, not a separate layout.**
+- Below 480 pt Plates stands two abreast; Sheet keeps three columns; Peek puts its stats in two
+  rows.
+- A section's heading drops "ONE SCALE", then its count, before letting texts overlap. A width that
+  ran to zero had meant "no limit"; a test now holds every line's texts apart from 374 to 1800 pt.
+- The browser's checks run at an emulated 390 × 844 screen through DevTools, since Chrome makes no
+  narrower window.

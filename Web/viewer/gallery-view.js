@@ -230,7 +230,7 @@ export class GalleryView {
       node.style.opacity = opacity === 1 ? "" : String(opacity);
       // Headings stay above what scrolls under them.
       node.style.zIndex = String(sticky ? items.length + i : i);
-      node.style.transform = "";
+      node.style.transform = node.dataset.turn ?? "";
       if (sticky) this.#sticky.push({ node, item, index: i });
       this.#frames.set(i, node);
     }
@@ -330,6 +330,17 @@ export class GalleryView {
     const horizontal = Math.abs(item.height) < Math.abs(item.width);
     const w = item.lineWidth;
     const style = item.flags & Flags.Dashed ? "dashed" : "solid";
+    node.dataset.turn = "";
+    if (Math.abs(item.width) > 0.5 && Math.abs(item.height) > 0.5) {
+      // A slanted line, a detail's leader: a level one as long, turned about its start.
+      const length = Math.hypot(item.width, item.height);
+      setBox(node, item.x, item.y - w / 2, length, 0);
+      node.style.borderTop = `${w}px ${style} ${cssColour(item.stroke)}`;
+      node.style.borderLeft = "none";
+      node.style.transformOrigin = `0 ${w / 2}px`;
+      node.dataset.turn = `rotate(${Math.atan2(item.height, item.width)}rad)`;
+      return;
+    }
     if (horizontal) {
       setBox(node, Math.min(item.x, item.x + item.width), item.y - w / 2, Math.abs(item.width), 0);
       node.style.borderTop = `${w}px ${style} ${cssColour(item.stroke)}`;

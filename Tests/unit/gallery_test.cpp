@@ -9,6 +9,7 @@
 #include "gallery/view.h"
 
 #include <doctest/doctest.h>
+#include <cmath>
 #include <format>
 #include <map>
 #include <string>
@@ -871,4 +872,43 @@ TEST_CASE("a folder that can no longer be read shows as last seen, faded, with o
     g.setLost(false);
     g.layout();
     CHECK(countText(g, "Allow reading this folder again.") == 0);
+}
+
+TEST_CASE("tiny beside huge: a speck at the shelf's scale gets a detail bubble") {
+    Gallery g;
+    std::vector<Entry> entries = {{"axis-600.step"}, {"axis-400.step"}, {"washer-m1.step"}};
+    g.setEntries("Parts", entries);
+    const double sizes[3] = {600.0, 400.0, 1.2};
+    for (u32 f = 0; f < 3; ++f) {
+        const u32 file = g.tree().fileAt(entries[f].path);
+        const double s = sizes[f];
+        Facts facts;
+        facts.size = {s, s * 0.2, s * 0.15};
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        g.setFacts(file, facts);
+        Picture p;
+        p.width = p.height = 512;
+        p.mmPerPixel = s * 1.3 / 512.0;
+        p.part = {80.0f, 100.0f, 340.0f, 300.0f};
+        p.ink = {70.0f, 95.0f, 370.0f, 340.0f};
+        g.setPicture(file, p);
+    }
+    g.setViewport(1080.0f, 720.0f);
+    g.layout();
+    CHECK(countText(g, "DETAIL A ") == 1);
+    CHECK(countText(g, "DETAIL B") == 0);
+    // The washer drawn twice: at the shelf's scale and in its bubble, far larger.
+    std::vector<float> washers;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind == GeoItemPicture && item.file == g.tree().fileAt("washer-m1.step")) {
+            washers.push_back(item.width);
+        }
+    }
+    REQUIRE(washers.size() == 2);
+    CHECK(std::max(washers[0], washers[1]) >= 10.0f * std::min(washers[0], washers[1]));
+    for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+        CHECK(spread.spread < 0.01f);
+    }
 }
