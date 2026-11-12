@@ -15,7 +15,7 @@ import json
 import sys
 
 TEXT = {"masthead.title", "masthead.subtitle", "tree.name", "tree.count", "status.heading", "status.body"}
-PLATFORM_X = {"masthead.title", "masthead.subtitle", "masthead.progress"}
+PLATFORM_X = {"masthead.title", "masthead.subtitle", "masthead.progress", "masthead.close"}
 # Sized by their labels, which Chrome and CoreText measure a fraction of a point apart: compared on
 # position and height, with the slack that adds up along a row of them.
 TEXT_SIZED = {"toolbar.card", "toolbar.item", "status.button", "structure.segment", "structure.switcher",

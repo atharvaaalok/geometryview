@@ -694,8 +694,10 @@ function showEmpty() {
   status.showInvitation();
   structure.element.hidden = true;
   library.element.hidden = true;
+  // The Library once it is listed, unless a card shows by then; also when the page opened with
+  // a file, as on the Mac.
   libraryEntries().then((kept) => library.refresh(kept)).then(() => {
-    if (names.length === 0 && panelOpen) showLibrary(true);
+    if (panelOpen && library.element.hidden && structure.element.hidden) showLibrary(true);
   });
   updateInsets();
   toolbar.update({ hasSelection: false, hasModel: false });

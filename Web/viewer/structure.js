@@ -214,7 +214,7 @@ export class StructureCard {
     const hide = pill({ icon: icons.sidebar, help: "Hide the sidebar (⌥S)", onPress: () => onHide?.() });
     hide.classList.add("desktop-only");
     this.element = el("section.card.structure", { "aria-label": "Structure" }, [
-      el("div.header", {}, [this.switcher.element, el("span.grow"), hide]),
+      el("div.header", {}, [this.switcher.element, hide]),
       this.#nothing,
       el("label.searchbox", {}, [el("span.glyph", { html: icons.search(14) }), this.#search, this.#matchLabel]),
       this.#list.element,

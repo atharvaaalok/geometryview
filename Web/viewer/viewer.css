@@ -390,8 +390,9 @@ body.phone .tree .row { height: 30px; }
 .structure .nothing { margin: 0; color: var(--muted); font-size: var(--text-s); }
 
 /* The Library: the switcher and the two ways in, then folders and recent files as tree rows. */
+/* The buttons at the right inset, as on the Mac: the switcher takes what room is left. */
 .structure .header { display: flex; align-items: center; gap: 8px; }
-.structure .header .grow { flex: 1; }
+.structure .header > :first-child { margin-right: auto; }
 .library .row.heading .name { font-weight: 600; }
 .library .row.message { color: var(--muted); font-size: var(--text-s); }
 .library .row.missing .name { color: var(--faint); }
