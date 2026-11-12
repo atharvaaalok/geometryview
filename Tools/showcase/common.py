@@ -18,7 +18,8 @@ from build123d import Compound, Shape, export_step
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build" / "showcase"
 STEP = OUT / "step"
-LIBRARY = OUT / "library" / "things_that_come_in_sizes"
+# The folder's own name is its title: posters print it as it is.
+LIBRARY = OUT / "library" / "Things That Come in Sizes"
 BLOBS = OUT / "blobs"
 PREVIEW = OUT / "preview"
 

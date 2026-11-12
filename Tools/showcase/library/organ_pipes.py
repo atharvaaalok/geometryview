@@ -77,6 +77,6 @@ def stopped_pipe(n: int) -> Solid:
 
 def files():
     for i, (note, n) in enumerate(diatonic(4, 15)):
-        yield f"{CHAPTER}/flue_pipes/{i + 1:02d} Flue pipe {note}.step", part(flue_pipe(n), f"flue_pipe_{note.lower()}")
+        yield f"{CHAPTER}/flue_pipes/{i + 1:03d} Flue pipe {note}.step", part(flue_pipe(n), f"flue_pipe_{note.lower()}")
     for i, (note, n) in enumerate(diatonic(4, 8)):
-        yield f"{CHAPTER}/stopped_pipes/{i + 1:02d} Stopped pipe {note}.step", part(stopped_pipe(n), f"stopped_pipe_{note.lower()}")
+        yield f"{CHAPTER}/stopped_pipes/{i + 1:03d} Stopped pipe {note}.step", part(stopped_pipe(n), f"stopped_pipe_{note.lower()}")

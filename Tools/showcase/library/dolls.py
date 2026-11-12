@@ -72,6 +72,6 @@ def files():
     for count in range(1, 8):
         name = f"matryoshka_{count}"
         if count == 1:
-            yield f"{CHAPTER}/matryoshka/{count:02d} Matryoshka 1.step", part(solid_doll(SMALLEST), "doll_1")
+            yield f"{CHAPTER}/matryoshka/{count:03d} Matryoshka 1.step", part(solid_doll(SMALLEST), "doll_1")
         else:
-            yield f"{CHAPTER}/matryoshka/{count:02d} Matryoshka {count}.step", assembly(name, nested(count))
+            yield f"{CHAPTER}/matryoshka/{count:03d} Matryoshka {count}.step", assembly(name, nested(count))

@@ -62,7 +62,7 @@ def flask(d: float, h: float, neck: float) -> Solid:
 
 def files():
     for i, (ml, d, h) in enumerate(BEAKERS):
-        yield f"{CHAPTER}/beakers/{i + 1:02d} Beaker {ml} ml.step", part(beaker(d, h), f"beaker_{ml}ml")
+        yield f"{CHAPTER}/beakers/{i + 1:03d} Beaker {ml} ml.step", part(beaker(d, h), f"beaker_{ml}ml")
     for i, (ml, d, h, neck) in enumerate(FLASKS):
-        yield (f"{CHAPTER}/erlenmeyer_flasks/{i + 1:02d} Erlenmeyer {ml} ml.step",
+        yield (f"{CHAPTER}/erlenmeyer_flasks/{i + 1:03d} Erlenmeyer {ml} ml.step",
                part(flask(d, h, neck), f"erlenmeyer_{ml}ml"))

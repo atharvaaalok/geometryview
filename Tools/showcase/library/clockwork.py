@@ -63,6 +63,6 @@ PINIONS = [6, 7, 8, 10, 12, 14, 16, 18]
 
 def files():
     for i, n in enumerate(PINIONS):
-        yield f"{CHAPTER}/pinions/{i + 1:02d} Pinion {n} leaves.step", part(pinion(n), f"pinion_{n}")
+        yield f"{CHAPTER}/pinions/{i + 1:03d} Pinion {n} leaves.step", part(pinion(n), f"pinion_{n}")
     for i, n in enumerate(WHEELS):
-        yield f"{CHAPTER}/wheels/{i + 1:02d} Wheel {n} teeth.step", part(wheel(n), f"wheel_{n}")
+        yield f"{CHAPTER}/wheels/{i + 1:03d} Wheel {n} teeth.step", part(wheel(n), f"wheel_{n}")

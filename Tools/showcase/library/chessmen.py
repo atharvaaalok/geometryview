@@ -180,4 +180,4 @@ def files():
         for i, (name, height, base_d) in enumerate(PIECES):
             shape = MAKERS[name](H, height * H, base_d * H / 2)
             label = f"{name.lower()}_{int(H)}mm"
-            yield f"{CHAPTER}/{folder}/{i + 1:02d} {name}.step", part(shape, label)
+            yield f"{CHAPTER}/{folder}/{i + 1:03d} {name}.step", part(shape, label)
