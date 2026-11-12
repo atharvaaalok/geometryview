@@ -18,6 +18,8 @@ const root = join(here, "../..");
 // Reports go beside the spike they came from; whole STEP imports are P2's, the viewer's own
 // renderer P3's.
 const reportsFor = (label) => {
+  // Runs that make the README's pictures keep their reports out of the measurements.
+  if (label.startsWith("media")) return join(root, "build/media/reports");
   // The STEP sweep's report stays beside the cache files it names, for Tools/web_step_sweep.py.
   if (label.includes("-p7-sweep")) return join(root, "build/fixtures/out");
   if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
