@@ -3,7 +3,7 @@
 **See inside your CAD models, and a whole folder of them at once.** STEP and STL, in your browser,
 on a Mac, on your phone, and from your AI apps.
 
-<img src="https://raw.githubusercontent.com/atharvaaalok/geometryview/v0.4.0/Docs/media/fig1-light.webp" width="680" alt="A turbofan cut along its axis, six stages numbered, in a drafting frame">
+<img src="https://raw.githubusercontent.com/atharvaaalok/geometryview/v0.4.1/Docs/media/fig1-light.webp" width="680" alt="A turbofan cut along its axis, six stages numbered, in a drafting frame">
 
 ## View a model
 
@@ -20,7 +20,7 @@ own, with Vulkan on. Or use the hosted copy:
 Connect a folder and every part in it is drawn to scale, five ways: Plates, Sheet, Ladders, Atlas and
 Catalogue.
 
-<img src="https://raw.githubusercontent.com/atharvaaalok/geometryview/v0.4.0/Docs/media/plates-light.webp" width="680" alt="A folder of 124 parts as a poster, fifteen families each at its own scale">
+<img src="https://raw.githubusercontent.com/atharvaaalok/geometryview/v0.4.1/Docs/media/plates-light.webp" width="680" alt="A folder of 124 parts as a poster, fifteen families each at its own scale">
 
 ## Use it from your AI app
 
