@@ -381,6 +381,10 @@ void geo_engine_set_overlay_shown(GeoEngine* engine, bool shown);
 /// once it is complete.
 void geo_engine_write_snapshot(GeoEngine* engine, const char* path);
 
+/// Writes the current view as a picture to share: as drawn, but without the view cube and scale
+/// bar. A PNG at `path`, written on the engine thread, which appears once it is complete.
+void geo_engine_write_picture(GeoEngine* engine, const char* path);
+
 /// Prints input-to-present latency to stderr when GEOMETRYVIEW_LATENCY is set.
 void geo_engine_report_latency(GeoEngine* engine);
 

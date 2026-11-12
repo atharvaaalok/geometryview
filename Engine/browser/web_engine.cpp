@@ -566,9 +566,10 @@ EMSCRIPTEN_KEEPALIVE void geo_web_stream_end(double token, const char* message) 
     web.core->importFinished(u64(token), {ok, true, error, ""});
 }
 
-/// Draws the current view with all its samples into a texture and reads it back; the pixels
-/// arrive through geoHost.snapshot, valid only during that call.
-EMSCRIPTEN_KEEPALIVE void geo_web_snapshot() {
+/// Draws the current view with all its samples into a texture and reads it back, with the view
+/// cube and scale bar if `overlay` is nonzero; the pixels arrive through geoHost.snapshot, valid
+/// only during that call.
+EMSCRIPTEN_KEEPALIVE void geo_web_snapshot(int overlay) {
     // The latest view, made here rather than waiting for the frame loop, which a browser pauses
     // while the page is out of sight, as it is when an AI app asks for a picture.
     if (std::optional<engine::Frame> frame = web.core->frame()) {
@@ -585,7 +586,8 @@ EMSCRIPTEN_KEEPALIVE void geo_web_snapshot() {
     const wgpu::Texture target = web.device.CreateTexture(&descriptor);
     web.device.PushErrorScope(wgpu::ErrorFilter::Validation);
     web.renderer->setSamples(4);
-    web.renderer->render(target, web.last->view, &web.last->overlay);
+    const render::Overlay none;
+    web.renderer->render(target, web.last->view, overlay != 0 ? &web.last->overlay : &none);
     web.renderer->setSamples(1);
     web.device.PopErrorScope(wgpu::CallbackMode::AllowSpontaneous,
                              [](wgpu::PopErrorScopeStatus, wgpu::ErrorType type,
