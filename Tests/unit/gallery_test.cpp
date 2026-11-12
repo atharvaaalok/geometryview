@@ -8,8 +8,8 @@
 #include "gallery/tree.h"
 #include "gallery/view.h"
 
-#include <doctest/doctest.h>
 #include <cmath>
+#include <doctest/doctest.h>
 #include <format>
 #include <map>
 #include <string>
@@ -169,9 +169,9 @@ TEST_CASE("plates lay out with every row and column on one line, in every style"
         g.setStyle(style);
         g.setViewport(1080.0f, 720.0f);
         REQUIRE(g.layout());
-        CHECK_FALSE(g.layout()); // nothing changed
+        CHECK_FALSE(g.layout());              // nothing changed
         CHECK(g.result().plates.size() == 3); // drafts holds nothing, so has no plate
-        CHECK(g.result().parts.size() == 2); // the root's own files, on a shelf
+        CHECK(g.result().parts.size() == 2);  // the root's own files, on a shelf
         CHECK(g.result().covers.size() > 4);
         checkAligned(g);
         // Hovered, a plate lifts, and the rest stay aligned.
@@ -974,6 +974,78 @@ TEST_CASE("tiny beside huge: a speck at the shelf's scale gets a detail bubble")
     CHECK(std::max(washers[0], washers[1]) >= 10.0f * std::min(washers[0], washers[1]));
     for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
         CHECK(spread.spread < 0.01f);
+    }
+}
+
+namespace {
+
+// A folder of two specks and a tall, narrow tower, as test-models/large is: the specks sort first
+// and get detail bubbles, the first at the shelf's left edge; the tower's square picture is mostly
+// clear margin, and it stands right after the second bubble.
+Gallery sizesWithATower(std::vector<Entry>& entries) {
+    Gallery g;
+    entries = {{"washer-m1.step"}, {"washer-m2.step"}, {"tower.step"}};
+    g.setEntries("Parts", entries);
+    struct Spec {
+        std::array<double, 3> size;
+        std::array<float, 4> part;
+    };
+    const Spec specs[3] = {{{1.2, 1.2, 0.3}, {80.0f, 100.0f, 340.0f, 300.0f}},
+                           {{2.0, 2.0, 0.5}, {80.0f, 100.0f, 340.0f, 300.0f}},
+                           {{190.0, 190.0, 1196.0}, {200.0f, 40.0f, 112.0f, 432.0f}}};
+    for (u32 f = 0; f < 3; ++f) {
+        const u32 file = g.tree().fileAt(entries[f].path);
+        Facts facts;
+        facts.size = specs[f].size;
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        g.setFacts(file, facts);
+        const double longest = *std::max_element(specs[f].size.begin(), specs[f].size.end());
+        Picture p;
+        p.width = p.height = 512;
+        p.mmPerPixel = longest / double(std::max(specs[f].part[2], specs[f].part[3]));
+        p.part = specs[f].part;
+        p.ink = {specs[f].part[0] - 10.0f, specs[f].part[1] - 5.0f, specs[f].part[2] + 30.0f,
+                 specs[f].part[3] + 40.0f};
+        g.setPicture(file, p);
+    }
+    g.setViews(0x1F);
+    g.setViewport(1080.0f, 720.0f);
+    return g;
+}
+
+} // namespace
+
+TEST_CASE("a part's card stays inside the view, the leftmost one's too, in every view") {
+    std::vector<Entry> entries;
+    Gallery g = sizesWithATower(entries);
+    for (const u32 view :
+         {GeoViewPlates, GeoViewSheet, GeoViewLadders, GeoViewAtlas, GeoViewCatalogue}) {
+        CAPTURE(view);
+        REQUIRE(g.setView(view));
+        for (const Entry& e : entries) {
+            const u32 file = g.tree().fileAt(e.path);
+            CAPTURE(e.path);
+            for (const bool selecting : {true, false}) {
+                CAPTURE(selecting);
+                if (selecting) {
+                    g.click(GeoTargetFile, file, false);
+                    g.hover(GeoTargetNone, 0);
+                } else {
+                    g.click(GeoTargetNone, 0, false);
+                    g.hover(GeoTargetFile, file);
+                }
+                g.layout();
+                for (const GeoGalleryItem& item : g.display().items()) {
+                    if ((item.flags & GeoItemSticker) == 0 || (item.flags & GeoItemFixed) != 0) {
+                        continue;
+                    }
+                    CHECK(item.x >= 0.0f);
+                    CHECK(item.x + item.width <= 1080.0f);
+                }
+            }
+        }
     }
 }
 

@@ -54,8 +54,9 @@ struct LayoutResult {
     std::vector<GeoGalleryLane> lanes; // bands that scroll sideways on their own
 };
 
-/// Content insets: one left edge for every view.
-inline constexpr float kContentLeft = 6.0f;
+/// Content insets: one left edge for every view, with room before it for the card a selected or
+/// hovered part stands on (10 points out, and 2 more lifted), which the front ends clip at 0.
+inline constexpr float kContentLeft = 18.0f;
 inline constexpr float kContentRight = 18.0f;
 inline constexpr float kContentTop = 2.0f;
 inline constexpr float kContentBottom = 30.0f;
