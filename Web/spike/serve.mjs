@@ -143,7 +143,8 @@ const server = createServer(async (request, response) => {
   }
   const path = url.pathname === "/" ? "/index.html" : url.pathname;
   const [prefix, directory] = mounts.find(([p]) => path.startsWith(p));
-  const name = path.slice(prefix.length) || "index.html";
+  // Paths arrive percent-encoded: a file named "01 Flue pipe C4.step" is asked for with %20.
+  const name = decodeURIComponent(path.slice(prefix.length)) || "index.html";
   if (name.includes("..")) {
     response.writeHead(400, headers).end();
     return;
