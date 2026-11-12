@@ -21,6 +21,7 @@ export class Gallery {
   #facts = new Map(); // path -> layout facts
   #pictures = new Map(); // path -> { png, note }
   #failures = new Map();
+  #phone = false;
   // Detail pictures: the files drawn large, and how to stop asking for them.
   #detailFiles = "";
   #detailAbort = null;
@@ -61,9 +62,11 @@ export class Gallery {
       action: (action) => this.#act(action),
       viewChanged: () => this.#scheduleWant(),
       atlasMoved: () => this.#on.changed?.(),
-    }, { probes });
+    }, { probes, phone });
     this.view.element.hidden = true;
-    this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(), version: engine.cacheVersion, phone }, {
+    this.#phone = phone;
+    this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(phone ? { recycleMB: 128 } : {}),
+                                         version: engine.cacheVersion, phone, walkStats: store.kind === "shell" }, {
       facts: (path, facts) => this.#receiveFacts(path, facts),
       measured: (path, bytes, modified) => this.#measured(path, bytes, modified),
       reading: (path, fraction) => {
@@ -290,9 +293,12 @@ export class Gallery {
 
   setStyle(style) {
     this.#style = style;
-    const pixels = this.core.picturePixels;
+    // A phone's pictures are smaller and drawn once: each is held decoded while it shows, and a
+    // phone shows its parts small.
+    const pixels = this.#phone ? 320 : this.core.picturePixels;
     this.#library.setSpec({ style, colorMode: 1, pixels, pixelsPerPoint: 2,
-                            lineScale: Math.min(1, Math.max(0.5, pixels / 2 / 320)), supersample: 2 });
+                            lineScale: Math.min(1, Math.max(0.5, pixels / 2 / 320)),
+                            supersample: this.#phone ? 1 : 2 });
     this.#pictures.clear();
     // Details in the old style go, and are asked for again in the new.
     this.view.keepDetails(new Set());
@@ -452,6 +458,8 @@ export class Gallery {
   // Asks for the detail pictures of what is drawn large, if that changed, one after another, and
   // lets the others go.
   #updateDetails() {
+    // A phone draws its parts small, and keeps its memory for them: no details there.
+    if (this.#phone) return;
     const files = this.core.details();
     const key = files.join(",");
     if (key === this.#detailFiles) return;
@@ -465,7 +473,8 @@ export class Gallery {
       for (const file of files) {
         if (abort.signal.aborted) return;
         const path = this.core.path(file);
-        const drawn = await this.#library.detail(path, colours.get(file) ?? -1, abort.signal).catch(() => null);
+        const drawn = await this.#library.detail(path, colours.get(file) ?? -1, abort.signal, this.#entries.get(path))
+          .catch(() => null);
         if (drawn && !abort.signal.aborted && this.core.fileAt(path) === file) this.view.setDetail(file, drawn.png);
       }
     })();
@@ -488,14 +497,15 @@ export class Gallery {
     const facts = this.#facts.get(path);
     const frames = [];
     let ink = null;
-    this.#library.turn(path, folderColor, Gallery.turnFrames, Gallery.turnPixels,
+    // A phone's turntable is smaller: its frames are held in the page's memory.
+    this.#library.turn(path, folderColor, Gallery.turnFrames, this.#phone ? 512 : Gallery.turnPixels,
                        facts?.hasBox ? facts.size : null, (frame, bitmap, note) => {
       frames[frame] = bitmap;
       // The box holding every frame's ink, as its corners: x0, y0, x1, y1.
       const [x, y, w, h] = note.ink;
       ink = ink ? [Math.min(ink[0], x), Math.min(ink[1], y), Math.max(ink[2], x + w), Math.max(ink[3], y + h)]
         : [x, y, x + w, y + h];
-    }, abort.signal).then((done) => {
+    }, abort.signal, this.#entries.get(path)).then((done) => {
       if (!done || abort.signal.aborted || this.#turnFile !== peeking || frames.length !== Gallery.turnFrames) {
         for (const frame of frames) frame?.close?.();
         return;
