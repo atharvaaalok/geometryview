@@ -72,3 +72,42 @@ Two front ends laying out on their own would drift apart, and every rule would b
   then differ by as much.
 - A new view is a new layout function in the core, painted unchanged by both front ends.
 - The core is small, pure and portable: it runs in the wasm unit tests too.
+
+## Addendum (2026-11-11): G3, Sheet and the moves
+
+**7. Sheet is the second layout, in the same core.**
+- `layoutSheet` draws every file once, folder by folder, as the design's contact sheet. It shares
+  its drawing of parts, scale bars and alignment with Plates (`Engine/gallery/draw.h`).
+- A heading that stays at the top while its block scrolls under it is data: each of its items
+  carries `sticky_top` and `sticky_until`, and a painter moves it down by how far the view has
+  scrolled past, at most that far. Painters measure it less that offset, so the check still holds
+  it to the layout.
+
+**8. The gallery's state is the core's.**
+- The core holds the views enabled, the view each folder last showed, Sheet's controls, the search
+  and Peek. The front ends keep only Sheet's controls between launches.
+- Esc steps back through Peek, the search, the selection and the folder, in the core. Typing
+  searches and Backspace edits the search, so no key that edits text goes up a folder.
+
+**9. Items can be fixed in the view.**
+- Peek is items with the `Fixed` flag, in the view's points. Painters paint them in a layer over the
+  content. While Peek shows, only its own targets can be hit.
+- A rectangle with the `Sheet` flag is filled with the drawing style's own sheet, which each
+  painter already draws for the gallery's ground.
+
+**10. Moves are data; painters play them.**
+- After a layout, `geo_gallery_transition` says what it plays against the one before:
+  - a switch of views, where parts in both fly, new ones fade in from 35%, and the old view
+    fades;
+  - into a folder, which grows out of its plate;
+  - back up, which shrinks into it.
+- `geo_gallery_tracks` gives each part's start and timing. The ease is (0.3, 0.7, 0.2, 1).
+- The Mac plays them with Core Animation, the browser with Web Animations. Each keeps the old view
+  beneath as a copy: the Mac hands its old layers over, the browser clones its elements. Under
+  Reduce Motion neither plays.
+- Both checks read back the animations started and compare them with the spec's timings
+  (`Docs/measurements/gallery/g3-sheet.md`).
+
+**11. Painting order is the list's order.** Layers reused from one paint to the next are put back
+in the display list's order among their siblings, not only given a z position. Whatever draws the
+tree, a snapshot included, shows the same covering.

@@ -29,12 +29,48 @@ final class GalleryController {
     var onLeave: (() -> Void)?
     /// The folder in view changed, for the masthead.
     var onFolderChanged: (() -> Void)?
+    /// The view in use or its controls changed, for the toolbar and the View menu.
+    var onChanged: (() -> Void)?
+    /// The search or what it found changed, for the search field.
+    var onSearchChanged: (() -> Void)?
 
-    init() {
+    /// Sheet's controls, kept from one launch to the next.
+    private(set) var sheet = SheetOptions.load()
+
+    init(views: UInt32 = (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)) {
         view = GalleryView(gallery: gallery)
+        gallery.views = views
+        gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
         view.onAction = { [weak self] action in self?.act(action) }
         view.onViewChanged = { [weak self] in self?.scheduleWant() }
+        view.onSearchChanged = { [weak self] in self?.onSearchChanged?() }
         library?.onEvent = { [weak self] event in self?.receive(event) }
+    }
+
+    /// Shows a view, if enabled: parts in both fly to their places.
+    @discardableResult
+    func setView(_ view: UInt32) -> Bool {
+        guard self.view.setView(view) else {
+            return false
+        }
+        onChanged?()
+        scheduleWant()
+        return true
+    }
+
+    /// Changes Sheet's scale, picture size or order.
+    func setSheet(_ options: SheetOptions) {
+        sheet = options
+        sheet.save()
+        gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
+        view.reload()
+        onChanged?()
+        scheduleWant()
+    }
+
+    /// Searches the folder in view; empty clears it.
+    func search(_ query: String) {
+        view.search(query)
     }
 
     var title: String { gallery.title }
@@ -68,6 +104,8 @@ final class GalleryController {
         view.scrollToTop()
         view.reload()
         onFolderChanged?()
+        onChanged?()
+        onSearchChanged?()
         scheduleWant()
     }
 
@@ -80,6 +118,7 @@ final class GalleryController {
             lineScale: min(1, max(0.5, Float(gallery.picturePixels) / 2 / 320))
         )
         view.setStyle(style)
+        onChanged?()
         scheduleWant()
     }
 
@@ -256,6 +295,8 @@ final class GalleryController {
                 view.repaint()
             }
             view.reload()
+            // What a search finds grows as names inside files arrive.
+            onSearchChanged?()
         }
     }
 
@@ -264,10 +305,12 @@ final class GalleryController {
     private func act(_ action: GeoGalleryAction) {
         switch action.kind {
         case GeoActionEnterFolder.rawValue:
+            // A folder shows the view it last showed.
             onFolderChanged?()
+            onChanged?()
+            onSearchChanged?()
             scheduleWant()
-        case GeoActionOpenFile.rawValue, GeoActionPeek.rawValue:
-            // Peek comes in G3; until then Space opens, as ⏎ does.
+        case GeoActionOpenFile.rawValue:
             if let root {
                 onOpen?(root.appendingPathComponent(gallery.path(of: action.target)))
             }
@@ -288,6 +331,35 @@ final class GalleryController {
             return nil
         }
         return String(path.dropFirst(base.count + 1))
+    }
+}
+
+/// Sheet's controls: its scale (GeoGalleryScale), cell size in points and order (GeoGallerySort).
+struct SheetOptions: Equatable {
+    var scale = GeoScaleFolder.rawValue
+    var cell: CGFloat = 128
+    var sort = GeoSortName.rawValue
+
+    private static let key = "gallery.sheet"
+
+    static func load() -> SheetOptions {
+        var options = SheetOptions()
+        if let kept = UserDefaults.standard.dictionary(forKey: key) {
+            options.scale = (kept["scale"] as? NSNumber)?.uint32Value ?? options.scale
+            options.cell = CGFloat((kept["cell"] as? NSNumber)?.doubleValue ?? Double(options.cell))
+            options.sort = (kept["sort"] as? NSNumber)?.uint32Value ?? options.sort
+        }
+        return options
+    }
+
+    func save() {
+        UserDefaults.standard.set(
+            [
+                "scale": NSNumber(value: scale), "cell": NSNumber(value: Double(cell)),
+                "sort": NSNumber(value: sort),
+            ],
+            forKey: Self.key
+        )
     }
 }
 

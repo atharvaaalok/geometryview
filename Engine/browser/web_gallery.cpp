@@ -58,8 +58,10 @@ EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_file_at(GeoGallery* gallery, const char
 
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_facts(GeoGallery* gallery, uint32_t file, double x,
                                                double y, double z, int hasBox, int estimated,
-                                               uint32_t parts, const char* product) {
-    const GeoGalleryFacts facts{{x, y, z}, hasBox != 0, estimated != 0, parts, product};
+                                               uint32_t parts, const char* product,
+                                               double triangles) {
+    const GeoGalleryFacts facts{{x, y, z}, hasBox != 0, estimated != 0,
+                                parts,     product,     uint64_t(triangles)};
     geo_gallery_set_facts(gallery, file, &facts);
 }
 
@@ -192,6 +194,80 @@ EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_check(GeoGallery* gallery, const float*
         out[i * 4 + 3] = spreads[i].items;
     }
     return over;
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_views(GeoGallery* gallery, uint32_t mask) {
+    geo_gallery_set_views(gallery, mask);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_views(GeoGallery* gallery) {
+    return geo_gallery_views(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE int gv_gallery_set_view(GeoGallery* gallery, uint32_t view) {
+    return geo_gallery_set_view(gallery, view) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_view(GeoGallery* gallery) {
+    return geo_gallery_view(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_sheet(GeoGallery* gallery, uint32_t scale, float cell,
+                                               uint32_t sort) {
+    geo_gallery_set_sheet(gallery, scale, cell, sort);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_search(GeoGallery* gallery, const char* query) {
+    geo_gallery_set_search(gallery, query);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* gv_gallery_search(GeoGallery* gallery) {
+    return geo_gallery_search(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_matches(GeoGallery* gallery) {
+    return geo_gallery_matches(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_peek(GeoGallery* gallery, uint32_t file) {
+    geo_gallery_peek(gallery, file);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_peeking(GeoGallery* gallery) {
+    return geo_gallery_peeking(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_selected(GeoGallery* gallery) {
+    return geo_gallery_selected(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE float gv_gallery_reveal(GeoGallery* gallery) {
+    return geo_gallery_reveal(gallery);
+}
+
+/// The last layout's transition as 7 floats: kind, the rect (x, y, width, height), duration and the
+/// old view's fade.
+EMSCRIPTEN_KEEPALIVE void gv_gallery_transition(GeoGallery* gallery, float* out) {
+    const GeoGalleryTransition t = geo_gallery_transition(gallery);
+    const float values[7] = {float(t.kind), t.rect[0],  t.rect[1], t.rect[2],
+                             t.rect[3],     t.duration, t.fade_out};
+    std::memcpy(out, values, sizeof(values));
+}
+
+/// The last layout's tracks, 8 floats each: item, kind, from (x, y, width, height), delay and
+/// duration, at most `capacity`. Returns how many there are.
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_tracks(GeoGallery* gallery, float* out,
+                                                uint32_t capacity) {
+    const uint32_t n = geo_gallery_tracks(gallery, nullptr, 0);
+    std::vector<GeoGalleryTrack> tracks(n);
+    geo_gallery_tracks(gallery, tracks.data(), n);
+    for (uint32_t i = 0; i < n && i < capacity; ++i) {
+        const GeoGalleryTrack& t = tracks[i];
+        const float values[8] = {float(t.item), float(t.kind), t.from[0], t.from[1],
+                                 t.from[2],     t.from[3],     t.delay,   t.duration};
+        std::memcpy(out + i * 8, values, sizeof(values));
+    }
+    return n;
 }
 
 } // extern "C"

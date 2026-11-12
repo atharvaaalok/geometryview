@@ -2,7 +2,7 @@
 // the view painting the layout as facts and pictures arrive. The page's counterpart of
 // App/Sources/Gallery/GalleryController.swift.
 
-import { GalleryCore, Keys } from "./gallery-core.js";
+import { GalleryCore, Keys, Scales, Sorts } from "./gallery-core.js";
 import { GalleryLibrary, layoutFacts } from "./gallery-library.js";
 import { GalleryView } from "./gallery-view.js";
 import { Thumbnailer } from "./thumbs.js";
@@ -24,15 +24,25 @@ export class Gallery {
   #wantScheduled = false;
   #walking = null;
   #style = 0;
+  #sheet = { scale: Scales.Folder, cell: 128, sort: Sorts.Name };
 
   /**
-   * `on` takes open(root, path) to open a file in the viewer, leave() when Esc reaches the top, and
-   * folderChanged() for the masthead. With `probes`, texts carry baseline marks, for the checks.
+   * `on` takes open(root, path) to open a file in the viewer, leave() when Esc reaches the top,
+   * folderChanged() for the masthead, changed() when the view or its controls changed, for the
+   * toolbar, and search(query, found) for the search box. `views` are those that may be shown, a bit
+   * each. With `probes`, texts carry baseline marks, for the checks.
    */
-  constructor({ engine, store, importers, phone = false, probes = false }, on) {
+  constructor({ engine, store, importers, phone = false, probes = false, views = 0b11 }, on) {
     this.#store = store;
     this.#on = on;
     this.core = new GalleryCore(engine.module);
+    this.core.setViews(views);
+    try {
+      Object.assign(this.#sheet, JSON.parse(localStorage.getItem("gallery.sheet") ?? "{}"));
+    } catch {
+      // A browser that keeps nothing starts from the defaults.
+    }
+    this.core.setSheet(this.#sheet.scale, this.#sheet.cell, this.#sheet.sort);
     this.view = new GalleryView(this.core, {
       action: (action) => this.#act(action),
       viewChanged: () => this.#scheduleWant(),
@@ -69,7 +79,52 @@ export class Gallery {
     this.core.setFolder(path);
     this.view.reload();
     this.#on.folderChanged?.();
+    this.#changed();
     this.#scheduleWant();
+  }
+
+  /** The view in use, those enabled, Sheet's controls and the style: what the toolbar shows. */
+  get state() {
+    return { view: this.core.view, views: this.core.views, sheet: { ...this.#sheet }, style: this.#style };
+  }
+
+  /** Shows a view, if enabled: parts in both fly to their places. */
+  setView(view) {
+    if (!this.view.setView(view)) return false;
+    this.#changed();
+    this.#scheduleWant();
+    return true;
+  }
+
+  /** Changes Sheet's scale, picture size or order: { scale, cell, sort }, any of them. */
+  setSheet(change) {
+    Object.assign(this.#sheet, change);
+    try {
+      localStorage.setItem("gallery.sheet", JSON.stringify(this.#sheet));
+    } catch {
+      // Kept for this visit only.
+    }
+    this.core.setSheet(this.#sheet.scale, this.#sheet.cell, this.#sheet.sort);
+    this.view.reload();
+    this.#changed();
+    this.#scheduleWant();
+  }
+
+  /** Searches the folder in view; empty clears it. */
+  setSearch(query) {
+    if (query === this.core.search) return;
+    this.core.setSearch(query);
+    this.view.reload();
+    this.#syncSearch();
+  }
+
+  #changed() {
+    this.#on.changed?.();
+    this.#syncSearch();
+  }
+
+  #syncSearch() {
+    this.#on.search?.(this.core.search, this.core.matches);
   }
 
   async #walk(root) {
@@ -93,17 +148,45 @@ export class Gallery {
                             lineScale: Math.min(1, Math.max(0.5, pixels / 2 / 320)) });
     this.#pictures.clear();
     this.view.setStyle(style);
+    this.#changed();
     this.#scheduleWant();
   }
 
-  /** A key while the gallery shows; true if it took it. */
+  /**
+   * A key while the gallery shows; true if it took it. ⌥1–⌥5 switch views (browsers keep ⌘1–⌘5);
+   * typing searches, digits too, and Backspace edits the search, never going up a folder. In the
+   * search box itself only Esc is the gallery's: it clears the search.
+   */
   key(e) {
+    const field = e.target?.closest?.("input, textarea, select");
+    if (field) {
+      if (e.key !== "Escape" || field.type !== "search") return false;
+      this.setSearch("");
+      field.blur();
+      return true;
+    }
+    const mod = e.metaKey || e.ctrlKey;
+    if (e.altKey && !mod && /^Digit[1-5]$/.test(e.code)) {
+      this.setView(Number(e.code.slice(5)) - 1);
+      return true;
+    }
     const keys = { ArrowLeft: Keys.Left, ArrowRight: Keys.Right, ArrowUp: Keys.Up, ArrowDown: Keys.Down,
                    Enter: Keys.Enter, " ": Keys.Space, Escape: Keys.Escape };
     let key = keys[e.key];
-    if (e.key === "ArrowUp" && (e.metaKey || e.ctrlKey)) key = Keys.FolderUp;
-    if (key === undefined) return false;
+    if (e.key === "ArrowUp" && mod) key = Keys.FolderUp;
+    if (key === undefined) {
+      if (e.key === "Backspace" && !mod) {
+        this.setSearch(Array.from(this.core.search).slice(0, -1).join(""));
+        return true;
+      }
+      if (e.key.length === 1 && !mod && !e.altKey) {
+        this.setSearch(this.core.search + e.key);
+        return true;
+      }
+      return false;
+    }
     this.view.key(key);
+    this.#syncSearch();
     return true;
   }
 
@@ -188,18 +271,19 @@ export class Gallery {
         this.view.repaint();
       }
       this.view.reload();
+      this.#syncSearch();
     });
   }
   #repaint = false;
 
   #act(action) {
     switch (action.kind) {
-      case 2: // into a folder
+      case 2: // into a folder: it shows the view it last showed
         this.#on.folderChanged?.();
+        this.#changed();
         this.#scheduleWant();
         break;
       case 3: // open
-      case 4: // Peek comes in G3; until then Space opens, as ⏎ does
         this.#on.open?.(this.root, this.core.path(action.target));
         break;
       case 5:

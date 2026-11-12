@@ -26,7 +26,8 @@ final class MainWindow: NSWindow {
     private lazy var watcher = DirectoryWatcher { [weak self] paths in self?.filesChanged(paths) }
     private var openURLs: [URL] = []
     private let sectionCard = SectionCard()
-    private lazy var galleryController = GalleryController()
+    private lazy var galleryController = GalleryController(views: GalleryCheck.views)
+    private lazy var galleryToolbar = GalleryToolbar(enabled: galleryController.gallery.views)
     /// Whether the gallery covers the viewport, and whether the files open came from it, so Esc
     /// goes back.
     private var inGallery = false
@@ -139,8 +140,10 @@ final class MainWindow: NSWindow {
         root.onWidthChange = { [weak self] width in self?.toolBar.fit(available: width - 336) }
         let gallery = galleryController.view
         gallery.isHidden = true
+        galleryToolbar.isHidden = true
         let views: [NSView] = [
-            viewport, gallery, dragArea, masthead, structure, libraryCard, selection, toolBar, lookCard,
+            viewport, gallery, dragArea, masthead, structure, libraryCard, selection, toolBar,
+            galleryToolbar, lookCard,
             sectionCard,
             holdHint,
             hoverChip,
@@ -205,6 +208,11 @@ final class MainWindow: NSWindow {
                 equalTo: root.bottomAnchor,
                 constant: -Self.toolbarBottom
             ),
+            galleryToolbar.centerXAnchor.constraint(equalTo: free.centerXAnchor),
+            galleryToolbar.bottomAnchor.constraint(
+                equalTo: root.bottomAnchor,
+                constant: -Self.toolbarBottom
+            ),
             sectionCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
             sectionCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
             lookCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
@@ -263,7 +271,21 @@ final class MainWindow: NSWindow {
         galleryController.onOpen = { [weak self] url in self?.openFromGallery(url) }
         galleryController.onLeave = { [weak self] in self?.leaveGallery() }
         galleryController.onFolderChanged = { [weak self] in self?.refreshMasthead() }
+        galleryController.onChanged = { [weak self] in self?.refreshGalleryToolbar() }
+        galleryController.onSearchChanged = { [weak self] in self?.refreshGallerySearch() }
         galleryController.setStyle(look.engineLook.style)
+        galleryToolbar.onView = { [weak self] view in self?.galleryController.setView(view) }
+        galleryToolbar.onSheet = { [weak self] options in
+            self?.galleryController.setSheet(options)
+        }
+        galleryToolbar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
+        libraryCard.onSearch = { [weak self] query in self?.galleryController.search(query) }
+        libraryCard.onSearchDone = { [weak self] in
+            guard let self, inGallery else {
+                return
+            }
+            makeFirstResponder(galleryController.view)
+        }
         libraryCard.onChoose = { [weak self] in self?.chooseFile(adding: false) }
         libraryCard.onReopen = { [weak self] file, adding in self?.reopen(file, adding: adding) }
         status.onOpen = { [weak self] in self?.chooseFile(adding: false) }
@@ -682,6 +704,11 @@ final class MainWindow: NSWindow {
     /// Ticks the menu's look items.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(chooseGalleryView(_:)):
+            let enabled = galleryController.gallery.views & (1 << UInt32(item.tag)) != 0
+            item.isHidden = !enabled
+            item.state = inGallery && item.tag == Int(galleryController.gallery.view) ? .on : .off
+            return inGallery && enabled
         case #selector(chooseStyle(_:)):
             item.state = item.tag == look.style.rawValue ? .on : .off
         case #selector(chooseColour(_:)):
@@ -765,11 +792,38 @@ final class MainWindow: NSWindow {
         engine.setCovered(true)
         status.isHidden = true
         toolBar.isHidden = true
+        galleryToolbar.isHidden = false
+        refreshGalleryToolbar()
         selection.isHidden = true
         hoverChip.isHidden = true
         showLibrary(true)
+        refreshGallerySearch()
         refreshMasthead()
         makeFirstResponder(galleryController.view)
+    }
+
+    private func refreshGalleryToolbar() {
+        galleryToolbar.show(
+            view: galleryController.gallery.view,
+            sheet: galleryController.sheet,
+            style: look.style.title
+        )
+    }
+
+    private func refreshGallerySearch() {
+        libraryCard.showSearch(
+            inGallery,
+            query: galleryController.gallery.search,
+            found: galleryController.gallery.matches
+        )
+    }
+
+    /// View as Plates (⌘1) … : the gallery's views, while it shows.
+    @objc func chooseGalleryView(_ sender: NSMenuItem) {
+        guard inGallery else {
+            return
+        }
+        galleryController.setView(UInt32(sender.tag))
     }
 
     private func leaveGallery() {
@@ -777,6 +831,8 @@ final class MainWindow: NSWindow {
         galleryController.view.isHidden = true
         engine.setCovered(false)
         toolBar.isHidden = false
+        galleryToolbar.isHidden = true
+        libraryCard.showSearch(false)
         if names.isEmpty {
             showEmpty()
         }

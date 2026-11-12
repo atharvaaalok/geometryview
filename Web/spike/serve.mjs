@@ -23,7 +23,7 @@ const reportsFor = (label) => {
   if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
   // The gallery's pictures, drawn as the browser will draw them, and its other checks.
-  if (label.includes("-thumbs-") || label.includes("-g1-") || label.includes("-g2-")) {
+  if (label.includes("-thumbs-") || /-g\d-/.test(label)) {
     return join(root, "Docs/measurements/gallery/web");
   }
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");

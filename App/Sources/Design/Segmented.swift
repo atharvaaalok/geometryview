@@ -25,8 +25,17 @@ final class SegmentedPill: NSView {
     private let border = Outline()
     private var segments: [Segment] = []
 
-    /// `tips`, when given, explain each option on its own, in place of the pill's `help`.
-    init(_ options: [String], selected: Int, help: String, tips: [String]? = nil) {
+    /// `tips`, when given, explain each option on its own, in place of the pill's `help`. `icons`
+    /// and `keys`, when given, put an icon before each option and its key after it, as the
+    /// gallery's view switch has them.
+    init(
+        _ options: [String],
+        selected: Int,
+        help: String,
+        tips: [String]? = nil,
+        icons: [Icons.Name]? = nil,
+        keys: [String]? = nil
+    ) {
         self.selected = selected
         super.init(frame: .zero)
         wantsLayer = true
@@ -42,7 +51,12 @@ final class SegmentedPill: NSView {
 
         var previous: NSView?
         for (index, option) in options.enumerated() {
-            let segment = Segment(title: option, divider: index > 0)
+            let segment = Segment(
+                title: option,
+                divider: index > 0,
+                icon: icons?[index],
+                key: keys?[index]
+            )
             ChromeLayout.name(segment, "structure.segment")
             segment.toolTip = tips?[index]
             segment.onPress = { [weak self] in
@@ -104,12 +118,14 @@ final class SegmentedPill: NSView {
             didSet { stateChanged() }
         }
         private let label: NSTextField
+        private let keyLabel: NSTextField?
         private let fill = CALayer()
         private let underline = CALayer()
         private let divider = CALayer()
 
-        init(title: String, divider hasDivider: Bool) {
+        init(title: String, divider hasDivider: Bool, icon: Icons.Name? = nil, key: String? = nil) {
             label = NSTextField(labelWithString: title)
+            keyLabel = key.map { NSTextField(labelWithString: $0) }
             super.init(frame: .zero)
             wantsLayer = true
             layer?.addSublayer(fill)
@@ -119,13 +135,40 @@ final class SegmentedPill: NSView {
                 layer?.addSublayer(divider)
             }
             underline.backgroundColor = Palette.ink.cgColor
-            label.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(label)
-            NSLayoutConstraint.activate([
-                label.centerYAnchor.constraint(equalTo: centerYAnchor),
-                label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
-                label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
-            ])
+            if icon == nil, keyLabel == nil {
+                label.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(label)
+                NSLayoutConstraint.activate([
+                    label.centerYAnchor.constraint(equalTo: centerYAnchor),
+                    label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
+                    label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
+                ])
+            } else {
+                // The icon, the name and its key on one baseline, 9 inside each end.
+                var views: [NSView] = []
+                if let icon {
+                    let image = NSImageView(image: Icons.image(icon, size: 15))
+                    image.contentTintColor = Palette.ink
+                    views.append(image)
+                }
+                views.append(label)
+                if let keyLabel {
+                    keyLabel.font = Typography.font(9.5, .medium)
+                    keyLabel.textColor = Palette.faint
+                    views.append(keyLabel)
+                }
+                let row = NSStackView(views: views)
+                row.orientation = .horizontal
+                row.spacing = 6
+                row.alignment = .centerY
+                row.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(row)
+                NSLayoutConstraint.activate([
+                    row.centerYAnchor.constraint(equalTo: centerYAnchor),
+                    row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
+                    row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+                ])
+            }
             setAccessibilityRole(.radioButton)
             setAccessibilityLabel(title)
             stateChanged()
@@ -166,6 +209,7 @@ final class SegmentedPill: NSView {
             }
             label.font = Typography.font(Typography.textSmall, isChosen ? .semibold : .medium)
             label.textColor = Palette.ink
+            keyLabel?.textColor = isChosen ? Palette.muted : Palette.faint
         }
     }
 

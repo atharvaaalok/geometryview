@@ -32,6 +32,7 @@ struct Facts {
     bool estimated = true;
     u32 parts = 0;
     std::string product; // the name inside the file
+    u64 triangles = 0;   // as drawn, 0 when not known
 };
 
 /// A file's picture: its pixels' size, its scale, and where in it the part and its ink are.

@@ -56,7 +56,8 @@ final class GalleryHandle {
                 has_box: facts.hasBox,
                 estimated: facts.estimated,
                 parts: facts.parts,
-                product: product
+                product: product,
+                triangles: facts.triangles
             )
             geo_gallery_set_facts(gallery, file, &f)
         }
@@ -134,6 +135,62 @@ final class GalleryHandle {
     var selected: UInt32? {
         let file = geo_gallery_selected(gallery)
         return file == UInt32.max ? nil : file
+    }
+
+    // MARK: Views, search, Peek and motion
+
+    /// The views that may be shown, a bit each (1 << GeoViewPlates ...).
+    var views: UInt32 {
+        get { geo_gallery_views(gallery) }
+        set { geo_gallery_set_views(gallery, newValue) }
+    }
+
+    /// Shows a view if it is enabled; the folder in view remembers it.
+    @discardableResult
+    func setView(_ view: UInt32) -> Bool {
+        geo_gallery_set_view(gallery, view)
+    }
+
+    var view: UInt32 { geo_gallery_view(gallery) }
+
+    func setSheet(scale: UInt32, cell: CGFloat, sort: UInt32) {
+        geo_gallery_set_sheet(gallery, scale, Float(cell), sort)
+    }
+
+    var search: String {
+        get { String(cString: geo_gallery_search(gallery)) }
+        set { geo_gallery_set_search(gallery, newValue) }
+    }
+
+    /// How many files the search found, or nil with no search.
+    var matches: UInt32? {
+        let n = geo_gallery_matches(gallery)
+        return n == UInt32.max ? nil : n
+    }
+
+    var peeking: UInt32? {
+        let file = geo_gallery_peeking(gallery)
+        return file == UInt32.max ? nil : file
+    }
+
+    func peek(_ file: UInt32?) {
+        geo_gallery_peek(gallery, file ?? UInt32.max)
+    }
+
+    /// Where to scroll so the selection shows, or nil if it shows already.
+    var reveal: CGFloat? {
+        let top = geo_gallery_reveal(gallery)
+        return top < 0 ? nil : CGFloat(top)
+    }
+
+    /// What the last layout plays against the one before.
+    var transition: GeoGalleryTransition { geo_gallery_transition(gallery) }
+
+    var tracks: [GeoGalleryTrack] {
+        let count = geo_gallery_tracks(gallery, nil, 0)
+        var out = [GeoGalleryTrack](repeating: GeoGalleryTrack(), count: Int(count))
+        _ = geo_gallery_tracks(gallery, &out, count)
+        return out
     }
 
     func wanted() -> [GeoGalleryWant] {

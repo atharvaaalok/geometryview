@@ -28,6 +28,8 @@ typedef enum GeoGalleryItemFlags {
     GeoItemHatched = 2, // a rectangle hatched at 45°: a file that could not be read
     GeoItemSticker = 4, // a rectangle lifted under the pointer: 3 pt shadow down and right
     GeoItemFading = 8,  // drawn at 22%: not what a search found
+    GeoItemFixed = 16,  // placed in the view, not the content: it does not scroll (Peek)
+    GeoItemSheet = 32,  // a rectangle filled with the drawing style's own sheet, as the gallery's
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -36,6 +38,7 @@ typedef enum GeoGalleryTargetKind {
     GeoTargetFolder = 1,
     GeoTargetFile = 2,
     GeoTargetMore = 3, // "show all" of a size band cut short
+    GeoTargetPeek = 4, // Peek's card (0), where a click does nothing, or its close button (1)
 } GeoGalleryTargetKind;
 
 typedef struct GeoGalleryItem {
@@ -59,6 +62,11 @@ typedef struct GeoGalleryItem {
     float line;
     uint32_t column; // 0 for none
     float column_line;
+    // A heading that stays at the top of the view while its block scrolls under it: it moves
+    // down by how far the view has scrolled past `sticky_top`, by `sticky_until` at most. Both 0
+    // for an item that scrolls with the content.
+    float sticky_top;
+    float sticky_until;
 } GeoGalleryItem;
 
 typedef struct GeoGalleryEntry {
@@ -74,6 +82,7 @@ typedef struct GeoGalleryFacts {
     bool estimated;
     uint32_t parts;
     const char* product; // the name inside the file, or null
+    uint64_t triangles;  // as drawn, 0 when not known
 } GeoGalleryFacts;
 
 typedef struct GeoGalleryPicture {
@@ -110,6 +119,55 @@ typedef struct GeoGalleryAction {
     uint32_t kind;
     uint32_t target;
 } GeoGalleryAction;
+
+/// The five views, in the order of the switch.
+typedef enum GeoGalleryViewKind {
+    GeoViewPlates = 0,
+    GeoViewSheet = 1,
+    GeoViewLadders = 2,
+    GeoViewAtlas = 3,
+    GeoViewCatalogue = 4,
+} GeoGalleryViewKind;
+
+/// How Sheet scales parts.
+typedef enum GeoGalleryScale {
+    GeoScaleFit = 0,    // each part fills its cell
+    GeoScaleFolder = 1, // one scale a folder
+    GeoScaleTrue = 2,   // one scale for everything in view
+} GeoGalleryScale;
+
+typedef enum GeoGallerySort {
+    GeoSortName = 0,
+    GeoSortSize = 1,
+} GeoGallerySort;
+
+/// What a layout should play, against the one before it (Docs/design/gallery-spec.md, "Motion"),
+/// with the ease (0.3, 0.7, 0.2, 1) throughout, and nothing under Reduce Motion.
+typedef enum GeoGalleryTransitionKind {
+    GeoTransitionNone = 0,
+    GeoTransitionSwitch = 1, // views switched: parts in both fly, the old view fades out
+    GeoTransitionInto = 2,   // into a folder: it grows out of its plate
+    GeoTransitionOut = 3,    // up a folder: it shrinks back into the plate it came from
+} GeoGalleryTransitionKind;
+
+typedef struct GeoGalleryTransition {
+    uint32_t kind;
+    float rect[4];  // the plate it grows from or shrinks into, in the view: x, y, width, height
+    float duration; // milliseconds
+    float fade_out; // the old view's fade, milliseconds
+} GeoGalleryTransition;
+
+typedef enum GeoGalleryTrackKind {
+    GeoTrackFly = 0,    // from where it was in the old view to its place
+    GeoTrackFadeIn = 1, // new to the view: fades in
+} GeoGalleryTrackKind;
+
+typedef struct GeoGalleryTrack {
+    uint32_t item; // in the new display list
+    uint32_t kind;
+    float from[4];         // where it starts, in the view
+    float delay, duration; // milliseconds
+} GeoGalleryTrack;
 
 /// Keys the gallery reads.
 typedef enum GeoGalleryKey {
@@ -184,6 +242,37 @@ typedef struct GeoGalleryGroupSpread {
     float spread; // points between its lowest and highest member
     uint32_t items;
 } GeoGalleryGroupSpread;
+
+/// The views that may be shown, a bit each (1 << GeoViewPlates ...): Plates and Sheet unless told.
+void geo_gallery_set_views(GeoGallery* gallery, uint32_t mask);
+uint32_t geo_gallery_views(const GeoGallery* gallery);
+/// Shows a view, if enabled; the folder in view remembers it. Selection, search, hover and style
+/// carry across.
+bool geo_gallery_set_view(GeoGallery* gallery, uint32_t view);
+uint32_t geo_gallery_view(const GeoGallery* gallery);
+
+/// Sheet's controls: its scale (GeoGalleryScale), its cells' size in points (72 to 200) and its
+/// order (GeoGallerySort).
+void geo_gallery_set_sheet(GeoGallery* gallery, uint32_t scale, float cell, uint32_t sort);
+
+/// Searches the folder in view: names, the names inside files, and folders. Empty clears it.
+void geo_gallery_set_search(GeoGallery* gallery, const char* query);
+const char* geo_gallery_search(const GeoGallery* gallery);
+/// Files in the folder that the search found, or UINT32_MAX with no search.
+uint32_t geo_gallery_matches(const GeoGallery* gallery);
+
+/// Shows a file large, with its measured size, parts, triangles and file, over the view; UINT32_MAX
+/// closes it.
+void geo_gallery_peek(GeoGallery* gallery, uint32_t file);
+uint32_t geo_gallery_peeking(const GeoGallery* gallery);
+
+/// Where to scroll so the selection shows, after a switch or a key; negative if it shows already.
+float geo_gallery_reveal(const GeoGallery* gallery);
+
+/// What the last layout should play against the one before, and its tracks: read right after a
+/// layout that returned true.
+GeoGalleryTransition geo_gallery_transition(const GeoGallery* gallery);
+uint32_t geo_gallery_tracks(const GeoGallery* gallery, GeoGalleryTrack* out, uint32_t capacity);
 
 /// Checks the alignment of what a painter drew: `lines[i]` and `columns[i]` are where item i's
 /// line and left edge were measured on screen, in content points, or NaN where it was not drawn.

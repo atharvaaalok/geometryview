@@ -2,9 +2,80 @@ import AppKit
 import GeometryViewEngine
 import QuartzCore
 
+/// Layers reused from one paint to the next, by kind, within one container: the content, which
+/// scrolls, or the items fixed in the view (Peek).
+@MainActor
+private final class LayerPool {
+    let parent: CALayer
+    var rects: [CALayer] = []
+    var texts: [CATextLayer] = []
+    var pictures: [CALayer] = []
+    var pictureFiles: [UInt32] = []
+    var lines: [CAShapeLayer] = []
+    var usedRects = 0
+    var usedTexts = 0
+    var usedPictures = 0
+    var usedLines = 0
+
+    init(parent: CALayer) { self.parent = parent }
+
+    func begin() {
+        usedRects = 0
+        usedTexts = 0
+        usedPictures = 0
+        usedLines = 0
+    }
+
+    func finish() {
+        for layer in rects[usedRects...] { layer.isHidden = true }
+        for layer in texts[usedTexts...] { layer.isHidden = true }
+        for layer in pictures[usedPictures...] { layer.isHidden = true }
+        for layer in lines[usedLines...] { layer.isHidden = true }
+        // In the display list's order: layers are reused for other items from paint to paint, and
+        // their order among siblings, not only their zPosition, decides what covers what wherever
+        // the tree is drawn (a snapshot's render(in:) reads only the order).
+        if let layers = parent.sublayers,
+            zip(layers, layers.dropFirst()).contains(where: { $0.zPosition > $1.zPosition })
+        {
+            parent.sublayers = layers.sorted { $0.zPosition < $1.zPosition }
+        }
+    }
+
+    func rect() -> CALayer { take(&rects, &usedRects) { CALayer() } }
+    func text() -> CATextLayer { take(&texts, &usedTexts) { CATextLayer() } }
+    func line() -> CAShapeLayer { take(&lines, &usedLines) { CAShapeLayer() } }
+
+    func picture(file: UInt32) -> CALayer {
+        let layer = take(&pictures, &usedPictures) { CALayer() }
+        if pictureFiles.count < pictures.count {
+            pictureFiles.append(file)
+        }
+        pictureFiles[usedPictures - 1] = file
+        return layer
+    }
+
+    private func take<L: CALayer>(_ pool: inout [L], _ used: inout Int, make: () -> L) -> L {
+        if used == pool.count {
+            let layer = make()
+            layer.anchorPoint = .zero
+            parent.addSublayer(layer)
+            pool.append(layer)
+        }
+        let layer = pool[used]
+        layer.isHidden = false
+        // Placed afresh: a frame set through a heading's old offset would land off by as much.
+        layer.transform = CATransform3DIdentity
+        used += 1
+        return layer
+    }
+}
+
 /// Paints the gallery's display list (gallery.h) with Core Animation layers, over the style's sheet,
 /// and turns the pointer and keys into the gallery's actions. Everything it draws was placed by the
 /// layout core, so the browser's painter draws the same.
+///
+/// The core says what a layout plays against the one before (transition and tracks); this plays it
+/// with Core Animation, the old view's layers handed to a copy beneath the new.
 @MainActor
 final class GalleryView: NSView {
     var gallery: GalleryHandle
@@ -14,6 +85,8 @@ final class GalleryView: NSView {
     var onAction: ((GeoGalleryAction) -> Void)?
     /// Called when what is in view changed: another folder, a scroll, a new layout.
     var onViewChanged: (() -> Void)?
+    /// Called when typing changed the search.
+    var onSearchChanged: (() -> Void)?
 
     /// Where the content sits in the window: right of the Library card, above the toolbar.
     var contentInsets = NSEdgeInsets(top: 96, left: 340, bottom: 84, right: 18) {
@@ -22,30 +95,45 @@ final class GalleryView: NSView {
 
     private(set) var style: GeoStyle = GeoStyleIllustration
     private let sheet = CALayer()
+    /// The view's area: what scrolls, what is fixed over it, and during a move a copy of the old
+    /// view beneath; a zoom stays inside it.
+    private let stage = CALayer()
     private let clip = CALayer()
-    private let content = CALayer()
+    private var content = CALayer()
+    private let fixed = CALayer()
+    private var ghost: CALayer?
     private var scrollY: CGFloat = 0
     private var painted: (top: CGFloat, bottom: CGFloat)?
     private var tracking: NSTrackingArea?
 
-    // Layers reused from one paint to the next, by kind.
-    private var rectLayers: [CALayer] = []
-    private var textLayers: [CATextLayer] = []
-    private var pictureLayers: [CALayer] = []
-    private var lineLayers: [CAShapeLayer] = []
+    private var contentPool: LayerPool
+    private let fixedPool: LayerPool
+    /// Headings that stay at the top while their block scrolls under them.
+    private var sticky: [(layer: CALayer, top: CGFloat, until: CGFloat)] = []
+    /// Each painted item's main layer, by index, for its track in a move.
+    private var layerOf: [Int: CALayer] = [:]
+    /// The style's sheet drawn at a size, for rectangles filled with it (Peek's picture).
+    private var sheetImages: [String: CGImage] = [:]
     /// Where each item was painted, by index: the frame of its layer, for the checks.
     private(set) var paintedFrames: [Int: CGRect] = [:]
 
     init(gallery: GalleryHandle) {
         self.gallery = gallery
+        contentPool = LayerPool(parent: content)
+        fixedPool = LayerPool(parent: fixed)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = true
         layer?.addSublayer(sheet)
-        clip.masksToBounds = true
-        layer?.addSublayer(clip)
+        stage.masksToBounds = true
+        stage.anchorPoint = .zero
+        layer?.addSublayer(stage)
+        clip.anchorPoint = .zero
+        stage.addSublayer(clip)
         clip.addSublayer(content)
         content.anchorPoint = .zero
+        fixed.anchorPoint = .zero
+        stage.addSublayer(fixed)
     }
 
     @available(*, unavailable)
@@ -72,6 +160,7 @@ final class GalleryView: NSView {
         }
         self.style = style
         gallery.setStyle(style.rawValue)
+        sheetImages.removeAll()
         drawSheet()
         reload()
     }
@@ -84,18 +173,43 @@ final class GalleryView: NSView {
         images.removeAll()
     }
 
-    /// Lays out again if anything changed, and paints what is in view.
-    func reload() {
+    /// Lays out again if anything changed, and paints what is in view, playing what the change
+    /// asks. With `reveal`, scrolls first so the selection shows: after a key or a switch of views.
+    func reload(reveal: Bool = false) {
         gallery.setViewport(width: area.width, height: area.height)
         let changed = gallery.layout()
-        clampScroll()
+        var motion: (GeoGalleryTransition, [GeoGalleryTrack], LayerPool)?
         if changed {
             painted = nil
+            let transition = gallery.transition
+            if transition.kind != GeoTransitionNone.rawValue,
+                !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            {
+                motion = (transition, gallery.tracks, handOldViewToGhost())
+            }
         }
+        if reveal, let top = gallery.reveal {
+            scrollY = top
+        }
+        clampScroll()
+        gallery.setScroll(scrollY)
         paint()
+        if let (transition, tracks, old) = motion {
+            play(transition, tracks: tracks, old: old)
+        }
         if changed {
             onViewChanged?()
         }
+    }
+
+    /// Shows another view, if enabled, flying what both views show; the selection kept in view.
+    @discardableResult
+    func setView(_ view: UInt32) -> Bool {
+        guard gallery.setView(view) else {
+            return false
+        }
+        reload(reveal: true)
+        return true
     }
 
     /// Paints again what is in view, as pictures arrive.
@@ -116,7 +230,9 @@ final class GalleryView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         sheet.frame = bounds
-        clip.frame = area
+        stage.frame = area
+        clip.frame = stage.bounds
+        fixed.frame = stage.bounds
         drawSheet()
         CATransaction.commit()
         reload()
@@ -127,12 +243,23 @@ final class GalleryView: NSView {
     /// The style's sheet, as the engine draws it: a wash from top to bottom, a vignette, and a
     /// drafting grid where the style has one.
     private func drawSheet() {
-        let size = bounds.size
-        guard size.width > 0, size.height > 0 else {
+        let scale = window?.backingScaleFactor ?? 2
+        guard let image = sheetImage(bounds.size, scale: scale) else {
             return
         }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        sheet.contents = image
+        sheet.contentsScale = scale
+        CATransaction.commit()
+    }
+
+    /// The style's sheet at a size in points.
+    private func sheetImage(_ size: CGSize, scale: CGFloat) -> CGImage? {
+        guard size.width > 0, size.height > 0 else {
+            return nil
+        }
         let s = geo_style_sheet(style)
-        let scale = window?.backingScaleFactor ?? 2
         let width = Int(size.width * scale)
         let height = Int(size.height * scale)
         guard
@@ -146,7 +273,7 @@ final class GalleryView: NSView {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )
         else {
-            return
+            return nil
         }
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let top = [CGFloat(s.top.0), CGFloat(s.top.1), CGFloat(s.top.2), 1]
@@ -211,11 +338,7 @@ final class GalleryView: NSView {
                 }
             }
         }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        sheet.contents = context.makeImage()
-        sheet.contentsScale = scale
-        CATransaction.commit()
+        return context.makeImage()
     }
 
     // MARK: Painting
@@ -226,7 +349,7 @@ final class GalleryView: NSView {
     }
 
     /// Paints the items within a screen of what is in view, reusing layers; scrolling within that
-    /// only moves the content.
+    /// only moves the content, and the headings that stay at the top.
     private func paint() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -237,6 +360,7 @@ final class GalleryView: NSView {
             width: area.width,
             height: max(gallery.contentHeight, area.height)
         )
+        placeSticky()
         let view = (top: scrollY, bottom: scrollY + area.height)
         if let painted, painted.top <= view.top, painted.bottom >= view.bottom {
             return
@@ -244,22 +368,34 @@ final class GalleryView: NSView {
         let window = (top: scrollY - area.height, bottom: scrollY + 2 * area.height)
         painted = window
         let scale = self.window?.backingScaleFactor ?? 2
-        var rects = 0
-        var texts = 0
-        var pictures = 0
-        var lines = 0
+        contentPool.begin()
+        fixedPool.begin()
+        sticky.removeAll(keepingCapacity: true)
+        layerOf.removeAll(keepingCapacity: true)
         paintedFrames.removeAll(keepingCapacity: true)
-        for (index, item) in gallery.items.enumerated() {
-            let lowY = min(item.y, item.y + item.height)
-            let highY = max(item.y, item.y + item.height)
-            guard CGFloat(highY) >= window.top - 8, CGFloat(lowY) <= window.bottom + 8 else {
-                continue
+        let items = gallery.items
+        for (index, item) in items.enumerated() {
+            let isFixed = item.flags & GeoItemFixed.rawValue != 0
+            let isSticky = !isFixed && (item.sticky_top != 0 || item.sticky_until != 0)
+            if !isFixed {
+                // A heading that stays at the top is painted wherever its block shows.
+                let lowY = CGFloat(min(item.y, item.y + item.height))
+                let highY =
+                    CGFloat(max(item.y, item.y + item.height))
+                    + (isSticky ? CGFloat(item.sticky_until) : 0)
+                guard highY >= window.top - 8, lowY <= window.bottom + 8 else {
+                    continue
+                }
             }
-            let z = CGFloat(index)
+            let pool = isFixed ? fixedPool : contentPool
+            // Headings stay above what scrolls under them.
+            let z = CGFloat(isSticky ? items.count + index : index)
+            let fade: Float = item.flags & GeoItemFading.rawValue != 0 ? 0.22 : 1
+            var layers: [CALayer] = []
             switch item.kind {
             case GeoItemRect.rawValue:
                 if item.flags & GeoItemSticker.rawValue != 0, item.shadow != 0 {
-                    let shadow = reuse(&rectLayers, &rects) { CALayer() }
+                    let shadow = pool.rect()
                     shadow.frame = CGRect(
                         x: CGFloat(item.x) + 3,
                         y: CGFloat(item.y) + 3,
@@ -267,21 +403,30 @@ final class GalleryView: NSView {
                         height: CGFloat(item.height)
                     )
                     shadow.backgroundColor = Self.color(item.shadow)
+                    shadow.contents = nil
+                    shadow.masksToBounds = false
                     shadow.borderWidth = 0
                     shadow.cornerRadius = CGFloat(item.radius)
+                    shadow.sublayers = nil
                     shadow.zPosition = z - 0.5
+                    shadow.opacity = fade
+                    layers.append(shadow)
                 }
-                let layer = reuse(&rectLayers, &rects) { CALayer() }
+                let layer = pool.rect()
                 paintRect(layer, item, scale: scale)
+                layer.opacity *= fade
                 layer.zPosition = z
                 paintedFrames[index] = layer.frame
+                layers.append(layer)
             case GeoItemText.rawValue:
-                let layer = reuse(&textLayers, &texts) { CATextLayer() }
+                let layer = pool.text()
                 paintText(layer, item, scale: scale)
+                layer.opacity = fade
                 layer.zPosition = z
                 paintedFrames[index] = layer.frame
+                layers.append(layer)
             case GeoItemPicture.rawValue:
-                let layer = reuse(&pictureLayers, &pictures) { CALayer() }
+                let layer = pool.picture(file: item.file)
                 layer.frame = CGRect(
                     x: CGFloat(item.x),
                     y: CGFloat(item.y),
@@ -291,21 +436,24 @@ final class GalleryView: NSView {
                 layer.contents = images[item.file]
                 layer.contentsGravity = .resize
                 layer.minificationFilter = .trilinear
+                layer.opacity = fade
                 layer.zPosition = z
                 paintedFrames[index] = layer.frame
+                layers.append(layer)
             case GeoItemLine.rawValue:
-                let layer = reuse(&lineLayers, &lines) { CAShapeLayer() }
+                let layer = pool.line()
                 let path = CGMutablePath()
                 path.move(to: CGPoint(x: CGFloat(item.x), y: CGFloat(item.y)))
                 path.addLine(
                     to: CGPoint(x: CGFloat(item.x + item.width), y: CGFloat(item.y + item.height))
                 )
-                layer.frame = content.bounds
+                layer.frame = pool.parent.bounds
                 layer.path = path
                 layer.strokeColor = Self.color(item.stroke)
                 layer.lineWidth = CGFloat(item.line_width)
                 layer.lineDashPattern = item.flags & GeoItemDashed.rawValue != 0 ? [4, 3] : nil
                 layer.fillColor = nil
+                layer.opacity = fade
                 layer.zPosition = z
                 paintedFrames[index] = CGRect(
                     x: CGFloat(min(item.x, item.x + item.width)),
@@ -313,32 +461,28 @@ final class GalleryView: NSView {
                     width: CGFloat(abs(item.width)),
                     height: CGFloat(abs(item.height))
                 )
+                layers.append(layer)
             default:
                 break
             }
+            if isSticky {
+                for layer in layers {
+                    sticky.append((layer, CGFloat(item.sticky_top), CGFloat(item.sticky_until)))
+                }
+            }
+            layerOf[index] = layers.last
         }
-        hideRest(rectLayers, from: rects)
-        hideRest(textLayers, from: texts)
-        hideRest(pictureLayers, from: pictures)
-        hideRest(lineLayers, from: lines)
+        contentPool.finish()
+        fixedPool.finish()
+        placeSticky()
     }
 
-    private func reuse<L: CALayer>(_ pool: inout [L], _ used: inout Int, make: () -> L) -> L {
-        if used == pool.count {
-            let layer = make()
-            layer.anchorPoint = .zero
-            content.addSublayer(layer)
-            pool.append(layer)
-        }
-        let layer = pool[used]
-        layer.isHidden = false
-        used += 1
-        return layer
-    }
-
-    private func hideRest<L: CALayer>(_ pool: [L], from used: Int) {
-        for layer in pool[used...] {
-            layer.isHidden = true
+    /// Moves each heading down by how far the view has scrolled past it, until the next takes over.
+    private func placeSticky() {
+        for (layer, top, until) in sticky {
+            let dy = min(max(scrollY - top, 0), until)
+            layer.transform =
+                dy > 0 ? CATransform3DMakeTranslation(0, dy, 0) : CATransform3DIdentity
         }
     }
 
@@ -352,9 +496,23 @@ final class GalleryView: NSView {
         layer.cornerRadius = CGFloat(item.radius)
         layer.borderWidth = item.stroke != 0 ? CGFloat(item.line_width) : 0
         layer.borderColor = item.stroke != 0 ? Self.color(item.stroke) : nil
+        layer.contents = nil
+        layer.masksToBounds = false
         if item.flags & GeoItemHatched.rawValue != 0 {
             layer.backgroundColor = Self.hatch(Self.color(item.stroke), scale: scale)
             layer.opacity = 0.8
+        } else if item.flags & GeoItemSheet.rawValue != 0 {
+            // The style's own sheet, as the gallery's ground.
+            let size = layer.bounds.size
+            let key = "\(Int(size.width))x\(Int(size.height))@\(scale)"
+            if sheetImages[key] == nil {
+                sheetImages[key] = sheetImage(size, scale: scale)
+            }
+            layer.backgroundColor = nil
+            layer.contents = sheetImages[key]
+            layer.contentsGravity = .resize
+            layer.masksToBounds = true
+            layer.opacity = 1
         } else {
             layer.backgroundColor = item.fill != 0 ? Self.color(item.fill) : nil
             layer.opacity = 1
@@ -398,6 +556,147 @@ final class GalleryView: NSView {
             width: CGFloat(item.width) + 1,
             height: ascent - font.descender + 1
         )
+    }
+
+    // MARK: Motion
+
+    /// Hands the view as last painted to a copy beneath the content, for the old view's part in a
+    /// move, and starts the content afresh. Returns the old layers' pool.
+    private func handOldViewToGhost() -> LayerPool {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        ghost?.removeFromSuperlayer()
+        let copy = CALayer()
+        copy.anchorPoint = .zero
+        copy.frame = stage.bounds
+        copy.masksToBounds = true
+        let old = content
+        let oldPool = contentPool
+        old.removeFromSuperlayer()
+        copy.addSublayer(old)
+        stage.insertSublayer(copy, below: clip)
+        ghost = copy
+        content = CALayer()
+        content.anchorPoint = .zero
+        clip.addSublayer(content)
+        contentPool = LayerPool(parent: content)
+        sticky.removeAll()
+        return oldPool
+    }
+
+    private func play(_ t: GeoGalleryTransition, tracks: [GeoGalleryTrack], old: LayerPool) {
+        guard let ghost else {
+            return
+        }
+        let ease = CAMediaTimingFunction(controlPoints: 0.3, 0.7, 0.2, 1)
+        let size = stage.bounds.size
+        let (px, py, pw, ph) = (
+            CGFloat(t.rect.0), CGFloat(t.rect.1), CGFloat(t.rect.2), CGFloat(t.rect.3)
+        )
+        func move(_ tx: CGFloat, _ ty: CGFloat, _ s: CGFloat) -> NSValue {
+            NSValue(
+                caTransform3D: CATransform3DScale(CATransform3DMakeTranslation(tx, ty, 0), s, s, 1)
+            )
+        }
+        // The whole view put into the plate, and the plate blown up to fill the view.
+        let into: NSValue = {
+            let s = min(pw / size.width, ph / size.height)
+            return move(px + (pw - size.width * s) / 2, py + (ph - size.height * s) / 2, s)
+        }()
+        let outOf: NSValue = {
+            let s = min(size.width / max(pw, 1), size.height / max(ph, 1))
+            return move((size.width - pw * s) / 2 - px * s, (size.height - ph * s) / 2 - py * s, s)
+        }()
+        let identity = NSValue(caTransform3D: CATransform3DIdentity)
+        let duration = CFTimeInterval(t.duration) / 1000
+        func animate(
+            _ layer: CALayer,
+            _ key: String,
+            _ values: [Any],
+            times: [NSNumber]? = nil,
+            duration: CFTimeInterval,
+            delay: CFTimeInterval = 0,
+            timing: CAMediaTimingFunction = ease,
+            keep: Bool = false
+        ) {
+            let a = CAKeyframeAnimation(keyPath: key)
+            a.values = values
+            a.keyTimes = times
+            a.duration = duration
+            a.timingFunction = timing
+            a.beginTime = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
+            a.fillMode = keep ? .both : .backwards
+            a.isRemovedOnCompletion = !keep
+            layer.add(a, forKey: "gallery.\(key)")
+        }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak ghost] in
+            ghost?.removeFromSuperlayer()
+            if let self, self.ghost === ghost {
+                self.ghost = nil
+            }
+        }
+        switch t.kind {
+        case GeoTransitionInto.rawValue:
+            // The folder grows out of its plate; the plates around it rush past.
+            animate(clip, "transform", [into, identity], duration: duration)
+            animate(clip, "opacity", [0, 1, 1], times: [0, 0.4, 1], duration: duration)
+            animate(ghost, "transform", [identity, outOf], duration: duration, keep: true)
+        case GeoTransitionOut.rawValue:
+            // The folder shrinks back into its plate; the plates around it settle.
+            animate(clip, "transform", [outOf, identity], duration: duration)
+            animate(clip, "opacity", [0.3, 1], duration: duration)
+            animate(ghost, "transform", [identity, into], duration: duration, keep: true)
+        default:
+            // A switch: parts in both views fly from where they were, the rest fade in, the old
+            // view fades out.
+            let items = gallery.items
+            let easeOut = CAMediaTimingFunction(name: .easeOut)
+            for track in tracks {
+                let index = Int(track.item)
+                guard let layer = layerOf[index], index < items.count else {
+                    continue
+                }
+                let item = items[index]
+                let trackDuration = CFTimeInterval(track.duration) / 1000
+                let delay = CFTimeInterval(track.delay) / 1000
+                if track.kind == GeoTrackFly.rawValue {
+                    let dx = CGFloat(track.from.0) - CGFloat(item.x)
+                    let dy = CGFloat(track.from.1) - (CGFloat(item.y) - scrollY)
+                    let s = item.width > 0 ? CGFloat(track.from.2) / CGFloat(item.width) : 1
+                    animate(
+                        layer,
+                        "transform",
+                        [move(dx, dy, s), identity],
+                        duration: trackDuration
+                    )
+                    for (i, file) in old.pictureFiles.enumerated()
+                    where file == item.file && i < old.pictures.count {
+                        old.pictures[i].isHidden = true
+                    }
+                } else {
+                    animate(
+                        layer,
+                        "opacity",
+                        [0, layer.opacity],
+                        duration: trackDuration,
+                        delay: delay,
+                        timing: easeOut
+                    )
+                }
+            }
+            animate(clip, "opacity", [0.001, 1], duration: 0.16, timing: easeOut)
+            animate(
+                ghost,
+                "opacity",
+                [1, 0],
+                duration: CFTimeInterval(t.fade_out) / 1000,
+                timing: easeOut,
+                keep: true
+            )
+        }
+        CATransaction.commit()
     }
 
     static func color(_ rgba: UInt32) -> CGColor {
@@ -457,6 +756,63 @@ final class GalleryView: NSView {
         return (lines, columns)
     }
 
+    // MARK: For the checks
+
+    /// Scrolls to `top`, as the wheel does.
+    func scroll(to top: CGFloat) {
+        scrollY = top
+        clampScroll()
+        gallery.setScroll(scrollY)
+        paint()
+        onViewChanged?()
+    }
+
+    /// A key, as typed; a click on a target.
+    func press(_ key: GeoGalleryKey) { act(gallery.key(key), reveal: true) }
+    func click(kind: UInt32, target: UInt32) {
+        act(gallery.click(kind: kind, target: target, twice: false))
+    }
+
+    /// The first heading staying at the top: where it sits from the view's top, as painted.
+    func stuckHeading() -> (top: CGFloat, fromViewTop: CGFloat)? {
+        for (layer, top, until) in sticky where !(layer is CATextLayer) && !(layer is CAShapeLayer)
+        {
+            let dy = scrollY - top
+            if dy > 0, dy < until {
+                // From the layer's own corner, which its transform moves.
+                return (top, layer.convert(CGPoint.zero, to: stage).y)
+            }
+        }
+        return nil
+    }
+
+    /// Layers painted at a search's 22%, and Peek's layers over the view.
+    var fadedLayers: Int {
+        (content.sublayers ?? []).filter { !$0.isHidden && abs($0.opacity - 0.22) < 0.01 }.count
+    }
+    var fixedLayers: Int { (fixed.sublayers ?? []).filter { !$0.isHidden }.count }
+
+    /// The moves playing: each animation's key, delay and duration in milliseconds.
+    func animations() -> [String] {
+        var layers: [CALayer] = [clip] + (ghost.map { [$0] } ?? []) + (content.sublayers ?? [])
+        layers = layers.filter { !$0.isHidden }
+        var out: [String] = []
+        for layer in layers {
+            for key in layer.animationKeys() ?? [] where key.hasPrefix("gallery.") {
+                guard let a = layer.animation(forKey: key) else {
+                    continue
+                }
+                let delay =
+                    a.beginTime > 0
+                    ? a.beginTime - layer.convertTime(CACurrentMediaTime(), from: nil) : 0
+                out.append(
+                    "\(key.dropFirst(8)) \(Int((max(0, delay) * 1000).rounded()))+\(Int((a.duration * 1000).rounded()))"
+                )
+            }
+        }
+        return out
+    }
+
     // MARK: Input
 
     override func updateTrackingAreas() {
@@ -487,7 +843,12 @@ final class GalleryView: NSView {
         {
             reload()
         }
-        let pointing = hit.map { $0.target_kind != GeoTargetNone.rawValue } ?? false
+        let pointing =
+            hit.map {
+                [GeoTargetFolder.rawValue, GeoTargetFile.rawValue, GeoTargetMore.rawValue].contains(
+                    $0.target_kind
+                ) || ($0.target_kind == GeoTargetPeek.rawValue && $0.target == 1)
+            } ?? false
         (pointing ? NSCursor.pointingHand : NSCursor.arrow).set()
     }
 
@@ -516,8 +877,11 @@ final class GalleryView: NSView {
         onViewChanged?()
     }
 
+    /// Keys: arrows, ⏎, Space and Esc are the gallery's; typing searches, digits too, and Backspace
+    /// edits the search, never going up a folder. ⌘1–⌘5 come through the View menu.
     override func keyDown(with event: NSEvent) {
-        let command = event.modifierFlags.contains(.command)
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let command = modifiers.contains(.command)
         let key: GeoGalleryKey?
         switch event.keyCode {
         case 123: key = GeoKeyLeft
@@ -529,26 +893,51 @@ final class GalleryView: NSView {
         case 53: key = GeoKeyEscape
         default: key = nil
         }
-        guard let key else {
-            super.keyDown(with: event)
+        if let key {
+            act(gallery.key(key), reveal: true)
+            onSearchChanged?()
             return
         }
-        act(gallery.key(key))
+        let plain = modifiers.isDisjoint(with: [.command, .control, .option])
+        if event.keyCode == 51, plain {
+            // Backspace
+            search(String(gallery.search.dropLast()))
+            return
+        }
+        if plain, let characters = event.characters, characters.count == 1,
+            let scalar = characters.unicodeScalars.first,
+            !CharacterSet.controlCharacters.contains(scalar), scalar.value < 0xF700
+        {
+            search(gallery.search + characters)
+            return
+        }
+        super.keyDown(with: event)
     }
 
     override func cancelOperation(_ sender: Any?) {
         act(gallery.key(GeoKeyEscape))
+        onSearchChanged?()
     }
 
-    private func act(_ action: GeoGalleryAction) {
+    /// Searches the folder in view; empty clears it.
+    func search(_ query: String) {
+        guard query != gallery.search else {
+            return
+        }
+        gallery.search = query
+        reload()
+        onSearchChanged?()
+    }
+
+    private func act(_ action: GeoGalleryAction, reveal: Bool = false) {
         switch action.kind {
         case GeoActionNone.rawValue:
             return
         case GeoActionEnterFolder.rawValue:
             scrollToTop()
             reload()
-        case GeoActionHandled.rawValue:
-            reload()
+        case GeoActionHandled.rawValue, GeoActionPeek.rawValue:
+            reload(reveal: reveal)
         default:
             break
         }

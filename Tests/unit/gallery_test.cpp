@@ -277,7 +277,7 @@ TEST_CASE("the C interface lays out and reports alignment as painted") {
     CHECK(geo_gallery_file_count(g) == 3);
     const uint32_t two = geo_gallery_file_at(g, "a/two.step");
     REQUIRE(two != UINT32_MAX);
-    const GeoGalleryFacts facts{{10, 8, 6}, true, false, 1, "Two"};
+    const GeoGalleryFacts facts{{10, 8, 6}, true, false, 1, "Two", 1200};
     for (uint32_t f = 0; f < 3; ++f) {
         geo_gallery_set_facts(g, f, &facts);
     }
@@ -339,4 +339,331 @@ TEST_CASE("an empty folder says so") {
     said = text.find("No STEP or STL files here.") != std::string::npos &&
            text.find("DRAFTS") != std::string::npos;
     CHECK(said);
+}
+
+// ---- G3: Sheet, views, motion, search, Peek ----------------------------------------------------
+
+namespace {
+
+Gallery measured(usize big = 50) {
+    Gallery g;
+    const std::vector<Entry> entries = library(big);
+    g.setEntries("Parts", entries);
+    measure(g);
+    g.setViewport(1080.0f, 720.0f);
+    return g;
+}
+
+usize countText(const Gallery& g, std::string_view needle) {
+    usize n = 0;
+    const std::string& text = g.display().textBuffer();
+    for (usize at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
+        ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("sheet lays every file out in cells, every row and column on one line") {
+    for (const u32 style : {0u, 3u, 5u}) {
+        for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+            CAPTURE(style);
+            CAPTURE(scale);
+            Gallery g = measured();
+            g.setStyle(style);
+            REQUIRE(g.setView(GeoViewSheet));
+            g.setSheet(scale, 128.0f, GeoSortName);
+            g.layout();
+            CHECK(g.result().parts.size() == 61); // every file once
+            CHECK(g.result().plates.empty());
+            checkAligned(g);
+        }
+    }
+}
+
+TEST_CASE("sheet's headings stay at the top until the next reaches them") {
+    Gallery g = measured();
+    g.setView(GeoViewSheet);
+    g.layout();
+    std::vector<std::pair<float, float>> headings; // top, until
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.sticky_top != 0.0f || item.sticky_until != 0.0f) {
+            if (headings.empty() || headings.back().first != item.sticky_top) {
+                headings.push_back({item.sticky_top, item.sticky_until});
+            }
+        }
+    }
+    // "In this folder", then bearing, fastener and motor; drafts holds nothing.
+    REQUIRE(headings.size() == 4);
+    for (usize i = 0; i + 1 < headings.size(); ++i) {
+        CHECK(headings[i].first < headings[i + 1].first);
+        CHECK(headings[i].second > 0.0f);
+    }
+    CHECK(countText(g, "IN THIS FOLDER") == 1);
+}
+
+TEST_CASE("a folder of files alone falls into size bands on the sheet") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("bearing"));
+    g.setView(GeoViewSheet);
+    g.layout();
+    CHECK(countText(g, "BY SIZE, SINCE THIS FOLDER HAS NO SUBFOLDERS") == 1);
+    CHECK(countText(g, "Under 20 mm") + countText(g, "20 to 100 mm") >= 1);
+    checkAligned(g);
+}
+
+TEST_CASE("true scale marks parts too small to see, drawn larger") {
+    Gallery g;
+    std::vector<Entry> entries = {{"big.step"}, {"tiny.step"}};
+    g.setEntries("Parts", entries);
+    measure(g);
+    // One part a thousand times the other's size.
+    Facts huge;
+    huge.size = {2000, 1600, 1200};
+    huge.hasBox = true;
+    huge.estimated = false;
+    huge.parts = 1;
+    g.setFacts(g.tree().fileAt("big.step"), huge);
+    Picture p;
+    p.width = p.height = 512;
+    p.mmPerPixel = 2000 * 1.3 / 512.0;
+    p.part = {80, 100, 340, 300};
+    p.ink = {70, 95, 370, 340};
+    g.setPicture(g.tree().fileAt("big.step"), p);
+    g.setViewport(1080.0f, 720.0f);
+    g.setView(GeoViewSheet);
+    g.setSheet(GeoScaleTrue, 128.0f, GeoSortName);
+    g.layout();
+    CHECK(countText(g, "DETAIL") == 1);
+}
+
+TEST_CASE("views: only those enabled, each folder remembering its own") {
+    Gallery g = measured();
+    CHECK_FALSE(g.setView(GeoViewLadders));
+    CHECK(g.view() == GeoViewPlates);
+    CHECK(g.setView(GeoViewSheet));
+    // Into a folder: the view in use carries on.
+    g.layout();
+    g.click(GeoTargetFolder, g.tree().folderAt("motor"), false);
+    CHECK(g.view() == GeoViewSheet);
+    CHECK(g.setView(GeoViewPlates));
+    g.layout();
+    // Back at the top, the root shows the view it last showed.
+    g.key(GeoKeyFolderUp);
+    CHECK(g.view() == GeoViewSheet);
+    g.setViews(1u << GeoViewPlates); // Sheet turned off: back to Plates
+    CHECK(g.view() == GeoViewPlates);
+}
+
+TEST_CASE("switching views keeps the selection, and flies parts in both views to their places") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 file = g.result().parts[1].index;
+    g.click(GeoTargetFile, file, false);
+    g.layout();
+    REQUIRE(g.setView(GeoViewSheet));
+    REQUIRE(g.layout());
+    CHECK(g.selected() == file);
+    const GeoGalleryTransition t = g.transition();
+    CHECK(t.kind == GeoTransitionSwitch);
+    CHECK(t.duration == 520.0f);
+    CHECK(t.fade_out == 260.0f);
+    REQUIRE_FALSE(g.tracks().empty());
+    for (const GeoGalleryTrack& track : g.tracks()) {
+        if (track.kind == GeoTrackFly) {
+            CHECK(track.delay == 0.0f);
+            CHECK(track.duration == 520.0f);
+        } else {
+            CHECK(track.delay == doctest::Approx(182.0f));
+            CHECK(track.duration == doctest::Approx(338.0f));
+        }
+    }
+    // The three motors are in both views: they fly.
+    usize flying = 0;
+    for (const GeoGalleryTrack& track : g.tracks()) {
+        flying += track.kind == GeoTrackFly ? 1 : 0;
+    }
+    CHECK(flying == 3);
+    // Played once: a layout for a hover plays nothing.
+    g.hover(GeoTargetFile, file);
+    REQUIRE(g.layout());
+    CHECK(g.transition().kind == GeoTransitionNone);
+    CHECK(g.tracks().empty());
+}
+
+TEST_CASE("into a folder it grows from its plate, and back out it shrinks into it") {
+    Gallery g = measured();
+    g.layout();
+    const LayoutResult::Place plate = g.result().plates[1];
+    g.click(GeoTargetFolder, plate.index, false);
+    REQUIRE(g.layout());
+    GeoGalleryTransition t = g.transition();
+    CHECK(t.kind == GeoTransitionInto);
+    CHECK(t.duration == 420.0f);
+    CHECK(t.rect[0] == plate.x);
+    CHECK(t.rect[2] == plate.w);
+    g.key(GeoKeyEscape);
+    REQUIRE(g.layout());
+    t = g.transition();
+    CHECK(t.kind == GeoTransitionOut);
+    CHECK(t.rect[0] == plate.x);
+    CHECK(t.rect[3] == plate.h);
+}
+
+TEST_CASE("a search marks what it found, and Esc steps back: Peek, search, selection, folder") {
+    Gallery g = measured();
+    g.setSearch("m12");
+    g.layout();
+    REQUIRE(g.matches().has_value());
+    CHECK(g.matches()->size() == 1);
+    CHECK(countText(g, "1 match") == 1);
+    usize faded = 0;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        faded += (item.flags & GeoItemFading) != 0 ? 1 : 0;
+    }
+    CHECK(faded > 0);
+    checkAligned(g);
+
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 file = g.result().parts[0].index;
+    g.click(GeoTargetFile, file, false);
+    CHECK(g.key(GeoKeySpace).kind == GeoActionPeek);
+    g.layout();
+    usize fixed = 0;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        fixed += (item.flags & GeoItemFixed) != 0 ? 1 : 0;
+    }
+    CHECK(fixed > 4);
+    CHECK(countText(g, "triangles") == 1);
+    CHECK(countText(g, "Open  \xE2\x8F\x8E") == 1);
+    CHECK(countText(g, "\xC3\x82") == 0); // no text decoded twice
+    g.setSearch("nema");
+    CHECK(g.key(GeoKeyEscape).kind == GeoActionHandled); // Peek
+    CHECK(g.peeking() == kNone);
+    CHECK(g.key(GeoKeyEscape).kind == GeoActionHandled); // the search
+    CHECK(g.search().empty());
+    CHECK(g.key(GeoKeyEscape).kind == GeoActionHandled); // the selection
+    CHECK(g.selected() == kNone);
+    CHECK(g.key(GeoKeyEscape).kind == GeoActionEnterFolder); // up a folder
+}
+
+TEST_CASE("arrows move the selection through the sheet's cells") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("bearing"));
+    g.setView(GeoViewSheet);
+    g.layout();
+    CHECK(g.key(GeoKeyRight).kind == GeoActionHandled);
+    const u32 first = g.selected();
+    REQUIRE(first != kNone);
+    g.layout();
+    g.key(GeoKeyRight);
+    g.layout();
+    CHECK(g.selected() != first);
+    const u32 second = g.selected();
+    g.key(GeoKeyDown);
+    g.layout();
+    CHECK(g.selected() != second);
+    CHECK(g.reveal() < 0.0f); // it shows
+}
+
+TEST_CASE("Peek: the card stays, Open opens, anywhere else closes, and arrows move it") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 first = g.result().parts[0].index;
+    g.click(GeoTargetFile, first, false);
+    REQUIRE(g.key(GeoKeySpace).kind == GeoActionPeek);
+    g.layout();
+    // Only Peek's own items can be hit; the parts under the scrim cannot.
+    const GeoGalleryHit scrim = g.hit(1.0f, 1.0f);
+    CHECK(scrim.target_kind == GeoTargetNone);
+    const GeoGalleryHit card = g.hit(540.0f, 360.0f);
+    CHECK((card.target_kind == GeoTargetPeek || card.target_kind == GeoTargetFile));
+    CHECK(g.click(GeoTargetPeek, 0, false).kind == GeoActionNone);
+    CHECK(g.peeking() == first);
+    // Arrows move the selection, and Peek with it.
+    g.key(GeoKeyRight);
+    g.layout();
+    CHECK(g.selected() != first);
+    CHECK(g.peeking() == g.selected());
+    const u32 second = g.selected();
+    // Open opens the file in Peek.
+    const GeoGalleryAction open = g.click(GeoTargetFile, second, false);
+    CHECK(open.kind == GeoActionOpenFile);
+    CHECK(open.target == second);
+    CHECK(g.peeking() == kNone);
+    // Anywhere else closes it.
+    g.key(GeoKeySpace);
+    CHECK(g.click(GeoTargetNone, 0, false).kind == GeoActionHandled);
+    CHECK(g.peeking() == kNone);
+}
+
+TEST_CASE("Peek's stats share their baselines, and its card fits the view") {
+    for (const float height : {420.0f, 720.0f, 1200.0f}) {
+        CAPTURE(height);
+        Gallery g = measured();
+        g.setViewport(1080.0f, height);
+        REQUIRE(g.setFolder("motor"));
+        g.layout();
+        g.click(GeoTargetFile, g.result().parts[0].index, false);
+        g.key(GeoKeySpace);
+        g.layout();
+        checkAligned(g);
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if ((item.flags & GeoItemFixed) != 0) {
+                CHECK(item.y >= 0.0f);
+                CHECK(item.y + item.height <= height + 0.01f);
+            }
+        }
+    }
+}
+
+TEST_CASE("back up from a folder shown as a sheet, it still shrinks into its plate") {
+    Gallery g = measured();
+    g.layout();
+    const LayoutResult::Place plate = g.result().plates[0];
+    g.click(GeoTargetFolder, plate.index, false);
+    REQUIRE(g.layout());
+    REQUIRE(g.setView(GeoViewSheet));
+    g.layout();
+    g.key(GeoKeyEscape);
+    REQUIRE(g.layout());
+    CHECK(g.view() == GeoViewPlates);
+    const GeoGalleryTransition t = g.transition();
+    CHECK(t.kind == GeoTransitionOut);
+    CHECK(t.rect[0] == plate.x);
+    CHECK(t.rect[2] == plate.w);
+}
+
+TEST_CASE("in the sheet, every part's shadow stays above its labels") {
+    for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+        CAPTURE(scale);
+        Gallery g = measured();
+        g.setView(GeoViewSheet);
+        g.setSheet(scale, 128.0f, GeoSortName);
+        g.layout();
+        const std::vector<GeoGalleryItem>& items = g.display().items();
+        usize checked = 0;
+        for (usize i = 0; i < items.size(); ++i) {
+            if (items[i].kind != GeoItemPicture) {
+                continue;
+            }
+            const Picture& p = *g.tree().file(items[i].file).picture;
+            const float k = items[i].width / float(p.width);
+            const float inkBottom = items[i].y + (p.ink[1] + p.ink[3]) * k;
+            // The file's label is the next text with its target.
+            for (usize j = i + 1; j < items.size(); ++j) {
+                if (items[j].kind == GeoItemText && items[j].target == items[i].file) {
+                    CHECK(inkBottom <= items[j].baseline - 1.025f * 10.5f + 0.01f);
+                    ++checked;
+                    break;
+                }
+            }
+        }
+        CHECK(checked > 20);
+        checkAligned(g);
+    }
 }

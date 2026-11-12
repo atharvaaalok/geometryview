@@ -14,6 +14,7 @@ import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
 import { Gallery } from "./gallery.js";
+import { GalleryToolbar } from "./gallery-toolbar.js";
 import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
          keyOf as keptKeyOf, persistOnce } from "./kept.js";
 import { DropZone, HoldHint, HoverChip, Look, LookCard, Masthead, SectionCard, SelectionCard,
@@ -127,6 +128,7 @@ const library = new LibraryCard(libraryStore, {
   switch: (show) => showLibrary(show),
   forget: (key) => forgetRecent(key),
   showFolder: (root, path) => showGallery(root, path),
+  search: (query) => gallery?.setSearch(query),
 });
 const selection = new SelectionCard((action) => engine.perform(action));
 const lookCard = new LookCard(look, (next) => applyLook(next));
@@ -151,6 +153,11 @@ const toolbar = new Toolbar({
     showLibrary(names.length === 0);
   },
 });
+const galleryToolbar = new GalleryToolbar({
+  view: (view) => gallery?.setView(view),
+  sheet: (change) => gallery?.setSheet(change),
+  look: () => toggleCard(lookCard),
+});
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
 const dropZone = new DropZone();
@@ -162,6 +169,7 @@ picker.addEventListener("change", () => {
 });
 document.body.append(masthead.element, structure.element, library.element, selection.element,
                      lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, toolbar.moreMenu,
+                     galleryToolbar.element,
                      holdHint.element,
                      hoverChip.element, dropZone.element, shortcuts.element, picker);
 
@@ -406,10 +414,14 @@ function applyLook(next, { remember = true } = {}) {
 // meanwhile. A file opened from it opens in the viewer, and Esc there comes back.
 function galleryFor() {
   if (gallery) return gallery;
-  gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery" }, {
+  // Plates and Sheet ship first; ?views=all shows the views still being built.
+  const views = params.get("views") === "all" ? 0b11111 : 0b11;
+  gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery", views }, {
     open: (root, path) => openFromGallery(root, path),
     leave: () => leaveGallery(),
     folderChanged: () => refreshMasthead(),
+    changed: () => galleryToolbar.show(gallery.state),
+    search: (query, found) => library.showSearch(galleryShown, query, found),
   });
   canvas.after(gallery.view.element);
   gallery.setStyle(look.engineLook.style);
@@ -428,6 +440,9 @@ function enterGallery() {
   engine.setCovered(true);
   status.hide();
   toolbar.element.hidden = true;
+  galleryToolbar.element.hidden = false;
+  galleryToolbar.show(gallery.state);
+  library.showSearch(true, gallery.core.search, gallery.core.matches);
   selection.element.hidden = true;
   if (!phone) {
     panelOpen = true;
@@ -442,6 +457,8 @@ function leaveGallery() {
   gallery.view.element.hidden = true;
   engine.setCovered(false);
   toolbar.element.hidden = false;
+  galleryToolbar.element.hidden = true;
+  library.showSearch(false);
   if (names.length === 0) showEmpty();
   refreshMasthead();
 }
@@ -1108,10 +1125,11 @@ function bridgeHandlers() {
 
 function testLabel() {
   // A report's name is a file's, so an imported fixture's folder joins it with a dash.
-  const name = (model ?? params.get("file") ?? "none").replaceAll("/", "-");
+  const name = (model ?? params.get("file") ?? (params.get("test") === "gallery" ? params.get("folder") : null) ?? "none")
+    .replaceAll("/", "-");
   // The gallery's checks are reported with its measurements.
   const phase = ["thumbs", "worker"].includes(params.get("test")) ? "g1"
-    : params.get("test") === "gallery" ? "g2" : "p4";
+    : params.get("test") === "gallery" ? "g3" : "p4";
   return `${params.get("label") ?? "unlabelled"}-${phase}-${params.get("test")}-${name}`;
 }
 
@@ -1337,35 +1355,45 @@ async function runGalleryTest() {
     .filter((p) => listing.some((e) => !e.folder && e.path.startsWith(`${p}/`))).sort().slice(0, 3);
   const runs = [];
   let worst = 0, over = 0, deviation = 0;
+  // Every alignment group as painted, and how far each item was painted from where the core laid it.
+  const measure = () => {
+    const { lines, columns } = g.view.measured();
+    const result = g.core.check(lines, columns, 0.5);
+    const items = g.core.items;
+    let off = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (!Number.isNaN(lines[i])) off = Math.max(off, Math.abs(lines[i] - items[i].line));
+      if (items[i].column && !Number.isNaN(columns[i])) off = Math.max(off, Math.abs(columns[i] - items[i].columnLine));
+    }
+    deviation = Math.max(deviation, off);
+    worst = Math.max(worst, ...result.over.map((o) => o.spread), 0);
+    over += result.over.length;
+    return { groupsChecked: result.checked, over: result.over, painted: lines.filter((v) => !Number.isNaN(v)).length,
+             maxDeviation: Math.round(off * 1000) / 1000 };
+  };
+  const views = params.get("views") === "all" ? [0, 1, 2, 3, 4] : [0, 1];
   // scrollOnly skips the styles' runs, for timing a scroll alone.
   for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
     next.choose(style);
     applyLook(next, { remember: false });
-    for (const path of ["", ...subfolders]) {
-      await g.show(root, path);
-      const waited = await settle();
-      const { lines, columns } = g.view.measured();
-      const result = g.core.check(lines, columns, 0.5);
-      // How far each item was painted from where the core laid it.
-      const items = g.core.items;
-      let off = 0;
-      for (let i = 0; i < items.length; i++) {
-        if (!Number.isNaN(lines[i])) off = Math.max(off, Math.abs(lines[i] - items[i].line));
-        if (items[i].column && !Number.isNaN(columns[i])) off = Math.max(off, Math.abs(columns[i] - items[i].columnLine));
+    for (const view of views) {
+      g.setView(view);
+      for (const path of ["", ...subfolders]) {
+        await g.show(root, path);
+        g.setView(view);
+        await sleep(600); // past any move
+        const waited = await settle();
+        if (params.has("shots") && path === "") {
+          // Whoever runs the browser takes a screenshot while the page waits.
+          await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-${dir.replaceAll("/", "-")}-${["plates", "sheet", "ladders", "atlas", "catalogue"][view]}-${style}`)}`);
+          await sleep(1500);
+        }
+        runs.push({ style, view, folder: path, waited, ...measure() });
       }
-      deviation = Math.max(deviation, off);
-      if (params.has("shots") && path === "") {
-        // Whoever runs the browser takes a screenshot while the page waits.
-        await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-${dir.replaceAll("/", "-")}-${style}`)}`);
-        await sleep(1500);
-      }
-      worst = Math.max(worst, ...result.over.map((o) => o.spread), 0);
-      over += result.over.length;
-      runs.push({ style, folder: path, groupsChecked: result.checked, over: result.over, waited,
-                  painted: lines.filter((v) => !Number.isNaN(v)).length, maxDeviation: Math.round(off * 1000) / 1000 });
     }
   }
+  const g3 = params.has("scrollOnly") ? null : await galleryMotionChecks(g, root, subfolders, measure, settle);
   // Scrolling the tallest folder: long tasks over 50 ms while it moves.
   const tall = params.get("scroll") ?? subfolders.at(-1) ?? "";
   await g.show(root, tall);
@@ -1403,7 +1431,101 @@ async function runGalleryTest() {
                scroll: { folder: tall, height: Math.round(height), frames: 120, ms: scrollMs, longTasks,
                          items: g.core.items.length,
                          longest: Math.max(0, ...longTasks) },
-               framesWhileCovered });
+               framesWhileCovered, ...(g3 ? { g3 } : {}) });
+}
+
+// G3's checks in the page: a heading of Sheet's stays at the top as its block scrolls under it; a
+// search fades what it did not find; Peek is painted over the view and aligned; and each move plays
+// for as long as the spec says, the selection kept.
+async function galleryMotionChecks(g, root, subfolders, measure, settle) {
+  const clip = g.view.element.querySelector(".gallery-clip");
+  const out = {};
+  // Sticky headings, in Sheet at the top, scrolled a third of the way.
+  await g.show(root, "");
+  g.setView(1);
+  await sleep(600);
+  await settle();
+  clip.scrollTop = Math.round((clip.scrollHeight - clip.clientHeight) / 3);
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);
+  const top = clip.getBoundingClientRect().top;
+  const items = g.core.items;
+  let stuck = null;
+  for (const [i, box] of g.view.paintedBoxes()) {
+    const item = items[i];
+    if (item.kind !== 0 || !(item.stickyUntil > 0)) continue;
+    const dy = clip.scrollTop - item.stickyTop;
+    if (dy > 0 && dy < item.stickyUntil) {
+      // On screen, the band's top sits at the view's top.
+      const node = [...clip.querySelectorAll(".g-rect")].find((n) => !n.hidden && Number(n.style.zIndex) === items.length + i);
+      stuck = { stickyTop: item.stickyTop, scroll: clip.scrollTop,
+                fromViewTop: node ? Math.round((node.getBoundingClientRect().top - top) * 1000) / 1000 : null,
+                layoutTop: Math.round(box.y * 1000) / 1000 };
+      break;
+    }
+  }
+  out.sticky = { ...stuck, aligned: measure() };
+  clip.scrollTop = 0;
+  // A search: what it did not find painted at 22%.
+  const probe = g.core.path(g.core.wanted()[0]?.file ?? 0).split("/").pop().slice(0, 3);
+  g.setSearch(probe);
+  await new Promise(requestAnimationFrame);
+  const faded = [...g.view.element.querySelectorAll(".gallery-content > :not([hidden])")].filter((n) => n.style.opacity === "0.22").length;
+  out.search = { query: probe, found: g.core.matches, fadedNodes: faded, aligned: measure() };
+  g.setSearch("");
+  // Peek over the first file of the first subfolder, in Sheet, where → selects a file. A folder
+  // shows the view it last showed, so the view is chosen once in it.
+  await g.show(root, subfolders[0] ?? "");
+  g.setView(1);
+  await sleep(600);
+  await settle();
+  g.view.key(1); // → selects the first file
+  g.view.key(5); // Space
+  await new Promise(requestAnimationFrame);
+  const fixed = g.view.element.querySelectorAll(".gallery-fixed > :not([hidden])").length;
+  out.peek = { file: g.core.peeking === null ? null : g.core.path(g.core.peeking), fixedNodes: fixed, aligned: measure() };
+  if (params.has("shots")) {
+    await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-peek`)}`);
+    await sleep(1500);
+  }
+  g.view.key(6); // Esc closes Peek
+  // A switch from Plates to Sheet, which shows more: its transition and tracks, and the animations
+  // playing. Parts in both fly; those new to Sheet fade in.
+  g.setView(0);
+  await sleep(700);
+  const selected = g.core.selected;
+  g.setView(1);
+  const t = g.core.transition, tracks = g.core.tracks;
+  const playing = document.getAnimations().map((a) => a.effect?.getTiming?.()).filter(Boolean);
+  out.switch = {
+    transition: { kind: t.kind, duration: t.duration, fadeOut: t.fadeOut },
+    fly: tracks.filter((k) => k.kind === 0).length, fadeIn: tracks.filter((k) => k.kind === 1).length,
+    flyTiming: [...new Set(tracks.filter((k) => k.kind === 0).map((k) => `${k.delay}+${k.duration}`))],
+    fadeTiming: [...new Set(tracks.filter((k) => k.kind === 1).map((k) => `${Math.round(k.delay)}+${Math.round(k.duration)}`))],
+    animations: playing.length,
+    animationTimings: [...new Set(playing.map((p) => `${Math.round(p.delay)}+${Math.round(p.duration)}`))],
+    selectionKept: g.core.selected === selected && selected !== null,
+  };
+  await sleep(700);
+  // Into a folder from its plate, and back out.
+  await g.show(root, "");
+  g.setView(0);
+  await sleep(600);
+  await settle();
+  const plate = g.core.items.find((i) => i.targetKind === 1);
+  if (plate) {
+    g.view.act(g.core.click(1, plate.target, false));
+    const into = g.core.transition;
+    const zoom = document.getAnimations().map((a) => a.effect?.getTiming?.()).filter(Boolean);
+    await sleep(600);
+    g.view.key(6); // Esc: up again
+    const back = g.core.transition;
+    out.zoom = { into: { kind: into.kind, duration: into.duration, rect: into.rect.map(Math.round) },
+                 out: { kind: back.kind, duration: back.duration, rect: back.rect.map(Math.round) },
+                 animations: zoom.length, animationTimings: [...new Set(zoom.map((p) => `${Math.round(p.delay)}+${Math.round(p.duration)}`))] };
+    await sleep(600);
+  }
+  return out;
 }
 
 // Waits for an imported file's scene, zooms in on the middle of the view, and reports how many

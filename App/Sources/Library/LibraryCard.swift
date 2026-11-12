@@ -37,6 +37,14 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
     var onConnect: (() -> Void)?
     /// A folder was clicked: its gallery shows, the connected folder it is in first.
     var onShowFolder: ((_ root: URL, _ folder: URL) -> Void)?
+    /// Called with the search typed while the gallery shows, and when Esc leaves the field.
+    var onSearch: ((String) -> Void)?
+    var onSearchDone: (() -> Void)?
+    /// Searches the folder the gallery shows: only while it shows. Typing in the gallery searches
+    /// too.
+    private let searchBox = SearchBox(placeholder: "Search this folder")
+    private var listBelowSwitcher: NSLayoutConstraint!
+    private var listBelowSearch: NSLayoutConstraint!
 
     init(store: LibraryStore) {
         self.store = store
@@ -69,12 +77,26 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
         add.onPress = { [weak self] in self?.onChoose?() }
         connect.onPress = { [weak self] in self?.onConnect?() }
 
-        for view in [switcher, add, connect, scroll] as [NSView] {
+        searchBox.field.delegate = self
+        searchBox.isHidden = true
+        ChromeLayout.name(searchBox, "library.search")
+        for view in [switcher, add, connect, searchBox, scroll] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let inset = Metrics.gap
+        listBelowSwitcher = scroll.topAnchor.constraint(
+            equalTo: switcher.bottomAnchor,
+            constant: 10
+        )
+        listBelowSearch = scroll.topAnchor.constraint(
+            equalTo: searchBox.bottomAnchor,
+            constant: 10
+        )
         NSLayoutConstraint.activate([
+            searchBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            searchBox.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
             connect.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
@@ -83,10 +105,22 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
             add.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            scroll.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
+            listBelowSwitcher,
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
         reload()
+    }
+
+    /// Shows the gallery's search, with its query and how many files it found (nil: no search).
+    func showSearch(_ shown: Bool, query: String = "", found: UInt32? = nil) {
+        searchBox.isHidden = !shown
+        listBelowSwitcher.isActive = !shown
+        listBelowSearch.isActive = shown
+        // The field keeps what is typed in it; typing in the gallery shows there too.
+        if searchBox.field.currentEditor() == nil, searchBox.field.stringValue != query {
+            searchBox.field.stringValue = query
+        }
+        searchBox.match.stringValue = found.map { "\($0) found" } ?? ""
     }
 
     /// Shows the store's folders and recent files afresh.
@@ -291,5 +325,38 @@ private final class RowBox: NSObject {
     let row: LibraryRow
     init(_ row: LibraryRow) {
         self.row = row
+    }
+}
+
+extension LibraryCard: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard notification.object as? NSTextField === searchBox.field else {
+            return
+        }
+        onSearch?(searchBox.field.stringValue)
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        if notification.object as? NSTextField === searchBox.field {
+            searchBox.editingEnded()
+        }
+    }
+
+    /// Esc in the field clears the search and gives the keys back to the gallery.
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy selector: Selector
+    ) -> Bool {
+        guard control === searchBox.field,
+            selector == #selector(NSResponder.cancelOperation(_:))
+        else {
+            return false
+        }
+        searchBox.field.stringValue = ""
+        onSearch?("")
+        window?.makeFirstResponder(nil)
+        onSearchDone?()
+        return true
     }
 }

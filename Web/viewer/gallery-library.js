@@ -120,5 +120,6 @@ export function layoutFacts(facts) {
   return {
     size: hasBox ? facts.max.map((v, i) => v - facts.min[i]) : [0, 0, 0],
     hasBox, estimated: Boolean(facts.estimated), parts: facts.parts ?? 0, product: facts.name ?? "",
+    triangles: facts.triangles ?? 0,
   };
 }

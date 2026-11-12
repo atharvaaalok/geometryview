@@ -30,6 +30,11 @@ export const iconMarkup = {
   parts: `<path d="M3 4h10M3 8h10M3 12h10"/>`,
   more: `<circle cx="3.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor" stroke="none"/>`,
   check: `<path d="M3.5 8.5l3 3 6-7"/>`,
+  plates: `<rect x="1.75" y="2.25" width="5.5" height="5" rx="1"/><rect x="8.75" y="2.25" width="5.5" height="5" rx="1"/><rect x="1.75" y="8.75" width="5.5" height="5" rx="1"/><rect x="8.75" y="8.75" width="5.5" height="5" rx="1"/><path d="M3 6h1M4.75 6h1M10 6h3M3 12.5h3M10 12.5h1"/>`,
+  sheet: `<path d="M2 3.5h12 M2 7h12 M2 10.5h12 M2 14h12"/><circle cx="4" cy="5.25" r=".6"/><circle cx="7" cy="5.25" r=".6"/><circle cx="10" cy="5.25" r=".6"/><circle cx="13" cy="5.25" r=".6"/><circle cx="4" cy="12.25" r=".6"/><circle cx="7" cy="12.25" r=".6"/>`,
+  ladders: `<path d="M1.5 12.5h13 M2.5 12.5v-1.5 M5.5 12.5v-3 M9 12.5v-5 M13 12.5v-8 M1.5 14.5v-2 M5 14.5v-2 M8.5 14.5v-2 M12 14.5v-2"/>`,
+  atlas: `<path d="M1.75 3.5l4-1.5 4.5 1.5 4-1.5v10.5l-4 1.5-4.5-1.5-4 1.5z M5.75 2v10.5 M10.25 3.5V14"/>`,
+  catalogue: `<path d="M8 3.5c-1.5-1-3.5-1.25-6-1v10c2.5-.25 4.5 0 6 1 1.5-1 3.5-1.25 6-1v-10c-2.5-.25-4.5 0-6 1z M8 3.5v10"/>`,
 };
 
 export const icons = Object.fromEntries(

@@ -85,6 +85,17 @@ enum MainMenu {
 
     private static func viewMenu() -> NSMenuItem {
         let menu = NSMenu(title: "View")
+        // The gallery's views, while it shows; those still being built only when asked for.
+        for (index, name) in ["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"].enumerated() {
+            let item = NSMenuItem(
+                title: "View as \(name)",
+                action: #selector(MainWindow.chooseGalleryView(_:)),
+                keyEquivalent: "\(index + 1)"
+            )
+            item.tag = index
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
         menu.addItem(actionItem("Fit to View", GeoActionFit))
         menu.addItem(
             NSMenuItem(
