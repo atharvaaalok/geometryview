@@ -1,6 +1,6 @@
 {
   "name": "geometryview",
-  "version": "0.1.2",
+  "version": "0.3.0",
   "description": "View STEP and STL models in your browser, and let AI apps open, inspect and picture them (MCP).",
   "keywords": [
     "step",

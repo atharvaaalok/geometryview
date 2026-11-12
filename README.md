@@ -48,6 +48,23 @@ throughout, or the file's own colours. Add a cast shadow, paper grain or a hand-
 Hold H and click to hide what you click, peeling layers; hold G to ghost it. I isolates the
 selection, as if it alone were open.
 
+## A whole folder at a glance
+
+Click a folder in the Library and see every part in it, drawn in the look you chose, to scale, in
+five views (⌘1–⌘5 on a Mac, ⌥1–⌥5 in a browser):
+
+- **Plates:** each folder a plate of its parts standing at one scale, with its sizes and counts.
+- **Sheet:** every file on a contact sheet, fitted, to each folder's scale or all to one, by size
+  or by name.
+- **Ladders:** each family on a ruler, smallest to largest, at a drafting scale (1:2, 1:10…).
+- **Atlas:** the folder as a map: its folders are regions, and zooming in names every part.
+- **Catalogue:** the folder typeset as a printed parts catalogue: contents, a plate and a table of
+  measured sizes for each folder, and an index.
+
+Search narrows any view as you type. Space opens Peek: the part large, with its size, parts,
+triangles and file; drag across it to turn it. Show as Poster prints any view on one sheet, saved
+as PNG or PDF; a Catalogue's PDF is the whole book.
+
 ## Fast, measured
 
 | Opening… | Mac app | Chrome |

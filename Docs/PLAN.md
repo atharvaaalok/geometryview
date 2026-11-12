@@ -231,9 +231,9 @@ of G6 to G8.
 | **G2** | Plates on the Mac and the web: the layout core, painters, checks, ADR 0018 | 0 alignment groups over 0.5 pt; Mac and web within 1 pt; no 3D frames under the gallery; no web long task over 50 ms | Review (2026-11-11) |
 | **G3** | Sheet, the view switch, shared state, flights, Peek, keys, menus | The selection survives every switch; motion matches the spec; G2's criteria still hold | Review (2026-11-11) |
 | **G4** | States, FSEvents, phones, a poster PNG, MCP `view_folder` | iPhone ≤600 MB on test-models; no horizontal scroll at 390 px; a changed file re-inks alone; five tools | Done (2026-11-11); the iPhone at most 489 MB on test-models |
-| **G5** | Release 0.2.0: Plates and Sheet | | |
+| **G5** | Release 0.2.0: Plates and Sheet | | Folded into 0.3.0: all five views were ready together |
 | **G6–G8** | Ladders, Atlas, Catalogue | Each reviewed | At review (2026-11-11) |
-| **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | Posters, PDF and the turnable Peek at review (2026-11-11); release 0.3.0 waits |
+| **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | Done; release 0.3.0 (2026-11-11) |
 
 **Spikes** (pass/fail, recorded in ADRs):
 
