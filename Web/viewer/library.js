@@ -126,6 +126,9 @@ export class LibraryCard {
                                                           onChange: (i) => on.switch(i === 0) });
     const add = pill({ icon: icons.plus, help: "Open files (⌘O)", onPress: () => on.choose() });
     const connect = pill({ icon: icons.folderPlus, help: "Connect a folder (⌥⌘O)", onPress: () => on.connect() });
+    // On a desktop the card can be put away, for the whole window.
+    const hide = pill({ icon: icons.sidebar, help: "Hide the sidebar (⌥S)", onPress: () => on.hide?.() });
+    hide.classList.add("desktop-only");
     connect.hidden = !store.canConnect;
     this.#list = new VirtualList({ role: "tree", rowHeight, count: () => this.#rows.length,
                                    row: (index) => this.#row(this.#rows[index]) });
@@ -137,7 +140,7 @@ export class LibraryCard {
     this.#searchBox = el("label.searchbox", { hidden: true },
                          [el("span.glyph", { html: icons.search(14) }), this.#search, this.#found]);
     this.element = el("section.card.structure.library", { hidden: true, "aria-label": "Library" }, [
-      el("div.header", {}, [this.switcher.element, el("span.grow"), add, connect]),
+      el("div.header", {}, [this.switcher.element, el("span.grow"), add, connect, hide]),
       this.#searchBox,
       this.#list.element,
     ]);

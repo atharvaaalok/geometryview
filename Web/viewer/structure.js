@@ -180,7 +180,7 @@ export class StructureCard {
   #highlighted = null; // from the pointer in the view
   #pointerRow = -1;
 
-  constructor(engine, { onSwitch }) {
+  constructor(engine, { onSwitch, onHide }) {
     this.#engine = engine;
     this.switcher = segmented(["Library", "Structure"], { selected: 1, help: "Library or structure",
                                                           onChange: (i) => onSwitch?.(i === 0) });
@@ -210,8 +210,11 @@ export class StructureCard {
       el("div.buttons", {}, [this.#showAll, this.#unghostAll]),
     ]);
     this.#nothing = el("p.nothing", { hidden: true, text: "Nothing open yet." });
+    // On a desktop the card can be put away, for the whole window.
+    const hide = pill({ icon: icons.sidebar, help: "Hide the sidebar (⌥S)", onPress: () => onHide?.() });
+    hide.classList.add("desktop-only");
     this.element = el("section.card.structure", { "aria-label": "Structure" }, [
-      this.switcher.element,
+      el("div.header", {}, [this.switcher.element, el("span.grow"), hide]),
       this.#nothing,
       el("label.searchbox", {}, [el("span.glyph", { html: icons.search(14) }), this.#search, this.#matchLabel]),
       this.#list.element,

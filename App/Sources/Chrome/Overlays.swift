@@ -169,6 +169,7 @@ final class ShortcutsSheet: NSView {
             ([cap(.section)], "Section across X"),
             ([cap(.clearSelection)], "Close a card, or clear the selection"),
             (["⌘", "W"], "Close the file"),
+            (["⌃⌘", "S"], "Hide or show the sidebar"),
             ([cap(.shortcuts)], "This sheet"),
         ]
         for (keyLabels, meaning) in entries {

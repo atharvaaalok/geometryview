@@ -103,6 +103,15 @@ enum MainMenu {
         poster.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(poster)
         menu.addItem(.separator())
+        // The sidebar put away for the whole window, or brought back; its title says which.
+        let sidebar = NSMenuItem(
+            title: "Hide Sidebar",
+            action: #selector(MainWindow.toggleSidebar(_:)),
+            keyEquivalent: "s"
+        )
+        sidebar.keyEquivalentModifierMask = [.command, .control]
+        menu.addItem(sidebar)
+        menu.addItem(.separator())
         menu.addItem(actionItem("Fit to View", GeoActionFit))
         menu.addItem(
             NSMenuItem(

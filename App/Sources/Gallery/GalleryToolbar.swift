@@ -11,6 +11,7 @@ final class GalleryToolbar: StickerCard {
     var onSheet: ((SheetOptions) -> Void)?
     var onShowLook: (() -> Void)?
     var onPoster: (() -> Void)?
+    var onShowSidebar: (() -> Void)?
     /// Ladders' scale chosen: true for one shared by every strip.
     var onLadders: ((Bool) -> Void)?
     /// Atlas: a level chosen, or a step in (1) or out (−1).
@@ -41,6 +42,8 @@ final class GalleryToolbar: StickerCard {
         icon: .poster,
         help: "Show it off: the view as a poster (⌥⌘P)"
     )
+    /// Brings the sidebar back, shown only while it is put away.
+    private let showSidebar = PillButton(icon: .sidebar, help: "Show the sidebar (⌃⌘S)")
     private let sheetControls: NSStackView
     private let laddersControls: NSStackView
     private let atlasControls: NSStackView
@@ -145,9 +148,11 @@ final class GalleryToolbar: StickerCard {
         }
         look.onPress = { [weak self] in self?.onShowLook?() }
         poster.onPress = { [weak self] in self?.onPoster?() }
+        showSidebar.onPress = { [weak self] in self?.onShowSidebar?() }
+        showSidebar.isHidden = true
 
         for view in [
-            viewSwitch, sheetControls, laddersControls, atlasControls, catalogueControls,
+            showSidebar, viewSwitch, sheetControls, laddersControls, atlasControls, catalogueControls,
             Self.rule(), poster, look,
         ] {
             stack.addArrangedSubview(view)
@@ -201,6 +206,12 @@ final class GalleryToolbar: StickerCard {
         sort.selected = Int(sheet.sort)
         size.value = Double((sheet.cell - 72) / 128)
         look.title = style
+        fit(available: available)
+    }
+
+    /// The sidebar out, or put away: its pill shows only while it is away.
+    func setSidebarShown(_ shown: Bool) {
+        showSidebar.isHidden = shown
         fit(available: available)
     }
 
