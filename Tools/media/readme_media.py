@@ -505,9 +505,46 @@ def chat():
         save(fit(sticker(body, 28, 4, 8, ink), WIDTH), f"chat-{theme}", quality=86)
 
 
+def social():
+    """The repository's social card, 1280 x 640 as GitHub asks: the name and what it does, large
+    enough to read in a link preview, beside the turbofan cut open, in FIG. 1's drafting frame."""
+    tf = BLOBS / "turbofan.geoblob"
+    r = render([("social-tf", tf, "--az 62 --el 16 --section x0.5 --transparent")], "2000x1400")
+    art = Image.open(WORK / "social-tf.png").convert("RGBA")
+    art = art.crop(art.getchannel("A").getbbox())
+    W, H, m = 1280, 640, 26
+    card = Image.new("RGBA", (W, H), PAPER + (255,))
+    art = art.resize((590, round(art.height * 590 / art.width)), Image.LANCZOS)
+    card.alpha_composite(art, (W - m - 22 - art.width, (H - art.height) // 2 - 6))
+    d = ImageDraw.Draw(card)
+    d.rectangle((m, m, W - m, H - m), outline=INK, width=3)
+    for x, y, sx, sy in ((m, m, -1, -1), (W - m, m, 1, -1), (m, H - m, -1, 1), (W - m, H - m, 1, 1)):
+        d.line((x + sx * 8, y, x + sx * 22, y), fill=INK, width=3)
+        d.line((x, y + sy * 8, x, y + sy * 22), fill=INK, width=3)
+    x0 = 72
+    d.text((x0, 156), "GeometryView", font=font("SemiBold", 66), fill=INK)
+    for i, line in enumerate(["See inside your CAD models,", "and a whole folder of them", "at once."]):
+        d.text((x0, 262 + i * 44), line, font=font("Medium", 30), fill=INK)
+    d.text((x0, 432), "STEP · STL", font=font("SemiBold", 22), fill=INK)
+    d.text((x0, 466), "Browser · Mac · iPhone · AI apps", font=font("Regular", 22), fill=(111, 104, 92))
+    # FIG. 1's title block, small, bottom right.
+    rows = [("FIG. 1", "TF-1 TURBOFAN"), ("VIEW", "SECTION A-A")]
+    bw, rh = 330, 30
+    bx, by = W - m - bw, H - m - rh * len(rows)
+    for i, (k, v) in enumerate(rows):
+        y = by + i * rh
+        d.rectangle((bx, y, W - m, y + rh), outline=INK, width=2, fill=SHEET + (255,))
+        d.line((bx + 96, y, bx + 96, y + rh), fill=INK, width=2)
+        d.text((bx + 10, y + rh / 2), k, font=font("Medium", 14), fill=INK, anchor="lm")
+        d.text((bx + 108, y + rh / 2), v, font=font("SemiBold", 16), fill=INK, anchor="lm")
+    path = OUT / "social-card.png"
+    card.convert("RGB").save(path, "PNG", optimize=True)
+    print(f"  {path.name}: {W}x{H}, {path.stat().st_size / 1e3:.0f} KB")
+
+
 CAPTURES = {"capture-gallery": capture_gallery, "capture-phone": capture_phone, "capture-mac": capture_mac}
 PICTURES = {f.__name__.replace("_", "-"): f for f in
-            (renders, fig1, plates, wall, inside, styles, everywhere, chat)}
+            (renders, fig1, plates, wall, inside, styles, everywhere, chat, social)}
 
 if __name__ == "__main__":
     args = sys.argv[1:]
