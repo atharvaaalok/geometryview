@@ -14,6 +14,11 @@ if [[ $1 == --web ]]; then
   for size in 32 180 192 512; do
     sips -z $size $size $master --out $icons/icon-$size.png >/dev/null
   done
+  # The page asks for them with the icon's hash, so a browser fetches them again when the icon
+  # changes: it keeps a page's icon by its URL, past the files' own caching.
+  stamp=$(shasum -a 256 $icons/icon-512.png | cut -c1-8)
+  sed -E -i '' "s#(icons/icon-[0-9]+\.png)(\?v=[0-9a-f]+)?#\1?v=$stamp#g" \
+    $root/Web/viewer/index.html $root/Web/viewer/manifest.webmanifest
   exit 0
 fi
 if [[ $1 == --ios ]]; then
