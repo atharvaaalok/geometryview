@@ -30,14 +30,17 @@
 .gallery-ghost { overflow: hidden; }
 .gallery-ghost-inner { position: absolute; inset: 0; }
 .gallery-content { position: relative; width: 100%; }
-.gallery-content > *, .gallery-fixed > * {
+.gallery-content > *, .gallery-fixed > *, .g-lane-content > * {
   position: absolute;
   box-sizing: border-box;
   margin: 0;
   padding: 0;
   pointer-events: none;
 }
-.gallery-content > [hidden], .gallery-fixed > [hidden] { display: none; }
+.gallery-content > [hidden], .gallery-fixed > [hidden], .g-lane-content > [hidden] { display: none; }
+/* A lane: a band that scrolls sideways on its own, its items placed in content points inside. */
+.g-lane { overflow: hidden; }
+.g-lane-content { position: absolute; width: 0; height: 0; }
 .g-text { white-space: pre; line-height: 1.3; overflow: visible; }
 .g-probe { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
 .g-picture { image-rendering: auto; }

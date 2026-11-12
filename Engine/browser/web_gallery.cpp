@@ -87,6 +87,41 @@ EMSCRIPTEN_KEEPALIVE int gv_gallery_poster(GeoGallery* gallery) {
     return geo_gallery_poster(gallery) ? 1 : 0;
 }
 
+/// The last layout's lanes, 6 floats each: id, rect (x, y, width, height), content width; at most
+/// `capacity`. Returns how many there are.
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_lanes(GeoGallery* gallery, float* out, uint32_t capacity) {
+    const uint32_t n = geo_gallery_lanes(gallery, nullptr, 0);
+    std::vector<GeoGalleryLane> lanes(n);
+    geo_gallery_lanes(gallery, lanes.data(), n);
+    for (uint32_t i = 0; i < n && i < capacity; ++i) {
+        const GeoGalleryLane& l = lanes[i];
+        const float values[6] = {float(l.id), l.rect[0], l.rect[1],
+                                 l.rect[2],   l.rect[3], l.content_width};
+        std::memcpy(out + i * 6, values, sizeof(values));
+    }
+    return n;
+}
+
+/// The selection's lane and the scroll that shows it, written to `out` as two floats; 0 if none.
+EMSCRIPTEN_KEEPALIVE int gv_gallery_reveal_lane(GeoGallery* gallery, float* out) {
+    uint32_t lane = 0;
+    float x = 0.0f;
+    if (!geo_gallery_reveal_lane(gallery, &lane, &x)) {
+        return 0;
+    }
+    out[0] = float(lane);
+    out[1] = x;
+    return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_lane_scroll(GeoGallery* gallery, uint32_t lane, float x) {
+    geo_gallery_set_lane_scroll(gallery, lane, x);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_ladders(GeoGallery* gallery, int shared) {
+    geo_gallery_set_ladders(gallery, shared != 0);
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_lost(GeoGallery* gallery, int lost) {
     geo_gallery_set_lost(gallery, lost != 0);
 }

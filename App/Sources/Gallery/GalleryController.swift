@@ -41,11 +41,14 @@ final class GalleryController {
 
     /// Sheet's controls, kept from one launch to the next.
     private(set) var sheet = SheetOptions.load()
+    /// Ladders' scale: one shared by every strip, kept from one launch to the next.
+    private(set) var laddersShared = UserDefaults.standard.bool(forKey: "gallery.ladders.shared")
 
     init(views: UInt32 = (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)) {
         view = GalleryView(gallery: gallery)
         gallery.views = views
         gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
+        gallery.setLadders(shared: laddersShared)
         view.onAction = { [weak self] action in self?.act(action) }
         view.onViewChanged = { [weak self] in self?.scheduleWant() }
         view.onSearchChanged = { [weak self] in self?.onSearchChanged?() }
@@ -68,6 +71,16 @@ final class GalleryController {
         sheet = options
         sheet.save()
         gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
+        view.reload()
+        onChanged?()
+        scheduleWant()
+    }
+
+    /// Ladders' scale: each strip its own, or one shared.
+    func setLadders(shared: Bool) {
+        laddersShared = shared
+        UserDefaults.standard.set(shared, forKey: "gallery.ladders.shared")
+        gallery.setLadders(shared: shared)
         view.reload()
         onChanged?()
         scheduleWant()

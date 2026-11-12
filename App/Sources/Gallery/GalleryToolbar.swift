@@ -11,6 +11,8 @@ final class GalleryToolbar: StickerCard {
     var onSheet: ((SheetOptions) -> Void)?
     var onShowLook: (() -> Void)?
     var onPoster: (() -> Void)?
+    /// Ladders' scale chosen: true for one shared by every strip.
+    var onLadders: ((Bool) -> Void)?
 
     private static let names = ["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]
     private static let icons: [Icons.Name] = [.plates, .sheet, .ladders, .atlas, .catalogue]
@@ -35,6 +37,14 @@ final class GalleryToolbar: StickerCard {
         help: "Show it off: the view as a poster (⌥⌘P)"
     )
     private let sheetControls: NSStackView
+    private let laddersControls: NSStackView
+    private let laddersSort = SegmentedPill(["Size", "Name"], selected: 0, help: "Order")
+    private let laddersScale = SegmentedPill(
+        ["Each", "Shared"],
+        selected: 0,
+        help: "Scale",
+        tips: ["Each strip at its own scale", "Every strip at one scale"]
+    )
     private var options = SheetOptions()
 
     /// `enabled`: the views that may be shown, a bit each.
@@ -49,6 +59,7 @@ final class GalleryToolbar: StickerCard {
             keys: views.map { "⌘\($0 + 1)" }
         )
         sheetControls = NSStackView(views: [])
+        laddersControls = NSStackView(views: [])
         super.init()
         let label = { (text: String) -> NSTextField in
             let field = NSTextField(labelWithString: "")
@@ -67,6 +78,14 @@ final class GalleryToolbar: StickerCard {
         }
         sheetControls.orientation = .horizontal
         sheetControls.spacing = 8
+        for view in [Self.rule(), label("SORT"), laddersSort, label("SCALE"), laddersScale] {
+            laddersControls.addArrangedSubview(view)
+        }
+        laddersControls.orientation = .horizontal
+        laddersControls.spacing = 8
+        laddersSort.onChange = { [weak self] index in self?.change { $0.sort = index == 0 ? 1 : 0 }
+        }
+        laddersScale.onChange = { [weak self] index in self?.onLadders?(index == 1) }
         size.widthAnchor.constraint(equalToConstant: 110).isActive = true
 
         viewSwitch.onChange = { [weak self] index in
@@ -83,7 +102,9 @@ final class GalleryToolbar: StickerCard {
         look.onPress = { [weak self] in self?.onShowLook?() }
         poster.onPress = { [weak self] in self?.onPoster?() }
 
-        let stack = NSStackView(views: [viewSwitch, sheetControls, Self.rule(), poster, look])
+        let stack = NSStackView(views: [
+            viewSwitch, sheetControls, laddersControls, Self.rule(), poster, look,
+        ])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -103,7 +124,10 @@ final class GalleryToolbar: StickerCard {
     }
 
     /// Shows the view in use, Sheet's controls, and the style's name.
-    func show(view: UInt32, sheet: SheetOptions, style: String) {
+    func show(view: UInt32, sheet: SheetOptions, style: String, laddersShared: Bool = false) {
+        laddersControls.isHidden = view != GeoViewLadders.rawValue
+        laddersSort.selected = sheet.sort == GeoSortSize.rawValue ? 0 : 1
+        laddersScale.selected = laddersShared ? 1 : 0
         if let index = views.firstIndex(of: view) {
             viewSwitch.selected = index
         }

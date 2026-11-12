@@ -116,7 +116,8 @@ final class GalleryCheck {
         }
         var runs: [[String: Any]] = []
         let names = ["plates", "sheet", "ladders", "atlas", "catalogue"]
-        let views = (0..<5).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
+        // The views built so far: Atlas and Catalogue come in G7 and G8.
+        let views = (0..<3).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
         for style in [GeoStyleIllustration, GeoStyleBlueprint, GeoStyleStudio] {
             useStyle(style)
             for view in views {

@@ -1,0 +1,469 @@
+{
+  "label": "mac-chrome-g6-gallery-test-models",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "test-models",
+  "files": 1862,
+  "runs": [
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "",
+      "waited": 88.062,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 120,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "slices",
+      "waited": 1.915,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 142,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "",
+      "waited": 0.916,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 318,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "slices",
+      "waited": 1.166,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 336,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "",
+      "waited": 0.416,
+      "groupsChecked": 16,
+      "over": [],
+      "painted": 297,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.414,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "",
+      "waited": 3.19,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 120,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "slices",
+      "waited": 0.672,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 150,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "",
+      "waited": 0.41,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 318,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "slices",
+      "waited": 0.403,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 336,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "",
+      "waited": 0.406,
+      "groupsChecked": 17,
+      "over": [],
+      "painted": 287,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.404,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 220,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "",
+      "waited": 2.688,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 120,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "large",
+      "waited": 0.401,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 61,
+      "maxDeviation": 0.208
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 40,
+      "maxDeviation": 0.197
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "slices",
+      "waited": 0.66,
+      "groupsChecked": 15,
+      "over": [],
+      "painted": 150,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "",
+      "waited": 0.416,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 316,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 44,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "models",
+      "waited": 0.403,
+      "groupsChecked": 14,
+      "over": [],
+      "painted": 58,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "slices",
+      "waited": 0.414,
+      "groupsChecked": 38,
+      "over": [],
+      "painted": 334,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "",
+      "waited": 0.405,
+      "groupsChecked": 17,
+      "over": [],
+      "painted": 300,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "large",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 24,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "models",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "slices",
+      "waited": 0.403,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 233,
+      "maxDeviation": 0.028
+    }
+  ],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0.208,
+  "scroll": {
+    "folder": "slices/hard",
+    "height": 7195,
+    "frames": 120,
+    "ms": 1990,
+    "longTasks": [],
+    "items": 1696,
+    "longest": 0
+  },
+  "framesWhileCovered": 0,
+  "g3": {
+    "sticky": {
+      "stickyTop": 412.5999755859375,
+      "scroll": 5265,
+      "fromViewTop": -0.006,
+      "layoutTop": 412.594,
+      "aligned": {
+        "groupsChecked": 28,
+        "over": [],
+        "painted": 412,
+        "maxDeviation": 0.02
+      }
+    },
+    "search": {
+      "query": "668",
+      "found": 221,
+      "fadedNodes": 207,
+      "aligned": {
+        "groupsChecked": 38,
+        "over": [],
+        "painted": 316,
+        "maxDeviation": 0.027
+      }
+    },
+    "peek": {
+      "file": "large/stl2m.stl",
+      "fixedNodes": 19,
+      "aligned": {
+        "groupsChecked": 13,
+        "over": [],
+        "painted": 63,
+        "maxDeviation": 0.024
+      }
+    },
+    "switch": {
+      "transition": {
+        "kind": 1,
+        "duration": 520,
+        "fadeOut": 260
+      },
+      "fly": 7,
+      "fadeIn": 0,
+      "flyTiming": [
+        "0+520"
+      ],
+      "fadeTiming": [],
+      "animations": 9,
+      "animationTimings": [
+        "0+520",
+        "0+160",
+        "0+260"
+      ],
+      "selectionKept": true
+    },
+    "zoom": {
+      "into": {
+        "kind": 2,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          264
+        ]
+      },
+      "out": {
+        "kind": 3,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          264
+        ]
+      },
+      "animations": 2,
+      "animationTimings": [
+        "0+420"
+      ]
+    }
+  },
+  "overflowX": {
+    "page": 0,
+    "gallery": 0,
+    "width": 1440
+  }
+}

@@ -28,6 +28,31 @@ public:
     void setReading(u32 file, float fraction);
     void setPoster(bool poster, std::string date);
     void setLost(bool lost);
+    void setLaneScroll(u32 lane, float x) {
+        laneScroll_[lane] = x;
+        // A comparison's card is placed over the hovered part as its lane is scrolled.
+        if (view_ == GeoViewLadders && selected_ != kNone && hoverKind_ == GeoTargetFile) {
+            dirty_ = true;
+        }
+    }
+    void setLadders(bool shared) {
+        if (shared != laddersShared_) {
+            laddersShared_ = shared;
+            dirty_ = true;
+        }
+    }
+    const GeoGalleryLane* laneOf(u32 lane) const {
+        for (const GeoGalleryLane& l : result_.lanes) {
+            if (l.id == lane) {
+                return &l;
+            }
+        }
+        return nullptr;
+    }
+    float laneScroll(u32 lane) const {
+        const auto it = laneScroll_.find(lane);
+        return it == laneScroll_.end() ? 0.0f : it->second;
+    }
     bool poster() const { return poster_; }
     void setChanged(u32 file, bool changed);
 
@@ -67,6 +92,8 @@ public:
     u32 peeking() const { return peek_; }
     /// Where to scroll so the selection shows, or negative if it shows already.
     float reveal() const;
+    /// The selection's lane and the scroll that shows it, if it is in a lane and does not show.
+    std::optional<std::pair<u32, float>> revealLane() const;
     const GeoGalleryTransition& transition() const { return transition_; }
     const std::vector<GeoGalleryTrack>& tracks() const { return tracks_; }
 
@@ -100,6 +127,8 @@ private:
     u32 peek_ = kNone;
     bool poster_ = false;
     bool lost_ = false;
+    bool laddersShared_ = false;
+    std::unordered_map<u32, float> laneScroll_;
     void layoutLost();
     std::string posterDate_;
     // Motion: what the next layout should play, and what the last one did.

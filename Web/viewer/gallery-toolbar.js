@@ -21,6 +21,9 @@ export class GalleryToolbar {
   #sort;
   #look;
   #poster;
+  #ladders;
+  #laddersSort;
+  #laddersScale;
   /** While a poster shows: Save PNG and Done, over its top margin. */
   posterBar;
 
@@ -49,6 +52,14 @@ export class GalleryToolbar {
     this.#sort = segmented(["Name", "Size"], { help: "Order", onChange: (sort) => on.sheet({ sort }) });
     this.#sheet = el("div.group", {}, [el("span.rule"), label("SCALE"), this.#scale.element, label("SIZE"),
                                        this.#size, label("SORT"), this.#sort.element]);
+    // Ladders: the order (shared with Sheet) and the scale, each strip's own or one for all.
+    this.#laddersSort = segmented(["Size", "Name"], { help: "Order", onChange: (i) => on.sheet({ sort: i === 0 ? 1 : 0 }) });
+    this.#laddersScale = segmented(["Each", "Shared"], {
+      help: "Scale", tips: ["Each strip at its own scale", "Every strip at one scale"],
+      onChange: (i) => on.ladders?.({ shared: i === 1 }),
+    });
+    this.#ladders = el("div.group.desktop-only", {}, [el("span.rule"), label("SORT"), this.#laddersSort.element,
+                                                       label("SCALE"), this.#laddersScale.element]);
     this.#look = pill({ icon: icons.palette, title: Styles[0].title, help: "Look", onPress: () => on.look() });
     this.#poster = pill({ icon: icons.poster, title: "Poster", help: "Show it off: the view as a poster (⌥P)",
                           onPress: () => on.poster() });
@@ -58,7 +69,7 @@ export class GalleryToolbar {
     const library = pill({ icon: icons.parts, help: "Library", onPress: () => on.library?.() });
     library.classList.add("phone-only");
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
-                      [library, views, this.#sheet, el("span.rule.desktop-only"), this.#poster, this.#look]);
+                      [library, views, this.#sheet, this.#ladders, el("span.rule.desktop-only"), this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
@@ -66,7 +77,10 @@ export class GalleryToolbar {
   }
 
   /** Shows the view in use among those enabled (a bit each), Sheet's controls, and the style. */
-  show({ view, views, sheet, style }) {
+  show({ view, views, sheet, style, ladders = { shared: false } }) {
+    this.#ladders.classList.toggle("off", view !== 2);
+    this.#laddersSort.selected = sheet.sort === 1 ? 0 : 1;
+    this.#laddersScale.selected = ladders.shared ? 1 : 0;
     this.#buttons.forEach((button, i) => {
       button.hidden = (views & (1 << i)) === 0;
       button.classList.toggle("on", i === view);
