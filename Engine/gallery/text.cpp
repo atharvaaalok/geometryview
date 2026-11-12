@@ -1,5 +1,6 @@
 #include "gallery/text.h"
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -45,6 +46,14 @@ std::string setText(std::string_view utf8, const TextStyle& style, float width) 
         out.pop_back();
     }
     return out + "\xE2\x80\xA6"; // …
+}
+
+TextStyle fitted(std::string_view utf8, TextStyle style, float width, float smallest) {
+    const float used = textWidth(utf8, style);
+    if (width > 0.0f && used > width) {
+        style.size = std::max(std::min(smallest, style.size), style.size * width / used);
+    }
+    return style;
 }
 
 std::string number(double value) {

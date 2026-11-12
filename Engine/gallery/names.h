@@ -7,9 +7,10 @@
 
 namespace geo::gallery {
 
-/// A folder's name as a heading: underscores and runs of spaces become one space, standard codes
-/// are spaced (iso4032 to ISO 4032), words without vowels are capitals (dgbb to DGBB), and other
-/// words start with a capital.
+/// A folder's name as a heading: a zero-padded ordering prefix is dropped ("01 Bells" to Bells),
+/// underscores and runs of spaces become one space, standard codes are spaced (iso4032 to ISO
+/// 4032), words without vowels are capitals (dgbb to DGBB), short words such as "and" or "of" stay
+/// as written between the first word and the last, and other words start with a capital.
 std::string folderTitle(std::string_view name);
 
 /// A file's names on its tile.

@@ -34,6 +34,10 @@ float textWidth(std::string_view utf8, const TextStyle& style);
 /// The text as set: in capitals when the style asks, then cut with an ellipsis to fit `width`.
 std::string setText(std::string_view utf8, const TextStyle& style, float width);
 
+/// The style at its own size or smaller, down to `smallest` points, so the text fits `width` whole
+/// if it can: a title shrinks before it is cut short.
+TextStyle fitted(std::string_view utf8, TextStyle style, float width, float smallest);
+
 /// Where a line's box starts, above its baseline, and the box's height: as a browser lays a line
 /// whose height is its font's ascent and descent.
 inline float ascentOf(const TextStyle& style) {

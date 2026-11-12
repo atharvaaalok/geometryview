@@ -24,6 +24,26 @@ TEST_CASE("folder names read as headings, for any library") {
     CHECK(folderTitle("stepper_nema") == "Stepper Nema");
     CHECK(folderTitle("din912 screws") == "DIN 912 Screws");
     CHECK(folderTitle("gt2") == "GT2");
+    CHECK(folderTitle("01 Organ Pipes") == "Organ Pipes"); // ordered as named, shown without
+    CHECK(folderTitle("007_bells") == "Bells");
+    CHECK(folderTitle("0042") == "0042"); // all prefix: it is the name
+    CHECK(folderTitle("2024 parts") == "2024 Parts");
+    CHECK(folderTitle("07 Wheels and Pinions") == "Wheels and Pinions");
+    CHECK(folderTitle("bill_of_materials") == "Bill of Materials");
+    CHECK(folderTitle("in stock") == "In Stock"); // the first word and the last are capitals
+    CHECK(folderTitle("type_a") == "Type A");
+    CHECK(folderTitle("Nuts And Bolts") == "Nuts And Bolts"); // as written
+}
+
+TEST_CASE("a title shrinks to fit before it is cut short") {
+    const TextStyle big{30.0f, 600, 0.0f, false};
+    const std::string title = "Things That Come in Sizes"; // 25 characters, 450 points at 30
+    CHECK(fitted(title, big, 500.0f, 20.0f).size == 30.0f);
+    CHECK(fitted(title, big, 360.0f, 20.0f).size == doctest::Approx(24.0f));
+    const TextStyle least = fitted(title, big, 200.0f, 20.0f);
+    CHECK(least.size == 20.0f);
+    CHECK(setText(title, least, 200.0f).ends_with("\xE2\x80\xA6"));      // and below that, cut
+    CHECK(fitted(title, TextStyle{12.0f}, 100.0f, 20.0f).size == 12.0f); // never grows
 }
 
 TEST_CASE("file names drop their extension and ordering prefix, and an id gives way") {

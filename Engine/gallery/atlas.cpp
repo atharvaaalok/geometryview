@@ -525,7 +525,9 @@ public:
         float y = top + pad + ascentOf(eyebrow);
         out.text("An atlas of", eyebrow, palette.muted, lx, y, w - 2.0f * pad - 30.0f);
         y += 30.0f;
-        out.text(tree.titleOf(in.folder), title, palette.on, lx, y, w - 2.0f * pad - 30.0f);
+        const std::string heading = tree.titleOf(in.folder);
+        out.text(heading, fitted(heading, title, w - 2.0f * pad - 30.0f, 14.0f), palette.on, lx, y,
+                 w - 2.0f * pad - 30.0f);
         y += 20.0f;
         const u32 n = tree.folder(in.folder).count;
         out.text(bands ? count(n, "part") + " by size \xC2\xB7 no subfolders"
