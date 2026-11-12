@@ -285,6 +285,12 @@ final class MainWindow: NSWindow {
         galleryToolbar.onLadders = { [weak self] shared in
             self?.galleryController.setLadders(shared: shared)
         }
+        galleryToolbar.onAtlasLevel = { [weak self] level in
+            self?.galleryController.atlas(level: level)
+        }
+        galleryToolbar.onAtlasStep = { [weak self] step in
+            self?.galleryController.atlas(step: step)
+        }
         libraryCard.onSearch = { [weak self] query in self?.galleryController.search(query) }
         libraryCard.onSearchDone = { [weak self] in
             guard let self, inGallery else {
@@ -818,7 +824,8 @@ final class MainWindow: NSWindow {
             view: galleryController.gallery.view,
             sheet: galleryController.sheet,
             style: look.style.title,
-            laddersShared: galleryController.laddersShared
+            laddersShared: galleryController.laddersShared,
+            atlasLevel: galleryController.gallery.atlasLevel
         )
     }
 

@@ -1,0 +1,670 @@
+{
+  "label": "mac-chrome-g6-gallery-designlib",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "designlib",
+  "files": 166,
+  "runs": [
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "",
+      "waited": 10.233,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 87,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 2.177,
+      "groupsChecked": 23,
+      "over": [],
+      "painted": 140,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 35,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "",
+      "waited": 0.402,
+      "groupsChecked": 31,
+      "over": [],
+      "painted": 191,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 33,
+      "over": [],
+      "painted": 220,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "",
+      "waited": 0.405,
+      "groupsChecked": 19,
+      "over": [],
+      "painted": 290,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "gallery",
+      "waited": 0.405,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 299,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 2,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 32,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 36,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 26,
+      "over": [],
+      "painted": 115,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 74,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 70,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 18,
+      "over": [],
+      "painted": 93,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 5,
+      "over": [],
+      "painted": 59,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "folder": "review",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 1,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 0,
+      "view": 3,
+      "level": 2,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "",
+      "waited": 0.408,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 89,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 23,
+      "over": [],
+      "painted": 143,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 35,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "",
+      "waited": 0.402,
+      "groupsChecked": 31,
+      "over": [],
+      "painted": 191,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.402,
+      "groupsChecked": 33,
+      "over": [],
+      "painted": 220,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 3,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "",
+      "waited": 0.404,
+      "groupsChecked": 19,
+      "over": [],
+      "painted": 297,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "gallery",
+      "waited": 0.404,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 306,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 2,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 39,
+      "maxDeviation": 0.018
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "",
+      "waited": 0.401,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 36,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 26,
+      "over": [],
+      "painted": 115,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 74,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 70,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 18,
+      "over": [],
+      "painted": 93,
+      "maxDeviation": 0.027
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 5,
+      "over": [],
+      "painted": 59,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "folder": "review",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 1,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 3,
+      "view": 3,
+      "level": 2,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "",
+      "waited": 0.415,
+      "groupsChecked": 11,
+      "over": [],
+      "painted": 89,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 23,
+      "over": [],
+      "painted": 143,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 0,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 4,
+      "over": [],
+      "painted": 35,
+      "maxDeviation": 0.019
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "",
+      "waited": 0.404,
+      "groupsChecked": 31,
+      "over": [],
+      "painted": 191,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "gallery",
+      "waited": 0.404,
+      "groupsChecked": 33,
+      "over": [],
+      "painted": 220,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 1,
+      "folder": "review",
+      "waited": 0.403,
+      "groupsChecked": 13,
+      "over": [],
+      "painted": 52,
+      "maxDeviation": 0.024
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "",
+      "waited": 0.404,
+      "groupsChecked": 19,
+      "over": [],
+      "painted": 292,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "gallery",
+      "waited": 0.404,
+      "groupsChecked": 21,
+      "over": [],
+      "painted": 303,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 2,
+      "folder": "review",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 33,
+      "maxDeviation": 0.023
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "",
+      "waited": 0.403,
+      "groupsChecked": 6,
+      "over": [],
+      "painted": 36,
+      "maxDeviation": 0.03
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 26,
+      "over": [],
+      "painted": 115,
+      "maxDeviation": 0.028
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "",
+      "waited": 0,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 74,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "gallery",
+      "waited": 0.403,
+      "groupsChecked": 12,
+      "over": [],
+      "painted": 70,
+      "maxDeviation": 0.025
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 18,
+      "over": [],
+      "painted": 93,
+      "maxDeviation": 0.026
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "gallery",
+      "waited": 0,
+      "groupsChecked": 5,
+      "over": [],
+      "painted": 59,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "folder": "review",
+      "waited": 0.402,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.021
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 1,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 2,
+      "over": [],
+      "painted": 12,
+      "maxDeviation": 0.022
+    },
+    {
+      "style": 5,
+      "view": 3,
+      "level": 2,
+      "folder": "review",
+      "waited": 0,
+      "groupsChecked": 1,
+      "over": [],
+      "painted": 15,
+      "maxDeviation": 0.024
+    }
+  ],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0.03,
+  "scroll": {
+    "folder": "review",
+    "height": 0,
+    "frames": 120,
+    "ms": 1987,
+    "longTasks": [],
+    "items": 12,
+    "longest": 0
+  },
+  "framesWhileCovered": 0,
+  "g3": {
+    "sticky": {
+      "stickyTop": 231.6199951171875,
+      "scroll": 1432,
+      "fromViewTop": -0.011,
+      "layoutTop": 231.609,
+      "aligned": {
+        "groupsChecked": 46,
+        "over": [],
+        "painted": 345,
+        "maxDeviation": 0.026
+      }
+    },
+    "search": {
+      "query": "600",
+      "found": 29,
+      "fadedNodes": 48,
+      "aligned": {
+        "groupsChecked": 31,
+        "over": [],
+        "painted": 191,
+        "maxDeviation": 0.025
+      }
+    },
+    "peek": {
+      "file": "gallery/assembly/belt_axis/all-sizes.step",
+      "fixedNodes": 19,
+      "aligned": {
+        "groupsChecked": 35,
+        "over": [],
+        "painted": 239,
+        "maxDeviation": 0.023
+      }
+    },
+    "switch": {
+      "transition": {
+        "kind": 1,
+        "duration": 520,
+        "fadeOut": 260
+      },
+      "fly": 65,
+      "fadeIn": 87,
+      "flyTiming": [
+        "0+520"
+      ],
+      "fadeTiming": [
+        "182+338"
+      ],
+      "animations": 55,
+      "animationTimings": [
+        "0+520",
+        "182+338",
+        "0+160",
+        "0+260"
+      ],
+      "selectionKept": true
+    },
+    "zoom": {
+      "into": {
+        "kind": 2,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          277
+        ]
+      },
+      "out": {
+        "kind": 3,
+        "duration": 420,
+        "rect": [
+          6,
+          2,
+          521,
+          277
+        ]
+      },
+      "animations": 2,
+      "animationTimings": [
+        "0+420"
+      ]
+    }
+  },
+  "overflowX": {
+    "page": 0,
+    "gallery": 0,
+    "width": 1440
+  }
+}

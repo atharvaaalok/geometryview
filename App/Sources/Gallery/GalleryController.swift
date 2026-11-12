@@ -52,6 +52,7 @@ final class GalleryController {
         view.onAction = { [weak self] action in self?.act(action) }
         view.onViewChanged = { [weak self] in self?.scheduleWant() }
         view.onSearchChanged = { [weak self] in self?.onSearchChanged?() }
+        view.onAtlasMoved = { [weak self] in self?.onChanged?() }
         library?.onEvent = { [weak self] event in self?.receive(event) }
     }
 
@@ -71,6 +72,15 @@ final class GalleryController {
         sheet = options
         sheet.save()
         gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
+        view.reload()
+        onChanged?()
+        scheduleWant()
+    }
+
+    /// Atlas: goes to a level, or a step in (1) or out (−1).
+    func atlas(level: Int? = nil, step: Int = 0) {
+        gallery.atlasLevel(level ?? max(0, min(2, gallery.atlasLevel + step)))
+        view.repaint()
         view.reload()
         onChanged?()
         scheduleWant()

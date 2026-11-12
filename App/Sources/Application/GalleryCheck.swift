@@ -116,8 +116,8 @@ final class GalleryCheck {
         }
         var runs: [[String: Any]] = []
         let names = ["plates", "sheet", "ladders", "atlas", "catalogue"]
-        // The views built so far: Atlas and Catalogue come in G7 and G8.
-        let views = (0..<3).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
+        // The views built so far: Catalogue comes in G8.
+        let views = (0..<4).map(UInt32.init).filter { controller.gallery.views & (1 << $0) != 0 }
         for style in [GeoStyleIllustration, GeoStyleBlueprint, GeoStyleStudio] {
             useStyle(style)
             for view in views {
@@ -137,6 +137,19 @@ final class GalleryCheck {
                     run["waitedSeconds"] = waited
                     run["waitingInView"] = controller.waitingInView
                     runs.append(run)
+                    if view == GeoViewAtlas.rawValue {
+                        // Atlas closer in: the districts, then every part named.
+                        for level in [1, 2] {
+                            controller.atlas(level: level)
+                            _ = await settle()
+                            var closer = measure()
+                            closer["style"] = Int(style.rawValue)
+                            closer["view"] = Int(view)
+                            closer["level"] = level
+                            closer["folder"] = controller.gallery.folder
+                            runs.append(closer)
+                        }
+                    }
                     print(
                         "gallery-check: style \(style.rawValue) \(names[Int(view)]) \(controller.gallery.folder.isEmpty ? "/" : controller.gallery.folder): \(run["groupsChecked"] ?? 0) groups, \((run["over"] as? [Any])?.count ?? 0) over 0.5 pt, waited \(String(format: "%.1f", waited)) s"
                     )

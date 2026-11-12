@@ -800,13 +800,14 @@ TEST_CASE("on a phone, plates stand two abreast, the sheet three, and Peek fits"
 
 TEST_CASE("no two texts on one line overlap, from a phone's width to a wide window") {
     for (const float width : {374.0f, 500.0f, 1080.0f, 1800.0f}) {
-        for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet), u32(GeoViewLadders)}) {
+        for (const u32 view :
+             {u32(GeoViewPlates), u32(GeoViewSheet), u32(GeoViewLadders), u32(GeoViewAtlas)}) {
             for (const char* folder : {"", "bearing", "motor"}) {
                 CAPTURE(width);
                 CAPTURE(view);
                 CAPTURE(folder);
                 Gallery g = measured();
-                g.setViews(0b111);
+                g.setViews(0b1111);
                 g.setViewport(width, 720.0f);
                 REQUIRE(g.setFolder(folder));
                 g.setView(view);
@@ -1043,4 +1044,79 @@ TEST_CASE("ladders: arrows along a strip scroll its lane to show the selection")
     REQUIRE(reveal.has_value()); // past the track's end
     g.setLaneScroll(reveal->first, reveal->second);
     CHECK_FALSE(g.revealLane().has_value()); // shown, centred
+}
+
+// ---- G7: Atlas
+// --------------------------------------------------------------------------------------
+
+TEST_CASE("atlas: the folder as a map, fitted, its regions named, its card in the corner") {
+    for (const u32 style : {0u, 3u, 5u}) {
+        CAPTURE(style);
+        Gallery g = measured();
+        g.setViews(0b1111);
+        g.setStyle(style);
+        REQUIRE(g.setView(GeoViewAtlas));
+        g.layout();
+        for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+            CHECK(spread.spread < 0.01f);
+        }
+        CHECK(g.result().contentHeight == 720.0f); // it pans; it does not scroll
+        CHECK(countText(g, "BEARING") == 1);       // the regions, named in capitals
+        CHECK(countText(g, "MOTOR") == 1);
+        CHECK(countText(g, "Regions \xC2\xB7 100%") == 1); // the card's level
+        usize fixed = 0;
+        for (const GeoGalleryItem& item : g.display().items()) {
+            fixed += (item.flags & GeoItemFixed) != 0 ? 1 : 0;
+            if ((item.flags & GeoItemFixed) == 0 && item.kind == GeoItemPicture) {
+                CHECK(item.x + item.width > 0.0f); // drawn only where it shows
+            }
+        }
+        CHECK(fixed > 4);
+    }
+}
+
+TEST_CASE("atlas: each level in draws more, and zooming keeps the point under the pointer") {
+    Gallery g = measured();
+    g.setViews(0b1111);
+    g.setView(GeoViewAtlas);
+    g.layout();
+    const usize far = g.result().parts.size();
+    AtlasCamera cam = g.atlasCamera();
+    // The map point under (300, 200) stays there as it zooms.
+    const float mx = (300.0f - cam.x) / cam.k, my = (200.0f - cam.y) / cam.k;
+    const float k = cam.k * 2.5f;
+    g.setAtlasCamera(k, 300.0f - (300.0f - cam.x) * k / cam.k,
+                     200.0f - (200.0f - cam.y) * k / cam.k);
+    cam = g.atlasCamera();
+    CHECK((mx * cam.k + cam.x) == doctest::Approx(300.0f));
+    CHECK((my * cam.k + cam.y) == doctest::Approx(200.0f));
+    g.layout();
+    CHECK(countText(g, "Districts") == 1);
+    // Closest: every part in view is named under its cell.
+    g.setAtlasCamera(cam.fit * 6.0f, cam.x, cam.y);
+    g.layout();
+    CHECK(countText(g, "Parts \xC2\xB7 600%") == 1);
+    usize named = 0;
+    for (const auto& p : g.result().parts) {
+        named += countText(g, g.tree().file(p.index).names.label) > 0 ? 1 : 0;
+    }
+    CHECK(named == g.result().parts.size());
+    CHECK(far > 0);
+    for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+        CHECK(spread.spread < 0.01f);
+    }
+}
+
+TEST_CASE("atlas: the card takes clicks, and a search drops pins") {
+    Gallery g = measured();
+    g.setViews(0b1111);
+    g.setView(GeoViewAtlas);
+    g.layout();
+    // A click on the card selects nothing beneath it.
+    const GeoGalleryHit card = g.hit(20.0f, 700.0f);
+    CHECK(card.target_kind == GeoTargetPeek);
+    CHECK(g.click(card.target_kind, card.target, false).kind == GeoActionNone);
+    g.setSearch("m12");
+    g.layout();
+    CHECK(countText(g, "Districts") == 1); // a search shows at least the districts
 }

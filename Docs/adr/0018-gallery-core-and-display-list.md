@@ -169,3 +169,14 @@ and time, without reading anything.
 - A strip's few far larger parts go after a divider at a scale of their own.
 - Parts stand by their ink on the ruler; that line is their alignment group.
 - Hover shows calipers; with a part chosen, a card gives the difference.
+
+## Addendum (2026-11-11): G7, Atlas and its camera
+
+**19. A view can be a map seen through a camera.**
+- Atlas lays the folder out in map units: regions squarified by the square root of their counts,
+  districts inside them. It draws only what shows, in the view's points, through a camera the core
+  holds (`geo_gallery_atlas_camera`, `_zoom`, `_pan`, `_level`).
+- Text keeps its size on screen; the level of detail follows the zoom.
+- The content never scrolls. Painters turn wheels, pinches and drags into the camera's moves and
+  draw again.
+- The map card is fixed in the view, like Peek's items, and takes its own clicks.

@@ -118,6 +118,24 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_set_lane_scroll(GeoGallery* gallery, uint32
     geo_gallery_set_lane_scroll(gallery, lane, x);
 }
 
+/// Atlas's camera as 4 floats: k, x, y, and the k that fits the map.
+EMSCRIPTEN_KEEPALIVE void gv_gallery_atlas_camera(GeoGallery* gallery, float* out) {
+    geo_gallery_atlas_camera(gallery, out);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_atlas_zoom(GeoGallery* gallery, float factor, float x,
+                                                float y) {
+    geo_gallery_atlas_zoom(gallery, factor, x, y);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_atlas_pan(GeoGallery* gallery, float dx, float dy) {
+    geo_gallery_atlas_pan(gallery, dx, dy);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_atlas_level(GeoGallery* gallery, uint32_t level) {
+    geo_gallery_atlas_level(gallery, level);
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_ladders(GeoGallery* gallery, int shared) {
     geo_gallery_set_ladders(gallery, shared != 0);
 }

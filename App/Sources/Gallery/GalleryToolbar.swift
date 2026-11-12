@@ -13,6 +13,9 @@ final class GalleryToolbar: StickerCard {
     var onPoster: (() -> Void)?
     /// Ladders' scale chosen: true for one shared by every strip.
     var onLadders: ((Bool) -> Void)?
+    /// Atlas: a level chosen, or a step in (1) or out (−1).
+    var onAtlasLevel: ((Int) -> Void)?
+    var onAtlasStep: ((Int) -> Void)?
 
     private static let names = ["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]
     private static let icons: [Icons.Name] = [.plates, .sheet, .ladders, .atlas, .catalogue]
@@ -38,6 +41,14 @@ final class GalleryToolbar: StickerCard {
     )
     private let sheetControls: NSStackView
     private let laddersControls: NSStackView
+    private let atlasControls: NSStackView
+    private let atlasLevels = SegmentedPill(
+        ["Regions", "Districts", "Parts"],
+        selected: 0,
+        help: "Level"
+    )
+    private let atlasOut = PillButton(title: "\u{2212}", help: "Zoom out a level (\u{2212})")
+    private let atlasIn = PillButton(title: "+", help: "Zoom in a level (+)")
     private let laddersSort = SegmentedPill(["Size", "Name"], selected: 0, help: "Order")
     private let laddersScale = SegmentedPill(
         ["Each", "Shared"],
@@ -60,6 +71,7 @@ final class GalleryToolbar: StickerCard {
         )
         sheetControls = NSStackView(views: [])
         laddersControls = NSStackView(views: [])
+        atlasControls = NSStackView(views: [])
         super.init()
         let label = { (text: String) -> NSTextField in
             let field = NSTextField(labelWithString: "")
@@ -83,6 +95,14 @@ final class GalleryToolbar: StickerCard {
         }
         laddersControls.orientation = .horizontal
         laddersControls.spacing = 8
+        for view in [Self.rule(), atlasOut, atlasLevels, atlasIn] {
+            atlasControls.addArrangedSubview(view)
+        }
+        atlasControls.orientation = .horizontal
+        atlasControls.spacing = 8
+        atlasLevels.onChange = { [weak self] level in self?.onAtlasLevel?(level) }
+        atlasOut.onPress = { [weak self] in self?.onAtlasStep?(-1) }
+        atlasIn.onPress = { [weak self] in self?.onAtlasStep?(1) }
         laddersSort.onChange = { [weak self] index in self?.change { $0.sort = index == 0 ? 1 : 0 }
         }
         laddersScale.onChange = { [weak self] index in self?.onLadders?(index == 1) }
@@ -103,7 +123,7 @@ final class GalleryToolbar: StickerCard {
         poster.onPress = { [weak self] in self?.onPoster?() }
 
         let stack = NSStackView(views: [
-            viewSwitch, sheetControls, laddersControls, Self.rule(), poster, look,
+            viewSwitch, sheetControls, laddersControls, atlasControls, Self.rule(), poster, look,
         ])
         stack.orientation = .horizontal
         stack.spacing = 8
@@ -124,7 +144,15 @@ final class GalleryToolbar: StickerCard {
     }
 
     /// Shows the view in use, Sheet's controls, and the style's name.
-    func show(view: UInt32, sheet: SheetOptions, style: String, laddersShared: Bool = false) {
+    func show(
+        view: UInt32,
+        sheet: SheetOptions,
+        style: String,
+        laddersShared: Bool = false,
+        atlasLevel: Int = 0
+    ) {
+        atlasControls.isHidden = view != GeoViewAtlas.rawValue
+        atlasLevels.selected = atlasLevel
         laddersControls.isHidden = view != GeoViewLadders.rawValue
         laddersSort.selected = sheet.sort == GeoSortSize.rawValue ? 0 : 1
         laddersScale.selected = laddersShared ? 1 : 0

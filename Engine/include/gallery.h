@@ -272,6 +272,16 @@ uint32_t geo_gallery_view(const GeoGallery* gallery);
 /// order (GeoGallerySort).
 void geo_gallery_set_sheet(GeoGallery* gallery, uint32_t scale, float cell, uint32_t sort);
 
+/// Atlas's camera: view points = map units × k + (x, y), as 4 floats: k, x, y, and the k that fits
+/// the whole map.
+void geo_gallery_atlas_camera(const GeoGallery* gallery, float* out);
+void geo_gallery_set_atlas_camera(GeoGallery* gallery, float k, float x, float y);
+/// Zooms the map by `factor` about a point of the view, or pans it by (dx, dy) view points.
+void geo_gallery_atlas_zoom(GeoGallery* gallery, float factor, float x, float y);
+void geo_gallery_atlas_pan(GeoGallery* gallery, float dx, float dy);
+/// Zooms to a level, about the view's middle: 0 the whole map (regions), 1 districts, 2 every part.
+void geo_gallery_atlas_level(GeoGallery* gallery, uint32_t level);
+
 /// Ladders' scale: each strip its own (false), or one for every strip (true).
 void geo_gallery_set_ladders(GeoGallery* gallery, bool shared);
 

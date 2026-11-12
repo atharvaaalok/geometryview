@@ -24,6 +24,8 @@ export class GalleryToolbar {
   #ladders;
   #laddersSort;
   #laddersScale;
+  #atlas;
+  #atlasLevels;
   /** While a poster shows: Save PNG and Done, over its top margin. */
   posterBar;
 
@@ -60,6 +62,12 @@ export class GalleryToolbar {
     });
     this.#ladders = el("div.group.desktop-only", {}, [el("span.rule"), label("SORT"), this.#laddersSort.element,
                                                        label("SCALE"), this.#laddersScale.element]);
+    // Atlas: out a level, the level, in a level.
+    this.#atlasLevels = segmented(["Regions", "Districts", "Parts"], { help: "Level", onChange: (level) => on.atlas?.({ level }) });
+    this.#atlas = el("div.group", {}, [el("span.rule"),
+      pill({ title: "\u2212", help: "Zoom out a level (\u2212)", onPress: () => on.atlas?.({ step: -1 }) }),
+      this.#atlasLevels.element,
+      pill({ title: "+", help: "Zoom in a level (+)", onPress: () => on.atlas?.({ step: 1 }) })]);
     this.#look = pill({ icon: icons.palette, title: Styles[0].title, help: "Look", onPress: () => on.look() });
     this.#poster = pill({ icon: icons.poster, title: "Poster", help: "Show it off: the view as a poster (⌥P)",
                           onPress: () => on.poster() });
@@ -69,7 +77,8 @@ export class GalleryToolbar {
     const library = pill({ icon: icons.parts, help: "Library", onPress: () => on.library?.() });
     library.classList.add("phone-only");
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
-                      [library, views, this.#sheet, this.#ladders, el("span.rule.desktop-only"), this.#poster, this.#look]);
+                      [library, views, this.#sheet, this.#ladders, this.#atlas, el("span.rule.desktop-only"), this.#poster,
+                       this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
       pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
@@ -77,7 +86,9 @@ export class GalleryToolbar {
   }
 
   /** Shows the view in use among those enabled (a bit each), Sheet's controls, and the style. */
-  show({ view, views, sheet, style, ladders = { shared: false } }) {
+  show({ view, views, sheet, style, ladders = { shared: false }, atlasLevel = 0 }) {
+    this.#atlas.classList.toggle("off", view !== 3);
+    this.#atlasLevels.selected = atlasLevel;
     this.#ladders.classList.toggle("off", view !== 2);
     this.#laddersSort.selected = sheet.sort === 1 ? 0 : 1;
     this.#laddersScale.selected = ladders.shared ? 1 : 0;
