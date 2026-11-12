@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Makes the icons from App/Resources/AppIcon.png, a 1024 px master: the GP52C flange rendered in
-# Studio by gcli at azimuth 45° and elevation 32°, on a rounded charcoal tile.
+# Makes the icons from App/Resources/AppIcon.png, a 1024 px master: four nesting dolls from the
+# showcase, cut in half and seen head-on, on a rounded charcoal tile (Tools/media/app_icon.py).
 #
 #   Tools/make_icons.sh <out.icns>     the app's icon, as the build makes it
 #   Tools/make_icons.sh --web          the web viewer's icons, in Web/viewer/icons

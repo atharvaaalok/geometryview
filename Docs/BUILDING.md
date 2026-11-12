@@ -147,8 +147,9 @@ The app has switches for measuring and checking it:
   sizes the window, `--card structure` shows the opened file's structure, and `--plain` leaves out
   the view cube and scale bar. In the browser viewer, `?plain` does the same.
 
-`Tools/make_icons.sh --web` remakes the web viewer's icons from the app icon's master,
-`App/Resources/AppIcon.png`.
+`python3 Tools/media/app_icon.py` draws the app icon's master, `App/Resources/AppIcon.png`, from the
+showcase's nesting dolls; the Mac app's icon is made from it as the app builds, and
+`Tools/make_icons.sh --web` and `--ios` remake the web viewer's and the iPhone shell's.
 
 ## The README's pictures
 
