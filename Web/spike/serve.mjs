@@ -141,10 +141,11 @@ const server = createServer(async (request, response) => {
     response.writeHead(204, headers).end();
     return;
   }
-  const path = url.pathname === "/" ? "/index.html" : url.pathname;
+  // Paths arrive percent-encoded: a file named "01 Flue pipe C4.step", or a folder mounted as
+  // "Things That Come in Sizes", is asked for with %20.
+  const path = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const [prefix, directory] = mounts.find(([p]) => path.startsWith(p));
-  // Paths arrive percent-encoded: a file named "01 Flue pipe C4.step" is asked for with %20.
-  const name = decodeURIComponent(path.slice(prefix.length)) || "index.html";
+  const name = path.slice(prefix.length) || "index.html";
   if (name.includes("..")) {
     response.writeHead(400, headers).end();
     return;
