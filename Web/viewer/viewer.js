@@ -1698,9 +1698,14 @@ async function galleryMotionChecks(g, root, subfolders, measure, settle) {
   out.sticky = { ...stuck, aligned: measure() };
   clip.scrollTop = 0;
   // A search: what it did not find painted at 22%.
-  const probe = g.core.path(g.core.wanted()[0]?.file ?? 0).split("/").pop().slice(0, 3);
+  const probe = params.get("search") ?? g.core.path(g.core.wanted()[0]?.file ?? 0).split("/").pop().slice(0, 3);
   g.setSearch(probe);
   await new Promise(requestAnimationFrame);
+  if (params.has("shots")) {
+    await settle();
+    await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-search`)}`);
+    await sleep(1500);
+  }
   const faded = [...g.view.element.querySelectorAll(".gallery-content > :not([hidden])")].filter((n) => n.style.opacity === "0.22").length;
   out.search = { query: probe, found: g.core.matches, fadedNodes: faded, aligned: measure() };
   g.setSearch("");
