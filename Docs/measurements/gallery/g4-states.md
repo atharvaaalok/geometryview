@@ -105,3 +105,28 @@ It is left for when the phone can be cabled and the folder connected.
 - The same core in wasm: 236 cases.
 - `npm test` in Launcher: 60 of 61, 1 skipped as before. Among them are the five tools,
   view_folder, and the cache's sweep.
+
+## The iPhone's memory (measured 2026-11-11, evening, Pacific Time)
+
+The gallery's check on test-models (1,862 files, 4.4 GB, copied into the shell's Documents), run
+by the shell on an iPhone 16 Pro over USB with all five views in Illustration, while Instruments'
+Activity Monitor recorded every process:
+
+| Run | The page's peak | Median | What happened |
+|---|---|---|---|
+| Before | 916 MB, sustained 600-780 MB | — | a memory warning, then the page was killed after about a minute |
+| After | **489 MB** | 294 MB | the whole check: 44 runs, 0 groups over 0.5 pt, 120 frames scrolled in 2.0 s |
+
+The criterion was at most 600 MB, with a gate of 900 MB: met. What it took, on phones only:
+- **Files fetched to be looked up.** The shell's store reads a file whole, and looking up a picture
+  fetched its file first for its size and time, so a 500 MB STL passed through the page even when
+  its picture was kept. On the shell, the walk's sizes and times find a file in the caches now.
+- **Imports.** STEP files over 12 MB and STL files over 16 MB are left to a computer, shown as
+  files that could not be drawn, saying why; the importer is let go after each file; no detail
+  pictures.
+- **Pictures held decoded.** 320-pixel pictures, not supersampled; half a view painted beyond
+  what shows; a picture no longer painted lets go of its image; the picture worker replaced above
+  128 MB.
+
+Instruments lost the phone about a minute into every recording over Wi-Fi; over USB it recorded
+throughout. Report: `iphone/iphone-loopback-g4mem5-g9-gallery-test-models.json`.

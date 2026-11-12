@@ -11,6 +11,17 @@ import { keptImport, keptPicture, keyOf, pictureKeyOf } from "./kept.js";
 
 const kBands = ["open", "visible", "near", "prefetch"];
 
+// A phone stops a page well before it would on a computer, and its gallery imports alongside its
+// pictures and page: a file larger than this is not imported there. It shows as a file that could
+// not be drawn, saying why, and opens on a computer. A STEP file's import takes many times its
+// size (a 16 MB file 390-700 MB on an iPhone 16 Pro), an STL file's about 115 bytes a triangle.
+export const kPhoneStepBytes = 12 * 1024 ** 2;
+export const kPhoneStlBytes = 16 * 1024 ** 2;
+
+function tooLargeForPhone(bytes) {
+  return new Error(`Too large to draw on a phone (${Math.round(bytes / 1024 ** 2)} MB). Open it on a computer.`);
+}
+
 export class GalleryLibrary {
   #importers;
   #thumbnailer;
@@ -51,7 +62,12 @@ export class GalleryLibrary {
    * known, and reading(path, fraction) while a file is imported. `version` is the cache files'
    * version, which keys hold.
    */
-  constructor({ importers, thumbnailer, version, phone = false }, on) {
+  // Whether the walk's sizes and times find a file in the caches, so the file itself is fetched
+  // only to import it: the shell's are its own, and fetching a file there reads all of it.
+  #walkStats;
+
+  constructor({ importers, thumbnailer, version, phone = false, walkStats = false }, on) {
+    this.#walkStats = walkStats;
     this.#importers = importers;
     this.#thumbnailer = thumbnailer;
     this.#version = version;
@@ -83,7 +99,7 @@ export class GalleryLibrary {
     for (const w of wants) {
       if (this.#done.has(w.path) || this.#failed.has(w.path)) continue;
       jobs.push({ id: w.path, band: kBands[w.band] ?? "prefetch", order: w.order, bytes: w.bytes ?? 0,
-                  run: (signal) => (this.#lost ? this.#kept(w) : this.#draw(w.path, w.folderColor, signal)) });
+                  run: (signal) => (this.#lost ? this.#kept(w) : this.#draw(w.path, w.folderColor, signal, w)) });
     }
     this.#importers.want(jobs, {
       onDone: (path) => this.#done.add(path),
@@ -94,15 +110,39 @@ export class GalleryLibrary {
     });
   }
 
-  async #draw(path, folderColor, signal) {
+  // Where a file is in the caches: its key, from the size and time its walk gave where they are
+  // trusted, else from the file itself, fetched. { key, bytes, file }, the file null until needed.
+  async #locate(path, stat) {
+    const root = this.#root;
+    let file = null, bytes = stat?.bytes ?? 0, modified = stat?.modified ?? 0;
+    if (!this.#walkStats || !(bytes > 0 && modified > 0)) {
+      file = await this.#folders.file(root.id, path);
+      if (!file) throw new Error("This file could not be read.");
+      bytes = file.size;
+      modified = file.lastModified;
+      // Its size and time, kept with the listing, find its picture again if the folder cannot be read.
+      this.#on.measured?.(path, bytes, modified);
+    }
+    const key = await keyOf({ source: root.name, path, size: bytes, modified, version: this.#version });
+    return { key, bytes, file };
+  }
+
+  // The file itself, to import it: fetched now if its walk found it.
+  async #fileOf(path, located) {
+    located.file ??= await this.#folders.file(this.#root.id, path);
+    if (!located.file) throw new Error("This file could not be read.");
+    return located.file;
+  }
+
+  #tooLarge(path, bytes) {
+    return this.#phone && bytes > (/\.stl$/i.test(path) ? kPhoneStlBytes : kPhoneStepBytes);
+  }
+
+  async #draw(path, folderColor, signal, stat) {
     const root = this.#root, spec = this.#spec;
     if (!root || !spec) return;
-    const file = await this.#folders.file(root.id, path);
-    if (!file) throw new Error("This file could not be read.");
-    // Its size and time, kept with the listing, find its picture again if the folder cannot be read.
-    this.#on.measured?.(path, file.size, file.lastModified);
-    const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
-                              version: this.#version });
+    const located = await this.#locate(path, stat);
+    const { key } = located;
     const picture = await pictureKeyOf({ ...spec, folderColor, version: this.#version });
     // Kept before: its facts at once, and its picture if drawn in this spec.
     const kept = await keptPicture(key, picture);
@@ -114,8 +154,10 @@ export class GalleryLibrary {
     if (signal.aborted) throw new Error("cancelled");
     // Its import kept before, or imported now.
     let blob = (await keptImport(key, this.#version))?.blob;
+    if (!blob && this.#tooLarge(path, located.bytes)) throw tooLargeForPhone(located.bytes);
     if (!blob) {
       this.#on.reading?.(path, 0);
+      const file = await this.#fileOf(path, located);
       blob = await this.#import(file, key, signal, (fraction) => this.#on.reading?.(path, fraction));
     }
     const drawn = await this.#thumbnailer.draw(blob, spec, -1, { folderColor, keep: { key, picture } });
@@ -130,20 +172,20 @@ export class GalleryLibrary {
    * twice the pixels a point, kept like the gallery's and read back if kept. The file is imported
    * first if its import was not kept. Resolves to { png, note }, or null when it cannot be drawn.
    */
-  async detail(path, folderColor, signal) {
+  async detail(path, folderColor, signal, stat) {
     const root = this.#root, spec = this.#spec;
     if (!root || !spec) return null;
     const detail = { ...spec, pixels: spec.pixels * 2, pixelsPerPoint: spec.pixelsPerPoint * 2, supersample: 1 };
-    const file = await this.#folders.file(root.id, path);
-    if (!file) return null;
-    const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
-                              version: this.#version });
+    const located = await this.#locate(path, stat).catch(() => null);
+    if (!located) return null;
+    const { key } = located;
     const picture = await pictureKeyOf({ ...detail, folderColor, version: this.#version });
     const kept = await keptPicture(key, picture);
     if (kept?.png && kept.note) return { png: kept.png, note: kept.note };
     if (signal.aborted) return null;
     let blob = (await keptImport(key, this.#version))?.blob;
-    if (!blob) blob = await this.#import(file, key, signal);
+    if (!blob && this.#tooLarge(path, located.bytes)) return null;
+    if (!blob) blob = await this.#import(await this.#fileOf(path, located), key, signal);
     if (signal.aborted) return null;
     const drawn = await this.#thumbnailer.draw(blob, detail, -1, { folderColor, keep: { key, picture } });
     drawn.bitmap?.close();
@@ -157,17 +199,17 @@ export class GalleryLibrary {
    * faces), each handed to `onFrame(frame, bitmap, note)` as it is drawn. The file is imported first
    * if its import was not kept. Stops when `signal` aborts.
    */
-  async turn(path, folderColor, frames, pixels, size, onFrame, signal) {
+  async turn(path, folderColor, frames, pixels, size, onFrame, signal, stat) {
     const root = this.#root, spec = this.#spec;
     if (!root || !spec) return false;
-    const file = await this.#folders.file(root.id, path);
-    if (!file) return false;
-    const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
-                              version: this.#version });
+    const located = await this.#locate(path, stat).catch(() => null);
+    if (!located) return false;
+    const { key } = located;
     let blob = (await keptImport(key, this.#version))?.blob;
+    if (!blob && this.#tooLarge(path, located.bytes)) return false; // too large here
     if (!blob) {
       if (signal.aborted) return false;
-      blob = await this.#import(file, key, signal);
+      blob = await this.#import(await this.#fileOf(path, located), key, signal);
     }
     const worldPerPixel = size ? Math.hypot(...size) * 1.1 / pixels : 0;
     for (let frame = 0; frame < frames; frame++) {
@@ -196,6 +238,12 @@ export class GalleryLibrary {
       worker.postMessage({ type: "import", file, kind: stl ? "stl" : "step", name: file.name, key, keepSource: false,
                            workers: this.#phone ? 1 : 2, threads: false, progressive: false });
     });
+    // A phone lets its importer go after each file: its heap only grows, and the page's memory is
+    // what the phone watches.
+    if (this.#phone) {
+      worker.terminate();
+      this.#worker = null;
+    }
     if (result.type !== "done") throw new Error(result.message ?? "This file could not be read.");
     const kept = await keptImport(key, this.#version);
     if (!kept) throw new Error("The import was not kept.");

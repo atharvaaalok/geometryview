@@ -57,15 +57,19 @@ export class GalleryView {
   #style = 0;
   #insets = kContentInsets;
   #probes = false;
+  // On a phone, memory is short: less is painted beyond the view, and a picture no longer painted
+  // lets go of its image, which a browser keeps decoded while an element holds it.
+  #phone = false;
 
   /**
    * `on` takes action(action) for what a click or key asks of the page, and viewChanged() when what
    * is in view changed. With `probes`, each text carries a mark on its baseline, for the checks.
    */
-  constructor(core, on, { probes = false } = {}) {
+  constructor(core, on, { probes = false, phone = false } = {}) {
     this.#core = core;
     this.#on = on;
     this.#probes = probes;
+    this.#phone = phone;
     this.element = el("div", "gallery");
     this.#sheet = el("div", "gallery-sheet");
     this.#stage = el("div", "gallery-stage");
@@ -277,7 +281,8 @@ export class GalleryView {
     this.#shownTop = top;
     this.#placeSticky(top);
     if (this.#painted && this.#painted.top <= top && this.#painted.bottom >= bottom) return;
-    const window = { top: top - height, bottom: bottom + height };
+    const margin = this.#phone ? height / 2 : height;
+    const window = { top: top - margin, bottom: bottom + margin };
     this.#painted = window;
     for (const layer of Object.values(this.#layers)) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
     this.#turnBox.hidden = true; // shown again below, if Peek still turns
@@ -356,7 +361,10 @@ export class GalleryView {
     for (const layer of [...Object.values(this.#layers), ...this.#laneLayers.values()]) {
       for (const kind of Object.keys(layer.pools)) {
         const pool = layer.pools[kind];
-        for (let i = layer.used[kind]; i < pool.length; i++) pool[i].hidden = true;
+        for (let i = layer.used[kind]; i < pool.length; i++) {
+          pool[i].hidden = true;
+          if (this.#phone && kind === "picture" && pool[i].getAttribute("src")) pool[i].removeAttribute("src");
+        }
       }
     }
     for (const [id, layer] of this.#laneLayers) {
