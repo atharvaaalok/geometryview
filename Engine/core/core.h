@@ -92,7 +92,8 @@ public:
     std::optional<Frame> frame();
 
     /// The current view drawn offscreen, as BGRA pixels the size of the viewport.
-    std::vector<u8> snapshot();
+    /// The view drawn offscreen, with the view cube and scale bar if they show and `overlay` asks.
+    std::vector<u8> snapshot(bool overlay = true);
 
     nav::Viewport viewport() const { return viewport_; }
     /// The pick id under the pointer as of the last frame, for diagnostics.

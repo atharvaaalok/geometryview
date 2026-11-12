@@ -250,8 +250,12 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         if message.name == "shell" {
-            if (message.body as? [String: Any])?["ready"] as? Bool == true {
+            let body = message.body as? [String: Any]
+            if body?["ready"] as? Bool == true {
                 viewerReady()
+            }
+            if let picture = body?["share"] as? String, let name = body?["name"] as? String {
+                share(picture, named: name)
             }
             return
         }
@@ -273,6 +277,27 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 at: reports.appendingPathComponent("\(name).partial.json"))
             next()
         }
+    }
+
+    // Save picture: the page's picture, a data: URL, offered in the share sheet (Photos, Files,
+    // Messages...), as the web view keeps no downloads. It goes as a file, so it keeps its name.
+    private func share(_ picture: String, named name: String) {
+        guard let comma = picture.firstIndex(of: ","),
+            let data = Data(base64Encoded: String(picture[picture.index(after: comma)...])),
+            let view = webView, let root = view.window?.rootViewController
+        else {
+            return
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent((name as NSString).lastPathComponent)
+        guard (try? data.write(to: file, options: .atomic)) != nil else {
+            return
+        }
+        let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = view
+        sheet.popoverPresentationController?.sourceRect =
+            CGRect(x: view.bounds.midX, y: view.bounds.maxY - 80, width: 1, height: 1)
+        (root.presentedViewController ?? root).present(sheet, animated: true)
     }
 
     private static let thermalNames: [ProcessInfo.ThermalState: String] = [

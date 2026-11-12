@@ -161,6 +161,12 @@ final class EngineHandle {
         geo_engine_write_snapshot(engine, path)
     }
 
+    /// The view as a picture to share, without the view cube and scale bar: a PNG at `path`, which
+    /// appears once it is complete.
+    func writePicture(to path: String) {
+        geo_engine_write_picture(engine, path)
+    }
+
     func selection() -> GeoSelectionSummary {
         geo_engine_selection(engine)
     }

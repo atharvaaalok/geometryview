@@ -4,7 +4,7 @@
 
 // The order tools fold in: lower first; tools of a rank fold together. Tools not named never fold.
 export const kFoldRanks = Object.freeze({
-  shortcuts: 0, projection: 1, views: 2, fit: 3, open: 4, connect: 4, look: 5, section: 6,
+  shortcuts: 0, projection: 1, views: 2, picture: 2, fit: 3, open: 4, connect: 4, look: 5, section: 6,
   seeThrough: 7, isolate: 8, ghost: 9, hide: 9, undo: 10, redo: 10, showAll: 11,
 });
 

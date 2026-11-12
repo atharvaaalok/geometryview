@@ -5,6 +5,8 @@ import GeometryViewEngine
 @MainActor
 final class HoldHint: NSView {
     private let chip = Chip()
+    /// Counts what the hint has shown, so a notice hides only if nothing came after it.
+    private var shown = 0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -26,7 +28,22 @@ final class HoldHint: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// A word of what just happened, such as "Picture copied", for a moment.
+    func notice(_ text: String) {
+        chip.fillColor = Palette.sheet
+        chip.setContent([Chip.text(text)])
+        isHidden = false
+        shown += 1
+        let mine = shown
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            if self?.shown == mine {
+                self?.isHidden = true
+            }
+        }
+    }
+
     func show(_ tool: GeoTool) {
+        shown += 1
         switch tool {
         case GeoToolHide:
             chip.fillColor = Palette.tomatoWash
@@ -169,6 +186,8 @@ final class ShortcutsSheet: NSView {
             ([cap(.section)], "Section across X"),
             ([cap(.clearSelection)], "Close a card, or clear the selection"),
             (["⌘", "W"], "Close the file"),
+            (["⌘", "C"], "Copy a picture of the view"),
+            (["⌘", "S"], "Save a picture of the view"),
             (["⌃⌘", "S"], "Hide or show the sidebar"),
             ([cap(.shortcuts)], "This sheet"),
         ]

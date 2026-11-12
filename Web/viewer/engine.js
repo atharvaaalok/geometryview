@@ -310,19 +310,19 @@ export class Engine {
     }
   }
 
-  // The view as drawn, with all its samples and the overlay: { width, height, pixels } with
-  // pixels as RGBA, or null if nothing is open.
-  snapshot() {
+  // The view as drawn, with all its samples, and the view cube and scale bar unless `overlay` is
+  // false: { width, height, pixels } with pixels as RGBA, or null if nothing is open.
+  snapshot({ overlay = true } = {}) {
     return new Promise((resolve) => {
-      this.#snapshots.push(resolve);
-      if (this.#snapshots.length === 1) this.#module._geo_web_snapshot();
+      this.#snapshots.push({ resolve, overlay });
+      if (this.#snapshots.length === 1) this.#module._geo_web_snapshot(overlay ? 1 : 0);
     });
   }
 
   #snapshots = [];
 
   #snapshotArrived(pointer, width, height, bgra) {
-    const resolve = this.#snapshots.shift();
+    const { resolve } = this.#snapshots.shift() ?? {};
     let image = null;
     if (pointer !== 0 && width > 0) {
       const pixels = this.#module.HEAPU8.slice(pointer, pointer + width * height * 4);
@@ -336,7 +336,7 @@ export class Engine {
       image = { width, height, pixels };
     }
     resolve?.(image);
-    if (this.#snapshots.length > 0) this.#module._geo_web_snapshot();
+    if (this.#snapshots.length > 0) this.#module._geo_web_snapshot(this.#snapshots[0].overlay ? 1 : 0);
   }
 
   // ---- What the engine publishes -----------------------------------------------------------

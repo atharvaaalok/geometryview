@@ -234,6 +234,7 @@ shell, which works offline and opens files from the share sheet too, builds from
 | Space | In a folder: Peek, the part large with its size, parts and triangles |
 | Click the view cube | Turn to that face's view |
 | ⌘O, ⌥⌘O | Open files, connect a folder |
+| ⌘C, ⌘S | Copy or save a picture: the drawing beside the sidebar, or in a folder, the poster |
 | ⌃⌘S (⌥S in a browser) | Hide or show the sidebar, for the whole window |
 | Esc | Close an open card or menu; with none open, clear the selection |
 | ? | Show every shortcut |

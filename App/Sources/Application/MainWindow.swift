@@ -17,6 +17,8 @@ final class MainWindow: NSWindow {
     private let toolBar = Toolbar()
     private let status = StatusCard()
     private let holdHint = HoldHint()
+    /// While a poster shows: Copy, Save PNG, Save PDF and Done, in its top right margin.
+    private let posterBar = PosterBar()
     private let hoverChip = Chip()
     private let dropZone = DropZone()
     private let shortcuts = ShortcutsSheet()
@@ -166,6 +168,7 @@ final class MainWindow: NSWindow {
             sectionCard,
             holdHint,
             hoverChip,
+            posterBar,
             status, dropZone, shortcuts,
         ]
         for view in views {
@@ -175,6 +178,7 @@ final class MainWindow: NSWindow {
         // Placed by frame where it opens, over the cards and under the sheets.
         root.addSubview(toolBar.viewsMenu, positioned: .below, relativeTo: status)
         root.addSubview(toolBar.moreMenu, positioned: .below, relativeTo: status)
+        root.addSubview(toolBar.pictureMenu, positioned: .below, relativeTo: status)
         // The space right of the tree card, where the toolBar and hints centre themselves.
         let free = NSLayoutGuide()
         root.addLayoutGuide(free)
@@ -239,6 +243,8 @@ final class MainWindow: NSWindow {
             sectionCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
             lookCard.centerXAnchor.constraint(equalTo: toolBar.centerXAnchor),
             lookCard.bottomAnchor.constraint(equalTo: toolBar.topAnchor, constant: -12),
+            posterBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
+            posterBar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -30),
             holdHint.centerXAnchor.constraint(equalTo: free.centerXAnchor),
             holdHint.bottomAnchor.constraint(
                 equalTo: root.bottomAnchor,
@@ -321,6 +327,12 @@ final class MainWindow: NSWindow {
         }
         galleryToolbar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
         galleryToolbar.onPoster = { [weak self] in self?.togglePoster(nil) }
+        toolBar.onCopyPicture = { [weak self] in self?.copy(nil) }
+        toolBar.onSavePicture = { [weak self] in self?.savePicture(nil) }
+        posterBar.onCopy = { [weak self] in self?.copy(nil) }
+        posterBar.onSavePNG = { [weak self] in self?.exportPoster(nil) }
+        posterBar.onSavePDF = { [weak self] in self?.exportPDF(nil) }
+        posterBar.onDone = { [weak self] in self?.setPoster(false) }
         galleryToolbar.onLadders = { [weak self] shared in
             self?.galleryController.setLadders(shared: shared)
         }
@@ -797,6 +809,8 @@ final class MainWindow: NSWindow {
     /// Ticks the menu's look items.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(copy(_:)), #selector(savePicture(_:)):
+            return inGallery || !names.isEmpty
         case #selector(toggleSidebar(_:)):
             item.title = sidebarHidden ? "Show Sidebar" : "Hide Sidebar"
             return !galleryController.gallery.poster
@@ -945,6 +959,7 @@ final class MainWindow: NSWindow {
             }
             libraryCard.isHidden = poster || sidebarHidden
         }
+        posterBar.isHidden = !poster
         if poster {
             dismissCard()
         }
@@ -1029,6 +1044,108 @@ final class MainWindow: NSWindow {
             }
             try? data.write(to: url)
         }
+    }
+
+    // MARK: Pictures
+
+    /// Copy (⌘C), where no text field takes it: the view as a picture, to paste anywhere; in a
+    /// gallery, the view as a poster.
+    @objc func copy(_ sender: Any?) {
+        makePicture { [weak self] image in
+            guard let self, let image,
+                let png = NSBitmapImageRep(cgImage: image)
+                    .representation(using: .png, properties: [:])
+            else {
+                return
+            }
+            let item = NSPasteboardItem()
+            item.setData(png, forType: .png)
+            if let tiff = NSImage(cgImage: image, size: .zero).tiffRepresentation {
+                item.setData(tiff, forType: .tiff)
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([item])
+            holdHint.notice("Picture copied")
+        }
+    }
+
+    /// Save Picture… (⌘S): the view as a picture, saved where the person chooses; in a gallery, the
+    /// view as a poster (as Export Poster as PNG).
+    @objc func savePicture(_ sender: Any?) {
+        if inGallery {
+            exportPoster(sender)
+            return
+        }
+        makePicture { [weak self] image in
+            guard let self, let image else {
+                return
+            }
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.png]
+            let name = names.first.map { ($0 as NSString).deletingPathExtension } ?? "GeometryView"
+            panel.nameFieldStringValue = "\(name).png"
+            panel.beginSheetModal(for: self) { response in
+                guard response == .OK, let url = panel.url,
+                    let data = NSBitmapImageRep(cgImage: image)
+                        .representation(using: .png, properties: [:])
+                else {
+                    return
+                }
+                try? data.write(to: url)
+            }
+        }
+    }
+
+    /// The view as a picture to share: the model as drawn, without the view cube and scale bar, at
+    /// the screen's resolution, cropped to what the sidebar leaves clear. In a gallery, the view as
+    /// a poster. Calls `done` on the main thread, with nothing if nothing is open.
+    private func makePicture(_ done: @escaping (CGImage?) -> Void) {
+        if inGallery {
+            let wasPoster = galleryController.gallery.poster
+            if !wasPoster {
+                setPoster(true)
+            }
+            let image = galleryController.view.posterImage()
+            if !wasPoster {
+                setPoster(false)
+            }
+            done(image)
+            return
+        }
+        guard !names.isEmpty else {
+            done(nil)
+            return
+        }
+        // The engine writes it on its own thread, in the container's temporary folder; it appears
+        // whole once it is written.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("picture-\(UUID().uuidString).png")
+        engine.writePicture(to: url.path)
+        let clear = structure.isHidden && libraryCard.isHidden ? 0 : Self.edge + Self.cardWidth
+        let scale = backingScaleFactor
+        var tries = 0
+        func look() {
+            tries += 1
+            guard let data = try? Data(contentsOf: url),
+                let image = NSBitmapImageRep(data: data)?.cgImage
+            else {
+                if tries < 100 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look() }
+                } else {
+                    done(nil)
+                }
+                return
+            }
+            try? FileManager.default.removeItem(at: url)
+            let left = Int((clear * scale).rounded())
+            let rest = CGRect(x: left, y: 0, width: image.width - left, height: image.height)
+            if left > 0, left < image.width, let cropped = image.cropping(to: rest) {
+                done(cropped)
+            } else {
+                done(image)
+            }
+        }
+        look()
     }
 
     /// View as Plates (⌘1) … : the gallery's views, while it shows.
@@ -1356,6 +1473,22 @@ final class MainWindow: NSWindow {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + (settling ? 1.5 : 0.5)) { [self] in
                 ChromeSnapshot.capture(self, engine: engine)
+                // GEOMETRYVIEW_SNAPSHOT_PICTURE also writes the picture Copy and Save Picture
+                // would make, as picture.png beside it.
+                if environment["GEOMETRYVIEW_SNAPSHOT_PICTURE"] != nil {
+                    makePicture { image in
+                        let output = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("picture.png")
+                        guard let image,
+                            let png = NSBitmapImageRep(cgImage: image)
+                                .representation(using: .png, properties: [:])
+                        else {
+                            return
+                        }
+                        try? png.write(to: output)
+                        print("picture: \(output.path), \(image.width) x \(image.height)")
+                    }
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSApp.terminate(nil)
                 }

@@ -1255,12 +1255,12 @@ std::optional<Frame> Core::frame() {
     return frame;
 }
 
-std::vector<u8> Core::snapshot() {
+std::vector<u8> Core::snapshot(bool withOverlay) {
     renderer_.syncState(interaction_.state());
     look_.apply(renderer_, scene_);
     const render::ViewState view = frameView();
     render::Overlay overlay;
-    if (scene_.hasGeometry() && overlayShown_) {
+    if (withOverlay && scene_.hasGeometry() && overlayShown_) {
         overlay =
             render::makeOverlay(camera_, viewport_, view.uniforms.viewRotation, pixelsPerPoint_,
                                 renderer_.glyphAdvance(), cubeHover_, overlayLayout());

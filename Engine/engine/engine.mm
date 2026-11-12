@@ -93,6 +93,7 @@ struct Command {
         SetSection,
         SetMouse,
         Snapshot,
+        Picture,
         RequestFrame,
         SetCovered,
         Stop
@@ -389,7 +390,8 @@ struct GeoEngine final : engine::Host {
                 core->setOverlayShown(command->shown);
                 break;
             case Command::Kind::Snapshot:
-                writeSnapshot(command->path);
+            case Command::Kind::Picture:
+                writeSnapshot(command->path, command->kind == Command::Kind::Snapshot);
                 std::free(command->path);
                 break;
             case Command::Kind::RequestFrame:
@@ -415,8 +417,8 @@ struct GeoEngine final : engine::Host {
 
     // Draws the current view offscreen and saves it, written to a temporary name first so the file
     // only ever appears whole.
-    void writeSnapshot(const std::string& path) {
-        const std::vector<u8> pixels = core->snapshot();
+    void writeSnapshot(const std::string& path, bool overlay) {
+        const std::vector<u8> pixels = core->snapshot(overlay);
         const nav::Viewport viewport = core->viewport();
         const std::string temporary = path + ".partial";
         if (engine::writePng(temporary.c_str(), pixels, u32(viewport.width),
@@ -700,6 +702,13 @@ void geo_engine_set_overlay_shown(GeoEngine* engine, bool shown) {
 void geo_engine_write_snapshot(GeoEngine* engine, const char* path) {
     Command command{};
     command.kind = Command::Kind::Snapshot;
+    command.path = strdup(path);
+    engine->post(command);
+}
+
+void geo_engine_write_picture(GeoEngine* engine, const char* path) {
+    Command command{};
+    command.kind = Command::Kind::Picture;
     command.path = strdup(path);
     engine->post(command);
 }
