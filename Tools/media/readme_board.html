@@ -1,3 +1,5 @@
+<!doctype html>
+<meta charset="utf-8">
 <title>README Mockups</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -60,6 +62,9 @@ main { padding-block: 22px 80px; padding-left: max(16px, env(safe-area-inset-lef
 .gh-light .boxhead { color: #1f2328; border-bottom: 1px solid #d1d9e0; background: #f6f8fa; }
 .gh-dark .boxhead { color: #f0f6fc; border-bottom: 1px solid #3d444d; background: #151b23; }
 .markdown-body { padding: 32px; }
+/* A table takes its colour from the README box, as on GitHub, even where a page without a doctype
+   would give it the board's own. */
+.markdown-body table { color: inherit; }
 .phone .markdown-body { padding: 16px; }
 .phone .site { padding: 8px; }
 .npm .site { background: #ffffff; }
