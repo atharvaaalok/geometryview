@@ -228,11 +228,11 @@ of G6 to G8.
 |---|---|---|---|
 | **G0** | Pictures: render options, a clear sheet, folder colour, the thumbnailer, `gcli sheet`, async offscreen pictures in the browser | 20 goldens unchanged; six RGBA goldens; ≤6 ms a picture warm at 256 px; small pictures read as their parts | Done (2026-11-11) |
 | **G1** | Foundation: facts, helper flags, the gate, the queue, the library service and its caches, scans, the browser's import queue, OPFS v2 and picture worker, the shell's `/scan`, ADR 0017 | S × W from a 500-file sweep; a file opened never waits behind gallery work; a second service starts no helper; prefetching does not evict Recent; node tests in CI | Done (2026-11-11) |
-| **G2** | Plates on the Mac and the web: the layout core, painters, checks, ADR 0018 | 0 alignment groups over 0.5 pt; Mac and web within 1 pt; no 3D frames under the gallery; no web long task over 50 ms | Review (2026-11-11) |
-| **G3** | Sheet, the view switch, shared state, flights, Peek, keys, menus | The selection survives every switch; motion matches the spec; G2's criteria still hold | Review (2026-11-11) |
+| **G2** | Plates on the Mac and the web: the layout core, painters, checks, ADR 0018 | 0 alignment groups over 0.5 pt; Mac and web within 1 pt; no 3D frames under the gallery; no web long task over 50 ms | Done (2026-11-11) |
+| **G3** | Sheet, the view switch, shared state, flights, Peek, keys, menus | The selection survives every switch; motion matches the spec; G2's criteria still hold | Done (2026-11-11) |
 | **G4** | States, FSEvents, phones, a poster PNG, MCP `view_folder` | iPhone ≤600 MB on test-models; no horizontal scroll at 390 px; a changed file re-inks alone; five tools | Done (2026-11-11); the iPhone at most 489 MB on test-models |
 | **G5** | Release 0.2.0: Plates and Sheet | | Folded into 0.3.0: all five views were ready together |
-| **G6–G8** | Ladders, Atlas, Catalogue | Each reviewed | At review (2026-11-11) |
+| **G6–G8** | Ladders, Atlas, Catalogue | Each reviewed | Done (2026-11-11) |
 | **G9** | Posters for every view, PDF, turnable Peek, release 0.3.0 | | Done; release 0.3.0 (2026-11-11) |
 
 **Spikes** (pass/fail, recorded in ADRs):
