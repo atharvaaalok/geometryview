@@ -1,7 +1,7 @@
 {
   "name": "geometryview",
   "version": "0.3.0",
-  "description": "View STEP and STL models in your browser, and let AI apps open, inspect and picture them (MCP).",
+  "description": "See inside STEP and STL models, and whole folders of them, in your browser; and let AI apps open, inspect and picture them (MCP).",
   "keywords": [
     "step",
     "stl",
@@ -14,7 +14,7 @@
     "mcp",
     "model-context-protocol"
   ],
-  "homepage": "https://github.com/atharvaaalok/geometryview#readme",
+  "homepage": "https://atharvaaalok.github.io/geometryview/",
   "bugs": {
     "url": "https://github.com/atharvaaalok/geometryview/issues"
   },
@@ -39,6 +39,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "prepack": "node scripts/web.mjs"
+    "prepack": "node scripts/web.mjs",
+    "prepublishOnly": "node scripts/readme.mjs --check"
   }
 }
