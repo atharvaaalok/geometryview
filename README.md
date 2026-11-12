@@ -70,9 +70,9 @@ reopen recent files at once.
 
 ## Use it from your AI app
 
-GeometryView gives AI apps four tools: **open_model**, **get_structure**, **render_view** (any
-view, style, section or part alone) and **open_in_viewer**, which shows you the model live. Ask
-something like:
+GeometryView gives AI apps five tools: **open_model**, **get_structure**, **render_view** (any
+view, style, section or part alone), **view_folder** (a whole folder on one contact sheet, with an
+index) and **open_in_viewer**, which shows you the model live. Ask something like:
 
 > *Open planetary-gearbox.step. Show me the second stage on its own, from below, then cut the
 > whole gearbox in half, in metal.*

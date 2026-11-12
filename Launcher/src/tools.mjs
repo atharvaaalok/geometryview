@@ -1,8 +1,8 @@
 // The tools an AI app can call: open a model, read its parts, picture it, and show it to the user.
 
-import { basename } from "node:path";
-import { importModel, nativeAvailable, openInViewer, readStats, readTree, render,
-         viewerApplication } from "./native.mjs";
+import { basename, relative, resolve } from "node:path";
+import { contactSheet, importModel, listModels, nativeAvailable, openInViewer, readFacts, readStats,
+         readTree, render, viewerApplication } from "./native.mjs";
 import { linkToPage, openInPage, pageRender, pageTree, showInPage, viewerServer } from "./page.mjs";
 
 export const instructions =
@@ -14,8 +14,10 @@ export const instructions =
   "studio). To study a part, pass names from get_structure as isolate, and use section to cut " +
   "through the model. open_in_viewer shows the model to the user, live: in the GeometryView app, " +
   "in their browser, or, when they want to see it inside this chat app, as a link to open in " +
-  "the app's own browser (where: link). Where this computer has no native engine, the viewer " +
-  "opens in the user's browser and the pictures come from it, so the user sees what you look at.";
+  "the app's own browser (where: link). view_folder pictures a whole folder of models on one " +
+  "contact sheet with a numbered index, to survey a library or find a part by eye. Where this " +
+  "computer has no native engine, the viewer opens in the user's browser and the pictures come " +
+  "from it, so the user sees what you look at.";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical", "studio"];
 const COLOURS = ["material", "parts", "mono", "file"];
@@ -26,6 +28,35 @@ const VIEWS = {
 };
 
 const path = { type: "string", description: "Absolute path to a .step, .stp or .stl file." };
+
+// How long view_folder waits for imports before drawing what it has; the rest keep importing, so
+// asking again shows them.
+const kFolderDeadline = 90_000;
+
+const naturalOrder = new Intl.Collator("en", { numeric: true, sensitivity: "base" }).compare;
+
+/// A box's sides in millimetres, as the gallery writes them: 40 × 30 × 26.
+function sides(facts) {
+  if (!Array.isArray(facts?.min) || !Array.isArray(facts?.max)) return "";
+  return facts.max.map((high, axis) => {
+    const value = high - facts.min[axis];
+    return value >= 100 ? String(Math.round(value)) : String(Number(value.toPrecision(3)));
+  }).join(" × ");
+}
+
+function largestSide(facts) {
+  if (!Array.isArray(facts?.min) || !Array.isArray(facts?.max)) return Infinity;
+  return Math.max(...facts.max.map((high, axis) => high - facts.min[axis]));
+}
+
+/// Waits for `work`, or rejects with `kLate` once `deadline` passes; the work carries on.
+const kLate = Symbol("late");
+function byDeadline(work, deadline) {
+  work.catch(() => {});
+  return Promise.race([work, new Promise((_, reject) => {
+    setTimeout(() => reject(kLate), Math.max(0, deadline - Date.now())).unref?.();
+  })]);
+}
 
 // ---- The tree as an outline ---------------------------------------------------------------------
 
@@ -213,6 +244,105 @@ export const tools = [
         { type: "text", text: `${basename(source)}${shown}, ${args.style ?? "illustration"} ` +
                               `style, from azimuth ${view.azimuth}°, elevation ${view.elevation}°.` },
       ];
+    },
+  },
+  {
+    name: "view_folder",
+    description: "Pictures a folder of 3D CAD models (STEP and STL files) on one contact sheet, " +
+                 "each part drawn over its name and number, for you to look at, with a numbered " +
+                 "index of the files: their paths, sizes in millimetres, parts and triangles. Use it " +
+                 "to survey a library, find a part by eye, or compare sizes (same_scale). Files are " +
+                 "taken in name order, max_files of them; those still importing after 90 seconds " +
+                 "are listed, and asking again shows them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute path to a folder." },
+        recursive: { type: "boolean", default: false, description: "Include the folders inside." },
+        max_files: { type: "integer", minimum: 1, maximum: 144, default: 36 },
+        filter: { type: "string", description: "Only files whose path inside the folder contains this." },
+        sort: { type: "string", enum: ["name", "size"], default: "name",
+                description: "Order on the sheet: by path, or smallest to largest measured size." },
+        style: { type: "string", enum: STYLES, default: "illustration" },
+        colour: { type: "string", enum: COLOURS, default: "parts" },
+        same_scale: { type: "boolean", default: false,
+                      description: "Draw every part at one scale, so sizes compare." },
+        cell: { type: "integer", minimum: 96, maximum: 384, default: 192,
+                description: "Each picture's size in points." },
+        columns: { type: "integer", minimum: 1, maximum: 12 },
+      },
+      required: ["path"],
+    },
+    async call(args) {
+      if (!nativeAvailable()) {
+        throw new Error("view_folder needs GeometryView's native engine, on a Mac with Apple silicon " +
+                        "and macOS 26 or later. Use render_view to picture files one by one.");
+      }
+      const folder = resolve(args.path);
+      const max = Math.min(144, Math.max(1, args.max_files ?? 36));
+      const filter = (args.filter ?? "").toLowerCase();
+      const found = (await listModels(folder, { recursive: args.recursive ?? false }))
+        .map((file) => ({ file, path: relative(folder, file) }))
+        .filter(({ path: inside }) => !filter || inside.toLowerCase().includes(filter))
+        .sort((a, b) => naturalOrder(a.path, b.path));
+      const where = `${folder}${args.recursive ? " and its folders" : ""}`;
+      if (found.length === 0) {
+        return [{ type: "text", text: `No STEP or STL files${filter ? ` matching "${args.filter}"` : ""} in ${where}.` }];
+      }
+      const chosen = found.slice(0, max);
+      // Imported a few at a time, by the deadline.
+      const deadline = Date.now() + kFolderDeadline;
+      const done = await Promise.all(chosen.map(async (entry) => {
+        try {
+          const read = (async () => {
+            const { blob } = await importModel(entry.file);
+            return { blob, facts: await readFacts(blob) };
+          })();
+          return { ...entry, ...(await byDeadline(read, deadline)) };
+        } catch (error) {
+          return error === kLate ? { ...entry, late: true } : { ...entry, error: String(error.message ?? error) };
+        }
+      }));
+      const drawn = done.filter((entry) => entry.blob);
+      if (args.sort === "size") drawn.sort((a, b) => largestSide(a.facts) - largestSide(b.facts));
+      const lines = [];
+      let png = null;
+      if (drawn.length > 0) {
+        const tiles = drawn.map((entry, index) => ({
+          blob: entry.blob,
+          label: basename(entry.path).replace(/\.(step|stp|stl)$/i, ""),
+          sub: [`#${index + 1}`, sides(entry.facts)].filter(Boolean).join(" · "),
+        }));
+        const sheet = await contactSheet(tiles, {
+          cell: args.cell ?? 192, columns: args.columns, style: args.style ?? "illustration",
+          colour: args.colour ?? "parts", sameScale: args.same_scale ?? false, title: basename(folder),
+        });
+        png = sheet.png;
+        drawn.forEach((entry, index) => {
+          const f = entry.facts ?? {};
+          const failed = sheet.tiles[index]?.error;
+          const parts = f.parts ? `${f.parts} part${f.parts === 1 ? "" : "s"}` : null;
+          const size = sides(f) ? `${sides(f)} mm` : null;
+          const triangles = f.triangles ? `${f.triangles.toLocaleString("en-US")} triangles` : null;
+          const name = f.name && f.name !== basename(entry.path).replace(/\.[^.]+$/, "") ? `"${f.name}"` : null;
+          lines.push(`${index + 1}. ${entry.path}: ${[size, parts, triangles, name, failed && `not drawn: ${failed}`]
+            .filter(Boolean).join(", ")}`);
+        });
+      }
+      const late = done.filter((entry) => entry.late).map((entry) => entry.path);
+      const failed = done.filter((entry) => entry.error);
+      const header = `${drawn.length} of ${found.length} STEP and STL files in ${where}` +
+        (filter ? ` matching "${args.filter}"` : "") +
+        `, ${args.style ?? "illustration"} style, ${args.sort === "size" ? "smallest to largest" : "by name"}` +
+        (args.same_scale ? ", at one scale" : "") + ". Numbered in reading order, as on the sheet.";
+      const text = [header, "", ...lines];
+      if (found.length > chosen.length) text.push("", `${found.length - chosen.length} more not shown: raise max_files (up to 144) or use filter.`);
+      if (late.length) text.push("", `Still importing, not drawn yet (ask again to see them): ${late.join(", ")}.`);
+      if (failed.length) text.push("", "Could not be read:", ...failed.map((entry) => `- ${entry.path}: ${entry.error}`));
+      const content = [];
+      if (png) content.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+      content.push({ type: "text", text: text.join("\n") });
+      return content;
     },
   },
   {
