@@ -24,6 +24,15 @@ TEST_CASE("folder names read as headings, for any library") {
     CHECK(folderTitle("stepper_nema") == "Stepper Nema");
     CHECK(folderTitle("din912 screws") == "DIN 912 Screws");
     CHECK(folderTitle("gt2") == "GT2");
+    CHECK(folderTitle("01 Organ Pipes") == "Organ Pipes"); // ordered as named, shown without
+    CHECK(folderTitle("007_bells") == "Bells");
+    CHECK(folderTitle("0042") == "0042"); // all prefix: it is the name
+    CHECK(folderTitle("2024 parts") == "2024 Parts");
+    CHECK(folderTitle("07 Wheels and Pinions") == "Wheels and Pinions");
+    CHECK(folderTitle("bill_of_materials") == "Bill of Materials");
+    CHECK(folderTitle("in stock") == "In Stock"); // the first word and the last are capitals
+    CHECK(folderTitle("type_a") == "Type A");
+    CHECK(folderTitle("Nuts And Bolts") == "Nuts And Bolts"); // as written
 }
 
 TEST_CASE("file names drop their extension and ordering prefix, and an id gives way") {

@@ -67,15 +67,47 @@ bool isIdWord(std::string_view word) {
 constexpr std::array<std::string_view, 7> kCodes = {"iso",  "din", "en", "ansi",
                                                     "asme", "jis", "gb"};
 
+// Short words a heading leaves as written between its first and last: "Wheels and Pinions".
+constexpr std::array<std::string_view, 16> kMinor = {"a",   "an", "and", "as",  "at", "by",
+                                                     "for", "in", "of",  "on",  "or", "per",
+                                                     "the", "to", "vs",  "with"};
+
+// The name without a zero-padded ordering prefix ("01_", "007 - ", "00."), if the rest still
+// names something.
+std::string_view withoutOrdering(std::string_view name) {
+    if (name.size() > 2 && name[0] == '0' && isDigit(name[1])) {
+        usize at = 2;
+        while (at < name.size() && isDigit(name[at])) {
+            ++at;
+        }
+        usize rest = at;
+        while (rest < name.size() &&
+               (name[rest] == '_' || name[rest] == ' ' || name[rest] == '-' || name[rest] == '.')) {
+            ++rest;
+        }
+        if (rest > at && rest < name.size()) {
+            name.remove_prefix(rest);
+        }
+    }
+    return name;
+}
+
 } // namespace
 
 std::string folderTitle(std::string_view name) {
     std::string out;
-    for (std::string_view word : words(name)) {
+    const std::vector<std::string_view> all = words(withoutOrdering(name));
+    for (usize i = 0; i < all.size(); ++i) {
+        const std::string_view word = all[i];
         if (!out.empty()) {
             out += ' ';
         }
         const std::string w = lowered(word);
+        if (i > 0 && i + 1 < all.size() &&
+            std::find(kMinor.begin(), kMinor.end(), w) != kMinor.end()) {
+            out += word;
+            continue;
+        }
         // ISO 4032: a standard's code and its number.
         bool coded = false;
         for (std::string_view code : kCodes) {
@@ -116,22 +148,7 @@ std::string stemOf(std::string_view fileName) {
     if (const usize dot = stem.rfind('.'); dot != std::string_view::npos && dot > 0) {
         stem = stem.substr(0, dot);
     }
-    // A zero-padded ordering prefix: "01_", "007 - ", "00."; the rest must still name something.
-    if (stem.size() > 2 && stem[0] == '0' && isDigit(stem[1])) {
-        usize at = 2;
-        while (at < stem.size() && isDigit(stem[at])) {
-            ++at;
-        }
-        usize rest = at;
-        while (rest < stem.size() &&
-               (stem[rest] == '_' || stem[rest] == ' ' || stem[rest] == '-' || stem[rest] == '.')) {
-            ++rest;
-        }
-        if (rest > at && rest < stem.size()) {
-            stem.remove_prefix(rest);
-        }
-    }
-    return std::string(stem);
+    return std::string(withoutOrdering(stem));
 }
 
 FileNames fileNames(std::string_view fileName, std::string_view product) {
