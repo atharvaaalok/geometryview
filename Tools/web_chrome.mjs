@@ -35,6 +35,7 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const kElements = {
   "masthead.title": ".masthead .title",
   "masthead.subtitle": ".masthead .subtitle",
+  "masthead.close": ".masthead .title-row .pill",
   "structure.card": ".card.structure:not(.library):not([hidden])",
   "structure.switcher": ".card.structure:not(.library):not([hidden]) .segmented",
   "structure.segment": [".card.structure:not(.library):not([hidden]) .segmented button"],

@@ -140,7 +140,7 @@ export class LibraryCard {
     this.#searchBox = el("label.searchbox", { hidden: true },
                          [el("span.glyph", { html: icons.search(14) }), this.#search, this.#found]);
     this.element = el("section.card.structure.library", { hidden: true, "aria-label": "Library" }, [
-      el("div.header", {}, [this.switcher.element, el("span.grow"), add, connect, hide]),
+      el("div.header", {}, [this.switcher.element, add, connect, hide]),
       this.#searchBox,
       this.#list.element,
     ]);
