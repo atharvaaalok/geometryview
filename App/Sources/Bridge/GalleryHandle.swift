@@ -111,6 +111,27 @@ final class GalleryHandle {
         geo_gallery_atlas_level(gallery, UInt32(max(0, min(2, level))))
     }
 
+    /// Catalogue: the spread in view, how many the book has, and the one its index starts on.
+    var catalogue: Catalogue {
+        var out: [UInt32] = [0, 0, 0]
+        geo_gallery_catalogue(gallery, &out)
+        return Catalogue(spread: Int(out[0]), spreads: Int(out[1]), index: Int(out[2]))
+    }
+
+    func setCatalogueSpread(_ spread: Int) {
+        geo_gallery_set_catalogue_spread(gallery, UInt32(max(0, spread)))
+    }
+
+    struct Catalogue {
+        var spread = 0
+        var spreads = 1
+        var index = 0
+    }
+
+    func catalogueIndex() {
+        geo_gallery_catalogue_index(gallery)
+    }
+
     /// Ladders' scale: each strip its own, or one shared.
     func setLadders(shared: Bool) {
         geo_gallery_set_ladders(gallery, shared)

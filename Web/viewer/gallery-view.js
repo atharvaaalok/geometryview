@@ -408,7 +408,10 @@ export class GalleryView {
     setBox(node, item.x, item.y, item.width, item.height);
     const s = node.style;
     s.borderRadius = `${item.radius}px`;
-    s.border = item.stroke ? `${item.lineWidth}px ${item.flags & Flags.Dashed ? "dashed" : "solid"} ${cssColour(item.stroke)}` : "none";
+    // A box no deeper than its two strokes is all stroke, as a layer draws it. A border would grow
+    // it (Chrome rounds a border up to a whole pixel), so it is filled with the stroke instead.
+    const allStroke = item.stroke && 2 * item.lineWidth >= Math.min(Math.abs(item.width), Math.abs(item.height));
+    s.border = item.stroke && !allStroke ? `${item.lineWidth}px ${item.flags & Flags.Dashed ? "dashed" : "solid"} ${cssColour(item.stroke)}` : "none";
     s.boxShadow = item.flags & Flags.Sticker && item.shadow ? `3px 3px 0 ${cssColour(item.shadow)}` : "none";
     if (item.flags & Flags.Ruler) {
       // A ruler: its line on top, minor ticks every `radius` points, major every `tracking`.
@@ -423,6 +426,8 @@ export class GalleryView {
       s.background = `repeating-linear-gradient(45deg, ${cssColour(item.stroke)} 0 1px, transparent 1px 7px)`;
     } else if (item.flags & Flags.Sheet) {
       s.background = this.#sheetBackground;
+    } else if (allStroke) {
+      s.background = cssColour(item.stroke);
     } else {
       s.background = item.fill ? cssColour(item.fill) : "transparent";
     }
@@ -809,7 +814,7 @@ export class GalleryView {
     const hit = this.#core.hit(x, y);
     if (this.#core.hover(hit.kind, hit.target)) this.reload();
     const pointing = hit.kind === Targets.Folder || hit.kind === Targets.File || hit.kind === Targets.More ||
-      hit.kind === Targets.Reconnect || (hit.kind === Targets.Peek && hit.target === 1);
+      hit.kind === Targets.Reconnect || hit.kind === Targets.Page || (hit.kind === Targets.Peek && hit.target === 1);
     this.#clip.style.cursor = pointing ? "pointer" : "";
   }
 

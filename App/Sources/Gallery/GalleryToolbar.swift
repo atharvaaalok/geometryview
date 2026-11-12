@@ -16,6 +16,8 @@ final class GalleryToolbar: StickerCard {
     /// Atlas: a level chosen, or a step in (1) or out (−1).
     var onAtlasLevel: ((Int) -> Void)?
     var onAtlasStep: ((Int) -> Void)?
+    /// Catalogue: a step back (−1) or on (1), a spread, or the index (neither).
+    var onCatalogue: ((_ step: Int?, _ spread: Int?) -> Void)?
 
     private static let names = ["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]
     private static let icons: [Icons.Name] = [.plates, .sheet, .ladders, .atlas, .catalogue]
@@ -49,6 +51,13 @@ final class GalleryToolbar: StickerCard {
     )
     private let atlasOut = PillButton(title: "\u{2212}", help: "Zoom out a level (\u{2212})")
     private let atlasIn = PillButton(title: "+", help: "Zoom in a level (+)")
+    private let catalogueControls: NSStackView
+    private let pages = NSTextField(labelWithString: "")
+    private let contents = PillButton(title: "Contents", help: "The contents")
+    private let index = PillButton(title: "Index", help: "The index")
+    private let stack = NSStackView(views: [])
+    /// The room the toolbar has, as the window last gave it.
+    private var available: CGFloat = .greatestFiniteMagnitude
     private let laddersSort = SegmentedPill(["Size", "Name"], selected: 0, help: "Order")
     private let laddersScale = SegmentedPill(
         ["Each", "Shared"],
@@ -72,6 +81,7 @@ final class GalleryToolbar: StickerCard {
         sheetControls = NSStackView(views: [])
         laddersControls = NSStackView(views: [])
         atlasControls = NSStackView(views: [])
+        catalogueControls = NSStackView(views: [])
         super.init()
         let label = { (text: String) -> NSTextField in
             let field = NSTextField(labelWithString: "")
@@ -103,6 +113,20 @@ final class GalleryToolbar: StickerCard {
         atlasLevels.onChange = { [weak self] level in self?.onAtlasLevel?(level) }
         atlasOut.onPress = { [weak self] in self?.onAtlasStep?(-1) }
         atlasIn.onPress = { [weak self] in self?.onAtlasStep?(1) }
+        // Catalogue: turn the book, the pages in view, the contents and the index.
+        pages.font = Typography.font(Typography.textExtraSmall, .semibold)
+        pages.textColor = Palette.muted
+        let turnBack = PillButton(title: "\u{2039}", help: "Turn back (\u{2190})")
+        let turnOn = PillButton(title: "\u{203A}", help: "Turn on (\u{2192})")
+        for view in [Self.rule(), turnBack, pages, turnOn, contents, index] {
+            catalogueControls.addArrangedSubview(view)
+        }
+        catalogueControls.orientation = .horizontal
+        catalogueControls.spacing = 8
+        turnBack.onPress = { [weak self] in self?.onCatalogue?(-1, nil) }
+        turnOn.onPress = { [weak self] in self?.onCatalogue?(1, nil) }
+        contents.onPress = { [weak self] in self?.onCatalogue?(nil, 1) }
+        index.onPress = { [weak self] in self?.onCatalogue?(nil, nil) }
         laddersSort.onChange = { [weak self] index in self?.change { $0.sort = index == 0 ? 1 : 0 }
         }
         laddersScale.onChange = { [weak self] index in self?.onLadders?(index == 1) }
@@ -122,9 +146,12 @@ final class GalleryToolbar: StickerCard {
         look.onPress = { [weak self] in self?.onShowLook?() }
         poster.onPress = { [weak self] in self?.onPoster?() }
 
-        let stack = NSStackView(views: [
-            viewSwitch, sheetControls, laddersControls, atlasControls, Self.rule(), poster, look,
-        ])
+        for view in [
+            viewSwitch, sheetControls, laddersControls, atlasControls, catalogueControls,
+            Self.rule(), poster, look,
+        ] {
+            stack.addArrangedSubview(view)
+        }
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -149,8 +176,17 @@ final class GalleryToolbar: StickerCard {
         sheet: SheetOptions,
         style: String,
         laddersShared: Bool = false,
-        atlasLevel: Int = 0
+        atlasLevel: Int = 0,
+        catalogue: GalleryHandle.Catalogue = .init()
     ) {
+        catalogueControls.isHidden = view != GeoViewCatalogue.rawValue
+        contents.isOn = catalogue.spread == 1
+        index.isOn = catalogue.spread > 0 && catalogue.spread >= catalogue.index
+        let total = catalogue.spreads * 2
+        pages.stringValue =
+            catalogue.spread == 0
+            ? "Cover \u{00B7} \(total - 2) pages"
+            : "Pages \(catalogue.spread * 2)\u{2013}\(catalogue.spread * 2 + 1) of \(total - 1)"
         atlasControls.isHidden = view != GeoViewAtlas.rawValue
         atlasLevels.selected = atlasLevel
         laddersControls.isHidden = view != GeoViewLadders.rawValue
@@ -165,6 +201,30 @@ final class GalleryToolbar: StickerCard {
         sort.selected = Int(sheet.sort)
         size.value = Double((sheet.cell - 72) / 128)
         look.title = style
+        fit(available: available)
+    }
+
+    /// How far the toolbar runs past its room, and how many folds it took to fit.
+    var cut: CGFloat { max(0, stack.fittingSize.width + 20 - available) }
+    var folds: Int { (viewSwitch.showsKeys ? 0 : 1) + (look.titleHidden ? 1 : 0) }
+
+    /// Fits the toolbar into `available` points, as the page does (gallery-toolbar.js): short of
+    /// room, the view switch drops its keys, then Poster and the Look pill their titles.
+    func fit(available: CGFloat) {
+        self.available = available
+        let folds: [(Bool) -> Void] = [
+            { [viewSwitch] in viewSwitch.showsKeys = !$0 },
+            { [poster, look] in
+                poster.titleHidden = $0
+                look.titleHidden = $0
+            },
+        ]
+        for fold in folds {
+            fold(false)
+        }
+        for fold in folds where stack.fittingSize.width + 20 > available {
+            fold(true)
+        }
     }
 
     private func change(_ edit: (inout SheetOptions) -> Void) {

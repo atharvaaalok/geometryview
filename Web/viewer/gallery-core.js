@@ -5,7 +5,7 @@
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
 export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128,
                                      Ruler: 256 });
-export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5 });
+export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5, Page: 6 });
 export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5,
                                        Reconnect: 6 });
 export const Keys = Object.freeze({ Left: 0, Right: 1, Up: 2, Down: 3, Enter: 4, Space: 5, Escape: 6, FolderUp: 7 });
@@ -144,6 +144,15 @@ export class GalleryCore {
   atlasZoom(factor, x, y) { this.#m._gv_gallery_atlas_zoom(this.#g, factor, x, y); }
   atlasPan(dx, dy) { this.#m._gv_gallery_atlas_pan(this.#g, dx, dy); }
   atlasLevel(level) { this.#m._gv_gallery_atlas_level(this.#g, level); }
+
+  /** Catalogue: { spread, spreads, index }: the spread in view, how many, and the index's first. */
+  get catalogue() {
+    this.#m._gv_gallery_catalogue(this.#g, this.#scratch);
+    const v = new Uint32Array(this.#m.HEAPU8.buffer, this.#scratch, 3);
+    return { spread: v[0], spreads: v[1], index: v[2] };
+  }
+  setCatalogueSpread(spread) { this.#m._gv_gallery_set_catalogue_spread(this.#g, spread); }
+  catalogueIndex() { this.#m._gv_gallery_catalogue_index(this.#g); }
 
   /** Ladders' scale: each strip its own, or one shared. */
   setLadders(shared) { this.#m._gv_gallery_set_ladders(this.#g, shared ? 1 : 0); }

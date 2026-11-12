@@ -151,6 +151,7 @@ bool Gallery::setFolder(std::string_view path) {
         peek_ = kNone;
         scroll_ = 0.0f;
         atlas_.reset();
+        spread_ = 0;
         findMatches();
         dirty_ = true;
     }
@@ -205,6 +206,9 @@ bool Gallery::layout() {
         break;
     case GeoViewAtlas:
         result_ = layoutAtlas(input, display_, atlasCamera());
+        break;
+    case GeoViewCatalogue:
+        result_ = layoutCatalogue(input, display_, spread_);
         break;
     default:
         result_ = layoutPlates(input, display_);
@@ -698,6 +702,7 @@ GeoGalleryAction Gallery::enter(u32 folder) {
     peek_ = kNone;
     scroll_ = 0.0f;
     atlas_.reset();
+    spread_ = 0;
     findMatches();
     dirty_ = true;
     return {GeoActionEnterFolder, folder};
@@ -717,6 +722,9 @@ GeoGalleryAction Gallery::click(u32 kind, u32 index, bool twice) {
         return {GeoActionHandled, 0};
     }
     switch (kind) {
+    case GeoTargetPage:
+        setCatalogueSpread(index / 2); // the spread the page is on
+        return {GeoActionHandled, 0};
     case GeoTargetReconnect:
         return {GeoActionReconnect, 0};
     case GeoTargetPeek:
@@ -787,6 +795,12 @@ GeoGalleryAction Gallery::key(u32 key) {
         }
         return std::nullopt;
     };
+    if (view_ == GeoViewCatalogue && (key == GeoKeyLeft || key == GeoKeyRight)) {
+        // ← and → turn the book a spread.
+        const u32 before = spread_;
+        setCatalogueSpread(key == GeoKeyLeft ? (spread_ == 0 ? 0 : spread_ - 1) : spread_ + 1);
+        return {before != spread_ ? GeoActionHandled : GeoActionNone, 0};
+    }
     switch (key) {
     case GeoKeyLeft:
     case GeoKeyRight:

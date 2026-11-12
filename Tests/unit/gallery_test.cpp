@@ -1120,3 +1120,189 @@ TEST_CASE("atlas: the card takes clicks, and a search drops pins") {
     g.layout();
     CHECK(countText(g, "Districts") == 1); // a search shows at least the districts
 }
+
+// ---- G8: Catalogue
+// ----------------------------------------------------------------------------------
+
+namespace {
+
+void checkNoOverlaps(const Gallery& g) {
+    struct Span {
+        float baseline, left, right;
+        std::string text;
+    };
+    std::vector<Span> spans;
+    const std::string& buffer = g.display().textBuffer();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind != GeoItemText) {
+            continue;
+        }
+        const std::string text = buffer.substr(item.text, item.text_length);
+        const float used = float(characters(text)) * (0.6f * item.font_size + item.tracking);
+        const float left = item.align == 1   ? item.x + (item.width - used) / 2.0f
+                           : item.align == 2 ? item.x + item.width - used
+                                             : item.x;
+        spans.push_back({item.baseline, left, left + used, text});
+    }
+    for (usize a = 0; a < spans.size(); ++a) {
+        for (usize b = a + 1; b < spans.size(); ++b) {
+            if (std::fabs(spans[a].baseline - spans[b].baseline) > 0.5f) {
+                continue;
+            }
+            CAPTURE(spans[a].text);
+            CAPTURE(spans[b].text);
+            CHECK(
+                (spans[a].right <= spans[b].left + 0.5f || spans[b].right <= spans[a].left + 0.5f));
+        }
+    }
+}
+
+} // namespace
+
+TEST_CASE("catalogue: the folder as a book, every spread aligned, every file in its tables once") {
+    for (const u32 style : {0u, 3u, 5u}) {
+        CAPTURE(style);
+        Gallery g = measured();
+        g.setViews(0b11111);
+        g.setStyle(style);
+        REQUIRE(g.setView(GeoViewCatalogue));
+        g.layout();
+        CHECK(countText(g, "FRONTISPIECE") == 1);
+        CHECK(countText(g, "PARTS CATALOGUE") == 1);
+        const u32 book = g.catalogueSpreads();
+        CHECK(book >= 6);
+        std::vector<u32> rows;
+        for (u32 s = 0; s < book; ++s) {
+            CAPTURE(s);
+            g.setCatalogueSpread(s);
+            g.layout();
+            CHECK(g.result().contentHeight == 720.0f); // it turns; it does not scroll
+            for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+                CHECK(spread.spread < 0.01f);
+            }
+            checkNoOverlaps(g);
+            for (const auto& p : g.result().parts) {
+                rows.push_back(p.index);
+            }
+        }
+        std::sort(rows.begin(), rows.end());
+        CHECK(rows.size() == 61); // every file in a table, once
+        CHECK(std::unique(rows.begin(), rows.end()) == rows.end());
+        // The index is at the end.
+        g.setCatalogueSpread(g.catalogueIndexSpread());
+        g.layout();
+        CHECK(countText(g, "Index") >= 1);
+    }
+}
+
+TEST_CASE("catalogue: everything on a page stays on it, clear of the fold") {
+    // Washers as ISO 7089 has them, M1 to M36: many small, then a few far larger, so the plate's
+    // rows fill unevenly, and the folder of measured() besides.
+    Gallery washers;
+    std::vector<Entry> entries;
+    const double sizes[] = {4, 6, 7, 9, 10, 12, 16, 20, 24, 30, 37, 44, 56, 56, 66};
+    for (const double size : sizes) {
+        entries.push_back({std::format("washer/M{}.step", size)});
+    }
+    washers.setEntries("Parts", entries);
+    for (u32 f = 0; f < washers.tree().fileCount(); ++f) {
+        Facts facts;
+        const double side = sizes[f];
+        facts.size = {side, side, side / 12.0};
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        washers.setFacts(f, facts);
+        Picture p;
+        p.width = p.height = 512;
+        p.mmPerPixel = side * 1.3 / 512.0;
+        p.part = {60.0f, 160.0f, 394.0f, 200.0f};
+        p.ink = {50.0f, 150.0f, 420.0f, 240.0f};
+        washers.setPicture(f, p);
+    }
+    washers.setViewport(1080.0f, 720.0f);
+    for (int which = 0; which < 2; ++which) {
+        for (const u32 style : {0u, 3u}) {
+            CAPTURE(which);
+            CAPTURE(style);
+            Gallery g = which == 0 ? measured() : washers;
+            g.setViews(0b11111);
+            g.setStyle(style);
+            REQUIRE(g.setView(GeoViewCatalogue));
+            g.layout();
+            for (u32 s = 0; s < g.catalogueSpreads(); ++s) {
+                CAPTURE(s);
+                g.setCatalogueSpread(s);
+                g.layout();
+                // The pages are the sheets; what follows the fold is the thumb index, off the edge.
+                std::vector<GeoGalleryItem> pages;
+                for (const GeoGalleryItem& item : g.display().items()) {
+                    if (item.kind == GeoItemRect && (item.flags & GeoItemSheet) != 0) {
+                        pages.push_back(item);
+                    }
+                }
+                REQUIRE(!pages.empty());
+                for (const GeoGalleryItem& item : g.display().items()) {
+                    if (item.kind == GeoItemLine && item.width == 0.0f &&
+                        std::abs(item.x - (pages[0].x + pages[0].width)) < 0.01f) {
+                        break; // the fold, then the tabs
+                    }
+                    if ((item.flags & GeoItemSheet) != 0) {
+                        continue;
+                    }
+                    float x0 = std::min(item.x, item.x + item.width),
+                          x1 = std::max(item.x, item.x + item.width);
+                    float y0 = std::min(item.y, item.y + item.height),
+                          y1 = std::max(item.y, item.y + item.height);
+                    if (item.kind == GeoItemPicture) {
+                        // A picture's ink: its bitmap has room around it.
+                        const Picture& p = *g.tree().file(item.file).picture;
+                        const float k = item.width / float(p.width);
+                        x0 = item.x + p.ink[0] * k;
+                        x1 = x0 + p.ink[2] * k;
+                        y0 = item.y + p.ink[1] * k;
+                        y1 = y0 + p.ink[3] * k;
+                    }
+                    // Within a page's text, 40 of its 504 points in from either edge.
+                    const bool inside = std::ranges::any_of(pages, [&](const GeoGalleryItem& p) {
+                        const float margin = p.width * 40.0f / 504.0f - 0.5f;
+                        return x0 >= p.x + margin && x1 <= p.x + p.width - margin &&
+                               y0 >= p.y - 0.5f && y1 <= p.y + p.height + 0.5f;
+                    });
+                    const std::string text =
+                        g.display().textBuffer().substr(item.text, item.text_length);
+                    CAPTURE(item.kind);
+                    CAPTURE(text);
+                    CAPTURE(x0);
+                    CAPTURE(x1);
+                    CAPTURE(y0);
+                    CAPTURE(pages[0].x);
+                    CAPTURE(pages[0].width);
+                    CHECK(inside);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("catalogue: arrows turn the book; a contents line turns to its page") {
+    Gallery g = measured();
+    g.setViews(0b11111);
+    g.setView(GeoViewCatalogue);
+    g.layout();
+    CHECK(g.key(GeoKeyLeft).kind == GeoActionNone); // the front already
+    CHECK(g.key(GeoKeyRight).kind == GeoActionHandled);
+    CHECK(g.catalogueSpread() == 1);
+    g.layout();
+    // A contents line: a page target, turning to that page's spread.
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.target_kind == GeoTargetPage && item.target > 4) {
+            CHECK(g.click(GeoTargetPage, item.target, false).kind == GeoActionHandled);
+            CHECK(g.catalogueSpread() == item.target / 2);
+            break;
+        }
+    }
+    g.setCatalogueSpread(1000);
+    CHECK(g.catalogueSpread() == g.catalogueSpreads() - 1); // the back cover at most
+    CHECK(g.key(GeoKeyRight).kind == GeoActionNone);
+}
