@@ -117,7 +117,8 @@ function fit() {
   const panes = [...document.querySelectorAll(".pane")];
   if (!panes.length) return;
   const room = $("panes").clientWidth;
-  const each = panes.length > 1 && room > 1200 ? (room - 24) / 2 : room;
+  // Two panes side by side on a wide window, with room for their borders and shadows.
+  const each = (panes.length > 1 && room > 1200 ? (room - 24) / 2 : room) - 12;
   for (const p of panes) {
     const scaler = p.querySelector(".scaler");
     const natural = widths[state.view] + 32;
@@ -125,6 +126,7 @@ function fit() {
     scaler.style.transform = `scale(${scale})`;
     const frame = p.querySelector(".frame");
     frame.style.width = natural * scale + 3 + "px";
+    p.style.width = natural * scale + 6 + "px";
     frame.style.height = scaler.scrollHeight * scale + 3 + "px";
   }
 }
