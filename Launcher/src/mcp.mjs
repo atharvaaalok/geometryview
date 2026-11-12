@@ -4,7 +4,7 @@
 
 import { createInterface } from "node:readline";
 
-const SERVER = { name: "geometryview", version: "0.3.0" };
+const SERVER = { name: "geometryview", version: "0.4.0" };
 const LATEST_PROTOCOL = "2025-06-18";
 
 /// Serves `tools` until standard input closes. Each tool is { name, description, inputSchema,
