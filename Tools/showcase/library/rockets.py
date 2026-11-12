@@ -98,4 +98,4 @@ def rocket(name: str, length: float, d: float, nose_kind: str, count: int, shape
 
 def files():
     for i, spec in enumerate(ROCKETS):
-        yield f"{CHAPTER}/{i + 1:02d} {spec[0]}.step", assembly(spec[0].lower(), rocket(*spec))
+        yield f"{CHAPTER}/model_rockets/{i + 1:02d} {spec[0]}.step", assembly(spec[0].lower(), rocket(*spec))
