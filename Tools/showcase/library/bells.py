@@ -70,7 +70,7 @@ def bowl(d: float) -> Solid:
 
 def files():
     for i, (note, n) in enumerate(diatonic(5, 15)):
-        yield (f"{CHAPTER}/handbells/{i + 1:02d} Handbell {note}.step",
+        yield (f"{CHAPTER}/handbells/{i + 1:03d} Handbell {note}.step",
                assembly(f"handbell_{note.lower()}", handbell(n)))
     for i, d in enumerate(BOWLS):
-        yield f"{CHAPTER}/singing_bowls/{i + 1:02d} Singing bowl {d} mm.step", part(bowl(d), f"singing_bowl_{d}mm")
+        yield f"{CHAPTER}/singing_bowls/{i + 1:03d} Singing bowl {d} mm.step", part(bowl(d), f"singing_bowl_{d}mm")

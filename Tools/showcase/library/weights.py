@@ -46,8 +46,8 @@ def knob_weight(g: float) -> Solid:
 
 def files():
     for i, (kg, label) in enumerate(BELL_WEIGHTS):
-        yield (f"{CHAPTER}/bell_weights/{i + 1:02d} Bell weight {label}.step",
+        yield (f"{CHAPTER}/bell_weights/{i + 1:03d} Bell weight {label}.step",
                part(bell_weight(kg), "bell_weight_" + label.replace(" ", "")))
     for i, (g, label) in enumerate(KNOB_WEIGHTS):
-        yield (f"{CHAPTER}/knob_weights/{i + 1:02d} Knob weight {label}.step",
+        yield (f"{CHAPTER}/knob_weights/{i + 1:03d} Knob weight {label}.step",
                part(knob_weight(g), "knob_weight_" + label.replace(" ", "")))

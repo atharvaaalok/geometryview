@@ -15,7 +15,7 @@ scripts are, and manifest.json records what they make, so a change shows.
 parts share a surface the renderer cannot tell which is in front and draws stripes of both colours.
 Parts of many bodies (blade rows, fins) are left out, since they are meant to sink into their hubs.
 
-`library` writes the folder, `things_that_come_in_sizes`, one chapter after another; `--sheet`
+`library` writes the folder, "Things That Come in Sizes", one chapter after another; `--sheet`
 draws each family on a contact sheet with `gcli sheet`. `model` writes an assembly; `--preview`
 draws it from four sides and cut, in Illustration and Studio, on one sheet.
 """

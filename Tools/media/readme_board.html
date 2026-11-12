@@ -1,0 +1,173 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>README Mockups</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a sticky bar of drafts and view switches over the board's notes, then the draft itself in
+   a GitHub frame at its real width, scaled down to fit a narrow window. */
+:root {
+  --paper: #f2efe7; --sheet: #f7f5ee; --ink: #231e16; --ink-soft: #6f685c; --rule: #ddd6c8;
+  --mustard: #f4b829; --cobalt: #5a82c6; --warn: #c2462b;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #17181b; --sheet: #222327; --ink: #eef0f4; --ink-soft: #a8a59c; --rule: #3a3c40;
+    --cobalt: #8fb0ea; --warn: #ef8a6c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #17181b; --sheet: #222327; --ink: #eef0f4; --ink-soft: #a8a59c; --rule: #3a3c40;
+  --cobalt: #8fb0ea; --warn: #ef8a6c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--mono); font-size: 14px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--paper); }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper);
+  border-bottom: 1.5px solid var(--ink); padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.bar h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: 0.04em; }
+.pills { display: flex; flex-wrap: wrap; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden;
+  background: var(--sheet); }
+.pills button { font: 500 12.5px var(--mono); padding: 5px 11px; border: 0; background: transparent;
+  color: var(--ink); cursor: pointer; }
+.pills button + button { border-left: 1.5px solid var(--ink); }
+.pills button[aria-pressed="true"] { background: var(--mustard); color: #231e16; }
+.pills button:focus-visible { outline: 2px solid var(--cobalt); outline-offset: -3px; }
+main { padding-block: 22px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; max-width: 1900px; margin: 0 auto; }
+.about { display: grid; gap: 10px; max-width: 980px; }
+.about h2 { margin: 0; font-size: 22px; font-weight: 600; text-wrap: balance; }
+.about p { margin: 0; line-height: 1.6; max-width: 80ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 12px; padding: 3px 10px; border: 1.5px solid var(--ink); border-radius: 999px; background: var(--sheet); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.muted { color: var(--ink-soft); }
+.panes { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.pane { display: grid; gap: 8px; min-width: 0; }
+.pane .label { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.06em; text-transform: uppercase; }
+.frame { border-radius: 10px; border: 1.5px solid var(--ink); overflow: hidden; box-shadow: 3px 3px 0 var(--ink); }
+/* GitHub's own surfaces: the page, and the README box on it. */
+.gh-light .site { background: #ffffff; } .gh-dark .site { background: #0d1117; }
+.site { padding: 16px; }
+.repo { font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 2px 4px 14px; }
+.gh-light .repo { color: #1f2328; } .gh-dark .repo { color: #f0f6fc; }
+.repo span { font-weight: 400; } .gh-light .repo span { color: #59636e; } .gh-dark .repo span { color: #9198a1; }
+.box { border-radius: 6px; overflow: hidden; }
+.gh-light .box { border: 1px solid #d1d9e0; } .gh-dark .box { border: 1px solid #3d444d; }
+.boxhead { font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 9px 16px; }
+.gh-light .boxhead { color: #1f2328; border-bottom: 1px solid #d1d9e0; background: #f6f8fa; }
+.gh-dark .boxhead { color: #f0f6fc; border-bottom: 1px solid #3d444d; background: #151b23; }
+.markdown-body { padding: 32px; }
+/* A table takes its colour from the README box, as on GitHub, even where a page without a doctype
+   would give it the board's own. */
+.markdown-body table { color: inherit; }
+.phone .markdown-body { padding: 16px; }
+.phone .site { padding: 8px; }
+.npm .site { background: #ffffff; }
+.npm .markdown-body { padding: 20px 24px; font-family: "Source Sans Pro", -apple-system, sans-serif; }
+.scaler { transform-origin: top left; }
+footer { font-size: 12px; color: var(--ink-soft); }
+</style>
+<style>/*GITHUB_CSS*/</style>
+
+<div class="bar">
+  <h1 id="title">README mockups</h1>
+  <div class="pills" id="drafts" role="group" aria-label="Draft"></div>
+  <div class="pills" id="views" role="group" aria-label="View">
+    <button type="button" id="v-desktop" data-view="desktop" aria-pressed="true">Desktop</button>
+    <button type="button" id="v-phone" data-view="phone" aria-pressed="false">Phone</button>
+    <button type="button" id="v-npm" data-view="npm" aria-pressed="false">npm</button>
+  </div>
+  <div class="pills" id="themes" role="group" aria-label="Theme">
+    <button type="button" id="t-both" data-theme-pick="both" aria-pressed="true">Light + dark</button>
+    <button type="button" id="t-light" data-theme-pick="light" aria-pressed="false">Light</button>
+    <button type="button" id="t-dark" data-theme-pick="dark" aria-pressed="false">Dark</button>
+  </div>
+</div>
+<main>
+  <section class="about" id="about"></section>
+  <div class="panes" id="panes"></div>
+  <footer>Each draft rendered by GitHub's Markdown API and styled with github-markdown-css (MIT); the npm
+    pane is approximate. Weights count every image each theme loads, once.</footer>
+</main>
+
+<script>
+const BOARD = "__BOARD__";
+const state = { draft: null, view: "desktop", theme: "both" };
+const widths = { desktop: 880, phone: 360, npm: 760 };
+const $ = (id) => document.getElementById(id);
+const mb = (bytes) => (bytes / 1e6).toFixed(2) + " MB";
+
+function pane(draft, theme) {
+  const view = state.view;
+  const html = view === "npm" ? draft.npm : draft[theme];
+  const wrap = document.createElement("div");
+  wrap.className = "pane";
+  const label = view === "npm" ? "npmjs.com (approximate)" : `${view} · ${theme}`;
+  const repo = view === "npm" ? "" : `<div class="repo"><span>atharvaaalok /</span> geometryview</div>`;
+  wrap.innerHTML = `<div class="label">${label} · ${widths[view]} px</div>
+    <div class="frame"><div class="scaler"><div class="gh-${view === "npm" ? "light" : theme} ${view}">
+      <div class="site">${repo}<div class="box"><div class="boxhead">README</div>
+        <article class="markdown-body">${html ?? "<p>No npm draft.</p>"}</article></div></div></div></div></div>`;
+  const scaler = wrap.querySelector(".scaler");
+  scaler.style.width = widths[view] + 32 + "px";
+  return wrap;
+}
+
+function fit() {
+  const panes = [...document.querySelectorAll(".pane")];
+  if (!panes.length) return;
+  const room = $("panes").clientWidth;
+  // Two panes side by side on a wide window, with room for their borders and shadows.
+  const each = (panes.length > 1 && room > 1200 ? (room - 24) / 2 : room) - 12;
+  for (const p of panes) {
+    const scaler = p.querySelector(".scaler");
+    const natural = widths[state.view] + 32;
+    const scale = Math.min(1, each / natural);
+    scaler.style.transform = `scale(${scale})`;
+    const frame = p.querySelector(".frame");
+    frame.style.width = natural * scale + 3 + "px";
+    p.style.width = natural * scale + 6 + "px";
+    frame.style.height = scaler.scrollHeight * scale + 3 + "px";
+  }
+}
+
+function show() {
+  const draft = BOARD.drafts.find((d) => d.id === state.draft) ?? BOARD.drafts[0];
+  state.draft = draft.id;
+  document.querySelectorAll("#drafts button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === draft.id)));
+  document.querySelectorAll("#views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === state.view)));
+  document.querySelectorAll("#themes button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themePick === state.theme)));
+  const w = draft.weight;
+  const chips = [`light ${mb(w.light)}`, `dark ${mb(w.dark)}`, `npm ${mb(w.npm)}`, `${draft.lines} lines`]
+    .map((t) => `<span class="chip">${t}</span>`).join("") +
+    draft.dropped.map((t) => `<span class="chip warn">GitHub drops ${t}</span>`).join("");
+  $("about").innerHTML = `<h2>${draft.name}</h2><p>${draft.idea}</p>${draft.notes ? `<p class="muted">${draft.notes}</p>` : ""}
+    <div class="facts">${chips}</div>`;
+  const panes = $("panes");
+  panes.replaceChildren();
+  const themes = state.view === "npm" ? ["light"] : state.theme === "both" ? ["light", "dark"] : [state.theme];
+  for (const t of themes) panes.append(pane(draft, t));
+  panes.querySelectorAll("img").forEach((img) => img.addEventListener("load", fit));
+  requestAnimationFrame(fit);
+}
+
+$("title").textContent = BOARD.title;
+for (const d of BOARD.drafts) {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "d-" + d.id; b.dataset.id = d.id; b.textContent = d.tab ?? d.id.toUpperCase();
+  b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => { location.hash = d.id; });
+  $("drafts").append(b);
+}
+document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; show(); }));
+document.querySelectorAll("#themes button").forEach((b) => b.addEventListener("click", () => { state.theme = b.dataset.themePick; show(); }));
+const route = () => { state.draft = location.hash.slice(1) || BOARD.drafts[0].id; show(); };
+addEventListener("hashchange", route);
+addEventListener("resize", fit);
+route();
+</script>
