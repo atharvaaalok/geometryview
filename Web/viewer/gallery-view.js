@@ -13,6 +13,7 @@ import { Actions, cssColour, Flags, Kinds, Targets, TrackKinds, Transitions } fr
 
 const kAscent = 1.025, kLine = 1.3; // IBM Plex Mono, in ems, as the core reckons
 const kFaded = 0.22; // what a search did not find
+const kStale = 0.45; // a picture being drawn again
 const kEase = "cubic-bezier(0.3, 0.7, 0.2, 1)";
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -221,7 +222,7 @@ export class GalleryView {
           continue;
       }
       const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
-      const opacity = base * (item.flags & Flags.Fading ? kFaded : 1);
+      const opacity = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1);
       node.style.opacity = opacity === 1 ? "" : String(opacity);
       // Headings stay above what scrolls under them.
       node.style.zIndex = String(sticky ? items.length + i : i);

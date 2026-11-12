@@ -123,7 +123,8 @@ std::string rangeOf(const Tree& tree, const std::vector<u32>& files) {
     return millimetres(kept.front()) + "\xE2\x80\x93" + millimetres(kept.back());
 }
 
-std::array<float, 2> Draw::part(u32 file, float x, float bottom, double mmPerPoint, u32 group) {
+std::array<float, 2> Draw::part(u32 file, float x, float bottom, double mmPerPoint, u32 group,
+                                bool marks) {
     const File& f = tree.file(file);
     const std::optional<Drawn> d = drawnOf(f);
     const float w = float(d->w / mmPerPoint), h = float(d->h / mmPerPoint);
@@ -133,12 +134,33 @@ std::array<float, 2> Draw::part(u32 file, float x, float bottom, double mmPerPoi
         const float k = float(p.mmPerPixel / mmPerPoint); // points a pixel
         out.picture(file, x - p.part[0] * k, bottom - (p.part[1] + p.part[3]) * k,
                     float(p.width) * k, float(p.height) * k);
+        if (f.stale) {
+            out.last().flags |= GeoItemStale; // drawn again: faded until the new picture comes
+        }
     } else {
         // Not drawn yet: its measured box, in construction lines.
         out.rect(x, bottom - h, w, h, 0, palette.faint, 1.0f, 0.0f, GeoItemDashed);
     }
     lastLine(bottom);
     out.group(0);
+    if (marks && f.reading >= 0.0f && !f.picture) {
+        // Being read: a mustard bar, filling as it reads, on the box's foot.
+        const float barW = std::min(64.0f, std::max(24.0f, w - 8.0f));
+        const float bx = x + (w - barW) / 2.0f, by = bottom - 9.0f;
+        out.rect(bx, by, barW, 5.0f, hex(0xF7F5EE), hex(0x231E16), 1.5f, 2.5f);
+        const float filled = (barW - 3.0f) * f.reading;
+        if (filled > 0.5f) {
+            out.rect(bx + 1.5f, by + 1.5f, filled, 2.0f, palette.folders[0], 0, 0.0f, 1.0f);
+        }
+    }
+    if (marks && f.changed) {
+        // Changed on disk and not seen since: a Δ at the part's top right.
+        constexpr TextStyle kDelta{9.5f, 600, 0.0f, false};
+        const float cx = x + w - 4.0f, cy = bottom - h - 14.0f;
+        out.rect(cx, cy, 16.0f, 14.0f, hex(0xF7F5EE), hex(0x231E16), 1.25f, 7.0f);
+        out.text("\xCE\x94", kDelta, hex(0x231E16), cx,
+                 cy + (14.0f - lineHeightOf(kDelta)) / 2.0f + ascentOf(kDelta), 16.0f, 1);
+    }
     return {w, h};
 }
 

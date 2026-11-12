@@ -50,6 +50,12 @@ export class Gallery {
     this.view.element.hidden = true;
     this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(), version: engine.cacheVersion, phone }, {
       facts: (path, facts) => this.#receiveFacts(path, facts),
+      reading: (path, fraction) => {
+        const file = this.core.fileAt(path);
+        if (file === null) return;
+        this.core.setReading(file, fraction);
+        this.#scheduleReload();
+      },
       picture: (path, png, note) => this.#receivePicture(path, png, note),
       failed: (path, message) => this.#receiveFailure(path, message),
     });

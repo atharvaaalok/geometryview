@@ -72,6 +72,16 @@ final class GalleryHandle {
         geo_gallery_set_failure(gallery, file, message)
     }
 
+    /// A file being read, 0 to 1, or negative once it is not.
+    func setReading(_ file: UInt32, _ fraction: Float) {
+        geo_gallery_set_reading(gallery, file, fraction)
+    }
+
+    /// A file changed on disk: a Δ until seen, its picture faded until a new one comes.
+    func setChanged(_ file: UInt32, _ changed: Bool) {
+        geo_gallery_set_changed(gallery, file, changed)
+    }
+
     func setStyle(_ style: UInt32) {
         geo_gallery_set_style(gallery, style)
     }

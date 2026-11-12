@@ -25,6 +25,8 @@ public:
     void setFacts(u32 file, Facts facts);
     void setPicture(u32 file, const Picture& picture);
     void setFailure(u32 file, std::string message);
+    void setReading(u32 file, float fraction);
+    void setChanged(u32 file, bool changed);
 
     void setStyle(u32 style);
     void setViewport(float width, float height);
@@ -71,6 +73,8 @@ private:
     void beginMotion(u32 kind, std::optional<std::array<float, 4>> rect = std::nullopt);
     void findMatches();
     void layoutPeek();
+    /// A changed file was looked at: its Δ goes.
+    void seen(u32 file);
     // The place nearest the one at `from` in a direction, or none.
     static std::optional<usize> nearest(const std::vector<LayoutResult::Place>& places, usize from,
                                         int dx, int dy);

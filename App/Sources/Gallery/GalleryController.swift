@@ -18,6 +18,11 @@ final class GalleryController {
     private var pictures: [String: (png: String, picture: GeoGalleryPicture, style: UInt32)] = [:]
     private var failures: [String: String] = [:]
     private var entries: [String: ScanEntry] = [:]
+    /// Pictures decoded, by path, so a new listing keeps them without decoding them again.
+    private var decoded: [String: CGImage] = [:]
+    /// Watches the root, so a file changed on disk re-inks.
+    private lazy var watcher = DirectoryWatcher { [weak self] _ in self?.rootChanged() }
+    private var rescanScheduled = false
     private var reloadScheduled = false
     private var wantScheduled = false
     private var picturesPending = 0
@@ -85,7 +90,9 @@ final class GalleryController {
             facts.removeAll()
             pictures.removeAll()
             failures.removeAll()
+            decoded.removeAll()
             view.clearImages()
+            watcher.watch([root.path])
             if let kept = library?.keptListing(root) {
                 load(kept)
             } else {
@@ -154,16 +161,19 @@ final class GalleryController {
         entries = Dictionary(list.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
         gallery.setEntries(title: root?.lastPathComponent ?? "", entries: list)
         gallery.setFolder(folder)
-        // What was known of each file is known still.
+        // What was known of each file is known still, its picture without decoding it again.
+        view.clearImages()
         for (path, f) in facts {
             if let file = gallery.file(at: path) {
                 gallery.setFacts(file, f)
             }
         }
         for (path, p) in pictures {
-            if let file = gallery.file(at: path) {
+            if let file = gallery.file(at: path), let image = decoded[path] {
                 gallery.setPicture(file, p.picture)
-                loadImage(p.png, for: file)
+                view.setImage(image, for: file)
+            } else if gallery.file(at: path) != nil {
+                loadImage(p.png, for: path)
             }
         }
         for (path, message) in failures {
@@ -180,11 +190,42 @@ final class GalleryController {
         {
             return
         }
-        view.clearImages()
+        // Files drawn before whose time changed: each re-inks alone, marked until seen.
+        let changed = list.filter { entry in
+            !entry.folder && pictures[entry.path] != nil
+                && entries[entry.path].map { $0.modified != entry.modified } == true
+        }.map(\.path)
         load(list)
+        for path in changed {
+            if let file = gallery.file(at: path) {
+                gallery.setChanged(file, true)
+            }
+        }
         view.reload()
         onFolderChanged?()
         scheduleWant()
+    }
+
+    /// Something under the root changed on disk: scans it again, once the burst is over.
+    private func rootChanged() {
+        guard !rescanScheduled, let root else {
+            return
+        }
+        rescanScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.rescanScheduled = false
+            guard let self, self.root == root, !scanning else {
+                return
+            }
+            scanning = true
+            Task { [weak self] in
+                let entries = await self?.library?.scan(root)
+                self?.scanning = false
+                if let entries, self?.root == root {
+                    self?.rescanned(entries)
+                }
+            }
+        }
     }
 
     // MARK: The library
@@ -234,26 +275,30 @@ final class GalleryController {
             facts[rel] = f
             gallery.setFacts(file, f)
         case .picture(let path, let png, let picture):
-            guard let rel = relative(path), let file = gallery.file(at: rel) else {
+            guard let rel = relative(path), gallery.file(at: rel) != nil else {
                 return
             }
+            // Laid out once decoded, so the old picture stays whole until the new one shows.
             pictures[rel] = (png, picture, styleRaw)
-            gallery.setPicture(file, picture)
-            loadImage(png, for: file)
+            loadImage(png, for: rel)
         case .failed(let path, let message):
             guard let rel = relative(path), let file = gallery.file(at: rel) else {
                 return
             }
             failures[rel] = message
             gallery.setFailure(file, message)
-        case .progress:
-            return
+        case .progress(let path, let done, let total):
+            guard total > 0, let rel = relative(path), let file = gallery.file(at: rel) else {
+                return
+            }
+            gallery.setReading(file, Float(done) / Float(total))
         }
         scheduleReload()
     }
 
-    /// Decodes a picture off the main thread, then paints it.
-    private func loadImage(_ png: String, for file: UInt32) {
+    /// Decodes a picture off the main thread, then paints it on the file at `path`, wherever the
+    /// listing then has it.
+    private func loadImage(_ png: String, for path: String) {
         picturesPending += 1
         Task.detached(priority: .userInitiated) {
             let url = URL(fileURLWithPath: png) as CFURL
@@ -270,6 +315,14 @@ final class GalleryController {
                     return
                 }
                 picturesPending -= 1
+                // Only the picture still wanted for the path: a newer one may have come meanwhile.
+                guard let wanted = pictures[path], wanted.png == png,
+                    let file = gallery.file(at: path)
+                else {
+                    return
+                }
+                decoded[path] = sendable.image
+                gallery.setPicture(file, wanted.picture)
                 view.setImage(sendable.image, for: file)
                 scheduleReload(repaint: true)
             }

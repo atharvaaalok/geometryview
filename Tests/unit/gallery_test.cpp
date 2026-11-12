@@ -667,3 +667,65 @@ TEST_CASE("in the sheet, every part's shadow stays above its labels") {
         checkAligned(g);
     }
 }
+
+TEST_CASE("a file being read shows its bar; a changed one its Δ until seen, and nothing moves") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 file = g.result().parts[1].index;
+    const auto boxes = [&] {
+        std::vector<std::array<float, 4>> out;
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if (item.kind == GeoItemPicture || (item.flags & GeoItemDashed) != 0) {
+                out.push_back({item.x, item.y, item.width, item.height});
+            }
+        }
+        return out;
+    };
+    const auto before = boxes();
+    g.setChanged(file, true);
+    REQUIRE(g.layout());
+    CHECK(boxes() == before); // nothing moves
+    CHECK(countText(g, "\xCE\x94") == 1);
+    usize stale = 0;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        stale += (item.flags & GeoItemStale) != 0 ? 1 : 0;
+    }
+    CHECK(stale == 1);
+    for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
+        CHECK(spread.spread < 0.01f); // the marks align on nothing
+    }
+    // Seen: hovered, the Δ goes; the picture stays faded until a new one comes.
+    g.hover(GeoTargetFile, file);
+    g.layout();
+    CHECK(countText(g, "\xCE\x94") == 0);
+    Picture p = *g.tree().file(file).picture;
+    g.setPicture(file, p);
+    g.layout();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        CHECK((item.flags & GeoItemStale) == 0);
+    }
+
+    // A file not drawn yet, being read: its box and a bar, which a picture ends.
+    Gallery r;
+    std::vector<Entry> entries = {{"a.step"}, {"b.step"}};
+    r.setEntries("Parts", entries);
+    Facts facts;
+    facts.size = {40, 30, 20};
+    facts.hasBox = true;
+    facts.estimated = true;
+    facts.parts = 1;
+    r.setFacts(0, facts);
+    r.setFacts(1, facts);
+    r.setViewport(1080.0f, 720.0f);
+    r.setReading(0, 0.5f);
+    r.layout();
+    usize bars = 0;
+    for (const GeoGalleryItem& item : r.display().items()) {
+        bars += item.kind == GeoItemRect && item.height == 5.0f ? 1 : 0;
+    }
+    CHECK(bars == 1);
+    CHECK_FALSE(r.layout()); // nothing new
+    r.setReading(0, 0.51f);  // the same sixteenth: no layout
+    CHECK_FALSE(r.layout());
+}

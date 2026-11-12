@@ -26,7 +26,8 @@ export class GalleryLibrary {
 
   /**
    * `on` takes facts(path, facts), picture(path, png, note) and failed(path, message), as each is
-   * known. `version` is the cache files' version, which keys hold.
+   * known, and reading(path, fraction) while a file is imported. `version` is the cache files'
+   * version, which keys hold.
    */
   constructor({ importers, thumbnailer, version, phone = false }, on) {
     this.#importers = importers;
@@ -85,7 +86,10 @@ export class GalleryLibrary {
     if (signal.aborted) throw new Error("cancelled");
     // Its import kept before, or imported now.
     let blob = (await keptImport(key, this.#version))?.blob;
-    if (!blob) blob = await this.#import(file, key, signal);
+    if (!blob) {
+      this.#on.reading?.(path, 0);
+      blob = await this.#import(file, key, signal, (fraction) => this.#on.reading?.(path, fraction));
+    }
     const drawn = await this.#thumbnailer.draw(blob, spec, -1, { folderColor, keep: { key, picture } });
     drawn.bitmap?.close();
     if (drawn.facts) this.#on.facts?.(path, drawn.facts);
@@ -94,12 +98,13 @@ export class GalleryLibrary {
   }
 
   // Imports in the gallery's own worker; a file in a connected folder keeps no source copy.
-  async #import(file, key, signal) {
+  async #import(file, key, signal, progress) {
     this.#worker ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" });
     const worker = this.#worker;
     const stl = /\.stl$/i.test(file.name);
     const result = await new Promise((resolve) => {
       worker.onmessage = ({ data }) => {
+        if (data.type === "progress" && data.total > 0) progress?.(data.done / data.total);
         if (data.type === "done" || data.type === "failed") resolve(data);
       };
       worker.onerror = (event) => resolve({ type: "failed", message: event.message ?? "The importer failed." });
