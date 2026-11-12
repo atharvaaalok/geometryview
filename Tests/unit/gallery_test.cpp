@@ -8,8 +8,8 @@
 #include "gallery/tree.h"
 #include "gallery/view.h"
 
-#include <doctest/doctest.h>
 #include <cmath>
+#include <doctest/doctest.h>
 #include <format>
 #include <map>
 #include <string>
@@ -169,9 +169,9 @@ TEST_CASE("plates lay out with every row and column on one line, in every style"
         g.setStyle(style);
         g.setViewport(1080.0f, 720.0f);
         REQUIRE(g.layout());
-        CHECK_FALSE(g.layout()); // nothing changed
+        CHECK_FALSE(g.layout());              // nothing changed
         CHECK(g.result().plates.size() == 3); // drafts holds nothing, so has no plate
-        CHECK(g.result().parts.size() == 2); // the root's own files, on a shelf
+        CHECK(g.result().parts.size() == 2);  // the root's own files, on a shelf
         CHECK(g.result().covers.size() > 4);
         checkAligned(g);
         // Hovered, a plate lifts, and the rest stay aligned.
@@ -975,6 +975,117 @@ TEST_CASE("tiny beside huge: a speck at the shelf's scale gets a detail bubble")
     for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
         CHECK(spread.spread < 0.01f);
     }
+}
+
+namespace {
+
+// A folder of two specks and a tall, narrow tower, as test-models/large is: the specks sort first
+// and get detail bubbles, the first at the shelf's left edge; the tower's square picture is mostly
+// clear margin, and it stands right after the second bubble.
+Gallery sizesWithATower(std::vector<Entry>& entries) {
+    Gallery g;
+    entries = {{"washer-m1.step"}, {"washer-m2.step"}, {"tower.step"}};
+    g.setEntries("Parts", entries);
+    struct Spec {
+        std::array<double, 3> size;
+        std::array<float, 4> part;
+    };
+    const Spec specs[3] = {{{1.2, 1.2, 0.3}, {80.0f, 100.0f, 340.0f, 300.0f}},
+                           {{2.0, 2.0, 0.5}, {80.0f, 100.0f, 340.0f, 300.0f}},
+                           {{190.0, 190.0, 1196.0}, {200.0f, 40.0f, 112.0f, 432.0f}}};
+    for (u32 f = 0; f < 3; ++f) {
+        const u32 file = g.tree().fileAt(entries[f].path);
+        Facts facts;
+        facts.size = specs[f].size;
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        g.setFacts(file, facts);
+        const double longest = *std::max_element(specs[f].size.begin(), specs[f].size.end());
+        Picture p;
+        p.width = p.height = 512;
+        p.mmPerPixel = longest / double(std::max(specs[f].part[2], specs[f].part[3]));
+        p.part = specs[f].part;
+        p.ink = {specs[f].part[0] - 10.0f, specs[f].part[1] - 5.0f, specs[f].part[2] + 30.0f,
+                 specs[f].part[3] + 40.0f};
+        g.setPicture(file, p);
+    }
+    g.setViews(0x1F);
+    g.setViewport(1080.0f, 720.0f);
+    return g;
+}
+
+} // namespace
+
+TEST_CASE("a part's card stays inside the view, the leftmost one's too, in every view") {
+    std::vector<Entry> entries;
+    Gallery g = sizesWithATower(entries);
+    for (const u32 view :
+         {GeoViewPlates, GeoViewSheet, GeoViewLadders, GeoViewAtlas, GeoViewCatalogue}) {
+        CAPTURE(view);
+        REQUIRE(g.setView(view));
+        for (const Entry& e : entries) {
+            const u32 file = g.tree().fileAt(e.path);
+            CAPTURE(e.path);
+            for (const bool selecting : {true, false}) {
+                CAPTURE(selecting);
+                if (selecting) {
+                    g.click(GeoTargetFile, file, false);
+                    g.hover(GeoTargetNone, 0);
+                } else {
+                    g.click(GeoTargetNone, 0, false);
+                    g.hover(GeoTargetFile, file);
+                }
+                g.layout();
+                for (const GeoGalleryItem& item : g.display().items()) {
+                    if ((item.flags & GeoItemSticker) == 0 || (item.flags & GeoItemFixed) != 0) {
+                        continue;
+                    }
+                    CHECK(item.x >= 0.0f);
+                    CHECK(item.x + item.width <= 1080.0f);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("a part is hit where it stands, not over its picture's clear margins") {
+    std::vector<Entry> entries;
+    Gallery g = sizesWithATower(entries);
+    REQUIRE(g.setView(GeoViewPlates));
+    g.layout();
+    REQUIRE(countText(g, "DETAIL A ") == 1);
+    REQUIRE(countText(g, "DETAIL B ") == 1);
+    const u32 washer = g.tree().fileAt("washer-m1.step");
+    // Anywhere in a part's own box hits that part: its bubble and its label too, though the
+    // tower's square picture reaches over the bubble beside it.
+    for (const LayoutResult::Place& place : g.result().parts) {
+        CAPTURE(g.tree().file(place.index).path);
+        for (int i = 0; i <= 6; ++i) {
+            for (int j = 0; j <= 4; ++j) {
+                const float x = place.x + 4.0f + (place.w - 8.0f) * float(i) / 6.0f;
+                const float y = place.y + 4.0f + (place.h - 8.0f) * float(j) / 4.0f;
+                CAPTURE(x);
+                CAPTURE(y);
+                const GeoGalleryHit at = g.hit(x, y);
+                CHECK(at.target_kind == GeoTargetFile);
+                CHECK(at.target == place.index);
+            }
+        }
+    }
+    // And → steps through them in order, from the speck.
+    g.click(GeoTargetFile, washer, false);
+    std::vector<u32> order = {washer};
+    for (usize i = 1; i < g.result().parts.size(); ++i) {
+        g.key(GeoKeyRight);
+        g.layout();
+        order.push_back(g.selected());
+    }
+    std::vector<u32> placed;
+    for (const LayoutResult::Place& place : g.result().parts) {
+        placed.push_back(place.index);
+    }
+    CHECK(order == placed);
 }
 
 // ---- G6: Ladders
