@@ -98,7 +98,8 @@ export class GalleryToolbar {
                       [library, views, this.#sheet, this.#ladders, this.#atlas, this.#catalogue, el("span.rule.desktop-only"),
                        this.#poster, this.#look]);
     this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
-      pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
+      pill({ title: "Copy", help: "Copy the poster as a picture (⌘C)", onPress: () => on.copy?.() }),
+      pill({ title: "Save PNG", help: "Save the poster as a picture (⌘S)", onPress: () => on.save() }),
       this.#savePDF = pill({ title: "Save PDF", help: "Save the poster, or in Catalogue the whole book, as a PDF",
                              onPress: () => on.savePDF() }),
       pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),

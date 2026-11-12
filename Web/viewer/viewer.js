@@ -98,6 +98,16 @@ function webgpuAdvice() {
   return navigator.gpu ? "" : " Open it in a current Chrome, Edge or Safari.";
 }
 window.geometryView = engine; // for the console and the shell's checks
+// The picture Copy and Save would make, its size and bytes, and with data, the PNG as a data URL:
+// for the page's checks.
+window.geometryViewPicture = async ({ data = false } = {}) => {
+  const blob = await pictureBlob();
+  if (!blob) return null;
+  const bitmap = await createImageBitmap(blob);
+  const picture = { width: bitmap.width, height: bitmap.height, bytes: blob.size };
+  if (data) picture.data = await dataURL(blob);
+  return picture;
+};
 // ?plain leaves out the view cube and scale bar, for pictures.
 if (params.has("plain")) engine.setOverlayShown(false);
 setCacheVersion(engine.cacheVersion);
@@ -162,6 +172,8 @@ const toolbar = new Toolbar({
   // A phone's sheet shows the Library until something is open; a desktop's sidebar comes back as
   // it was.
   onParts: () => setPanelOpen(!panelOpen, phone ? names.length === 0 : showingLibrary),
+  onCopyPicture: () => copyPicture(),
+  onSavePicture: () => savePicture(),
 });
 const galleryToolbar = new GalleryToolbar({
   view: (view) => gallery?.setView(view),
@@ -172,6 +184,7 @@ const galleryToolbar = new GalleryToolbar({
   look: () => toggleCard(lookCard),
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
+  copy: () => copyPicture(),
   savePDF: () => saveGalleryPDF(),
   // On a phone the Library is a sheet raised from the toolbar; on a desktop the sidebar comes back.
   library: () => setPanelOpen(!panelOpen, true),
@@ -187,6 +200,7 @@ picker.addEventListener("change", () => {
 });
 document.body.append(masthead.element, structure.element, library.element, selection.element,
                      lookCard.element, sectionCard.element, toolbar.element, toolbar.viewsMenu, toolbar.moreMenu,
+                     toolbar.pictureMenu,
                      galleryToolbar.element, galleryToolbar.posterBar,
                      holdHint.element,
                      hoverChip.element, dropZone.element, shortcuts.element, picker);
@@ -208,11 +222,26 @@ new ViewportInput(engine, canvas, {
 addEventListener("keydown", (e) => {
   // ⌥S puts the sidebar away or brings it back, in the viewer and the gallery alike; not while
   // typing, where it is a letter.
-  if (!phone && e.altKey && e.code === "KeyS" && !e.metaKey && !e.ctrlKey &&
-      !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (!phone && e.altKey && e.code === "KeyS" && !e.metaKey && !e.ctrlKey && !typing) {
     e.preventDefault();
     e.stopImmediatePropagation();
     setPanelOpen(!panelOpen, galleryShown || showingLibrary);
+    return;
+  }
+  // ⌘C copies the view as a picture, where no text is selected or typed; ⌘S saves it, in place
+  // of the browser's saving the page.
+  const command = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey;
+  if (command && e.code === "KeyC" && !typing && !String(getSelection() ?? "")) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    copyPicture();
+    return;
+  }
+  if (command && e.code === "KeyS") {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    savePicture();
     return;
   }
   if (galleryShown && e.key === "Escape" && dismissCard()) {
@@ -242,6 +271,7 @@ canvas.addEventListener("pointerdown", () => {
   closeCards();
   toolbar.viewsMenu.hidden = true;
   toolbar.moreMenu.hidden = true;
+  toolbar.pictureMenu.hidden = true;
 });
 // The toolbar folds what doesn't fit into More: worked out when the window's width changes, and
 // once the fonts its labels are measured in are in. Its room is what viewer.css gives it.
@@ -421,7 +451,7 @@ function closeCards() {
 // Closes whatever card, menu or sheet is open: the shortcuts sheet, the views and More menus, the
 // look and section cards. Returns whether any was.
 function dismissCard() {
-  const open = [shortcuts.element, toolbar.viewsMenu, toolbar.moreMenu, lookCard.element,
+  const open = [shortcuts.element, toolbar.viewsMenu, toolbar.moreMenu, toolbar.pictureMenu, lookCard.element,
                 sectionCard.element].filter((element) => !element.hidden);
   for (const element of open) element.hidden = true;
   return open.length > 0;
@@ -546,6 +576,81 @@ async function saveGalleryPDF() {
   if (!pdf) return;
   const what = gallery.core.view === 4 ? "catalogue" : "poster";
   const link = el("a", { href: URL.createObjectURL(pdf), download: `${gallery.title} ${what}.pdf` });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+}
+
+// ---- Pictures ---------------------------------------------------------------------------------
+
+// The view as a picture to share: the model as drawn, without the view cube and scale bar, at the
+// screen's resolution, cropped to what the sidebar leaves clear; in a gallery, the view as a
+// poster. A PNG blob, or null with nothing to show.
+async function pictureBlob() {
+  if (galleryShown) return (await gallery?.view.posterPNG()) ?? null;
+  if (names.filter(Boolean).length === 0) return null;
+  const image = await engine.snapshot({ overlay: false });
+  if (!image) return null;
+  const x = Math.min(Math.round(insets.left * engine.scale), image.width - 1);
+  const whole = new OffscreenCanvas(image.width, image.height);
+  whole.getContext("2d").putImageData(
+      new ImageData(new Uint8ClampedArray(image.pixels.buffer), image.width, image.height), 0, 0);
+  const picture = new OffscreenCanvas(image.width - x, image.height);
+  picture.getContext("2d").drawImage(whole, x, 0, image.width - x, image.height, 0, 0, image.width - x, image.height);
+  return picture.convertToBlob({ type: "image/png" });
+}
+
+// A blob as a data: URL, as the iPhone shell takes a file.
+function dataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// The picture's file name: the file shown, or the gallery's folder.
+function pictureName() {
+  if (galleryShown && gallery) return `${gallery.title} poster.png`;
+  const name = names.find(Boolean) ?? "GeometryView";
+  return `${name.replace(/\.[^.]+$/, "")}.png`;
+}
+
+// Copy picture (⌘C): on the clipboard, to paste anywhere. The item is made in the press itself,
+// its picture to come, as Safari asks.
+async function copyPicture() {
+  const blob = pictureBlob().then((b) => b ?? Promise.reject(new Error("Nothing to copy.")));
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    holdHint.notice("Picture copied");
+  } catch {
+    // A browser that won't copy a picture still saves it.
+    if (await blob.catch(() => null)) savePicture();
+  }
+}
+
+// Save picture (⌘S): downloaded, or on a phone, shared from the share sheet (Photos, Files,
+// Messages...).
+async function savePicture() {
+  const blob = await pictureBlob();
+  if (!blob) return;
+  const file = new File([blob], pictureName(), { type: "image/png" });
+  // The iPhone shell's web view keeps no downloads: the shell offers the picture in its share
+  // sheet.
+  const shell = window.webkit?.messageHandlers?.shell;
+  if (shell) {
+    shell.postMessage({ share: await dataURL(blob), name: file.name });
+    return;
+  }
+  if (phone && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return; // the sheet closed: nothing to do
+    }
+  }
+  const link = el("a", { href: URL.createObjectURL(file), download: file.name });
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
 }

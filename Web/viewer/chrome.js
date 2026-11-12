@@ -224,6 +224,9 @@ export class SelectionCard {
 
 // ---- The toolbar ------------------------------------------------------------------------------
 
+// A phone's toolbar, as the page marks its body before the toolbar is made.
+const onPhoneToolbar = () => document.body.classList.contains("phone");
+
 export class Toolbar {
   #needSelection = [];
   #needModel = [];
@@ -234,7 +237,7 @@ export class Toolbar {
   #more;
 
   constructor({ onAction, onMode, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect, canConnect,
-                onParts }) {
+                onParts, onCopyPicture, onSavePicture }) {
     this.pick = segmented(["Face", "Body", "Part"], {
       help: "What a click selects (1, 2, 3)",
       tips: ["Clicks select single faces (1)", "Clicks select whole bodies (2)", "Clicks select whole parts (3)"],
@@ -253,6 +256,10 @@ export class Toolbar {
     const look = pill({ icon: icons.palette, help: "Style and colour", onPress: onLook });
     const views = pill({ icon: icons.cube, help: "Standard views", onPress: () => this.#toggleViews(views) });
     const fit = pill({ icon: icons.fit, help: "Fit to view (F)", onPress: act(Actions.Fit) });
+    // A picture of the view to share: copied or saved from a menu; shared, on a phone.
+    const picture = pill({ icon: icons.camera, help: onPhoneToolbar() ? "Share a picture of the view"
+                                                                       : "Copy or save a picture of the view",
+                           onPress: () => (onPhoneToolbar() ? onSavePicture() : this.#togglePicture(picture)) });
     // The two ways in, as on the first page and in the Library.
     const open = pill({ icon: icons.plus, help: "Open files (⌘O)", onPress: onOpen });
     const connect = pill({ icon: icons.folderPlus, help: "Connect a folder (⌥⌘O)", onPress: onConnect });
@@ -267,14 +274,19 @@ export class Toolbar {
     // A phone has the selection card's own buttons for these, and no keyboard.
     for (const button of [hide, ghost, isolate, shortcuts]) button.classList.add("desktop-only");
     this.#needSelection = [hide, ghost, isolate];
-    this.#needModel = [showAll, fit, views, undo, redo, seeThrough];
+    this.#needModel = [showAll, fit, views, undo, redo, seeThrough, picture];
     this.viewsMenu = el("div.menu.views", { hidden: true, role: "menu" }, [
       ["Front", Actions.ViewFront], ["Back", Actions.ViewBack], ["Left", Actions.ViewLeft],
       ["Right", Actions.ViewRight], ["Top", Actions.ViewTop], ["Bottom", Actions.ViewBottom],
       ["Isometric", Actions.ViewIso],
     ].map(([title, a]) => el("button", { type: "button", role: "menuitem", text: title,
                                           onclick: () => { this.viewsMenu.hidden = true; onAction(a); } })));
-    this.#handlers = { onAction, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect };
+    this.pictureMenu = el("div.menu.views", { hidden: true, role: "menu" }, [
+      ["Copy picture (⌘C)", onCopyPicture], ["Save picture (⌘S)", onSavePicture],
+    ].map(([title, press]) => el("button", { type: "button", role: "menuitem", text: title,
+                                              onclick: () => { this.pictureMenu.hidden = true; press(); } })));
+    this.#handlers = { onAction, onProjection, onShortcuts, onLook, onSection, onOpen, onConnect, onCopyPicture,
+                       onSavePicture };
     this.#more = pill({ icon: icons.more, help: "More tools", onPress: () => this.#toggleMore() });
     this.#more.classList.add("folded");
     this.#more.dataset.tool = "more";
@@ -285,7 +297,7 @@ export class Toolbar {
       [["hide", hide], ["ghost", ghost], ["isolate", isolate], ["showAll", showAll]],
       [["undo", undo], ["redo", redo]],
       [["seeThrough", seeThrough], ["section", cut], ["look", look], ["projection", this.projection.element],
-       ["views", views], ["fit", fit], ["shortcuts", shortcuts]],
+       ["views", views], ["fit", fit], ["picture", picture], ["shortcuts", shortcuts]],
     ];
     const children = [];
     groups.forEach((tools, group) => {
@@ -356,6 +368,8 @@ export class Toolbar {
                         ["Isometric", Actions.ViewIso]]
                       .map(([title, a]) => row(null, title, () => h.onAction(a), { disabled: tool("views").disabled }))],
       fit: () => [action("fit", "fit", "Fit to view", Actions.Fit)],
+      picture: () => [row("camera", "Copy picture", h.onCopyPicture, { disabled: tool("picture").disabled }),
+                      row(null, "Save picture", h.onSavePicture, { disabled: tool("picture").disabled })],
       shortcuts: () => [row(null, "Shortcuts", h.onShortcuts)],
     };
     const items = this.#tools.filter((t) => this.#folded.has(t.key)).flatMap((t) => rows[t.key]?.() ?? []);
@@ -369,6 +383,14 @@ export class Toolbar {
     const rect = button.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8))}px`;
     menu.style.top = `${rect.top - menu.offsetHeight - 10}px`;
+  }
+
+  // Copy picture and Save picture, in a menu above their button, as the views' menu is.
+  #togglePicture(button) {
+    const menu = this.pictureMenu;
+    menu.hidden = !menu.hidden;
+    if (menu.hidden) return;
+    this.#place(menu, button);
   }
 
   // The standard views, in a menu above their button, outside the toolbar so nothing clips it.
@@ -481,8 +503,19 @@ export class StatusCard {
 
 export class HoldHint {
   element = el("div.chip.hint", { hidden: true, "aria-live": "polite" });
+  #shown = 0; // what the hint has shown, so a notice hides only if nothing came after it
+
+  /** A word of what just happened, such as "Picture copied", for a moment. */
+  notice(text) {
+    const mine = ++this.#shown;
+    this.element.classList.remove("hiding");
+    this.element.replaceChildren(el("span", { text }));
+    this.element.hidden = false;
+    setTimeout(() => { if (this.#shown === mine) this.element.hidden = true; }, 1400);
+  }
 
   show(tool) {
+    ++this.#shown;
     const hints = {
       [Tools.Hide]: ["H", "Click to hide. Click again to peel the next layer."],
       [Tools.Ghost]: ["G", "Click to ghost. Click a ghost to bring it back."],
@@ -536,6 +569,8 @@ export class ShortcutsSheet {
       [["S"], "Section across X"],
       [["Esc"], "Close a card, or clear the selection"],
       [["⌘O"], "Open a file"],
+      [["⌘C"], "Copy a picture of the view"],
+      [["⌘S"], "Save a picture of the view"],
       [["⌥S"], "Hide or show the sidebar"],
       [["?"], "This sheet"],
     ];
