@@ -41,6 +41,9 @@ final class Toolbar: StickerCard {
         help: "See through the housing (T)"
     )
     private let shortcuts = PillButton(title: "?", style: .ghostly, help: "Shortcuts (?)")
+    private let picture = PillButton(icon: .camera, help: "Copy or save a picture of the view")
+    var onCopyPicture: (() -> Void)?
+    var onSavePicture: (() -> Void)?
     // The two ways in, as on the first page and in the Library.
     private let openFiles = PillButton(icon: .plus, help: "Open files (⌘O)")
     private let connectFolder = PillButton(icon: .folderPlus, help: "Connect a folder (⌥⌘O)")
@@ -86,6 +89,7 @@ final class Toolbar: StickerCard {
         shortcuts.onPress = { [weak self] in self?.onShowShortcuts?() }
         look.onPress = { [weak self] in self?.onShowLook?() }
         cut.onPress = { [weak self] in self?.onShowSection?() }
+        picture.onPress = { [weak self] in self?.showPictureMenu() }
 
         openFiles.onPress = { [weak self] in self?.onOpen?() }
         connectFolder.onPress = { [weak self] in self?.onConnect?() }
@@ -98,7 +102,7 @@ final class Toolbar: StickerCard {
             [("hide", hide), ("ghost", ghost), ("isolate", isolate), ("showAll", showAll)],
             [("undo", undo), ("redo", redo)],
             [("seeThrough", seeThrough), ("section", cut), ("look", look), ("projection", projection),
-             ("views", views), ("fit", fit), ("shortcuts", shortcuts)],
+             ("views", views), ("fit", fit), ("picture", picture), ("shortcuts", shortcuts)],
         ]
         var views: [NSView] = []
         for (group, members) in groups.enumerated() {
@@ -149,6 +153,16 @@ final class Toolbar: StickerCard {
         viewsMenu.toggle(above: views)
     }
 
+    /// Copy Picture and Save Picture, in a menu above the camera pill.
+    lazy var pictureMenu = MenuCard(items: [
+        ("Copy Picture", { [weak self] in self?.onCopyPicture?() }),
+        ("Save Picture\u{2026}", { [weak self] in self?.onSavePicture?() }),
+    ])
+
+    func showPictureMenu() {
+        pictureMenu.toggle(above: picture)
+    }
+
     // MARK: Folding
 
     /// Folds the least used tools into More until the toolbar fits `available` points: the
@@ -197,7 +211,8 @@ final class Toolbar: StickerCard {
 
     /// The order tools fold in, as kFoldRanks in toolbar-fold.js: lower first, a rank at a time.
     static let foldRanks: [String: Int] = [
-        "shortcuts": 0, "projection": 1, "views": 2, "fit": 3, "open": 4, "connect": 4, "look": 5,
+        "shortcuts": 0, "projection": 1, "views": 2, "picture": 2, "fit": 3, "open": 4,
+        "connect": 4, "look": 5,
         "section": 6, "seeThrough": 7, "isolate": 8, "ghost": 9, "hide": 9, "undo": 10, "redo": 10,
         "showAll": 11,
     ]
@@ -291,6 +306,17 @@ final class Toolbar: StickerCard {
                     items.append(row("views", nil, title, act(action)))
                 }
             case "fit": items.append(row("fit", .fit, "Fit to view", act(GeoActionFit)))
+            case "picture":
+                items.append(
+                    row("picture", .camera, "Copy picture") { [weak self] in
+                        self?.onCopyPicture?()
+                    }
+                )
+                items.append(
+                    row("picture", nil, "Save picture\u{2026}") { [weak self] in
+                        self?.onSavePicture?()
+                    }
+                )
             case "shortcuts": items.append(row("shortcuts", nil, "Shortcuts") { [weak self] in self?.onShowShortcuts?() })
             default: break
             }
@@ -304,7 +330,7 @@ final class Toolbar: StickerCard {
         for button in [hide, ghost, isolate] {
             button.isEnabled = hasSelection
         }
-        for button in [showAll, fit, views, undo, redo, seeThrough] {
+        for button in [showAll, fit, views, undo, redo, seeThrough, picture] {
             button.isEnabled = hasModel
         }
     }

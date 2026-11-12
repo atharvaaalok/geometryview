@@ -35,6 +35,17 @@ enum MainMenu {
         menu.addItem(actionItem("Undo", GeoActionUndo, key: "z", modifiers: .command))
         menu.addItem(actionItem("Redo", GeoActionRedo, key: "z", modifiers: [.command, .shift]))
         menu.addItem(.separator())
+        // The standard commands, for the search fields; with no text to take it, Copy copies the
+        // view as a picture (MainWindow.copy).
+        menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.addItem(
+            withTitle: "Select All",
+            action: #selector(NSText.selectAll(_:)),
+            keyEquivalent: "a"
+        )
+        menu.addItem(.separator())
         for (title, mode) in [
             ("Select Faces", GeoSelectFaces), ("Select Bodies", GeoSelectBodies),
             ("Select Parts", GeoSelectParts),
@@ -209,6 +220,12 @@ enum MainMenu {
         )
         connect.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(connect)
+        menu.addItem(.separator())
+        menu.addItem(
+            withTitle: "Save Picture\u{2026}",
+            action: #selector(MainWindow.savePicture(_:)),
+            keyEquivalent: "s"
+        )
         let export = NSMenuItem(
             title: "Export Poster as PNG…",
             action: #selector(MainWindow.exportPoster(_:)),
