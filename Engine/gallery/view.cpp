@@ -365,9 +365,12 @@ void Gallery::layoutPeek() {
                   palette.dark ? rgba(10, 18, 36, 0.55f) : rgba(242, 239, 231, 0.62f), 0, 0.0f);
 
     const float headH = lineHeightOf(kName) + 2.0f + lineHeightOf(kWhere);
-    const float statsH = lineHeightOf(kStat) + lineHeightOf(kUnit);
-    const float rest = kTop + headH + kGap + kGap + statsH + kGap + kPill + kTop;
     const float w = std::max(240.0f, std::min(780.0f, width_ - 32.0f));
+    // On a narrow view, a phone's, the stats go in two rows of two.
+    const bool twoRows = w - 2.0f * kPad < 420.0f;
+    const float statH = lineHeightOf(kStat) + lineHeightOf(kUnit);
+    const float statsH = twoRows ? 2.0f * statH + 8.0f : statH;
+    const float rest = kTop + headH + kGap + kGap + statsH + kGap + kPill + kTop;
     const float picH = std::clamp(height_ - 48.0f - rest, 120.0f, 390.0f);
     const float h = rest + picH;
     const float x = std::round((width_ - w) / 2.0f);
@@ -425,9 +428,6 @@ void Gallery::layoutPeek() {
 
     // Size, parts, triangles and file, each a number over what it counts, on two baselines.
     const float sy = py + picH + kGap;
-    const float statBaseline = sy + ascentOf(kStat);
-    const float unitBaseline = sy + lineHeightOf(kStat) + ascentOf(kUnit);
-    const u32 numbers = ++result_.groups, units = ++result_.groups;
     const std::string none = "\xE2\x80\x94"; // —
     std::string size = none;
     if (f.facts && f.facts->hasBox) {
@@ -455,17 +455,28 @@ void Gallery::layoutPeek() {
          1.0f},
         {bytes, ext.empty() ? "file" : ext + " file", 1.0f},
     };
-    float sx = px;
-    const float shares = 4.9f, room = inner - 3.0f * 8.0f;
-    for (usize i = 0; i < 4; ++i) {
-        const float cw = room * stats[i].share / shares;
-        display_.group(numbers);
-        display_.text(stats[i].value, i == 0 ? kStatFirst : kStat, ink, sx, statBaseline, cw);
-        display_.last().line = statBaseline;
-        display_.group(units);
-        display_.text(stats[i].unit, kUnit, muted, sx, unitBaseline, cw);
-        display_.last().line = unitBaseline;
-        sx += cw + 8.0f;
+    const usize perRow = twoRows ? 2 : 4;
+    for (usize row = 0; row * perRow < 4; ++row) {
+        const float top = sy + float(row) * (statH + 8.0f);
+        const float statBaseline = top + ascentOf(kStat);
+        const float unitBaseline = top + lineHeightOf(kStat) + ascentOf(kUnit);
+        const u32 numbers = ++result_.groups, units = ++result_.groups;
+        float shares = 0.0f;
+        for (usize i = row * perRow; i < (row + 1) * perRow; ++i) {
+            shares += twoRows ? 1.0f : stats[i].share;
+        }
+        const float room = inner - float(perRow - 1) * 8.0f;
+        float sx = px;
+        for (usize i = row * perRow; i < (row + 1) * perRow; ++i) {
+            const float cw = room * (twoRows ? 1.0f : stats[i].share) / shares;
+            display_.group(numbers);
+            display_.text(stats[i].value, i == 0 ? kStatFirst : kStat, ink, sx, statBaseline, cw);
+            display_.last().line = statBaseline;
+            display_.group(units);
+            display_.text(stats[i].unit, kUnit, muted, sx, unitBaseline, cw);
+            display_.last().line = unitBaseline;
+            sx += cw + 8.0f;
+        }
     }
     display_.group(0);
 
@@ -478,8 +489,9 @@ void Gallery::layoutPeek() {
     display_.text(open, kPillText, paper, px + 10.5f,
                   ay + (kPill - lineHeightOf(kPillText)) / 2.0f + ascentOf(kPillText), openW);
     display_.target(GeoTargetNone, 0);
-    display_.text("Space or Esc closes", kWhere, muted, px + openW + 12.0f,
-                  ay + (kPill - lineHeightOf(kWhere)) / 2.0f + ascentOf(kWhere),
+    // A narrow card is a phone's, where nothing types: a tap outside closes it.
+    display_.text(twoRows ? "Tap outside to close" : "Space or Esc closes", kWhere, muted,
+                  px + openW + 12.0f, ay + (kPill - lineHeightOf(kWhere)) / 2.0f + ascentOf(kWhere),
                   inner - openW - 12.0f);
 
     display_.key(0);

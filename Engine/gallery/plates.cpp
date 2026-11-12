@@ -77,14 +77,19 @@ public:
             const float barW = scaleBarWidth(*mmPerPoint);
             rightStart = right - barW;
             scaleBar(*mmPerPoint, rightStart, baseline, palette.on, g);
+            // "ONE SCALE" where the line has room for it, as on a phone it may not.
             const float oneW = textWidth("ONE SCALE", kOneScale);
-            rightStart -= 14.0f + oneW;
-            out.group(g);
-            out.text("ONE SCALE", kOneScale, palette.muted, rightStart, baseline, oneW);
-            out.group(0);
+            if (rightStart - 14.0f - oneW - 14.0f >= x) {
+                rightStart -= 14.0f + oneW;
+                out.group(g);
+                out.text("ONE SCALE", kOneScale, palette.muted, rightStart, baseline, oneW);
+                out.group(0);
+            }
         }
-        if (!meta.empty()) {
-            const float room = rightStart - 14.0f - x - 40.0f;
+        // What the section holds, cut to the room left, or left out where that is too little to
+        // read.
+        if (const float room = rightStart - 14.0f - x;
+            !meta.empty() && room >= textWidth("000000", kSectionMeta)) {
             out.group(g);
             const float used = out.text(meta, kSectionMeta, palette.muted, x, baseline, room);
             out.group(0);
@@ -537,7 +542,9 @@ public:
         constexpr float gap = 16.0f, aspect = 1.25f, minH = 168.0f;
         usize bestC = 1, bestR = n;
         float bestW = width, bestH = minH, bestScore = -1.0f;
-        for (usize c = 1; c <= n; ++c) {
+        // On a phone's width, two abreast, as the design has it.
+        const bool narrow = width < 480.0f && n >= 2;
+        for (usize c = narrow ? 2 : 1; c <= (narrow ? 2 : n); ++c) {
             const usize r = (n + c - 1) / c;
             const float w = (width - gap * float(c - 1)) / float(c);
             const float h = std::max(minH, (height - gap * float(r - 1)) / float(r));
