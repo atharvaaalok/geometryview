@@ -4,6 +4,7 @@
 #include "format/blob.h"
 #include "import.h"
 #include "library_command.h"
+#include "render_command.h"
 #include "scene/facts.h"
 #include "sheet.h"
 
@@ -355,57 +356,6 @@ int treeCommand(const char* path) {
     return 1;
 }
 
-int renderCommand(int argc, const char** argv) {
-    // gcli render <metallib> <blob> <png> [width height azimuth elevation projection style colour
-    //                                      section plain]
-    // Styles and colour modes are numbered as in engine.h.
-    GeoRenderOptions options = geo_default_render_options();
-    if (argc > 5) {
-        options.width = u32(std::atoi(argv[5]));
-    }
-    if (argc > 6) {
-        options.height = u32(std::atoi(argv[6]));
-    }
-    if (argc > 7) {
-        options.azimuth_degrees = std::atof(argv[7]);
-    }
-    if (argc > 8) {
-        options.elevation_degrees = std::atof(argv[8]);
-    }
-    options.perspective = argc > 9 && std::string_view(argv[9]) == "perspective";
-    if (argc > 10) {
-        options.look.style = GeoStyle(std::atoi(argv[10]));
-        options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
-    }
-    if (argc > 11) {
-        options.look.color_mode = GeoColorMode(std::atoi(argv[11]));
-    }
-    // A section as axis letters and fractions, such as "x0.5" or "x0.5,z-0.3", where a minus
-    // removes the low side.
-    if (argc > 12) {
-        for (std::string_view cut :
-             std::views::split(std::string_view(argv[12]), ',') | std::views::transform([](auto r) {
-                 return std::string_view(r.begin(), r.end());
-             })) {
-            if (cut.size() < 2 || cut[0] < 'x' || cut[0] > 'z') {
-                continue;
-            }
-            const int axis = cut[0] - 'x';
-            const bool flip = cut[1] == '-';
-            options.section.enabled[axis] = true;
-            options.section.flip[axis] = flip;
-            options.section.position[axis] =
-                std::strtof(std::string(cut.substr(flip ? 2 : 1)).c_str(), nullptr);
-        }
-    }
-    options.overlay = !(argc > 13 && std::string_view(argv[13]) == "plain");
-    // Comma-separated part names to draw alone.
-    if (argc > 14) {
-        options.isolate = argv[14];
-    }
-    return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
-}
-
 } // namespace
 
 int main(int argc, const char** argv) {
@@ -420,8 +370,8 @@ int main(int argc, const char** argv) {
     if (command == "stats" && argc == 3) {
         return statsCommand(argv[2]);
     }
-    if (command == "render" && argc >= 5) {
-        return renderCommand(argc, argv);
+    if (command == "render" && argc >= 4) {
+        return gcli::renderCommand(argc, argv);
     }
     if (command == "facts" && argc == 3) {
         return factsCommand(argv[2]);
@@ -443,7 +393,8 @@ int main(int argc, const char** argv) {
     std::println(stderr, "       gcli tree <blob>");
     std::println(stderr, "       gcli render <metallib> <blob> <png> [width height azimuth "
                          "elevation ortho|perspective style colour section plain|overlay "
-                         "isolate]");
+                         "isolate | --flags]");
+    std::println(stderr, "       gcli render <metallib> --batch [--same-scale] [--flags] < shots");
     std::println(stderr, "       gcli library <metallib> <helper> <cache> <folder> [--slots S] "
                          "[--workers W] [--style N] [--pixels P] [--limit N] [--prefetch]");
     std::println(stderr,

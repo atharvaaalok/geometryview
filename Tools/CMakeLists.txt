@@ -28,7 +28,7 @@ if(GEO_TARGET STREQUAL "wasm")
     return()
 endif()
 
-add_executable(gcli gcli/main.cpp gcli/library_command.cpp gcli/sheet.mm)
+add_executable(gcli gcli/main.cpp gcli/library_command.cpp gcli/render_command.cpp gcli/sheet.mm)
 target_include_directories(gcli PRIVATE "${CMAKE_SOURCE_DIR}/Engine")
 target_link_libraries(gcli PRIVATE engine import_core geo_warnings)
 

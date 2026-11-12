@@ -12,6 +12,8 @@
 // Chrome is GEOMETRYVIEW_CHROME, or Google Chrome's usual place on a Mac. Its window is 1440 × 900,
 // or GEOMETRYVIEW_WINDOW ("390,844" for a phone's). Chrome makes no window narrower than 500, so a
 // narrower one is a phone's screen emulated through DevTools: 3 pixels a point, touch, mobile.
+// GEOMETRYVIEW_SCALE ("2") draws a desktop window at that many pixels a point, as a Retina screen
+// does, so its screenshots are sharp.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -54,6 +56,7 @@ server.stdout.on("data", (text) => {
     chrome = spawn(chromePath, ["--headless=new", `--user-data-dir=${profile}`, "--no-first-run",
                                 `--remote-debugging-port=${devtools}`,
                                 "--enable-unsafe-webgpu", `--window-size=${Math.max(500, screenSize[0])},${screenSize[1]}`,
+                                ...(scale && !emulated ? [`--force-device-scale-factor=${scale}`] : []),
                                 emulated ? "about:blank" : `http://127.0.0.1:${port}${page}`], { stdio: "ignore" });
     if (emulated) {
       emulate(`http://127.0.0.1:${port}${page}`).catch((error) => {
@@ -79,6 +82,7 @@ server.stdout.on("data", (text) => {
 
 const screenSize = (process.env.GEOMETRYVIEW_WINDOW ?? "1440,900").split(",").map(Number);
 const emulated = screenSize[0] < 500;
+const scale = Number(process.env.GEOMETRYVIEW_SCALE ?? 0);
 let emulation = null; // the DevTools session holding the emulation, kept open for the run
 
 // Opens the page on an emulated phone screen.
