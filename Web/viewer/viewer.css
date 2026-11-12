@@ -390,8 +390,8 @@ body.phone .tree .row { height: 30px; }
 .structure .nothing { margin: 0; color: var(--muted); font-size: var(--text-s); }
 
 /* The Library: the switcher and the two ways in, then folders and recent files as tree rows. */
-.library .header { display: flex; align-items: center; gap: 8px; }
-.library .header .grow { flex: 1; }
+.structure .header { display: flex; align-items: center; gap: 8px; }
+.structure .header .grow { flex: 1; }
 .library .row.heading .name { font-weight: 600; }
 .library .row.message { color: var(--muted); font-size: var(--text-s); }
 .library .row.missing .name { color: var(--faint); }
@@ -546,6 +546,12 @@ body.phone .library .actions ~ .count { display: none; }
 /* ---- Phones: the tree and cards give way to the view ------------------------------------ */
 
 .phone-only { display: none !important; }
+/* The sidebar put away on a desktop: the toolbar, its cards and the hint centre on the whole
+   window, and the toolbar shows the pill that brings the sidebar back. */
+body.sidebar-hidden .toolbar, body.sidebar-hidden .popover, body.sidebar-hidden .hint { left: 50%; }
+body.sidebar-hidden .toolbar { max-width: calc(100% - 36px); }
+.pane-pill { display: none !important; }
+body.phone .pane-pill, body.sidebar-hidden .pane-pill { display: inline-flex !important; }
 body.phone .phone-only { display: inline-flex !important; }
 body.phone .desktop-only { display: none !important; }
 

@@ -28,6 +28,7 @@ export const iconMarkup = {
   plus: `<path d="M8 3v10M3 8h10"/>`,
   close: `<path d="M4 4l8 8M12 4l-8 8"/>`,
   parts: `<path d="M3 4h10M3 8h10M3 12h10"/>`,
+  sidebar: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M6.25 2.75v10.5"/>`,
   more: `<circle cx="3.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor" stroke="none"/>`,
   check: `<path d="M3.5 8.5l3 3 6-7"/>`,
   plates: `<rect x="1.75" y="2.25" width="5.5" height="5" rx="1"/><rect x="8.75" y="2.25" width="5.5" height="5" rx="1"/><rect x="1.75" y="8.75" width="5.5" height="5" rx="1"/><rect x="8.75" y="8.75" width="5.5" height="5" rx="1"/><path d="M3 6h1M4.75 6h1M10 6h3M3 12.5h3M10 12.5h1"/>`,

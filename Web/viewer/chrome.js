@@ -257,9 +257,12 @@ export class Toolbar {
     const open = pill({ icon: icons.plus, help: "Open files (⌘O)", onPress: onOpen });
     const connect = pill({ icon: icons.folderPlus, help: "Connect a folder (⌥⌘O)", onPress: onConnect });
     connect.hidden = !canConnect;
-    // On a phone the tree is a sheet over the view, opened from here.
-    const parts = pill({ icon: icons.parts, help: "Parts and library", onPress: onParts });
-    parts.classList.add("phone-only");
+    // On a phone the tree is a sheet over the view, opened from here; on a desktop, the sidebar
+    // brought back once it is put away.
+    const onPhone = document.body.classList.contains("phone");
+    const parts = pill({ icon: onPhone ? icons.parts : icons.sidebar,
+                         help: onPhone ? "Parts and library" : "Show the sidebar (⌥S)", onPress: onParts });
+    parts.classList.add("pane-pill");
     const shortcuts = pill({ title: "?", style: "ghostly", help: "Shortcuts (?)", onPress: onShortcuts });
     // A phone has the selection card's own buttons for these, and no keyboard.
     for (const button of [hide, ghost, isolate, shortcuts]) button.classList.add("desktop-only");
@@ -533,6 +536,7 @@ export class ShortcutsSheet {
       [["S"], "Section across X"],
       [["Esc"], "Close a card, or clear the selection"],
       [["⌘O"], "Open a file"],
+      [["⌥S"], "Hide or show the sidebar"],
       [["?"], "This sheet"],
     ];
     const grid = el("div.grid", {}, entries.flatMap(([keys, meaning]) => [

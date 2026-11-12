@@ -109,8 +109,14 @@ let perspective = false;
 let names = [];
 const progress = new Map();
 let hovered = null; // { document, node, face }
-// The tree and library card: always open on a desktop, a sheet opened when wanted on a phone.
-let panelOpen = !phone;
+// The tree and library card: a sheet opened when wanted on a phone; on a desktop open unless put
+// away, which the page remembers.
+const kSidebarHidden = "sidebar.hidden";
+let panelOpen = !phone && !(() => {
+  try { return localStorage.getItem(kSidebarHidden) === "1"; } catch { return false; }
+})();
+document.body.classList.toggle("sidebar-hidden", !phone && !panelOpen);
+let showingLibrary = true; // which card the sidebar shows when open
 // The gallery, made when a folder's is first shown (gallery.js).
 let gallery = null;
 let galleryShown = false;
@@ -122,7 +128,8 @@ let pointer = null; // { x, y } in CSS pixels, while over the view
 const masthead = new Masthead();
 // In the gallery, × leaves it, as Esc does at the top; in the viewer it closes the files.
 masthead.onClose = () => (galleryShown ? leaveGallery() : closeFiles());
-const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show) });
+const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show),
+                                              onHide: () => setPanelOpen(false) });
 const library = new LibraryCard(libraryStore, {
   open: (row, add) => openFromFolder(row, add),
   reopen: (entry, add) => reopenRecent(entry, add),
@@ -132,6 +139,7 @@ const library = new LibraryCard(libraryStore, {
   forget: (key) => forgetRecent(key),
   showFolder: (root, path) => showGallery(root, path),
   search: (query) => gallery?.setSearch(query),
+  hide: () => setPanelOpen(false),
 });
 const selection = new SelectionCard((action) => engine.perform(action));
 const lookCard = new LookCard(look, (next) => applyLook(next));
@@ -151,10 +159,9 @@ const toolbar = new Toolbar({
   onOpen: () => chooseFile(false),
   onConnect: () => connectFolder(),
   canConnect: libraryStore.canConnect,
-  onParts: () => {
-    panelOpen = !panelOpen;
-    showLibrary(names.length === 0);
-  },
+  // A phone's sheet shows the Library until something is open; a desktop's sidebar comes back as
+  // it was.
+  onParts: () => setPanelOpen(!panelOpen, phone ? names.length === 0 : showingLibrary),
 });
 const galleryToolbar = new GalleryToolbar({
   view: (view) => gallery?.setView(view),
@@ -166,11 +173,8 @@ const galleryToolbar = new GalleryToolbar({
   poster: () => setGalleryPoster(!gallery?.poster),
   save: () => saveGalleryPoster(),
   savePDF: () => saveGalleryPDF(),
-  // On a phone the Library is a sheet raised from the toolbar.
-  library: () => {
-    panelOpen = !panelOpen;
-    showLibrary(true);
-  },
+  // On a phone the Library is a sheet raised from the toolbar; on a desktop the sidebar comes back.
+  library: () => setPanelOpen(!panelOpen, true),
 });
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
@@ -202,6 +206,15 @@ new ViewportInput(engine, canvas, {
 // While the gallery shows, its keys are its own; in the viewer, Esc goes back to the gallery the
 // files came from once no card is open.
 addEventListener("keydown", (e) => {
+  // ⌥S puts the sidebar away or brings it back, in the viewer and the gallery alike; not while
+  // typing, where it is a letter.
+  if (!phone && e.altKey && e.code === "KeyS" && !e.metaKey && !e.ctrlKey &&
+      !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setPanelOpen(!panelOpen, galleryShown || showingLibrary);
+    return;
+  }
   if (galleryShown && e.key === "Escape" && dismissCard()) {
     // A card open over the gallery closes first.
     e.preventDefault();
@@ -232,7 +245,7 @@ canvas.addEventListener("pointerdown", () => {
 });
 // The toolbar folds what doesn't fit into More: worked out when the window's width changes, and
 // once the fonts its labels are measured in are in. Its room is what viewer.css gives it.
-const fitToolbar = () => toolbar.fit(phone || innerWidth <= 900 ? innerWidth - 16 : innerWidth - 336);
+const fitToolbar = () => toolbar.fit(phone || innerWidth <= 900 || !panelOpen ? innerWidth - 16 : innerWidth - 336);
 addEventListener("resize", fitToolbar);
 document.fonts.ready.then(fitToolbar);
 fitToolbar();
@@ -453,6 +466,7 @@ function galleryFor() {
   // A press in the gallery closes the cards, as one in the view does.
   gallery.view.element.addEventListener("pointerdown", () => closeCards());
   gallery.setStyle(look.engineLook.style);
+  gallery.view.setInsets(galleryInsets());
   return gallery;
 }
 
@@ -477,10 +491,7 @@ function enterGallery() {
   galleryToolbar.show(gallery.state);
   library.showSearch(true, gallery.core.search, gallery.core.matches);
   selection.element.hidden = true;
-  if (!phone) {
-    panelOpen = true;
-    showLibrary(true);
-  }
+  if (!phone) showLibrary(true);
   gallery.view.reload();
   refreshMasthead();
 }
@@ -507,7 +518,7 @@ function setGalleryPoster(poster) {
   galleryToolbar.element.hidden = poster;
   galleryToolbar.posterBar.hidden = !poster;
   if (poster) closeCards();
-  gallery.view.setInsets(poster ? { top: 30, left: 30, bottom: 30, right: 30 } : kGalleryInsets);
+  gallery.view.setInsets(poster ? { top: 30, left: 30, bottom: 30, right: 30 } : galleryInsets());
   gallery.setPoster(poster);
   if (!poster) {
     showLibrary(true);
@@ -547,6 +558,24 @@ async function openFromGallery(root, path) {
 
 // ---- Layout -----------------------------------------------------------------------------------
 
+// The sidebar put away (open false) or brought back, showing the Library (or the tree). On a
+// desktop the page remembers it, and the toolbar, the gallery and framing take the room.
+function setPanelOpen(open, library = showingLibrary) {
+  panelOpen = open;
+  if (!phone) {
+    try { localStorage.setItem(kSidebarHidden, open ? "0" : "1"); } catch { /* kept for this visit only */ }
+    document.body.classList.toggle("sidebar-hidden", !open);
+    fitToolbar();
+    if (gallery && !gallery.poster) gallery.view.setInsets(galleryInsets());
+  }
+  showLibrary(library);
+}
+
+// Where a gallery shows: right of the sidebar, or the whole window less the edge once it is away.
+function galleryInsets() {
+  return phone || panelOpen ? kGalleryInsets : { ...kGalleryInsets, left: kGalleryInsets.right };
+}
+
 // The tree card covers the left, the masthead the top and the toolbar the bottom: framing keeps
 // the model in the rest.
 function updateInsets() {
@@ -569,6 +598,7 @@ function showEmpty() {
 
 // The Library card, or the structure card; the latter says so when nothing is open.
 function showLibrary(show) {
+  showingLibrary = show;
   library.element.hidden = !show || !panelOpen;
   structure.element.hidden = show || !panelOpen;
   structure.showNothing(names.filter(Boolean).length === 0);
@@ -619,7 +649,8 @@ async function showConnected(ids) {
   persistOnce(); // what is kept of a connected folder's files should outlast storage pressure
   await library.refresh();
   for (const id of ids) library.expand(id);
-  if (!phone) panelOpen = true;
+  // A folder just connected is shown, in the sidebar brought back if it was away.
+  if (!phone && !panelOpen) setPanelOpen(true, true);
   showLibrary(true);
 }
 

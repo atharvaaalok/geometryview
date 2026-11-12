@@ -89,9 +89,11 @@ export class GalleryToolbar {
     this.#poster.classList.add("desktop-only", "fold");
     this.#look.classList.add("fold");
     this.#sheet.classList.add("desktop-only");
-    // On a phone: the Library's sheet, raised from here.
-    const library = pill({ icon: icons.parts, help: "Library", onPress: () => on.library?.() });
-    library.classList.add("phone-only");
+    // On a phone: the Library's sheet, raised from here; on a desktop, the sidebar brought back.
+    const onPhone = document.body.classList.contains("phone");
+    const library = pill({ icon: onPhone ? icons.parts : icons.sidebar,
+                           help: onPhone ? "Library" : "Show the sidebar (⌥S)", onPress: () => on.library?.() });
+    library.classList.add("pane-pill");
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
                       [library, views, this.#sheet, this.#ladders, this.#atlas, this.#catalogue, el("span.rule.desktop-only"),
                        this.#poster, this.#look]);
