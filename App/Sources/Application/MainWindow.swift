@@ -128,6 +128,12 @@ final class MainWindow: NSWindow {
             apply(next, remember: false)
         }
         check.usePoster = { [weak self] poster in self?.setPoster(poster) }
+        check.hooks = GalleryCheck.Hooks(
+            toggleLook: { [weak self] in self?.toggleLookCard(nil) },
+            lookOpen: { [weak self] in !(self?.lookCard.isHidden ?? true) },
+            inGallery: { [weak self] in self?.inGallery ?? false },
+            pressClose: { [weak self] in self?.masthead.onClose?() }
+        )
         Task {
             await check.run(root: root.url, folder: folder)
         }
@@ -263,7 +269,17 @@ final class MainWindow: NSWindow {
         viewport.onDragging = { [weak self] dragging in self?.dropZone.isHidden = !dragging }
 
         toolBar.onAction = { [weak self] action in self?.engine.perform(action) }
-        masthead.onClose = { [weak self] in self?.closeFiles(nil) }
+        // In the gallery, × leaves it, as Esc does at the top; in the viewer it closes the files.
+        masthead.onClose = { [weak self] in
+            guard let self else {
+                return
+            }
+            if inGallery {
+                leaveGallery()
+            } else {
+                closeFiles(nil)
+            }
+        }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
         toolBar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
         structure.switcher.onChange = { [weak self] index in self?.showLibrary(index == 0) }
@@ -281,6 +297,7 @@ final class MainWindow: NSWindow {
         galleryController.onChanged = { [weak self] in self?.refreshGalleryToolbar() }
         galleryController.onSearchChanged = { [weak self] in self?.refreshGallerySearch() }
         galleryController.view.onLeavePoster = { [weak self] in self?.setPoster(false) }
+        galleryController.view.onEscape = { [weak self] in self?.dismissCard() ?? false }
         galleryController.setStyle(look.engineLook.style)
         galleryToolbar.onView = { [weak self] view in self?.galleryController.setView(view) }
         galleryToolbar.onSheet = { [weak self] options in
@@ -859,12 +876,17 @@ final class MainWindow: NSWindow {
     }
 
     private func setPoster(_ poster: Bool) {
+        // Only the gallery shows a poster: once it has been left (an export finishing late, say),
+        // the poster is put away and the viewer's chrome left as it is.
+        let poster = poster && inGallery
         galleryController.view.contentInsets =
             poster
             ? NSEdgeInsets(top: 30, left: 30, bottom: 30, right: 30)
             : NSEdgeInsets(top: 96, left: 340, bottom: 84, right: 18)
-        for view in [masthead, libraryCard, galleryToolbar] as [NSView] {
-            view.isHidden = poster
+        if inGallery {
+            for view in [masthead, libraryCard, galleryToolbar] as [NSView] {
+                view.isHidden = poster
+            }
         }
         if poster {
             dismissCard()
@@ -904,11 +926,16 @@ final class MainWindow: NSWindow {
                     self.masthead.setProgress(Double(page - 1) / Double(max(1, pages)))
                 }
                 self.masthead.setProgress(nil)
-                self.masthead.show(
-                    title: self.galleryController.title,
-                    subtitle: self.galleryController.subtitle
-                )
-                self.setPoster(wasPoster)
+                if self.inGallery {
+                    self.masthead.show(
+                        title: self.galleryController.title,
+                        subtitle: self.galleryController.subtitle
+                    )
+                    self.setPoster(wasPoster)
+                } else {
+                    self.setPoster(false)  // left meanwhile: the viewer's masthead, as it was
+                    self.refreshMasthead()
+                }
                 self.exportingPDF = false
                 try? data?.write(to: url)
             }
@@ -956,6 +983,10 @@ final class MainWindow: NSWindow {
     }
 
     private func leaveGallery() {
+        dismissCard()  // no card left open over the viewer
+        if galleryController.gallery.poster {
+            setPoster(false)
+        }
         inGallery = false
         galleryController.view.isHidden = true
         engine.setCovered(false)

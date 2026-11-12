@@ -38,7 +38,8 @@ void receive(void* context, const GeoLibraryEvent* event) {
         tally.failed.push_back(std::string(event->path) + ": " + event->message);
         break;
     case GeoLibraryProgress:
-    case GeoLibraryTurnFrame: // no turntables asked for here
+    case GeoLibraryTurnFrame: // no turntables or details asked for here
+    case GeoLibraryDetail:
         break;
     }
 }
@@ -83,7 +84,7 @@ int libraryCommand(int argc, const char** argv) {
     descriptor.cache_directory = argv[4];
     Found found;
     found.root = argv[5];
-    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 256, 2.0f, 0.5f};
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 256, 2.0f, 0.5f, 2};
     bool prefetch = false;
     for (int i = 6; i < argc; ++i) {
         const std::string_view flag = argv[i];

@@ -129,6 +129,46 @@ TEST_CASE("a picture knows the part's box, its shadow's, and the scale it was dr
     }
 }
 
+TEST_CASE("supersampled, a picture is the same picture with smoother edges") {
+    @autoreleasepool {
+        const std::string drive = geo::test::importDrive(GEO_TEST_WORKER_PATH);
+        GeoThumbnailer* thumbnailer = geo_thumbnailer_create(GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(thumbnailer != nullptr);
+        GeoRenderOptions options = pictureOptions(GeoStyleIllustration);
+        GeoThumbnail plain = draw(thumbnailer, drive, options);
+        options.supersample = 2;
+        GeoThumbnail smooth = draw(thumbnailer, drive, options);
+        CHECK(smooth.width == plain.width);
+        CHECK(smooth.height == plain.height);
+        CHECK(smooth.world_per_pixel == doctest::Approx(plain.world_per_pixel).epsilon(0.02));
+        for (int i = 0; i < 4; ++i) {
+            CAPTURE(i);
+            CHECK(std::abs(int(smooth.part_rect[i]) - int(plain.part_rect[i])) <= 2);
+        }
+        // Nearer the picture as it would be with no stairs at all, drawn four times as large and
+        // averaged: outlines and the shadow's edge, where the plain picture steps, are what differ.
+        options.supersample = 4;
+        GeoThumbnail truth = draw(thumbnailer, drive, options);
+        const auto off = [&](const GeoThumbnail& picture) {
+            double sum = 0;
+            const usize n = usize(picture.width) * picture.height * 4;
+            for (usize p = 0; p < n; ++p) {
+                sum += std::abs(int(picture.bgra[p]) - int(truth.bgra[p]));
+            }
+            return sum / double(n);
+        };
+        const double plainOff = off(plain), smoothOff = off(smooth);
+        CAPTURE(plainOff);
+        CAPTURE(smoothOff);
+        CHECK(smoothOff < plainOff * 0.7);
+        geo_thumbnail_free(&plain);
+        geo_thumbnail_free(&smooth);
+        geo_thumbnail_free(&truth);
+        geo_thumbnailer_destroy(thumbnailer);
+        unlink(drive.c_str());
+    }
+}
+
 TEST_CASE("a file that cannot be drawn says why and leaves the picture empty") {
     @autoreleasepool {
         GeoThumbnailer* thumbnailer = geo_thumbnailer_create(GEO_TEST_SHADER_LIBRARY);
@@ -145,7 +185,7 @@ TEST_CASE("a file that cannot be drawn says why and leaves the picture empty") {
 }
 
 // Not a check: how long a picture takes, kept and fresh, to compare against the gallery's budget
-// of 6 ms a picture. Printed with -s.
+// of 6 ms a picture, and supersampled as the gallery draws them. Printed with -s.
 TEST_CASE("timing: pictures from a kept thumbnailer and from fresh ones") {
     @autoreleasepool {
         const std::string drive = geo::test::importDrive(GEO_TEST_WORKER_PATH);
@@ -157,13 +197,14 @@ TEST_CASE("timing: pictures from a kept thumbnailer and from fresh ones") {
         const auto ms = [](Clock::duration d) {
             return std::chrono::duration<double, std::milli>(d).count();
         };
-        for (const u32 size : {256u, 512u}) {
+        for (const auto [size, supersample] : {std::pair{256u, 1u}, {512u, 1u}, {512u, 2u}}) {
             GeoThumbnailer* kept = geo_thumbnailer_create(GEO_TEST_SHADER_LIBRARY);
             REQUIRE(kept != nullptr);
             std::vector<double> warm, fresh;
             for (u32 i = 0; i < 24; ++i) {
                 GeoRenderOptions options = pictureOptions(GeoStyle(i % geo::render::kStyleCount));
                 options.width = options.height = size;
+                options.supersample = supersample;
                 const Clock::time_point start = Clock::now();
                 GeoThumbnail picture = draw(kept, drive, options);
                 warm.push_back(ms(Clock::now() - start));
@@ -172,6 +213,7 @@ TEST_CASE("timing: pictures from a kept thumbnailer and from fresh ones") {
             for (u32 i = 0; i < 6; ++i) {
                 GeoRenderOptions options = pictureOptions(GeoStyle(i % geo::render::kStyleCount));
                 options.width = options.height = size;
+                options.supersample = supersample;
                 const Clock::time_point start = Clock::now();
                 GeoThumbnailer* once = geo_thumbnailer_create(GEO_TEST_SHADER_LIBRARY);
                 GeoThumbnail picture = draw(once, drive, options);
@@ -181,8 +223,8 @@ TEST_CASE("timing: pictures from a kept thumbnailer and from fresh ones") {
             }
             geo_thumbnailer_destroy(kept);
             warm.erase(warm.begin(), warm.begin() + 6); // each style's first picture compiles
-            MESSAGE(size << " px: kept " << median(warm) << " ms, fresh " << median(fresh)
-                         << " ms (median)");
+            MESSAGE(size << " px, supersample " << supersample << ": kept " << median(warm)
+                         << " ms, fresh " << median(fresh) << " ms (median)");
         }
         unlink(drive.c_str());
     }

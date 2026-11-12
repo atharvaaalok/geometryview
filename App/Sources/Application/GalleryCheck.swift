@@ -38,6 +38,15 @@ final class GalleryCheck {
     static var isPoster: Bool { CommandLine.arguments.contains("--gallery-poster") }
     /// Shows or puts away the poster, as the window does.
     var usePoster: ((Bool) -> Void)?
+    /// The window's own, for checks that need it: the Look card, whether the gallery shows, and
+    /// the masthead's ×.
+    struct Hooks {
+        var toggleLook: () -> Void
+        var lookOpen: () -> Bool
+        var inGallery: () -> Bool
+        var pressClose: () -> Void
+    }
+    var hooks: Hooks?
     /// `--gallery-watch <file>`: shows the file's folder, says when it is ready, and waits for the
     /// file to change on disk, to see it re-ink alone.
     static var watchFile: String? {
@@ -190,6 +199,7 @@ final class GalleryCheck {
                 "lookups": stats.lookups, "failures": stats.failures,
             ]
         }
+        report["window"] = await windowChecks(root: root, folder: folder)
         write(report, to: "gallery-check.json")
         print(
             "gallery-check: \(failures) groups over 0.5 pt, \(after - before) 3D frames while covered"
@@ -511,6 +521,101 @@ final class GalleryCheck {
     }
 
     /// Waits for the pictures in view, at most two minutes. Returns the seconds waited.
+    /// What the person found trying the gallery: Esc with the Look card open closes the card
+    /// first; another connected folder shown and this one again brings every file's facts and
+    /// pictures back; × leaves the gallery.
+    private func windowChecks(root: URL, folder: URL) async -> [String: Any] {
+        guard let hooks else {
+            return [:]
+        }
+        var out: [String: Any] = [:]
+        controller.show(root: root, folder: folder)
+        _ = await settle()
+        // Esc, as typed, with the Look card open.
+        hooks.toggleLook()
+        let opened = hooks.lookOpen()
+        if let escape = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: 53
+        ) {
+            controller.view.keyDown(with: escape)
+        }
+        out["escape"] = [
+            "lookOpened": opened, "lookOpenAfter": hooks.lookOpen(),
+            "galleryAfter": hooks.inGallery(),
+        ]
+        // Another root, then this one again: every file told again.
+        let known = controller.factsKnown
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "gallery-check-other"
+        )
+        try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        for i in 0..<2 {
+            let stl =
+                "solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex \(10 + i) 0 0\n"
+                + "vertex 0 \(10 + i) \(10 + i)\nendloop\nendfacet\nendsolid t\n"
+            try? stl.write(
+                to: other.appendingPathComponent("t\(i).stl"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        controller.show(root: other, folder: other)
+        try? await Task.sleep(for: .seconds(2))
+        _ = await settle()
+        controller.show(root: root, folder: folder)
+        let back = Date()
+        while controller.factsKnown < known, Date().timeIntervalSince(back) < 60 {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        let waited = await settle()
+        out["rootSwitch"] = [
+            "factsBefore": known, "factsAfter": controller.factsKnown,
+            "seconds": Date().timeIntervalSince(back), "waitedForPictures": waited,
+            "waitingInView": controller.waitingInView,
+        ]
+        // Detail pictures: Catalogue's plate figure and Plates' covers, drawn large.
+        controller.setView(GeoViewCatalogue.rawValue)
+        controller.catalogue(spread: 2)
+        _ = await settle()
+        let detailStart = Date()
+        let wanted = controller.gallery.details().count
+        while controller.view.detailCount < wanted, Date().timeIntervalSince(detailStart) < 60 {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        snapshot("gallery-detail-catalogue.png")
+        var details: [String: Any] = [
+            "catalogueWanted": wanted, "catalogueShown": controller.view.detailCount,
+            "catalogueSeconds": Date().timeIntervalSince(detailStart),
+        ]
+        controller.setView(GeoViewPlates.rawValue)
+        _ = await settle()
+        let platesStart = Date()
+        let platesWanted = controller.gallery.details().count
+        while controller.view.detailCount < platesWanted,
+            Date().timeIntervalSince(platesStart) < 60
+        {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        snapshot("gallery-detail-plates.png")
+        details["platesWanted"] = platesWanted
+        details["platesShown"] = controller.view.detailCount
+        details["platesSeconds"] = Date().timeIntervalSince(platesStart)
+        out["details"] = details
+        // The masthead's ×, in the gallery.
+        hooks.pressClose()
+        out["close"] = ["galleryAfter": hooks.inGallery(), "viewHidden": controller.view.isHidden]
+        return out
+    }
+
     private func settle() async -> Double {
         let start = Date()
         while controller.waitingInView > 0, Date().timeIntervalSince(start) < 120 {

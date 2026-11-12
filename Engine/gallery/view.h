@@ -113,6 +113,8 @@ public:
     u32 selected() const { return selected_; }
 
     std::vector<GeoGalleryWant> wanted() const;
+    /// Files drawn large in view, nearest the middle first, at most 32 (GeoItemDetail).
+    std::vector<u32> details() const;
 
     // ---- Views and what they share ----
 

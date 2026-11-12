@@ -282,6 +282,13 @@ final class GalleryHandle {
         return out
     }
 
+    /// The files drawn large in view, whose detail pictures are wanted.
+    func details() -> [UInt32] {
+        var out = [UInt32](repeating: 0, count: 32)
+        let count = geo_gallery_details(gallery, &out, 32)
+        return Array(out.prefix(Int(min(count, 32))))
+    }
+
     func wanted() -> [GeoGalleryWant] {
         let count = geo_gallery_wanted(gallery, nil, 0)
         var out = [GeoGalleryWant](repeating: GeoGalleryWant(), count: Int(count))

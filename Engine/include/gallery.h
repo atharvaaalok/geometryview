@@ -34,9 +34,12 @@ typedef enum GeoGalleryItemFlags {
     GeoItemLost = 128,  // drawn at 35%: a folder that can no longer be read, as last seen
     GeoItemRuler = 256, // a rectangle drawn as a ruler: its top line, minor ticks every `radius`
                         // points, major ticks every `tracking` (Ladders)
-    GeoItemTurn =
-        512, // a picture drawn as Peek's turntable: the painter's frame of `file`,
-             // every frame fitted alike into the rectangle (geo_gallery_set_peek_turnable)
+    // A picture drawn as Peek's turntable: the painter's frame of `file`, every frame fitted alike
+    // into the rectangle (geo_gallery_set_peek_turnable).
+    GeoItemTurn = 512,
+    // A picture drawn large, above half a point a pixel: drawn from the file's detail picture,
+    // twice the pixels, once it has come (geo_gallery_details).
+    GeoItemDetail = 1024,
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -256,6 +259,9 @@ uint32_t geo_gallery_selected(const GeoGallery* gallery);
 /// The files to draw, in the library's bands: those in view, those near, the rest of the folder.
 /// Writes at most `capacity`; returns how many there are.
 uint32_t geo_gallery_wanted(const GeoGallery* gallery, GeoGalleryWant* out, uint32_t capacity);
+/// The files drawn large in view (GeoItemDetail), nearest the middle first, at most 32: those whose
+/// detail pictures are wanted. Writes at most `capacity`; returns how many there are.
+uint32_t geo_gallery_details(const GeoGallery* gallery, uint32_t* out, uint32_t capacity);
 
 /// One alignment group's spread, as painted.
 typedef struct GeoGalleryGroupSpread {

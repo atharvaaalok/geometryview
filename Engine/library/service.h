@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace geo::library {
@@ -44,6 +45,8 @@ struct PictureSpec {
     // every turn, in millimetres a pixel. Both 0 for the gallery's pictures, which fit their file.
     float turn = 0.0f;
     double worldPerPixel = 0.0;
+    // Drawn this many times as large and averaged down: smooth outlines and shadow edges.
+    u32 supersample = 1;
 
     bool operator==(const PictureSpec&) const = default;
 };
@@ -91,6 +94,11 @@ public:
     virtual void failed(const std::string& path, const std::string& message) = 0;
     /// A frame of a turntable asked for with Service::turn: `frame` of `frames`, turned
     /// frame × 360 / frames degrees.
+    /// A file's detail picture, asked for with Service::detail.
+    virtual void detail(const std::string& path, const std::string& pngPath,
+                        const PictureNote& note) {
+        (void)path, (void)pngPath, (void)note;
+    }
     virtual void turnFrame(const std::string& path, u32 frame, u32 frames,
                            const std::string& pngPath, const PictureNote& note) {
         (void)path, (void)frame, (void)frames, (void)pngPath, (void)note;
@@ -137,6 +145,15 @@ public:
     void setPicture(const PictureSpec& spec);
     /// Whether files are imported ahead of being near the view.
     void setPrefetch(bool allowed);
+    /// Files drawn large: each gets a detail picture (twice the pixels at twice the pixels a point,
+    /// so the same picture, sharper), after the pictures in view, read back if kept, its file
+    /// imported first if its cache file has gone. Replaces the last set.
+    void detail(std::vector<std::string> paths);
+    /// The spec a detail picture is drawn in.
+    PictureSpec detailSpec() const;
+    /// Forgets what it has told: every file is looked up again when next wanted, and its facts,
+    /// picture and failure told again from the caches. Imports and pictures under way finish.
+    void reset();
     /// Peek's turntable: `frames` pictures of one file, `pixels` square, turned evenly about the
     /// upright at one scale, ahead of any other picture; the file is imported again first if its
     /// cache file has gone. Frames drawn before come from the cache. 0 frames stops it.
@@ -180,6 +197,8 @@ private:
     void startStructure(const std::string& path);
     void startPicture(const std::string& path);
     bool startTurnFrame();
+    bool startDetail();
+    bool detailKept(const std::string& path) const;
     void cancelForOpens();
     void maybeEvict();
     void updatePrefetch();
@@ -230,10 +249,16 @@ private:
         std::string path;
         u32 frames = 0;
         u32 pixels = 0;
-        u32 next = 0; // the next frame to draw
-        bool painting = false;
+        u32 next = 0;       // the next frame to draw
+        u32 generation = 0; // which turntable this is: frames of an earlier one are not told
     };
     std::optional<Turn> turn_;
+    u32 turnGeneration_ = 0;
+    // Files drawn large, and those whose detail picture has been told in the current spec.
+    std::vector<std::string> details_;
+    std::unordered_set<std::string> detailsTold_;
+    // The picture thread's one slot is taken: a job handed over and not yet done, whatever kind.
+    bool slotBusy_ = false;
     bool routesDirty_ = false;
     bool prefetchAllowed_ = true;
     Pressure pressure_ = Pressure::Normal;

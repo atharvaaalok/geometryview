@@ -518,6 +518,9 @@ void Gallery::layoutPeek() {
         display_.picture(peek_, midX - (p.ink[0] + p.ink[2] / 2.0f) * k,
                          midY - (p.ink[1] + p.ink[3] / 2.0f) * k, float(p.width) * k,
                          float(p.height) * k);
+        if (k > kDetailAbove) {
+            display_.last().flags |= GeoItemDetail;
+        }
     } else if (f.failed()) {
         centred(f.failure);
     } else {
@@ -902,6 +905,37 @@ GeoGalleryAction Gallery::key(u32 key) {
     default:
         return {GeoActionNone, 0};
     }
+}
+
+std::vector<u32> Gallery::details() const {
+    const float top = scroll_, bottom = scroll_ + height_, middle = (top + bottom) / 2.0f;
+    std::vector<std::pair<float, u32>> found;
+    std::unordered_set<u32> seen;
+    for (const GeoGalleryItem& item : display_.items()) {
+        if (item.kind != GeoItemPicture || (item.flags & GeoItemDetail) == 0) {
+            continue;
+        }
+        float y0 = item.y, y1 = item.y + item.height;
+        if ((item.flags & GeoItemFixed) != 0) {
+            y0 += scroll_; // placed in the view: always in it
+            y1 += scroll_;
+        } else if (const GeoGalleryLane* lane = item.lane != 0 ? laneOf(item.lane) : nullptr) {
+            const float left = item.x - laneScroll(item.lane);
+            if (left + item.width < lane->rect[0] || left > lane->rect[0] + lane->rect[2]) {
+                continue; // scrolled out of its lane
+            }
+        }
+        if (y1 < top || y0 > bottom || !seen.insert(item.file).second) {
+            continue;
+        }
+        found.push_back({std::fabs((y0 + y1) / 2.0f - middle), item.file});
+    }
+    std::sort(found.begin(), found.end());
+    std::vector<u32> out;
+    for (usize i = 0; i < std::min<usize>(found.size(), 32); ++i) {
+        out.push_back(found[i].second);
+    }
+    return out;
 }
 
 std::vector<GeoGalleryWant> Gallery::wanted() const {

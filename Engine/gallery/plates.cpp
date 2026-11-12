@@ -392,7 +392,9 @@ public:
     }
 
     // Parts at one scale on one to three baselines in the art box, whichever draws them largest.
-    // Returns the scale, in millimetres a point.
+    // Each row's parts stand on one line, raised by the row's deepest shadow so every shadow ends
+    // 3 points above the row's foot: clear of the rule under the art box. Returns the scale, in
+    // millimetres a point.
     std::optional<double> cover(const std::vector<u32>& parts, float x, float y, float W, float H) {
         if (parts.empty() || W < 20.0f || H < 20.0f) {
             return std::nullopt;
@@ -402,6 +404,13 @@ public:
             const Drawn d = *drawnOf(tree.file(f));
             const double pad = 0.04 * largest(d);
             return std::array<double, 2>{d.w + pad, d.h + pad};
+        };
+        const auto deepest = [&](const std::vector<u32>& rowFiles) {
+            double below = 0;
+            for (const u32 f : rowFiles) {
+                below = std::max(below, drawnOf(tree.file(f))->below);
+            }
+            return below;
         };
         struct Best {
             double mm = 0;
@@ -423,11 +432,12 @@ public:
             const double rowH = (H - gapY * float(rows.size() - 1)) / float(rows.size());
             double mm = 0;
             for (const auto& rowFiles : rows) {
-                double widths = 0;
+                double widths = 0, tallest = 0;
                 for (const u32 f : rowFiles) {
-                    mm = std::max(mm, padded(f)[1] / rowH);
+                    tallest = std::max(tallest, padded(f)[1]);
                     widths += padded(f)[0];
                 }
+                mm = std::max(mm, (tallest + deepest(rowFiles)) / std::max(1.0, rowH - 3.0));
                 mm = std::max(mm, widths / (W - gapX * float(rowFiles.size() - 1)));
             }
             // Never past 1.25 times a picture's own pixels, or it blurs.
@@ -440,15 +450,17 @@ public:
                 best = Best{mm, rows};
             }
         }
-        std::vector<float> used;
+        // Each row: its tallest part, its deepest shadow under the foot, and 3 points below that.
+        std::vector<float> used, sunk;
         float total = 0;
         for (const auto& rowFiles : best->rows) {
             float h = 0;
             for (const u32 f : rowFiles) {
                 h = std::max(h, float(padded(f)[1] / best->mm));
             }
-            used.push_back(h);
-            total += h;
+            sunk.push_back(float(deepest(rowFiles) / best->mm));
+            used.push_back(h + sunk.back() + 3.0f);
+            total += used.back();
         }
         total += gapY * float(best->rows.size() - 1);
         float rowY = y + H - total;
@@ -462,10 +474,10 @@ public:
             widths += gapX * float(rowFiles.size() - 1);
             float px = x + (W - widths) / 2.0f;
             const u32 g = newGroup();
+            const float foot = base - 3.0f - sunk[i];
             for (const u32 f : rowFiles) {
-                const auto size = part(f, px, base - 3.0f, best->mm, g);
-                result.covers.push_back(
-                    {GeoTargetFile, f, px, base - 3.0f - size[1], size[0], size[1]});
+                const auto size = part(f, px, foot, best->mm, g);
+                result.covers.push_back({GeoTargetFile, f, px, foot - size[1], size[0], size[1]});
                 px += size[0] + gapX;
             }
             rowY = base + gapY;
@@ -672,14 +684,20 @@ public:
             for (const u32 f : good) {
                 (largest(*drawnOf(tree.file(f))) <= 3.0 * q3 ? normal : oversize).push_back(f);
             }
-            if (!normal.empty()) {
-                FamilyScale family = familyScale(tree, normal, 150.0f, 132.0f, 0.8, 1e9);
-                for (const u32 f : normal) {
+            // A scale no larger than the pictures stay sharp at.
+            const auto sharp = [&](const std::vector<u32>& files, double mm) {
+                for (const u32 f : files) {
                     if (const auto& p = tree.file(f).picture; p && p->mmPerPixel > 0) {
-                        family.mmPerPoint = std::max(family.mmPerPoint,
-                                                     p->mmPerPixel / (kMaxPointsPerPixel * 1.04));
+                        mm = std::max(mm, p->mmPerPixel / (kMaxPointsPerPixel * 1.04));
                     }
                 }
+                return mm;
+            };
+            double normalMm = 1.0;
+            if (!normal.empty()) {
+                FamilyScale family = familyScale(tree, normal, 150.0f, 132.0f, 0.8, 1e9);
+                family.mmPerPoint = sharp(normal, family.mmPerPoint);
+                normalMm = family.mmPerPoint;
                 const std::string range = rangeOf(tree, good);
                 std::string meta = count(good.size(), "file");
                 if (!range.empty()) {
@@ -691,12 +709,9 @@ public:
                 y = shelf(bySize(tree, normal), y, width, [mm](u32) { return mm; }, {});
             }
             if (!oversize.empty()) {
-                const FamilyScale big = familyScale(tree, oversize, 440.0f, 150.0f, 1.0, 1e9);
-                const double ratio =
-                    normal.empty()
-                        ? 1.0
-                        : big.mmPerPoint /
-                              familyScale(tree, normal, 150.0f, 132.0f, 0.8, 1e9).mmPerPoint;
+                FamilyScale big = familyScale(tree, oversize, 440.0f, 150.0f, 1.0, 1e9);
+                big.mmPerPoint = sharp(oversize, big.mmPerPoint);
+                const double ratio = normal.empty() ? 1.0 : big.mmPerPoint / normalMm;
                 y += 18.0f;
                 y = section(
                     y, width,

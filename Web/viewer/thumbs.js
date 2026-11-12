@@ -54,7 +54,8 @@ export class Thumbnailer {
       this.#worker.postMessage({ type: "draw", id, blob, pixels: spec.pixels, style: spec.style,
                                  colorMode: spec.colorMode, pixelsPerPoint: spec.pixelsPerPoint,
                                  lineScale: spec.lineScale, firstColor, folderColor, keep,
-                                 turn: spec.turn ?? 0, worldPerPixel: spec.worldPerPixel ?? 0 });
+                                 turn: spec.turn ?? 0, worldPerPixel: spec.worldPerPixel ?? 0,
+                                 supersample: spec.supersample ?? 1 });
     });
     this.heapMB = answer.heapMB ?? this.heapMB;
     if (this.heapMB > this.#recycleMB) {

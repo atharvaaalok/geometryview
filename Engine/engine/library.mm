@@ -51,6 +51,7 @@ public:
             options.azimuth_degrees = 35.0 + double(spec.turn);
             options.elevation_degrees = 30.0;
             options.world_per_pixel = spec.worldPerPixel;
+            options.supersample = spec.supersample;
             options.look.style = GeoStyle(spec.style);
             options.look.color_mode = GeoColorMode(spec.colorMode);
             options.look.cast_shadow = geo_style_casts_shadow(options.look.style);
@@ -144,6 +145,21 @@ public:
         out.first_color = note.firstColor;
         event.done = frame;
         event.total = frames;
+        send(event);
+    }
+    void detail(const std::string& path, const std::string& pngPath,
+                const library::PictureNote& note) override {
+        GeoLibraryEvent event{};
+        event.kind = GeoLibraryDetail;
+        event.path = path.c_str();
+        GeoPicture& out = event.picture;
+        out.png_path = pngPath.c_str();
+        out.width = note.width;
+        out.height = note.height;
+        out.world_per_pixel = note.worldPerPixel;
+        std::copy(note.partRect.begin(), note.partRect.end(), out.part_rect);
+        std::copy(note.inkRect.begin(), note.inkRect.end(), out.ink_rect);
+        out.first_color = note.firstColor;
         send(event);
     }
     void progress(const std::string& path, u32 done, u32 total) override {
@@ -288,11 +304,22 @@ void geo_library_set_picture(GeoLibrary* library, const GeoPictureSpec* spec) {
     picture.pixels = std::clamp<u32>(spec->pixels, 16, 2048);
     picture.pixelsPerPoint = spec->pixels_per_point > 0 ? spec->pixels_per_point : 2.0f;
     picture.lineScale = std::clamp(spec->line_scale, 0.1f, 1.0f);
+    picture.supersample = std::clamp<u32>(spec->supersample, 1, 4);
     library->service->setPicture(picture);
 }
 
 void geo_library_set_prefetch(GeoLibrary* library, bool allowed) {
     library->service->setPrefetch(allowed);
+}
+
+void geo_library_reset(GeoLibrary* library) { library->service->reset(); }
+
+void geo_library_detail(GeoLibrary* library, const char* const* paths, uint32_t count) {
+    std::vector<std::string> wanted;
+    for (uint32_t i = 0; i < count; ++i) {
+        wanted.emplace_back(paths[i]);
+    }
+    library->service->detail(std::move(wanted));
 }
 
 void geo_library_turn(GeoLibrary* library, const char* path, uint32_t frames, uint32_t pixels) {

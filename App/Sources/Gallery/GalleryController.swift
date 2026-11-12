@@ -27,6 +27,7 @@ final class GalleryController {
     private var wantScheduled = false
     private var picturesPending = 0
     /// Peek's turntable: the file it is for, and its frames as they are decoded, with their notes.
+    private var detailPaths: [String] = []
     private var turnFile: UInt32?
     private var turnPath = ""
     private var turnImages: [CGImage?] = []
@@ -180,6 +181,10 @@ final class GalleryController {
             failures.removeAll()
             decoded.removeAll()
             view.clearImages()
+            // What the library told of the last root's files is forgotten here, so it tells it
+            // again, from its caches, for the files wanted next.
+            library?.reset()
+            detailPaths = []
             watcher.watch([root.path])
             if let kept = library?.keptListing(root) {
                 load(kept)
@@ -189,6 +194,10 @@ final class GalleryController {
             scanning = true
             Task { [weak self] in
                 let entries = await self?.library?.scan(root)
+                // Another root shown meanwhile: its own scan tells it.
+                guard self?.root == root else {
+                    return
+                }
                 self?.scanning = false
                 if let entries {
                     self?.rescanned(entries)
@@ -206,6 +215,9 @@ final class GalleryController {
 
     func setStyle(_ style: GeoStyle) {
         styleRaw = style.rawValue
+        // Details in the old style go, and are asked for again in the new.
+        view.keepDetails([])
+        detailPaths = []
         library?.setPicture(
             style: style,
             colorMode: GeoColorParts,
@@ -235,6 +247,9 @@ final class GalleryController {
     }
 
     /// Pictures still to arrive for files in view, for the checks.
+    /// Files whose facts the library has told, for the checks.
+    var factsKnown: Int { facts.count }
+
     var waitingInView: Int {
         gallery.wanted().filter { want in
             let path = gallery.path(of: want.file)
@@ -347,6 +362,23 @@ final class GalleryController {
         }
         library.want(wants)
         updateTurn()
+        updateDetails()
+    }
+
+    /// Asks for the detail pictures of what is drawn large, if that changed, and lets the others
+    /// go.
+    private func updateDetails() {
+        guard let root, let library else {
+            return
+        }
+        let files = gallery.details()
+        let paths = files.map { root.appendingPathComponent(gallery.path(of: $0)).path }
+        guard paths != detailPaths else {
+            return
+        }
+        detailPaths = paths
+        view.keepDetails(Set(files))
+        library.detail(paths: paths)
     }
 
     private func receive(_ event: LibraryEvent) {
@@ -381,6 +413,31 @@ final class GalleryController {
                 return
             }
             gallery.setReading(file, Float(done) / Float(total))
+        case .detail(let path, let png, _):
+            guard let rel = relative(path), gallery.file(at: rel) != nil else {
+                return
+            }
+            Task.detached(priority: .userInitiated) {
+                let image = CGImageSourceCreateWithURL(URL(fileURLWithPath: png) as CFURL, nil)
+                    .flatMap {
+                        CGImageSourceCreateImageAtIndex(
+                            $0,
+                            0,
+                            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                        )
+                    }
+                let sendable = UncheckedImage(image: image)
+                await MainActor.run { [weak self] in
+                    // Still drawn large, in this folder: shown.
+                    guard let self, detailPaths.contains(path),
+                        let file = gallery.file(at: rel), let image = sendable.image
+                    else {
+                        return
+                    }
+                    view.setDetailImage(image, for: file)
+                }
+            }
+            return
         case .turnFrame(let path, let frame, let frames, let png, let picture):
             receiveTurnFrame(path: path, frame: frame, frames: frames, png: png, picture: picture)
             return

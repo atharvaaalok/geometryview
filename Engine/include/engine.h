@@ -410,6 +410,10 @@ typedef struct GeoRenderOptions {
     // A fixed scale for an orthographic view, in model units per pixel, so pictures of different
     // files compare; 0 frames the file to fit.
     double world_per_pixel;
+    // Draws at this many times the size and pixels a point, then averages each square of pixels:
+    // the same picture, its outlines and shadow edges smooth (the thumbnailer only; 1 or 0 for
+    // none, at most 4).
+    uint32_t supersample;
 } GeoRenderOptions;
 
 /// The options gcli render starts from: 1600 by 1000 pixels at 2 per point, from the front right

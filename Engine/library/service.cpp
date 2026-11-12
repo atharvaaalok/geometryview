@@ -183,6 +183,8 @@ struct Service::Event {
         PictureDone,
         Evicted,
         Turn,
+        Reset,
+        Detail,
     };
     Kind kind = Kind::Gate;
     std::vector<FileWant> wants;
@@ -203,6 +205,9 @@ struct Service::Event {
     u32 total = 0;
     u64 bytes = 0;
     i32 turnFrame = -1; // a turntable's frame, for PictureDone
+    u32 turnGeneration = 0;
+    bool detail = false; // a detail picture, for PictureDone
+    std::vector<std::string> paths;
 };
 
 struct Service::PictureJob {
@@ -213,6 +218,8 @@ struct Service::PictureJob {
     i32 folderColor = -1;
     std::optional<scene::Facts> facts; // measured ones; read from the blob otherwise
     i32 turnFrame = -1;                // a turntable's frame, or -1 for the gallery's picture
+    u32 turnGeneration = 0;            // and which turntable
+    bool detail = false;               // a detail picture
 };
 
 // Receives an import's segments: the model's, for an estimated box, and its progress.
@@ -318,6 +325,27 @@ void Service::setPicture(const PictureSpec& spec) {
     post(std::move(event));
 }
 
+void Service::detail(std::vector<std::string> paths) {
+    Event event;
+    event.kind = Event::Kind::Detail;
+    event.paths = std::move(paths);
+    post(std::move(event));
+}
+
+PictureSpec Service::detailSpec() const {
+    PictureSpec spec = spec_;
+    spec.pixels = spec_.pixels * 2;
+    spec.pixelsPerPoint = spec_.pixelsPerPoint * 2.0f;
+    spec.supersample = 1; // drawn large already, and shown smaller than its pixels
+    return spec;
+}
+
+void Service::reset() {
+    Event event;
+    event.kind = Event::Kind::Reset;
+    post(std::move(event));
+}
+
 void Service::turn(const std::string& path, u32 frames, u32 pixels) {
     Event event;
     event.kind = Event::Kind::Turn;
@@ -359,6 +387,10 @@ std::string Service::pictureKey(const PictureSpec& spec, i32 firstColor,
     // A turntable's frame: its turn and scale too. The gallery's pictures keep their keys.
     if (spec.turn != 0.0f || spec.worldPerPixel != 0.0) {
         text += std::format("|turn {:.2f}|{:.6g}", spec.turn, spec.worldPerPixel);
+    }
+    // Supersampled: another picture, smoother; one drawn plainly keeps its key.
+    if (spec.supersample > 1) {
+        text += std::format("|ss{}", spec.supersample);
     }
     return std::format("{:016x}", XXH3_64bits(text.data(), text.size()));
 }
@@ -456,6 +488,7 @@ void Service::apply(Event& event) {
             break;
         }
         spec_ = event.spec;
+        detailsTold_.clear();
         // Pictures in the new spec may be kept already: each file is looked up again, those in
         // view first.
         for (auto& [path, state] : files_) {
@@ -556,26 +589,66 @@ void Service::apply(Event& event) {
         routesDirty_ = true;
         break;
     }
+    case Event::Kind::Detail: {
+        details_ = std::move(event.paths);
+        // One no longer drawn large is told again when it is next: the gallery lets it go.
+        const std::unordered_set<std::string> wanted(details_.begin(), details_.end());
+        std::erase_if(detailsTold_, [&](const std::string& p) { return !wanted.contains(p); });
+        routesDirty_ = true;
+        break;
+    }
+    case Event::Kind::Reset:
+        // Told again: what was learned is read back from the caches by the next look-up. Jobs
+        // under way keep their flags, so nothing starts twice.
+        detailsTold_.clear();
+        for (auto& [path, state] : files_) {
+            state.looked = false;
+            state.pictureCurrent = false;
+            state.failed = false;
+            state.facts.reset();
+            state.structured = false;
+        }
+        routesDirty_ = true;
+        break;
     case Event::Kind::Turn:
         if (event.done == 0 || event.path.empty()) {
             turn_.reset(); // a frame being drawn finishes, unheard
         } else if (!turn_ || turn_->path != event.path || turn_->frames != event.done ||
                    turn_->pixels != event.total) {
-            const bool painting = turn_ && turn_->painting;
-            turn_ = Turn{event.path, event.done, event.total, 0, painting};
+            turn_ = Turn{event.path, event.done, event.total, 0, ++turnGeneration_};
         }
         routesDirty_ = true;
         break;
     case Event::Kind::PictureDone: {
-        if (event.turnFrame >= 0) {
-            // A turntable's frame: told if it is still wanted; the next one follows.
+        slotBusy_ = false;
+        if (event.detail) {
+            // A detail picture: told if its file is still drawn large in this spec.
             FileState& state = files_[event.path];
-            if (turn_ && turn_->path == event.path) {
-                turn_->painting = false;
+            if (event.ok) {
+                if (event.pictureKey ==
+                    pictureKey(detailSpec(), firstColorOf(state), config_.pictureVersion)) {
+                    detailsTold_.insert(event.path);
+                    listener_.detail(event.path, event.pngPath, event.note);
+                }
+                std::lock_guard lock(mutex_);
+                ++stats_.pictures;
+            } else if (event.missingBlob) {
+                state.blobReady = false; // evicted: imported again, then drawn
+            } else {
+                detailsTold_.insert(event.path); // it cannot be drawn larger: the picture stays
+            }
+            routesDirty_ = true;
+            break;
+        }
+        if (event.turnFrame >= 0) {
+            // A turntable's frame: told if its turntable is still the one wanted; the next one
+            // follows.
+            FileState& state = files_[event.path];
+            if (turn_ && turn_->generation == event.turnGeneration) {
                 if (event.ok) {
                     listener_.turnFrame(event.path, u32(event.turnFrame), turn_->frames,
                                         event.pngPath, event.note);
-                    turn_->next = std::max(turn_->next, u32(event.turnFrame) + 1);
+                    turn_->next = u32(event.turnFrame) + 1;
                     std::lock_guard lock(mutex_);
                     ++stats_.pictures;
                 } else if (event.missingBlob) {
@@ -583,8 +656,6 @@ void Service::apply(Event& event) {
                 } else {
                     turn_.reset(); // it cannot be drawn turned: Peek keeps its picture
                 }
-            } else if (turn_) {
-                turn_->painting = false;
             }
             routesDirty_ = true;
             break;
@@ -727,6 +798,24 @@ void Service::reroute() {
             structures.push_back(job);
         }
     }
+    // Files drawn large want their detail pictures: looked up, and imported again if their cache
+    // file has gone and no detail was kept, after what is in view.
+    for (const std::string& path : details_) {
+        if (detailsTold_.contains(path)) {
+            continue;
+        }
+        const FileState& state = files_[path];
+        const auto other = [&](const Want& w) { return w.id == path; };
+        const Want job{path, Band::Near, 0.0, state.bytes};
+        if (!state.looked) {
+            if (std::ranges::none_of(lookups, other)) {
+                lookups.push_back(job);
+            }
+        } else if (!state.blobReady && !state.importing && !state.failed && state.facts &&
+                   !detailKept(path) && std::ranges::none_of(imports, other)) {
+            imports.push_back(job);
+        }
+    }
     // Peek's turntable needs its file's cache file: looked up, or imported first of all.
     if (turn_) {
         const FileState& state = files_[turn_->path];
@@ -768,14 +857,76 @@ void Service::startJobs() {
             startStructure(*path);
         }
     }
-    // One picture at a time: Peek's turntable first, then the gallery's.
-    if (pictures_.runningCount() == 0 && !(turn_ && turn_->painting)) {
-        if (!startTurnFrame()) {
+    // One picture at a time: Peek's turntable first, then the gallery's in view, then details of
+    // what is drawn large, then the rest.
+    if (!slotBusy_ && pictures_.runningCount() == 0 && !startTurnFrame()) {
+        const std::vector<std::string> waiting = pictures_.waiting();
+        const bool inView =
+            !waiting.empty() &&
+            pictures_.bandOf(waiting.front()).value_or(Band::Prefetch) <= Band::Visible;
+        if (inView || !startDetail()) {
             if (const std::optional<std::string> path = pictures_.next()) {
                 startPicture(*path);
             }
         }
     }
+}
+
+bool Service::detailKept(const std::string& path) const {
+    const auto it = files_.find(path);
+    if (it == files_.end() || it->second.key.empty()) {
+        return false;
+    }
+    const std::string picture =
+        pictureKey(detailSpec(), firstColorOf(it->second), config_.pictureVersion);
+    return exists(notePath(it->second.key, picture)) &&
+           exists(picturePath(it->second.key, picture));
+}
+
+bool Service::startDetail() {
+    const PictureSpec spec = detailSpec();
+    for (const std::string& path : details_) {
+        if (detailsTold_.contains(path)) {
+            continue;
+        }
+        const FileState& state = files_[path];
+        if (!state.looked || state.failed || !state.facts || state.key.empty()) {
+            continue;
+        }
+        // Kept before: told at once.
+        const std::string picture = pictureKey(spec, firstColorOf(state), config_.pictureVersion);
+        json::Value noted;
+        PictureNote note;
+        const std::string png = picturePath(state.key, picture);
+        if (readJson(notePath(state.key, picture), noted) && PictureNote::fromJson(noted, note) &&
+            exists(png)) {
+            detailsTold_.insert(path);
+            listener_.detail(path, png, note);
+            continue;
+        }
+        if (!state.blobReady || state.importing) {
+            continue;
+        }
+        auto job = std::make_unique<PictureJob>();
+        job->path = path;
+        job->blobPath = state.blobPath;
+        job->key = state.key;
+        job->spec = spec;
+        job->folderColor = state.folderColor;
+        job->detail = true;
+        if (state.facts && !state.facts->estimated) {
+            job->facts = state.facts;
+        }
+        slotBusy_ = true;
+        {
+            std::lock_guard lock(mutex_);
+            ++jobs_;
+            pictureJob_ = std::move(job);
+        }
+        pictureReady_.notify_all();
+        return true;
+    }
+    return false;
 }
 
 bool Service::startTurnFrame() {
@@ -786,8 +937,12 @@ bool Service::startTurnFrame() {
     if (!state.blobReady || state.importing || state.key.empty()) {
         return false;
     }
+    // Drawn as a detail is: its lines as thick for its size as a picture's, and never enlarged
+    // where it is shown, so not supersampled.
     PictureSpec spec = spec_;
     spec.pixels = turn_->pixels;
+    spec.pixelsPerPoint = spec_.pixelsPerPoint * float(turn_->pixels) / float(spec_.pixels);
+    spec.supersample = 1;
     // One scale for every turn: the box's diagonal fits whichever way it faces.
     if (state.facts && state.facts->hasBox) {
         const auto& f = *state.facts;
@@ -819,10 +974,11 @@ bool Service::startTurnFrame() {
     job->spec = spec;
     job->folderColor = state.folderColor;
     job->turnFrame = i32(turn_->next);
+    job->turnGeneration = turn_->generation;
     if (state.facts && !state.facts->estimated) {
         job->facts = state.facts;
     }
-    turn_->painting = true;
+    slotBusy_ = true;
     {
         std::lock_guard lock(mutex_);
         ++jobs_;
@@ -932,6 +1088,7 @@ void Service::startStructure(const std::string& path) {
 void Service::startPicture(const std::string& path) {
     FileState& state = files_[path];
     state.painting = true;
+    slotBusy_ = true;
     auto job = std::make_unique<PictureJob>();
     job->path = path;
     job->blobPath = state.blobPath;
@@ -1030,6 +1187,8 @@ void Service::paintLoop() {
         done.kind = Event::Kind::PictureDone;
         done.path = job->path;
         done.turnFrame = job->turnFrame;
+        done.turnGeneration = job->turnGeneration;
+        done.detail = job->detail;
         std::optional<scene::Facts> facts = job->facts;
         if (!facts) {
             scene::Facts measured;

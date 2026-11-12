@@ -21,6 +21,9 @@ export class Gallery {
   #facts = new Map(); // path -> layout facts
   #pictures = new Map(); // path -> { png, note }
   #failures = new Map();
+  // Detail pictures: the files drawn large, and how to stop asking for them.
+  #detailFiles = "";
+  #detailAbort = null;
   // Peek's turntable: the file it is for, and how to stop it.
   #turnFile = null;
   #turnAbort = null;
@@ -86,6 +89,7 @@ export class Gallery {
       this.#pictures.clear();
       this.#failures.clear();
       this.view.clearImages();
+      this.#detailFiles = "";
       this.#library.setRoot(this.#store.folders, root);
       this.#load([]);
       this.#walking = this.#walk(root);
@@ -288,8 +292,11 @@ export class Gallery {
     this.#style = style;
     const pixels = this.core.picturePixels;
     this.#library.setSpec({ style, colorMode: 1, pixels, pixelsPerPoint: 2,
-                            lineScale: Math.min(1, Math.max(0.5, pixels / 2 / 320)) });
+                            lineScale: Math.min(1, Math.max(0.5, pixels / 2 / 320)), supersample: 2 });
     this.#pictures.clear();
+    // Details in the old style go, and are asked for again in the new.
+    this.view.keepDetails(new Set());
+    this.#detailFiles = "";
     this.view.setStyle(style);
     this.#changed();
     this.#scheduleWant();
@@ -391,6 +398,7 @@ export class Gallery {
                  modified: entry?.modified ?? 0 };
       }));
       this.#updateTurn();
+      this.#updateDetails();
     });
   }
 
@@ -440,6 +448,28 @@ export class Gallery {
   /** Files whose turntable frames have come in Peek, 24 a turn, 768 pixels square. */
   static turnFrames = 24;
   static turnPixels = 768;
+
+  // Asks for the detail pictures of what is drawn large, if that changed, one after another, and
+  // lets the others go.
+  #updateDetails() {
+    const files = this.core.details();
+    const key = files.join(",");
+    if (key === this.#detailFiles) return;
+    this.#detailFiles = key;
+    this.#detailAbort?.abort();
+    const abort = new AbortController();
+    this.#detailAbort = abort;
+    this.view.keepDetails(new Set(files));
+    const colours = new Map(this.core.wanted().map((w) => [w.file, w.folderColor]));
+    (async () => {
+      for (const file of files) {
+        if (abort.signal.aborted) return;
+        const path = this.core.path(file);
+        const drawn = await this.#library.detail(path, colours.get(file) ?? -1, abort.signal).catch(() => null);
+        if (drawn && !abort.signal.aborted && this.core.fileAt(path) === file) this.view.setDetail(file, drawn.png);
+      }
+    })();
+  }
 
   // Asks for the turntable of the file in Peek, if it changed, and puts the last one away. Once all
   // its frames have come, Peek can turn.

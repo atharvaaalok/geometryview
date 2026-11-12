@@ -53,6 +53,29 @@ bool alphaBounds(const std::vector<u8>& bgra, u32 width, u32 height, uint32_t re
     return true;
 }
 
+// Each n × n square of BGRA pixels averaged into one, rounding to nearest: premultiplied colour
+// averages as it should, and so does an opaque picture.
+std::vector<u8> averaged(const std::vector<u8>& bgra, u32 width, u32 height, u32 n) {
+    const u32 w = width / n, h = height / n, count = n * n;
+    std::vector<u8> out(usize(w) * h * 4);
+    for (u32 y = 0; y < h; ++y) {
+        for (u32 x = 0; x < w; ++x) {
+            u32 sum[4] = {};
+            for (u32 dy = 0; dy < n; ++dy) {
+                const u8* row = &bgra[(usize(y * n + dy) * width + usize(x) * n) * 4];
+                for (u32 dx = 0; dx < n * 4; ++dx) {
+                    sum[dx % 4] += row[dx];
+                }
+            }
+            u8* at = &out[(usize(y) * w + x) * 4];
+            for (u32 c = 0; c < 4; ++c) {
+                at[c] = u8((sum[c] + count / 2) / count);
+            }
+        }
+    }
+    return out;
+}
+
 bool fail(char* error, u32 capacity, const std::string& message) {
     if (error != nullptr && capacity > 0) {
         std::snprintf(error, capacity, "%s", message.c_str());
@@ -94,19 +117,37 @@ bool geo_thumbnailer_render(GeoThumbnailer* thumbnailer, const char* blob_path,
             return fail(error, error_capacity, message);
         }
         gpu::Renderer& renderer = *thumbnailer->renderer;
+        // Supersampled: drawn n times as large, lines and all, then each n × n square averaged.
+        const u32 n = std::clamp(options->supersample, 1u, 4u);
+        GeoRenderOptions drawn = *options;
+        drawn.width *= n;
+        drawn.height *= n;
+        drawn.pixels_per_point =
+            (options->pixels_per_point > 0.0f ? options->pixels_per_point : 2.0f) * float(n);
+        drawn.world_per_pixel = options->world_per_pixel / double(n);
         engine::OffscreenView frame;
-        if (!engine::prepareOffscreen(renderer, std::move(segments), *options, frame, message)) {
+        if (!engine::prepareOffscreen(renderer, std::move(segments), drawn, frame, message)) {
             return fail(error, error_capacity, message);
         }
-        const std::vector<u8> pixels =
+        std::vector<u8> pixels =
             renderer.renderOffscreen(frame.view, options->overlay ? &frame.overlay : nullptr);
+        if (n > 1) {
+            pixels = averaged(pixels, drawn.width, drawn.height, n);
+        }
 
         out->width = options->width;
         out->height = options->height;
         out->premultiplied = options->transparent;
-        out->world_per_pixel = frame.worldPerPixel;
+        out->world_per_pixel = frame.worldPerPixel * double(n);
         if (const std::optional<std::array<u32, 4>> part = renderer.drawnBounds()) {
-            std::copy(part->begin(), part->end(), out->part_rect);
+            // Its pixels at the size kept: every one any of its drawn pixels falls in.
+            const u32 x0 = (*part)[0] / n, y0 = (*part)[1] / n;
+            const u32 x1 = ((*part)[0] + (*part)[2] + n - 1) / n;
+            const u32 y1 = ((*part)[1] + (*part)[3] + n - 1) / n;
+            out->part_rect[0] = x0;
+            out->part_rect[1] = y0;
+            out->part_rect[2] = x1 - x0;
+            out->part_rect[3] = y1 - y0;
         }
         if (!options->transparent ||
             !alphaBounds(pixels, options->width, options->height, out->ink_rect)) {

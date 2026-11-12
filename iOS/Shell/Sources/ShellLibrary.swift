@@ -145,6 +145,17 @@ final class ShellLibrary: NSObject, WKScriptMessageHandlerWithReply, UIDocumentP
         _ = connect(folder)
     }
 
+    /// For the page's scripted gallery check: a folder put in the app's own storage (as
+    /// `devicectl device copy to` puts one in Documents), connected as a person's would be.
+    func connectDocumentsFolder(named name: String) {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = documents.appendingPathComponent(name, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            return
+        }
+        _ = connect(folder)
+    }
+
     // MARK: Pickers
 
     private func present(_ kind: Picking, _ replyHandler: @escaping (Any?, String?) -> Void) {

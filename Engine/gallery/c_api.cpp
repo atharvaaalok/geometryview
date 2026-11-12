@@ -175,6 +175,14 @@ uint32_t geo_gallery_wanted(const GeoGallery* gallery, GeoGalleryWant* out, uint
     return uint32_t(wanted.size());
 }
 
+uint32_t geo_gallery_details(const GeoGallery* gallery, uint32_t* out, uint32_t capacity) {
+    const std::vector<u32> details = gallery->gallery.details();
+    if (out != nullptr) {
+        std::copy_n(details.begin(), std::min<usize>(capacity, details.size()), out);
+    }
+    return uint32_t(details.size());
+}
+
 uint32_t geo_gallery_check(const GeoGallery* gallery, const float* lines, const float* columns,
                            float tolerance, GeoGalleryGroupSpread* out, uint32_t capacity,
                            uint32_t* checked) {

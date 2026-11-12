@@ -120,7 +120,8 @@ let insets = { left: 0, top: 0, right: 0, bottom: 0 };
 let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
-masthead.onClose = () => closeFiles();
+// In the gallery, × leaves it, as Esc does at the top; in the viewer it closes the files.
+masthead.onClose = () => (galleryShown ? leaveGallery() : closeFiles());
 const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show) });
 const library = new LibraryCard(libraryStore, {
   open: (row, add) => openFromFolder(row, add),
@@ -201,7 +202,11 @@ new ViewportInput(engine, canvas, {
 // While the gallery shows, its keys are its own; in the viewer, Esc goes back to the gallery the
 // files came from once no card is open.
 addEventListener("keydown", (e) => {
-  if (galleryShown && gallery?.key(e)) {
+  if (galleryShown && e.key === "Escape" && dismissCard()) {
+    // A card open over the gallery closes first.
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  } else if (galleryShown && gallery?.key(e)) {
     e.preventDefault();
     e.stopImmediatePropagation();
   } else if (!galleryShown && openedFromGallery && e.key === "Escape" && !dismissCard()) {
@@ -444,6 +449,8 @@ function galleryFor() {
     search: (query, found) => library.showSearch(galleryShown, query, found),
   });
   canvas.after(gallery.view.element);
+  // A press in the gallery closes the cards, as one in the view does.
+  gallery.view.element.addEventListener("pointerdown", () => closeCards());
   gallery.setStyle(look.engineLook.style);
   return gallery;
 }
@@ -478,6 +485,8 @@ function enterGallery() {
 }
 
 function leaveGallery() {
+  dismissCard(); // no card left open over the viewer
+  if (gallery.poster) setGalleryPoster(false);
   galleryShown = false;
   gallery.view.element.hidden = true;
   engine.setCovered(false);
@@ -1401,10 +1410,20 @@ async function runWorkerTest() {
 // frames while the gallery covers it.
 async function runGalleryTest() {
   const dir = params.get("folder") ?? "test-models";
-  const listing = await (await fetch(`/list?dir=${encodeURIComponent(dir)}`)).json();
-  if (!libraryStore.folders.adoptRemote) throw new Error("Run with backend=visit.");
   const name = dir.split("/").pop();
-  const id = libraryStore.folders.adoptRemote(name, listing, `/viewer/${dir}/`);
+  let id, listing;
+  if (libraryStore.kind === "shell") {
+    // On the iPhone: the folder the shell connected from its own storage, walked as the gallery
+    // walks it.
+    id = (await libraryStore.folders.folders()).find((f) => f.name === name)?.id;
+    if (!id) throw new Error(`The shell connected no folder named ${name}.`);
+    listing = [];
+    for await (const entry of libraryStore.folders.walk(id)) listing.push({ path: entry.path, folder: entry.kind === "folder" });
+  } else {
+    listing = await (await fetch(`/list?dir=${encodeURIComponent(dir)}`)).json();
+    if (!libraryStore.folders.adoptRemote) throw new Error("Run with backend=visit.");
+    id = libraryStore.folders.adoptRemote(name, listing, `/viewer/${dir}/`);
+  }
   await library.refresh();
   const root = { id, name };
   const g = galleryFor();
@@ -1451,8 +1470,10 @@ async function runGalleryTest() {
   // checkViews (a list, "4" or "0,4") runs only those, for looking into one.
   const views = params.has("checkViews") ? params.get("checkViews").split(",").map(Number)
     : params.get("views") === "all" ? [0, 1, 2, 3, 4] : [0, 1];
-  // scrollOnly skips the styles' runs, for timing a scroll alone.
-  for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
+  // scrollOnly skips the styles' runs, for timing a scroll alone; styles=0 runs Illustration only,
+  // to keep a phone's run short.
+  const styles = params.has("styles") ? params.get("styles").split(",").map(Number) : [0, 3, 5];
+  for (const style of params.has("scrollOnly") ? [] : styles) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
     next.choose(style);
     applyLook(next, { remember: false });
@@ -1603,7 +1624,36 @@ async function runGalleryTest() {
   const before = engine.stats().frames;
   await sleep(2000);
   const framesWhileCovered = engine.stats().frames - before;
+  // Detail pictures: Catalogue's plate figure, drawn large.
+  const details = { galleryBefore: galleryShown };
+  if (views.includes(4)) {
+    await g.show(root, "");
+    g.setView(4);
+    g.catalogue({ spread: 2 });
+    await settle();
+    const detailStart = performance.now();
+    const wanted = g.core.details().length;
+    while (g.view.detailCount < wanted && performance.now() - detailStart < 60_000) await sleep(200);
+    Object.assign(details, { catalogueWanted: wanted, catalogueShown: g.view.detailCount,
+                             catalogueSeconds: Math.round(performance.now() - detailStart) / 1000 });
+    if (params.has("shots")) {
+      await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-gallery-detail-catalogue`)}`);
+      await sleep(1500);
+    }
+  }
+  // What the person found trying the gallery: Esc with the Look card open closes the card first,
+  // and × leaves the gallery.
+  const galleryBefore = galleryShown;
+  toggleCard(lookCard);
+  const lookOpened = !lookCard.element.hidden;
+  // Pressed as a key is, at the page's focus: the window's capturing listener sees it first.
+  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+  const escape = { galleryBefore, lookOpened, lookOpenAfter: !lookCard.element.hidden, galleryAfter: galleryShown };
+  masthead.onClose();
+  const close = { galleryAfter: galleryShown, viewHidden: g.view.element.hidden,
+                  emptyShown: !status.element.hidden };
   await post({ folder: dir, files: listing.filter((e) => !e.folder).length, runs, groupsOver: over,
+               window: { escape, close, details },
                worstSpread: worst, maxDeviation: Math.round(deviation * 1000) / 1000,
                scroll: { folder: tall, height: Math.round(height), frames: 120, ms: scrollMs, longTasks,
                          items: g.core.items.length,

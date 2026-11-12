@@ -27,6 +27,7 @@ struct Seen {
     std::vector<std::string> failures;
     std::vector<std::pair<uint32_t, GeoPicture>> turns; // a turntable's frames, as told
     std::vector<std::string> turnPngs;
+    std::map<std::string, GeoPicture> details;
 };
 
 void receive(void* context, const GeoLibraryEvent* event) {
@@ -45,6 +46,9 @@ void receive(void* context, const GeoLibraryEvent* event) {
         seen.failures.push_back(event->path);
         break;
     case GeoLibraryProgress:
+        break;
+    case GeoLibraryDetail:
+        seen.details[event->path] = event->picture;
         break;
     case GeoLibraryTurnFrame:
         CHECK(event->total == 4);
@@ -107,7 +111,7 @@ TEST_CASE("a folder scanned, wanted and drawn through the library's C interface"
     CHECK(summary.files == 3);
     CHECK(summary.folders == 1);
 
-    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f};
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f, 1};
     geo_library_set_picture(library, &spec);
     std::vector<std::string> paths;
     std::vector<GeoLibraryWant> wants;
@@ -147,6 +151,112 @@ TEST_CASE("a folder scanned, wanted and drawn through the library's C interface"
     fs::remove_all(root);
 }
 
+TEST_CASE("after a reset, files wanted again are told again from the caches, not imported") {
+    char pattern[] = "/tmp/geolibraryXXXXXX";
+    REQUIRE(mkdtemp(pattern) != nullptr);
+    const fs::path root = pattern;
+    fs::create_directories(root / "cache");
+    std::vector<std::string> paths;
+    for (int i = 0; i < 2; ++i) {
+        paths.push_back((root / std::format("p{}.stl", i)).string());
+        std::ofstream(paths.back()) << triangleStl(10.0 + i);
+    }
+    Seen seen;
+    GeoLibraryDescriptor descriptor{};
+    descriptor.shader_library_path = GEO_TEST_SHADER_LIBRARY;
+    descriptor.import_helper_path = GEO_TEST_HELPER_PATH;
+    const std::string cache = (root / "cache").string();
+    descriptor.cache_directory = cache.c_str();
+    descriptor.callback = receive;
+    descriptor.context = &seen;
+    GeoLibrary* library = geo_library_create(&descriptor);
+    REQUIRE(library != nullptr);
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f, 1};
+    geo_library_set_picture(library, &spec);
+    std::vector<GeoLibraryWant> wants;
+    for (const std::string& path : paths) {
+        wants.push_back({path.c_str(), GeoBandVisible, 0.0, 0, 0.0, -1});
+    }
+    geo_library_want(library, wants.data(), uint32_t(wants.size()));
+    geo_library_wait_idle(library);
+    REQUIRE(seen.pictures.size() == 2);
+    const GeoLibraryStats before = geo_library_stats(library);
+
+    // Wanted again, as is: nothing is told, it has been.
+    seen.facts.clear();
+    seen.pictures.clear();
+    geo_library_want(library, nullptr, 0);
+    geo_library_want(library, wants.data(), uint32_t(wants.size()));
+    geo_library_wait_idle(library);
+    CHECK(seen.pictures.empty());
+
+    // After a reset, as when the gallery shows another folder and comes back: told again.
+    geo_library_reset(library);
+    geo_library_want(library, wants.data(), uint32_t(wants.size()));
+    geo_library_wait_idle(library);
+    for (const std::string& path : paths) {
+        CAPTURE(path);
+        CHECK(seen.facts.contains(path));
+        CHECK(seen.pictures.contains(path));
+    }
+    const GeoLibraryStats after = geo_library_stats(library);
+    CHECK(after.imports == before.imports);   // from the caches
+    CHECK(after.pictures == before.pictures); // nothing drawn again
+    geo_library_destroy(library);
+    fs::remove_all(root);
+}
+
+TEST_CASE("a part drawn large gets a detail picture, twice the pixels, kept and read back") {
+    char pattern[] = "/tmp/geolibraryXXXXXX";
+    REQUIRE(mkdtemp(pattern) != nullptr);
+    const fs::path root = pattern;
+    fs::create_directories(root / "cache");
+    const std::string path = (root / "wedge.stl").string();
+    std::ofstream(path) << triangleStl(20.0);
+    Seen seen;
+    GeoLibraryDescriptor descriptor{};
+    descriptor.shader_library_path = GEO_TEST_SHADER_LIBRARY;
+    descriptor.import_helper_path = GEO_TEST_HELPER_PATH;
+    const std::string cache = (root / "cache").string();
+    descriptor.cache_directory = cache.c_str();
+    descriptor.callback = receive;
+    descriptor.context = &seen;
+    GeoLibrary* library = geo_library_create(&descriptor);
+    REQUIRE(library != nullptr);
+    // Supersampled, as the gallery draws them.
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f, 2};
+    geo_library_set_picture(library, &spec);
+    const GeoLibraryWant want{path.c_str(), GeoBandVisible, 0.0, 0, 0.0, -1};
+    geo_library_want(library, &want, 1);
+    geo_library_wait_idle(library);
+    REQUIRE(seen.pictures.contains(path));
+    CHECK(seen.pictures[path].width == 128);
+    const GeoPicture& picture = seen.pictures[path];
+
+    const char* paths[] = {path.c_str()};
+    geo_library_detail(library, paths, 1);
+    geo_library_wait_idle(library);
+    REQUIRE(seen.details.contains(path));
+    const GeoPicture& detail = seen.details[path];
+    CHECK(detail.width == 256);
+    // The same picture at twice the pixels: its part where the picture's is, twice as far in.
+    CHECK(std::abs(double(detail.part_rect[0]) - 2.0 * picture.part_rect[0]) <= 3.0);
+    CHECK(std::abs(double(detail.part_rect[2]) - 2.0 * picture.part_rect[2]) <= 3.0);
+    CHECK(std::abs(detail.world_per_pixel * 2.0 - picture.world_per_pixel) <
+          picture.world_per_pixel * 0.02);
+    CHECK(geo_library_stats(library).pictures == 2);
+
+    // No longer drawn large, then again: read back, not drawn.
+    seen.details.clear();
+    geo_library_detail(library, nullptr, 0);
+    geo_library_detail(library, paths, 1);
+    geo_library_wait_idle(library);
+    CHECK(seen.details.contains(path));
+    CHECK(geo_library_stats(library).pictures == 2);
+    geo_library_destroy(library);
+    fs::remove_all(root);
+}
+
 TEST_CASE("Peek's turntable: a part turned at one scale, drawn once, then read back") {
     char pattern[] = "/tmp/geolibraryXXXXXX";
     REQUIRE(mkdtemp(pattern) != nullptr);
@@ -165,7 +275,7 @@ TEST_CASE("Peek's turntable: a part turned at one scale, drawn once, then read b
     descriptor.context = &seen;
     GeoLibrary* library = geo_library_create(&descriptor);
     REQUIRE(library != nullptr);
-    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f};
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f, 1};
     geo_library_set_picture(library, &spec);
     const GeoLibraryWant want{path.c_str(), GeoBandVisible, 0.0, 0, 0.0, -1};
     geo_library_want(library, &want, 1);

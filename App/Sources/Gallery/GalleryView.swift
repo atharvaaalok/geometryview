@@ -81,6 +81,7 @@ final class GalleryView: NSView {
     var gallery: GalleryHandle
     /// Pictures by file, decoded off the main thread as they arrive.
     private var images: [UInt32: CGImage] = [:]
+    private var detailImages: [UInt32: CGImage] = [:]
     /// Called with what a key or click asks of the window: open a file, leave the gallery.
     var onAction: ((GeoGalleryAction) -> Void)?
     /// Called when what is in view changed: another folder, a scroll, a new layout.
@@ -89,6 +90,9 @@ final class GalleryView: NSView {
     var onSearchChanged: (() -> Void)?
     /// Called with Esc while a poster shows.
     var onLeavePoster: (() -> Void)?
+    /// Called first with Esc: true if it closed something of the window's (a card), which then
+    /// takes the key.
+    var onEscape: (() -> Bool)?
     /// Called when Atlas's map moved, for the toolbar's level.
     var onAtlasMoved: (() -> Void)?
     private var atlasDrag: CGPoint?
@@ -202,8 +206,23 @@ final class GalleryView: NSView {
         images[file] = image
     }
 
+    /// A file's detail picture, for where it is drawn large (GeoItemDetail).
+    func setDetailImage(_ image: CGImage?, for file: UInt32) {
+        detailImages[file] = image
+        repaint()
+    }
+
+    /// Detail pictures held, for the checks.
+    var detailCount: Int { detailImages.count }
+
+    /// Lets go of the detail pictures of files no longer drawn large.
+    func keepDetails(_ files: Set<UInt32>) {
+        detailImages = detailImages.filter { files.contains($0.key) }
+    }
+
     func clearImages() {
         images.removeAll()
+        detailImages.removeAll()
     }
 
     /// Lays out again if anything changed, and paints what is in view, playing what the change
@@ -507,7 +526,10 @@ final class GalleryView: NSView {
                     layer.masksToBounds = true
                     placeTurn(in: layer, turntable)
                 } else {
-                    layer.contents = images[item.file]
+                    // Drawn large: its detail picture, framed as the picture, once it has come.
+                    let detail =
+                        item.flags & GeoItemDetail.rawValue != 0 ? detailImages[item.file] : nil
+                    layer.contents = detail ?? images[item.file]
                     layer.masksToBounds = false
                 }
                 layer.contentsGravity = .resize
@@ -945,7 +967,8 @@ final class GalleryView: NSView {
         }
         let w = layer.bounds.width
         let h = layer.bounds.height
-        let k = min(w / (turntable.ink.width + 24), h / (turntable.ink.height + 24))
+        // As large as the area allows, but never past half a point a pixel: sharp on a 2× screen.
+        let k = min(w / (turntable.ink.width + 24), h / (turntable.ink.height + 24), 0.5)
         turnImage.frame = CGRect(
             x: w / 2 - turntable.ink.midX * k,
             y: h / 2 - turntable.ink.midY * k,
@@ -1341,6 +1364,9 @@ final class GalleryView: NSView {
         case 53: key = GeoKeyEscape
         default: key = nil
         }
+        if event.keyCode == 53, onEscape?() == true {
+            return  // a card open over the gallery closes first
+        }
         if gallery.poster {
             if event.keyCode == 53 {
                 onLeavePoster?()
@@ -1380,6 +1406,9 @@ final class GalleryView: NSView {
     }
 
     override func cancelOperation(_ sender: Any?) {
+        if onEscape?() == true {
+            return
+        }
         if gallery.poster {
             onLeavePoster?()
             return

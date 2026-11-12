@@ -224,8 +224,11 @@ const kSourcePiece = 8 << 20;
 // ---- Pictures and facts --------------------------------------------------------------------------
 
 /** The key of a picture of a file: a hash of how it is drawn and the engine's version. */
-export async function pictureKeyOf({ style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version }) {
-  const text = JSON.stringify([style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version]);
+export async function pictureKeyOf({ style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version,
+                                     supersample = 1 }) {
+  // Supersampled: another picture, smoother; one drawn plainly keeps its key.
+  const fields = [style, colorMode, pixels, pixelsPerPoint, lineScale, folderColor, version];
+  const text = JSON.stringify(supersample > 1 ? [...fields, `ss${supersample}`] : fields);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
   return [...digest.subarray(0, 8)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

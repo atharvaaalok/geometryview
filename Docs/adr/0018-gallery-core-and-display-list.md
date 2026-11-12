@@ -224,3 +224,16 @@ and time, without reading anything.
   frames, the angle and the drag are the front ends'.
 - A live 3D view inside Peek would need the file opened in the viewer's engine for every part
   peeked at; pictures cost a second and turn on the iPhone too.
+
+## Addendum (2026-11-11): sharp pictures
+
+**24. Pictures are supersampled, never enlarged past 1.25×, and drawn large from details.**
+- Outlines come from one sample a pixel and the shadow from a half-resolution mask, so pictures
+  showed staircases. The gallery's pictures are drawn twice as large at twice the pixels a point
+  and averaged (`GeoRenderOptions.supersample`): the same picture, smooth edges, at four times the
+  drawing time. The picture's key changes only when supersampled, so a plain one keeps its own.
+- No view draws a picture past 0.625 points a pixel; Catalogue caps in the view's points, its page
+  being drawn larger than its own size.
+- A picture drawn above half a point a pixel is flagged `GeoItemDetail`; the front ends ask for
+  those in view (`geo_gallery_details`) and the library draws them at twice the pixels, kept like
+  pictures. Every picture in memory stays its usual size; only the few drawn large get more.
