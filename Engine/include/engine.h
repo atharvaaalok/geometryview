@@ -362,6 +362,10 @@ uint32_t geo_engine_swatch(GeoEngine* engine, uint32_t document, uint32_t occurr
 /// Requests a redraw, for changes that do not arrive as input.
 void geo_engine_request_frame(GeoEngine* engine);
 
+/// Something covers the whole view, as the gallery does: no frames are drawn until it is
+/// uncovered, when one is, with whatever changed meanwhile.
+void geo_engine_set_covered(GeoEngine* engine, bool covered);
+
 GeoEngineStats geo_engine_stats(const GeoEngine* engine);
 
 /// Tells the engine which edges of the view the interface covers, in points, so framing keeps the

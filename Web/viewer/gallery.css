@@ -1,0 +1,33 @@
+/* The gallery: a folder's display list, laid out by the core (gallery-core.js) and painted by
+   gallery-view.js as absolutely placed elements over the style's sheet. Nothing here moves
+   anything: every position comes from the core, so the Mac and the browser agree. */
+
+.gallery {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  font-family: "Plex Mono", ui-monospace, monospace;
+  font-variant-ligatures: none;
+  font-kerning: none;
+}
+.gallery[hidden] { display: none; }
+.gallery-sheet { position: absolute; inset: 0; }
+.gallery-clip {
+  position: absolute;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+.gallery-content { position: relative; width: 100%; }
+.gallery-content > * {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+.gallery-content > [hidden] { display: none; }
+.g-text { white-space: pre; line-height: 1.3; overflow: visible; }
+.g-probe { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
+.g-picture { image-rendering: auto; }

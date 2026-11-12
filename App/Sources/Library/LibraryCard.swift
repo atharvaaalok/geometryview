@@ -35,6 +35,8 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
     var onReopen: ((RecentFile, _ adding: Bool) -> Void)?
     var onChoose: (() -> Void)?
     var onConnect: (() -> Void)?
+    /// A folder was clicked: its gallery shows, the connected folder it is in first.
+    var onShowFolder: ((_ root: URL, _ folder: URL) -> Void)?
 
     init(store: LibraryStore) {
         self.store = store
@@ -124,8 +126,17 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
         let row = rows[index]
         let adding = NSApp.currentEvent?.modifierFlags.contains(.command) == true
         switch row.kind {
-        case .section, .folder:
+        case .section:
             toggle(index)
+        case .folder:
+            toggle(index)
+            if let node = row.node, !node.isMissing {
+                var top = node
+                while let parent = top.parent {
+                    top = parent
+                }
+                onShowFolder?(top.url, node.url)
+            }
         case .file:
             if let node = row.node {
                 onOpen?(node.url, adding)

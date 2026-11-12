@@ -26,6 +26,11 @@ final class MainWindow: NSWindow {
     private lazy var watcher = DirectoryWatcher { [weak self] paths in self?.filesChanged(paths) }
     private var openURLs: [URL] = []
     private let sectionCard = SectionCard()
+    private lazy var galleryController = GalleryController()
+    /// Whether the gallery covers the viewport, and whether the files open came from it, so Esc
+    /// goes back.
+    private var inGallery = false
+    private var openedFromGallery = false
     private var look = Look.saved()
     private var exercise: Exercise?
     private var chromeCheck: ChromeCheck?
@@ -85,6 +90,43 @@ final class MainWindow: NSWindow {
         contentView = makeLayout()
         connect()
         showEmpty()
+        if let path = GalleryCheck.folder {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+                startGallery(at: path)
+            }
+        }
+    }
+
+    /// --gallery <folder>: shows a connected folder's gallery, and runs its checks if asked.
+    private func startGallery(at path: String) {
+        let folder = URL(fileURLWithPath: path).standardizedFileURL
+        guard
+            let root = library.roots.first(where: {
+                folder.path == $0.url.standardizedFileURL.path
+                    || folder.path.hasPrefix($0.url.standardizedFileURL.path + "/")
+            })
+        else {
+            print("gallery: \(path) is not inside a connected folder")
+            if GalleryCheck.isCheck || GalleryCheck.isLayout {
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        showGallery(root: root.url, folder: folder)
+        guard GalleryCheck.isCheck || GalleryCheck.isLayout else {
+            return
+        }
+        let check = GalleryCheck(controller: galleryController, engine: engine) { [weak self] style in
+            guard let self, let chosen = Look.Style(rawValue: Int(style.rawValue)) else {
+                return
+            }
+            var next = look
+            next.choose(chosen)
+            apply(next, remember: false)
+        }
+        Task {
+            await check.run(root: root.url, folder: folder)
+        }
     }
 
     // MARK: Layout
@@ -95,8 +137,10 @@ final class MainWindow: NSWindow {
         // The toolbar folds what doesn't fit into More: worked out when the width changes. Its room
         // is the window's width less the cards', as the page leaves it.
         root.onWidthChange = { [weak self] width in self?.toolBar.fit(available: width - 336) }
+        let gallery = galleryController.view
+        gallery.isHidden = true
         let views: [NSView] = [
-            viewport, dragArea, masthead, structure, libraryCard, selection, toolBar, lookCard,
+            viewport, gallery, dragArea, masthead, structure, libraryCard, selection, toolBar, lookCard,
             sectionCard,
             holdHint,
             hoverChip,
@@ -114,6 +158,11 @@ final class MainWindow: NSWindow {
         root.addLayoutGuide(free)
 
         NSLayoutConstraint.activate([
+            gallery.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            gallery.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            gallery.topAnchor.constraint(equalTo: root.topAnchor),
+            gallery.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+
             viewport.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             viewport.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             viewport.topAnchor.constraint(equalTo: root.topAnchor),
@@ -193,7 +242,7 @@ final class MainWindow: NSWindow {
             self?.receive(urls, adding: adding)
         }
         viewport.onKeyCommand = { [weak self] command in self?.run(command) }
-        viewport.onEscape = { [weak self] in self?.dismissCard() ?? false }
+        viewport.onEscape = { [weak self] in self?.escapeFromViewer() ?? false }
         viewport.onToolChange = { [weak self] tool in self?.toolChanged(tool) }
         viewport.onPointerMoved = { [weak self] point in self?.pointerMoved(point) }
         viewport.onDragging = { [weak self] dragging in self?.dropZone.isHidden = !dragging }
@@ -208,6 +257,13 @@ final class MainWindow: NSWindow {
             adding ? self?.add(url) : self?.open(url)
         }
         libraryCard.onConnect = { [weak self] in self?.connectFolder(nil) }
+        libraryCard.onShowFolder = { [weak self] root, folder in
+            self?.showGallery(root: root, folder: folder)
+        }
+        galleryController.onOpen = { [weak self] url in self?.openFromGallery(url) }
+        galleryController.onLeave = { [weak self] in self?.leaveGallery() }
+        galleryController.onFolderChanged = { [weak self] in self?.refreshMasthead() }
+        galleryController.setStyle(look.engineLook.style)
         libraryCard.onChoose = { [weak self] in self?.chooseFile(adding: false) }
         libraryCard.onReopen = { [weak self] file, adding in self?.reopen(file, adding: adding) }
         status.onOpen = { [weak self] in self?.chooseFile(adding: false) }
@@ -499,6 +555,7 @@ final class MainWindow: NSWindow {
         lookCard.show(look)
         masthead.setOnDarkSheet(look.style.onDark)
         engine.setLook(look)
+        galleryController.setStyle(look.engineLook.style)
     }
 
     @objc func chooseStyle(_ sender: NSMenuItem) {
@@ -678,7 +735,59 @@ final class MainWindow: NSWindow {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        dismissCard()
+        _ = escapeFromViewer()
+    }
+
+    /// Esc in the viewer: closes a card, or else goes back to the gallery the files came from.
+    private func escapeFromViewer() -> Bool {
+        if dismissCard() {
+            return true
+        }
+        if openedFromGallery, !inGallery, galleryController.root != nil {
+            enterGallery()
+            return true
+        }
+        return false
+    }
+
+    // MARK: Gallery
+
+    /// Shows a connected folder's gallery over the viewport, the Library beside it.
+    private func showGallery(root: URL, folder: URL) {
+        galleryController.show(root: root, folder: folder)
+        enterGallery()
+    }
+
+    private func enterGallery() {
+        inGallery = true
+        galleryController.view.isHidden = false
+        // The viewport is covered: it draws nothing until uncovered.
+        engine.setCovered(true)
+        status.isHidden = true
+        toolBar.isHidden = true
+        selection.isHidden = true
+        hoverChip.isHidden = true
+        showLibrary(true)
+        refreshMasthead()
+        makeFirstResponder(galleryController.view)
+    }
+
+    private func leaveGallery() {
+        inGallery = false
+        galleryController.view.isHidden = true
+        engine.setCovered(false)
+        toolBar.isHidden = false
+        if names.isEmpty {
+            showEmpty()
+        }
+        refreshMasthead()
+        makeFirstResponder(viewport)
+    }
+
+    private func openFromGallery(_ url: URL) {
+        leaveGallery()
+        openedFromGallery = true
+        open(url)
     }
 
     /// Whether any card, menu or sheet is open, for the chrome check.
@@ -814,6 +923,12 @@ final class MainWindow: NSWindow {
     }
 
     private func refreshMasthead() {
+        if inGallery {
+            masthead.isHidden = false
+            masthead.show(title: galleryController.title, subtitle: galleryController.subtitle)
+            masthead.setProgress(nil)
+            return
+        }
         guard !names.isEmpty else {
             masthead.isHidden = true
             return

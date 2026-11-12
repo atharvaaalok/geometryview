@@ -9,7 +9,7 @@
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +23,9 @@ const reportsFor = (label) => {
   if (label.includes("-p4-")) return join(root, "Docs/measurements/p4/runtime");
   if (label.includes("-import-step-")) return join(root, "Docs/measurements/p2/step");
   // The gallery's pictures, drawn as the browser will draw them, and its other checks.
-  if (label.includes("-thumbs-") || label.includes("-g1-")) return join(root, "Docs/measurements/gallery/web");
+  if (label.includes("-thumbs-") || label.includes("-g1-") || label.includes("-g2-")) {
+    return join(root, "Docs/measurements/gallery/web");
+  }
   if (label.includes("-p3-")) return join(root, "Docs/measurements/p3/renderer");
   return join(root, "Docs/measurements/phase0", label.includes("-import-") ? "import" : "renderer");
 };
@@ -37,6 +39,11 @@ const mounts = [
   ["/viewer/build/", join(root, "build/wasm-webgpu/Engine")],
   ["/viewer/fonts/", join(root, "ThirdParty/ibm-plex-mono")],
   ["/viewer/fixtures/", join(root, "build/fixtures")],
+  // GeometryView's own test models, for the gallery's checks, and any other folders named in
+  // GEOMETRYVIEW_GALLERY_FOLDERS as name=path,name=path, read only.
+  ["/viewer/test-models/", join(root, "test-models")],
+  ...(process.env.GEOMETRYVIEW_GALLERY_FOLDERS ?? "").split(",").filter((pair) => pair.includes("="))
+    .map((pair) => [`/viewer/${pair.split("=")[0]}/`, pair.slice(pair.indexOf("=") + 1)]),
   ["/viewer/occt/", join(root, "build/wasm-release/Import")],
   ["/viewer/occt-threads/", join(root, "build/wasm-threads/Import")],
   ["/viewer/", join(root, "Web/viewer")],
@@ -55,6 +62,40 @@ const server = createServer(async (request, response) => {
     "Cache-Control": "no-store",
   };
   const url = new URL(request.url, `http://${request.headers.host}`);
+  // A served folder's STEP and STL files and its folders, for the gallery's checks:
+  // /list?dir=test-models/models answers [{ path, folder, bytes, modified }].
+  if (request.method === "GET" && url.pathname === "/list") {
+    const dir = String(url.searchParams.get("dir") ?? "");
+    const mount = mounts.find(([prefix]) => `/viewer/${dir}/`.startsWith(prefix) && prefix !== "/viewer/");
+    if (!mount || dir.includes("..")) {
+      response.writeHead(404, headers).end();
+      return;
+    }
+    const base = join(mount[1], `/viewer/${dir}/`.slice(mount[0].length));
+    const entries = [];
+    const walk = async (folder, prefix) => {
+      for (const entry of await readdir(folder, { withFileTypes: true })) {
+        if (entry.name.startsWith(".")) continue;
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          entries.push({ path, folder: true });
+          await walk(join(folder, entry.name), path);
+        } else if (/\.(step|stp|stl)$/i.test(entry.name)) {
+          const info = await stat(join(folder, entry.name));
+          entries.push({ path, folder: false, bytes: info.size, modified: Math.round(info.mtimeMs) });
+        }
+      }
+    };
+    await walk(base, "");
+    response.writeHead(200, { ...headers, "Content-Type": "application/json" }).end(JSON.stringify(entries));
+    return;
+  }
+  // A page asks for a screenshot of itself: whoever runs the browser takes it (Tools/web_report.mjs).
+  if (request.method === "GET" && url.pathname === "/shot") {
+    console.log(`shot: ${String(url.searchParams.get("name") ?? "shot").replace(/[^\w.-]+/g, "-")}`);
+    response.writeHead(204, headers).end();
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/report") {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);

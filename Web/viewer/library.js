@@ -108,7 +108,8 @@ export class LibraryCard {
   #recent = [];
   #open = new Set();
 
-  // `on` takes: open({ root, path, name }, add), reopen(entry, add), choose(), connect(), switch(show)
+  // `on` takes: open({ root, path, name }, add), reopen(entry, add), choose(), connect(), switch(show),
+  // showFolder(root, path)
   constructor(store, on) {
     this.#store = store;
     this.#on = on;
@@ -212,6 +213,8 @@ export class LibraryCard {
       this.#expanded.add(row.key);
       await this.#readListing(row.root, row.path);
     }
+    // A folder's gallery shows beside the card.
+    this.#on.showFolder?.({ id: row.root, name: this.folderName(row.root) }, row.path);
   }
 
   async #disconnect(row) {

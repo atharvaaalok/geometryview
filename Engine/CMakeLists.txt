@@ -11,7 +11,7 @@ target_link_libraries(geo_format PUBLIC geo_base PRIVATE geo_warnings)
 # The engine's logic and the layers under it, the same on every platform: no Metal, no threads of
 # its own, no processes. The Mac engine and the universal viewer each add a platform around it.
 file(GLOB_RECURSE engine_core_sources CONFIGURE_DEPENDS
-    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp core/*.cpp)
+    math/*.cpp nav/*.cpp scene/*.cpp model/*.cpp render/*.cpp core/*.cpp gallery/*.cpp)
 add_library(engine_core STATIC ${engine_core_sources})
 target_include_directories(engine_core PUBLIC include PUBLIC .)
 target_include_directories(engine_core SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/ThirdParty/xxhash")
@@ -51,7 +51,7 @@ if(GEO_TARGET STREQUAL "wasm")
     # The engine in the browser: the core, the WebGPU renderer and the page's host, as a module
     # the viewer's page loads. See browser/web_engine.cpp.
     if(GEO_WEBGPU)
-        add_executable(geometryview-web browser/web_engine.cpp)
+        add_executable(geometryview-web browser/web_engine.cpp browser/web_gallery.cpp)
         target_link_libraries(geometryview-web PRIVATE engine_webgpu engine_core geo_warnings)
         set_target_properties(geometryview-web PROPERTIES SUFFIX ".mjs")
         target_link_options(geometryview-web PRIVATE

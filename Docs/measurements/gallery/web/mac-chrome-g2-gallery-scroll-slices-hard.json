@@ -1,0 +1,22 @@
+{
+  "label": "mac-chrome-g2-gallery-scroll-slices-hard",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "test-models",
+  "files": 1862,
+  "runs": [],
+  "groupsOver": 0,
+  "worstSpread": 0,
+  "maxDeviation": 0,
+  "scroll": {
+    "folder": "slices/hard",
+    "height": 7048,
+    "frames": 120,
+    "ms": 1996,
+    "longTasks": [],
+    "items": 1696,
+    "longest": 0
+  },
+  "framesWhileCovered": 0
+}

@@ -172,6 +172,10 @@ export class Engine {
   hoverNode(document, node) { this.#module._geo_web_hover_node(document, node); }
   nodeAction(document, node, action) { this.#module._geo_web_node_action(document, node, action); }
   requestFrame() { this.#module._geo_web_request_frame(); }
+  /** The gallery covers the canvas: no frames until uncovered. */
+  setCovered(covered) { this.#module._geo_web_set_covered(covered ? 1 : 0); }
+  /** The engine's module, for the gallery's layout core, which lives in it too. */
+  get module() { return this.#module; }
   // Looks at what is shown from a direction, in degrees around Z and above the XY plane.
   setView(azimuth, elevation, perspective) {
     this.#module._geo_web_set_view(azimuth, elevation, perspective ? 1 : 0);
