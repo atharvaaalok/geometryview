@@ -74,7 +74,7 @@ def model(names: list[str], preview: bool) -> None:
         blob = common.import_blob(step, BLOBS / f"{name}.geoblob", getattr(module, "LEVEL", 1))
         print(f"  {step}")
         if preview:
-            preview_model(name, blob, getattr(module, "CUT", "x0.5"))
+            preview_model(name, blob, common.section(blob, getattr(module, "CUT", "x0.5")))
 
 
 def preview_model(name: str, blob: Path, cut: str) -> None:

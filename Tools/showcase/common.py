@@ -7,6 +7,7 @@ see-through, so `check_names` refuses the words that would mislead it.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -103,6 +104,19 @@ def import_blob(step: Path, blob: Path, level: int = 1) -> Path:
     subprocess.run([str(GCLI), "import", str(step), str(blob), str(WORKER), str(level)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     return blob
+
+
+def section(blob: Path, cut) -> str:
+    """A section for gcli render: as given ("x0.5", a fraction of the bounds), or ("x", 0.0), a
+    plane at that coordinate, turned into the fraction of this file's bounds."""
+    if isinstance(cut, str):
+        return cut
+    axis, at = cut
+    facts = json.loads(subprocess.run([str(GCLI), "facts", str(blob)], check=True, capture_output=True,
+                                      text=True).stdout)
+    i = "xyz".index(axis)
+    lo, hi = facts["min"][i], facts["max"][i]
+    return f"{axis}{(at - lo) / (hi - lo):.4f}"
 
 
 def guard(path: Path) -> Path:
