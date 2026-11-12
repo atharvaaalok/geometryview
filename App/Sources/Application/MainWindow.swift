@@ -46,6 +46,13 @@ final class MainWindow: NSWindow {
     private var hovered: (document: UInt32, node: UInt32, face: UInt32)?
     private var pointer: NSPoint?
 
+    /// The sidebar, the library or structure card, put away for the whole window: remembered.
+    private var sidebarHidden = UserDefaults.standard.bool(forKey: "sidebar.hidden")
+    /// Which card the sidebar shows when it is out: the library, or the structure.
+    private var showingLibrary = true
+    /// Where the toolbars centre: right of the sidebar, or across the window once it is away.
+    private var freeBesideCard: NSLayoutConstraint?
+    private var freeWhole: NSLayoutConstraint?
     private static let cardWidth: CGFloat = 300
     private static let selectionWidth: CGFloat = 286
     private static let edge: CGFloat = 18
@@ -148,8 +155,7 @@ final class MainWindow: NSWindow {
         // doesn't fit into More, the gallery's its keys and titles. Their room is the window's
         // width less the cards', as the page leaves it.
         root.onWidthChange = { [weak self] width in
-            self?.toolBar.fit(available: width - 336)
-            self?.galleryToolbar.fit(available: width - 336)
+            self?.fitToolbars(width)
         }
         let gallery = galleryController.view
         gallery.isHidden = true
@@ -172,6 +178,10 @@ final class MainWindow: NSWindow {
         // The space right of the tree card, where the toolBar and hints centre themselves.
         let free = NSLayoutGuide()
         root.addLayoutGuide(free)
+        freeBesideCard = free.leadingAnchor.constraint(equalTo: structure.trailingAnchor)
+        freeWhole = free.leadingAnchor.constraint(equalTo: root.leadingAnchor)
+        freeBesideCard?.isActive = !sidebarHidden
+        freeWhole?.isActive = sidebarHidden
 
         NSLayoutConstraint.activate([
             gallery.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -214,7 +224,6 @@ final class MainWindow: NSWindow {
             selection.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.selectionTop),
             selection.widthAnchor.constraint(equalToConstant: Self.selectionWidth),
 
-            free.leadingAnchor.constraint(equalTo: structure.trailingAnchor),
             free.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             toolBar.centerXAnchor.constraint(equalTo: free.centerXAnchor),
             toolBar.bottomAnchor.constraint(
@@ -288,6 +297,13 @@ final class MainWindow: NSWindow {
             adding ? self?.add(url) : self?.open(url)
         }
         libraryCard.onConnect = { [weak self] in self?.connectFolder(nil) }
+        libraryCard.onHide = { [weak self] in self?.setSidebarHidden(true) }
+        structure.onHide = { [weak self] in self?.setSidebarHidden(true) }
+        toolBar.onShowSidebar = { [weak self] in self?.setSidebarHidden(false) }
+        galleryToolbar.onShowSidebar = { [weak self] in self?.setSidebarHidden(false) }
+        toolBar.setSidebarShown(!sidebarHidden)
+        galleryToolbar.setSidebarShown(!sidebarHidden)
+        galleryController.view.contentInsets = galleryInsets
         libraryCard.onShowFolder = { [weak self] root, folder in
             self?.showGallery(root: root, folder: folder)
         }
@@ -661,8 +677,9 @@ final class MainWindow: NSWindow {
     /// Shows the library, or the structure of what is open, in the left card; the structure card
     /// says so when nothing is open.
     private func showLibrary(_ show: Bool) {
-        libraryCard.isHidden = !show
-        structure.isHidden = show
+        showingLibrary = show
+        libraryCard.isHidden = !show || sidebarHidden
+        structure.isHidden = show || sidebarHidden
         structure.showNothing(names.isEmpty)
         libraryCard.switcher.selected = 0
         structure.switcher.selected = 1
@@ -739,9 +756,50 @@ final class MainWindow: NSWindow {
         engine.setSection(section)
     }
 
+    // MARK: Sidebar
+
+    /// Hide Sidebar / Show Sidebar (⌃⌘S).
+    @objc func toggleSidebar(_ sender: Any?) {
+        setSidebarHidden(!sidebarHidden)
+    }
+
+    /// The sidebar put away or brought back, and remembered: the toolbars centre on the room left,
+    /// the gallery takes it, and framing keeps clear of the card only while it is out. The camera
+    /// stays: F frames the model again.
+    private func setSidebarHidden(_ hidden: Bool) {
+        sidebarHidden = hidden
+        UserDefaults.standard.set(hidden, forKey: "sidebar.hidden")
+        freeBesideCard?.isActive = !hidden
+        freeWhole?.isActive = hidden
+        toolBar.setSidebarShown(!hidden)
+        galleryToolbar.setSidebarShown(!hidden)
+        if !galleryController.gallery.poster {
+            galleryController.view.contentInsets = galleryInsets
+        }
+        if let width = contentView?.bounds.width {
+            fitToolbars(width)
+        }
+        showLibrary(inGallery || showingLibrary)
+    }
+
+    /// Where the gallery shows: right of the sidebar, or the window less its edge once it is away.
+    private var galleryInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 96, left: sidebarHidden ? 18 : 340, bottom: 84, right: 18)
+    }
+
+    /// The toolbars fit the window's width less the sidebar's room, as the page leaves it.
+    private func fitToolbars(_ width: CGFloat) {
+        let room: CGFloat = sidebarHidden ? 36 : 336
+        toolBar.fit(available: width - room)
+        galleryToolbar.fit(available: width - room)
+    }
+
     /// Ticks the menu's look items.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(toggleSidebar(_:)):
+            item.title = sidebarHidden ? "Show Sidebar" : "Hide Sidebar"
+            return !galleryController.gallery.poster
         case #selector(togglePoster(_:)):
             item.state = galleryController.gallery.poster ? .on : .off
             return inGallery
@@ -880,13 +938,12 @@ final class MainWindow: NSWindow {
         // the poster is put away and the viewer's chrome left as it is.
         let poster = poster && inGallery
         galleryController.view.contentInsets =
-            poster
-            ? NSEdgeInsets(top: 30, left: 30, bottom: 30, right: 30)
-            : NSEdgeInsets(top: 96, left: 340, bottom: 84, right: 18)
+            poster ? NSEdgeInsets(top: 30, left: 30, bottom: 30, right: 30) : galleryInsets
         if inGallery {
-            for view in [masthead, libraryCard, galleryToolbar] as [NSView] {
+            for view in [masthead, galleryToolbar] as [NSView] {
                 view.isHidden = poster
             }
+            libraryCard.isHidden = poster || sidebarHidden
         }
         if poster {
             dismissCard()
@@ -1199,7 +1256,8 @@ final class MainWindow: NSWindow {
     private func showEmpty() {
         status.showInvitation()
         structure.isHidden = true
-        libraryCard.isHidden = false
+        showingLibrary = true
+        libraryCard.isHidden = sidebarHidden
         updateInsets()
         toolBar.update(hasSelection: false, hasModel: false)
     }

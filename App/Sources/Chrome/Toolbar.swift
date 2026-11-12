@@ -44,6 +44,10 @@ final class Toolbar: StickerCard {
     // The two ways in, as on the first page and in the Library.
     private let openFiles = PillButton(icon: .plus, help: "Open files (⌘O)")
     private let connectFolder = PillButton(icon: .folderPlus, help: "Connect a folder (⌥⌘O)")
+    /// Brings the sidebar back, shown only while it is put away.
+    private let showSidebar = PillButton(icon: .sidebar, help: "Show the sidebar (⌃⌘S)")
+    private var sidebarShown = true
+    var onShowSidebar: (() -> Void)?
     var onOpen: (() -> Void)?
     var onConnect: (() -> Void)?
 
@@ -85,10 +89,11 @@ final class Toolbar: StickerCard {
 
         openFiles.onPress = { [weak self] in self?.onOpen?() }
         connectFolder.onPress = { [weak self] in self?.onConnect?() }
+        showSidebar.onPress = { [weak self] in self?.onShowSidebar?() }
         more.onPress = { [weak self] in self?.toggleMore() }
         more.isHidden = true
         let groups: [[(String, NSView)]] = [
-            [("open", openFiles), ("connect", connectFolder)],
+            [("parts", showSidebar), ("open", openFiles), ("connect", connectFolder)],
             [("pick", pick)],
             [("hide", hide), ("ghost", ghost), ("isolate", isolate), ("showAll", showAll)],
             [("undo", undo), ("redo", redo)],
@@ -158,10 +163,14 @@ final class Toolbar: StickerCard {
                 widths[tool.key] = tool.view.fittingSize.width
             }
         }
-        let items = tools.map { FoldItem(key: $0.key, width: widths[$0.key] ?? 0, group: $0.group) }
+        // The sidebar's pill takes no room, and shows not at all, while the sidebar is out.
+        let absent = { (key: String) in key == "parts" && self.sidebarShown }
+        let items = tools.map {
+            FoldItem(key: $0.key, width: absent($0.key) ? 0 : widths[$0.key] ?? 0, group: $0.group)
+        }
         folded = Self.foldPlan(items, available: available)
         for tool in tools {
-            tool.view.isHidden = folded.contains(tool.key)
+            tool.view.isHidden = folded.contains(tool.key) || absent(tool.key)
         }
         for (group, divider) in rules.enumerated() {
             divider.isHidden = !Self.ruleShows(items, folded: folded, group: group)
@@ -170,6 +179,14 @@ final class Toolbar: StickerCard {
         if folded.isEmpty {
             moreMenu.close()
         }
+    }
+
+    /// The sidebar out, or put away: its pill shows only while it is away.
+    func setSidebarShown(_ shown: Bool) {
+        sidebarShown = shown
+        let room = fittedTo
+        fittedTo = -1
+        fit(available: room)
     }
 
     struct FoldItem {

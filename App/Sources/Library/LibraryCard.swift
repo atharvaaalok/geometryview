@@ -16,6 +16,8 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
     private let scroll = NSScrollView()
     private let add = PillButton(icon: .plus, help: "Open files (⌘O)")
     private let connect = PillButton(icon: .folderPlus, help: "Connect a folder (⌥⌘O)")
+    /// Puts the sidebar away, for the whole window.
+    private let hide = PillButton(icon: .sidebar, help: "Hide the sidebar (⌃⌘S)")
     private var rows: [LibraryRow] = []
     /// The paths of the folders shown open.
     private var expanded: Set<String> = []
@@ -35,6 +37,7 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
     var onReopen: ((RecentFile, _ adding: Bool) -> Void)?
     var onChoose: (() -> Void)?
     var onConnect: (() -> Void)?
+    var onHide: (() -> Void)?
     /// A folder was clicked: its gallery shows, the connected folder it is in first.
     var onShowFolder: ((_ root: URL, _ folder: URL) -> Void)?
     /// Called with the search typed while the gallery shows, and when Esc leaves the field.
@@ -76,11 +79,12 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
 
         add.onPress = { [weak self] in self?.onChoose?() }
         connect.onPress = { [weak self] in self?.onConnect?() }
+        hide.onPress = { [weak self] in self?.onHide?() }
 
         searchBox.field.delegate = self
         searchBox.isHidden = true
         ChromeLayout.name(searchBox, "library.search")
-        for view in [switcher, add, connect, searchBox, scroll] as [NSView] {
+        for view in [switcher, add, connect, hide, searchBox, scroll] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -99,7 +103,9 @@ final class LibraryCard: StickerCard, NSTableViewDataSource, NSTableViewDelegate
             searchBox.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
             switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
-            connect.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            hide.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            hide.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
+            connect.trailingAnchor.constraint(equalTo: hide.leadingAnchor, constant: -8),
             connect.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
             add.trailingAnchor.constraint(equalTo: connect.leadingAnchor, constant: -8),
             add.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),

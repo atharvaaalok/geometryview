@@ -16,6 +16,9 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         help: "Show files or parts"
     )
     private let searchBox = SearchBox(placeholder: "Search parts")
+    /// Puts the sidebar away, for the whole window.
+    private let hide = PillButton(icon: .sidebar, help: "Hide the sidebar (⌃⌘S)")
+    var onHide: (() -> Void)?
     private let nothing = NSTextField(labelWithString: "Nothing open yet.")
     private var searchField: NSTextField { searchBox.field }
     private var matchLabel: NSTextField { searchBox.match }
@@ -76,7 +79,8 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         nothing.font = Typography.font(Typography.textSmall)
         nothing.textColor = Palette.muted
         nothing.isHidden = true
-        for view in [switcher, searchBox, scroll, footer, nothing] as [NSView] {
+        hide.onPress = { [weak self] in self?.onHide?() }
+        for view in [switcher, hide, searchBox, scroll, footer, nothing] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -84,6 +88,8 @@ final class StructureCard: StickerCard, NSTableViewDataSource, NSTableViewDelega
         NSLayoutConstraint.activate([
             switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             switcher.topAnchor.constraint(equalTo: topAnchor, constant: inset - 4),
+            hide.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            hide.centerYAnchor.constraint(equalTo: switcher.centerYAnchor),
             searchBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
             searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             searchBox.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 10),
