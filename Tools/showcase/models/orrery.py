@@ -131,7 +131,7 @@ def arms_and_bodies() -> tuple[list, list]:
         if name == "saturn":
             rings = ring(radius * 1.9, radius * 1.3, 1.6, -0.8)
             worlds.append(part(rings.moved(Pos(0, 0, 0) * Rot(X=22)).moved(Pos(cx, cy, cz)), "saturn_rings"))
-    worlds.insert(0, part(Solid.make_sphere(30).moved(Pos(0, 0, 236 + 29.5)), "sun"))
+    worlds.insert(0, part(Solid.make_sphere(30).moved(Pos(0, 0, 236 + 30)), "sun"))
     return arms, worlds
 
 

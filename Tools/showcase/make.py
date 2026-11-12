@@ -5,10 +5,15 @@ and assemblies to look inside. Every model is written here from scratch, MIT lik
     $PY Tools/showcase/make.py library [chapter ...] [--sheet]
     $PY Tools/showcase/make.py model <name ...> [--preview]
     $PY Tools/showcase/make.py manifest [--check]
+    $PY Tools/showcase/make.py check [model ...]
 
 The STEP files land in build/showcase (step/ for the assemblies, library/ for the folder), with
 GeometryView cache files in blobs/ and preview sheets in preview/. They are not committed: the
 scripts are, and manifest.json records what they make, so a change shows.
+
+`check` intersects every pair of a model's parts and lists those that fill the same space: where two
+parts share a surface the renderer cannot tell which is in front and draws stripes of both colours.
+Parts of many bodies (blade rows, fins) are left out, since they are meant to sink into their hubs.
 
 `library` writes the folder, `things_that_come_in_sizes`, one chapter after another; `--sheet`
 draws each family on a contact sheet with `gcli sheet`. `model` writes an assembly; `--preview`
@@ -103,6 +108,43 @@ def preview_model(name: str, blob: Path, cut: str) -> None:
     print(f"  preview {out}")
 
 
+def check(names: list[str]) -> int:
+    """Lists pairs of parts that overlap, largest first. Returns the number of models with any."""
+    import itertools
+
+    def leaves(shape):
+        kids = getattr(shape, "children", None)
+        if kids:
+            for k in kids:
+                yield from leaves(k)
+        else:
+            yield shape
+
+    failed = 0
+    for name in names:
+        module = importlib.import_module(f"models.{name}")
+        if not hasattr(module, "build"):
+            continue
+        parts = [s for s in leaves(module.build()) if len(s.solids()) <= 6]
+        boxes = [(s, s.bounding_box()) for s in parts]
+        hits = []
+        for (a, ba), (b, bb) in itertools.combinations(boxes, 2):
+            if any(getattr(ba.max, k) < getattr(bb.min, k) or getattr(bb.max, k) < getattr(ba.min, k)
+                   for k in "XYZ"):
+                continue
+            try:
+                volume = (a & b).volume
+            except Exception:
+                continue
+            if volume > 0.01:
+                hits.append((volume, a.label, b.label))
+        print(f"  {name}: {len(parts)} parts, {len(hits)} overlapping pairs")
+        for volume, a, b in sorted(hits, reverse=True):
+            print(f"    {volume:10.2f} mm3  {a} / {b}")
+        failed += bool(hits)
+    return failed
+
+
 def manifest(check: bool) -> int:
     """Records each file's hash and the tools' versions; with --check, compares instead."""
     import build123d
@@ -140,11 +182,15 @@ def main() -> int:
     mod.add_argument("--preview", action="store_true")
     man = sub.add_parser("manifest")
     man.add_argument("--check", action="store_true")
+    chk = sub.add_parser("check")
+    chk.add_argument("names", nargs="*", default=MODELS)
     args = parser.parse_args()
     if args.command == "library":
         library(args.chapters, args.sheet)
     elif args.command == "model":
         model(args.names, args.preview)
+    elif args.command == "check":
+        return 1 if check(args.names) else 0
     else:
         return manifest(args.check)
     return 0

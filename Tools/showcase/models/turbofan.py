@@ -117,6 +117,10 @@ def combustor() -> list:
     igniter = Solid.make_cylinder(3.5, 46).moved(Pos(0, 0, 0) * Rot(Y=90)).moved(Pos(160, 0, 110))
     igniters = bodies("igniters", [at(igniter, rz=a) for a in (100, 260)])
     casing = Profile(178, 48).line(186, 48).line(188, 200).line(180, 200).turn()
+    # The igniters pass through holes in the casing and the outer wall.
+    for hole in igniters.solids():
+        casing = casing - hole
+        outer = outer - hole
     return [part(dome, "combustor_dome"), part(outer, "combustor_outer_wall"),
             part(inner, "combustor_inner_wall"), nozzles, igniters, part(casing, "combustor_casing")]
 
