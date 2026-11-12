@@ -122,6 +122,12 @@ final class Host: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         if runs.contains(where: { $0.query.contains("test=library") }) {
             library.connectTestFolder(bundle: Bundle.main.resourceURL!)
         }
+        // The gallery's check: the folder it names, copied into Documents beforehand.
+        for run in runs where run.query.contains("test=gallery") {
+            let folder = URLComponents(string: "?" + run.query)?.queryItems?
+                .first { $0.name == "folder" }?.value
+            library.connectDocumentsFolder(named: folder ?? "test-models")
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(SchemeHandler(files: files), forURLScheme: SchemeHandler.scheme)

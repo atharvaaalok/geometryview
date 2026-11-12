@@ -1410,10 +1410,20 @@ async function runWorkerTest() {
 // frames while the gallery covers it.
 async function runGalleryTest() {
   const dir = params.get("folder") ?? "test-models";
-  const listing = await (await fetch(`/list?dir=${encodeURIComponent(dir)}`)).json();
-  if (!libraryStore.folders.adoptRemote) throw new Error("Run with backend=visit.");
   const name = dir.split("/").pop();
-  const id = libraryStore.folders.adoptRemote(name, listing, `/viewer/${dir}/`);
+  let id, listing;
+  if (libraryStore.kind === "shell") {
+    // On the iPhone: the folder the shell connected from its own storage, walked as the gallery
+    // walks it.
+    id = (await libraryStore.folders.folders()).find((f) => f.name === name)?.id;
+    if (!id) throw new Error(`The shell connected no folder named ${name}.`);
+    listing = [];
+    for await (const entry of libraryStore.folders.walk(id)) listing.push({ path: entry.path, folder: entry.kind === "folder" });
+  } else {
+    listing = await (await fetch(`/list?dir=${encodeURIComponent(dir)}`)).json();
+    if (!libraryStore.folders.adoptRemote) throw new Error("Run with backend=visit.");
+    id = libraryStore.folders.adoptRemote(name, listing, `/viewer/${dir}/`);
+  }
   await library.refresh();
   const root = { id, name };
   const g = galleryFor();
@@ -1460,8 +1470,10 @@ async function runGalleryTest() {
   // checkViews (a list, "4" or "0,4") runs only those, for looking into one.
   const views = params.has("checkViews") ? params.get("checkViews").split(",").map(Number)
     : params.get("views") === "all" ? [0, 1, 2, 3, 4] : [0, 1];
-  // scrollOnly skips the styles' runs, for timing a scroll alone.
-  for (const style of params.has("scrollOnly") ? [] : [0, 3, 5]) {
+  // scrollOnly skips the styles' runs, for timing a scroll alone; styles=0 runs Illustration only,
+  // to keep a phone's run short.
+  const styles = params.has("styles") ? params.get("styles").split(",").map(Number) : [0, 3, 5];
+  for (const style of params.has("scrollOnly") ? [] : styles) {
     const next = Object.assign(Object.create(Object.getPrototypeOf(look)), look);
     next.choose(style);
     applyLook(next, { remember: false });
