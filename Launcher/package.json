@@ -1,6 +1,6 @@
 {
   "name": "geometryview",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "See inside STEP and STL models, and whole folders of them, in your browser; and let AI apps open, inspect and picture them (MCP).",
   "keywords": [
     "step",
