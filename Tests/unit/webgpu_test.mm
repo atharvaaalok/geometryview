@@ -443,6 +443,31 @@ TEST_CASE("the WebGPU renderer keeps hidden edges hidden, as Metal does") {
     }
 }
 
+TEST_CASE("the WebGPU renderer keeps a thin wall's inside hidden, as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importThinTube(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        const GeoRenderOptions options = test::thinTubeView();
+        const std::vector<u8> expected = renderWith(*metal, blob, options);
+        const std::vector<u8> image = renderWith(*web, blob, options);
+        REQUIRE(image.size() == expected.size());
+        test::checkWallHidesItsInside(test::grayOf(image), options.width, options.height);
+        const Difference d = compare(image, expected);
+        CAPTURE(d.mean);
+        CAPTURE(d.changed);
+        CHECK(d.mean < 1.0);
+        CHECK(d.changed < 0.005);
+        unlink(blob.c_str());
+    }
+}
+
 // What a scenario changes after the shared setup, on whichever renderer draws it.
 using Scenario = std::function<void(engine::OffscreenView&, render::Backend&)>;
 

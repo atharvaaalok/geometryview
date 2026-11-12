@@ -205,16 +205,20 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
         transformPoint(occurrence, decodePosition(definition, min(segment.a, lastVertex)));
     const float3 b =
         transformPoint(occurrence, decodePosition(definition, min(segment.b, lastVertex)));
-    // Toward the eye by the definition's chord error, or the floor if that is more: an edge lies
-    // on its own faces exactly, but on a curved face the facets beside it can sit a hair in front
-    // of it, and the line would show in dashes; and a line has width, which a concave crease's
-    // faces would cut into. No more than that, or the edges of what is just behind show through.
+    // Toward the eye by the floor, or by the definition's chord error where that is more and the
+    // segment has a face on one side only. A segment between two faces lies on both faces'
+    // triangles exactly, and needs only the floor: a line has width, which a concave crease's
+    // faces would cut into. Where only one face meets it, the facets beside it on a curved face
+    // can sit a hair in front, and the line would show in dashes. No more than that, or the
+    // edges of what is just behind show through: the far side of a part thinner than the lift,
+    // such as a fan blade at its edges.
     const auto pixelWorld = [&](float3 p) {
         return frame.perspective != 0
                    ? frame.worldPerPixel * max(dot(p - frame.eye, frame.forward), 0.0)
                    : frame.worldPerPixel;
     };
-    const float chordLift = definition.edgeLift * metal::length(occurrence.rows[0].xyz);
+    const float chordLift =
+        rawB == kEdgeNoFace ? definition.edgeLift * metal::length(occurrence.rows[0].xyz) : 0.0;
     const auto lift = [&](float3 p) {
         const float offset =
             max(chordLift, frame.edgeFloor * style.pixelsPerPoint * pixelWorld(p));
