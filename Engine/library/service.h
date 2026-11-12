@@ -40,6 +40,10 @@ struct PictureSpec {
     u32 pixels = 256;  // the picture's side
     float pixelsPerPoint = 2.0f;
     float lineScale = 0.5f;
+    // Peek's turntable: degrees about the upright added to the usual view, and a scale held for
+    // every turn, in millimetres a pixel. Both 0 for the gallery's pictures, which fit their file.
+    float turn = 0.0f;
+    double worldPerPixel = 0.0;
 
     bool operator==(const PictureSpec&) const = default;
 };
@@ -85,6 +89,12 @@ public:
     }
     /// A file that cannot be shown, and why. It is not tried again until it changes.
     virtual void failed(const std::string& path, const std::string& message) = 0;
+    /// A frame of a turntable asked for with Service::turn: `frame` of `frames`, turned
+    /// frame × 360 / frames degrees.
+    virtual void turnFrame(const std::string& path, u32 frame, u32 frames,
+                           const std::string& pngPath, const PictureNote& note) {
+        (void)path, (void)frame, (void)frames, (void)pngPath, (void)note;
+    }
 };
 
 struct ServiceConfig {
@@ -127,6 +137,10 @@ public:
     void setPicture(const PictureSpec& spec);
     /// Whether files are imported ahead of being near the view.
     void setPrefetch(bool allowed);
+    /// Peek's turntable: `frames` pictures of one file, `pixels` square, turned evenly about the
+    /// upright at one scale, ahead of any other picture; the file is imported again first if its
+    /// cache file has gone. Frames drawn before come from the cache. 0 frames stops it.
+    void turn(const std::string& path, u32 frames, u32 pixels);
     /// Memory running short: one import at a time on a warning; on a critical warning, imports not
     /// for a file being opened are cancelled and prefetching stops.
     void setPressure(Pressure pressure);
@@ -165,6 +179,7 @@ private:
     void startImport(const std::string& path, ImportGate::Ticket ticket);
     void startStructure(const std::string& path);
     void startPicture(const std::string& path);
+    bool startTurnFrame();
     void cancelForOpens();
     void maybeEvict();
     void updatePrefetch();
@@ -211,6 +226,14 @@ private:
     Queue imports_;
     Queue pictures_;
     PictureSpec spec_;
+    struct Turn {
+        std::string path;
+        u32 frames = 0;
+        u32 pixels = 0;
+        u32 next = 0; // the next frame to draw
+        bool painting = false;
+    };
+    std::optional<Turn> turn_;
     bool routesDirty_ = false;
     bool prefetchAllowed_ = true;
     Pressure pressure_ = Pressure::Normal;

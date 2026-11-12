@@ -125,6 +125,34 @@ export class GalleryLibrary {
                                           part: drawn.partRect, ink: drawn.inkRect, firstColor: drawn.firstColor });
   }
 
+  /**
+   * Peek's turntable: `frames` pictures of the file at `path`, `pixels` square, turned evenly about
+   * the upright at one scale (its box's diagonal, from `size` in millimetres, fits whichever way it
+   * faces), each handed to `onFrame(frame, bitmap, note)` as it is drawn. The file is imported first
+   * if its import was not kept. Stops when `signal` aborts.
+   */
+  async turn(path, folderColor, frames, pixels, size, onFrame, signal) {
+    const root = this.#root, spec = this.#spec;
+    if (!root || !spec) return false;
+    const file = await this.#folders.file(root.id, path);
+    if (!file) return false;
+    const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
+                              version: this.#version });
+    let blob = (await keptImport(key, this.#version))?.blob;
+    if (!blob) {
+      if (signal.aborted) return false;
+      blob = await this.#import(file, key, signal);
+    }
+    const worldPerPixel = size ? Math.hypot(...size) * 1.1 / pixels : 0;
+    for (let frame = 0; frame < frames; frame++) {
+      if (signal.aborted) return false;
+      const drawn = await this.#thumbnailer.draw(blob, { ...spec, pixels, turn: (360 * frame) / frames, worldPerPixel },
+                                                 -1, { folderColor });
+      onFrame(frame, drawn.bitmap, { width: drawn.width, height: drawn.height, ink: drawn.inkRect });
+    }
+    return !signal.aborted;
+  }
+
   // Imports in the gallery's own worker; a file in a connected folder keeps no source copy.
   async #import(file, key, signal, progress) {
     this.#worker ??= new Worker(new URL("./import-worker.js", import.meta.url), { type: "module" });

@@ -58,7 +58,8 @@ public:
 
     /// A poster's printed head: the folder's title large, what it holds, and on the right
     /// `eyebrow` and the drawing style. Returns where the view starts below it.
-    float posterHead(std::string_view summary, std::string_view eyebrow, float width);
+    float posterHead(std::string_view summary, std::string_view eyebrow, float width,
+                     float left = kContentLeft, float top = kContentTop);
     /// Its foot at `y`: a rule, then the folder's path, GeometryView and the style, and the date.
     /// Returns the poster's bottom.
     float posterFoot(float y, float width);

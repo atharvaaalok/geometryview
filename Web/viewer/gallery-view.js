@@ -47,6 +47,12 @@ export class GalleryView {
   #laneScroll = new Map();
   #laneLayers = new Map();
   #drag = null;
+  // Peek's turntable: { file, frames (ImageBitmaps), ink: [x, y, w, h] holding every frame's }, the
+  // frame shown, and the box and canvas it is drawn in, over Peek's picture area.
+  #turntable = null;
+  #turnFrame = 0;
+  #turnBox;
+  #turnCanvas;
   #style = 0;
   #insets = kContentInsets;
   #probes = false;
@@ -67,6 +73,13 @@ export class GalleryView {
     this.#fixed = el("div", "gallery-fixed");
     this.#clip.append(this.#content);
     this.#stage.append(this.#clip, this.#fixed);
+    this.#turnCanvas = document.createElement("canvas");
+    this.#turnBox = el("div", "g-turn");
+    this.#turnBox.style.cssText = "position: absolute; overflow: hidden; pointer-events: none";
+    this.#turnCanvas.style.cssText = "position: absolute; left: 0; top: 0; width: 100%; height: 100%";
+    this.#turnBox.append(this.#turnCanvas);
+    this.#turnBox.hidden = true;
+    this.#fixed.append(this.#turnBox);
     this.element.append(this.#sheet, this.#stage);
     const pools = () => ({ rect: [], text: [], picture: [], line: [] });
     this.#layers = { content: { node: this.#content, pools: pools() }, fixed: { node: this.#fixed, pools: pools() } };
@@ -108,6 +121,11 @@ export class GalleryView {
       this.#scrollLane(lane, (this.#laneScroll.get(lane.id) ?? 0) + (e.deltaX || e.deltaY));
     }, { passive: false });
     this.#clip.addEventListener("pointerdown", (e) => {
+      if (e.button === 0 && this.#overTurntable(e)) {
+        // A drag across Peek's turntable turns the part, a frame every 24 points.
+        this.#drag = { turn: true, x: e.clientX, from: this.#turnFrame, moved: false };
+        return;
+      }
       if (this.#core.view === Views.Atlas && e.button === 0) {
         this.#drag = { atlas: true, x: e.clientX, y: e.clientY, moved: false };
         return;
@@ -118,6 +136,11 @@ export class GalleryView {
     this.#clip.addEventListener("pointermove", (e) => {
       const d = this.#drag;
       if (!d || !(e.buttons & 1)) return;
+      if (d.turn) {
+        if (Math.abs(e.clientX - d.x) >= 4) d.moved = true; // a turn is not a click
+        this.#showTurnFrame(d.from + Math.round((e.clientX - d.x) / 24));
+        return;
+      }
       if (d.atlas) {
         // A drag pans the map.
         const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -255,6 +278,7 @@ export class GalleryView {
     const window = { top: top - height, bottom: bottom + height };
     this.#painted = window;
     for (const layer of Object.values(this.#layers)) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
+    this.#turnBox.hidden = true; // shown again below, if Peek still turns
     for (const layer of this.#laneLayers.values()) layer.used = { rect: 0, text: 0, picture: 0, line: 0 };
     this.#frames.clear();
     this.#sticky = [];
@@ -295,6 +319,14 @@ export class GalleryView {
           this.#paintText(node, item);
           break;
         case Kinds.Picture:
+          if (item.flags & Flags.Turn && this.#turntable?.file === item.file) {
+            // Peek's turntable: its own box, over the picture area, the frame shown drawn in it.
+            node = this.#turnBox;
+            node.hidden = false;
+            setBox(node, item.x, item.y, item.width, item.height);
+            this.#drawTurn(item.width, item.height);
+            break;
+          }
           node = this.#reuse(layer, "picture", "g-picture", "img");
           node.src = this.#images.get(item.file) ?? "";
           node.style.visibility = this.#images.has(item.file) ? "" : "hidden";
@@ -507,12 +539,33 @@ export class GalleryView {
    * poster runs. Drawn on a canvas from the display list, as the elements paint it.
    */
   async posterPNG(scale = 2) {
+    const { canvas } = await this.posterCanvas(scale);
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
+  /** The poster as a JPEG for a PDF's page: its bytes, pixels, and size in points. */
+  async posterJPEG(scale = 2) {
+    const { canvas, width, height } = await this.posterCanvas(scale);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    // A PDF's page is 14,400 points a side at most: a taller poster's page is smaller, whole.
+    const k = Math.min(1, 14400 / Math.max(width, height));
+    return { jpeg: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height,
+             points: [width * k, height * k] };
+  }
+
+  /**
+   * The poster drawn on a canvas, `scale` pixels a point or fewer, and its size in points. A very
+   * tall poster is drawn smaller: a canvas holds 32,767 pixels a side at most, and 60 million
+   * pixels is plenty.
+   */
+  async posterCanvas(scale = 2) {
     const host = this.element.getBoundingClientRect();
     const area = this.#stage.getBoundingClientRect();
     const left = area.left - host.left, top = area.top - host.top;
     const bottom = host.bottom - area.bottom;
     const width = host.width;
     const height = Math.max(host.height, top + this.#core.contentHeight + bottom);
+    scale = Math.min(scale, 32000 / height, Math.sqrt(60e6 / (width * height)));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
@@ -549,7 +602,7 @@ export class GalleryView {
       if (lane) g.restore();
     }
     for (const bitmap of bitmaps.values()) bitmap.close();
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    return { canvas, width, height };
   }
 
   #canvasItem(g, item, bitmaps, width, height) {
@@ -774,8 +827,10 @@ export class GalleryView {
         const fraction = item.height ? (item.line - item.y) / item.height : 1;
         lines[i] = top + fraction * box.height;
       } else if (item.kind === Kinds.Line) {
-        const horizontal = Math.abs(item.height) < Math.abs(item.width);
-        lines[i] = horizontal ? top + item.lineWidth / 2 : top;
+        // The box's top is above the line's by half the stroke, as much of it as runs upright: all
+        // of it level, none of it upright, and in between as the line slants.
+        const length = Math.hypot(item.width, item.height) || 1;
+        lines[i] = top + (item.lineWidth / 2) * Math.abs(item.width) / length;
       } else if (item.flags & Flags.Ruler) {
         lines[i] = top + item.lineWidth / 2; // a ruler stands on its line, its top border
       } else {
@@ -815,7 +870,7 @@ export class GalleryView {
     if (this.#core.hover(hit.kind, hit.target)) this.reload();
     const pointing = hit.kind === Targets.Folder || hit.kind === Targets.File || hit.kind === Targets.More ||
       hit.kind === Targets.Reconnect || hit.kind === Targets.Page || (hit.kind === Targets.Peek && hit.target === 1);
-    this.#clip.style.cursor = pointing ? "pointer" : "";
+    this.#clip.style.cursor = this.#overTurntable(e) ? "ew-resize" : pointing ? "pointer" : "";
   }
 
   // The map moved: drawn again from the camera, the toolbar told of its level.
@@ -837,9 +892,60 @@ export class GalleryView {
     this.act(this.#core.click(hit.kind, hit.target, twice));
   }
 
+  // ---- Peek's turntable ----
+
+  /** The turntable's frames for the file in Peek, or null: its still picture shows meanwhile. */
+  setTurntable(turntable) {
+    for (const frame of this.#turntable?.frames ?? []) frame.close?.();
+    this.#turntable = turntable;
+    this.#turnFrame = 0;
+    this.#painted = null;
+  }
+
+  /** The turntable's frame showing, for the checks. */
+  get turnFrameShown() { return this.#turnFrame; }
+
+  /** Shows a frame of the turntable, counted round. */
+  #showTurnFrame(frame) {
+    const count = this.#turntable?.frames.length ?? 0;
+    if (!count) return;
+    this.#turnFrame = ((frame % count) + count) % count;
+    const box = this.#turnBox.getBoundingClientRect();
+    this.#drawTurn(box.width, box.height);
+  }
+
+  // Draws the frame shown into the box `w` × `h`: every frame fitted alike, as the board fits them,
+  // by the box holding all their ink and 12 pixels of room around it.
+  #drawTurn(w, h) {
+    const t = this.#turntable;
+    const frame = t?.frames[this.#turnFrame];
+    if (!frame) return;
+    const ratio = devicePixelRatio || 1;
+    const canvas = this.#turnCanvas;
+    const cw = Math.round(w * ratio), ch = Math.round(h * ratio);
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+    const g = canvas.getContext("2d");
+    g.setTransform(ratio, 0, 0, ratio, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const [ix, iy, iw, ih] = t.ink;
+    const k = Math.min(w / (iw + 24), h / (ih + 24));
+    g.imageSmoothingQuality = "high";
+    g.drawImage(frame, w / 2 - (ix + iw / 2) * k, h / 2 - (iy + ih / 2) * k, frame.width * k, frame.height * k);
+  }
+
+  #overTurntable(e) {
+    if (this.#turnBox.hidden || !this.#turntable) return false;
+    const box = this.#turnBox.getBoundingClientRect();
+    return e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+  }
+
   /** Acts on what a click or key asked: lays out again, and tells the page. */
   act(action, { reveal = false } = {}) {
     if (action.kind === Actions.None) return;
+    if (action.kind === Actions.Turn) this.#showTurnFrame(this.#turnFrame + (action.target === 0 ? -1 : 1));
     if (action.kind === Actions.EnterFolder) {
       this.scrollToTop();
       this.reload();

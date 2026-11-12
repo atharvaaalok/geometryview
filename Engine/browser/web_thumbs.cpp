@@ -145,9 +145,12 @@ EMSCRIPTEN_KEEPALIVE u8* thumbs_staging(u32 size) {
 
 /// Draws the staged cache file as a `pixels`-square picture on a clear sheet, from the front right
 /// and above, in a style and colour mode as engine.h numbers them. Answers through
-/// thumbsHost.drawn, once the GPU has drawn it. One picture at a time.
+/// thumbsHost.drawn, once the GPU has drawn it. One picture at a time. For Peek's turntable,
+/// `turn` degrees about the upright are added to the view, and `worldPerPixel` holds its scale
+/// (millimetres a pixel); both 0 for the gallery's pictures.
 EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, float pixelsPerPoint,
-                                      float lineScale, int firstColor) {
+                                      float lineScale, int firstColor, float turn,
+                                      double worldPerPixel) {
     if (!thumbs.renderer || thumbs.busy) {
         drawnNothing(thumbs.busy ? "A picture is being drawn." : "The renderer is not ready.");
         return;
@@ -164,8 +167,9 @@ EMSCRIPTEN_KEEPALIVE void thumbs_draw(u32 pixels, u32 style, u32 colorMode, floa
     GeoRenderOptions options = geo_default_render_options();
     options.width = options.height = std::clamp(pixels, 16u, 2048u);
     options.overlay = false;
-    options.azimuth_degrees = 35.0;
+    options.azimuth_degrees = 35.0 + double(turn);
     options.elevation_degrees = 30.0;
+    options.world_per_pixel = worldPerPixel > 0.0 ? worldPerPixel : 0.0;
     options.look.style = GeoStyle(std::min(style, u32(GeoStyleStudio)));
     options.look.color_mode = GeoColorMode(std::min(colorMode, u32(GeoColorFile)));
     options.look.cast_shadow = geo_style_casts_shadow(options.look.style);

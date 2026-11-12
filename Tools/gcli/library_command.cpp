@@ -38,6 +38,7 @@ void receive(void* context, const GeoLibraryEvent* event) {
         tally.failed.push_back(std::string(event->path) + ": " + event->message);
         break;
     case GeoLibraryProgress:
+    case GeoLibraryTurnFrame: // no turntables asked for here
         break;
     }
 }

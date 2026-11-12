@@ -241,20 +241,20 @@ public:
         firstItem = out.items().size();
         constexpr float height = 34.0f;
         const float baseline = y + (height - lineHeightOf(kHeading)) / 2.0f + ascentOf(kHeading);
-        out.rect(0.0f, y, kContentLeft + width + kContentRight, height, palette.band);
+        out.rect(edgeL_, y, edgeR_ - edgeL_, height, palette.band);
         const u32 group = newGroup();
         out.target(g.folder == kNone ? GeoTargetNone : GeoTargetFolder, g.folder);
         out.group(group);
         const std::string count = grouped(g.count);
         const float countW = textWidth(count, kHeadingCount);
-        const float used = out.text(g.heading, kHeading, palette.on, kContentLeft + 4.0f, baseline,
+        const float used = out.text(g.heading, kHeading, palette.on, left_ + 4.0f, baseline,
                                     width - countW - 40.0f);
         out.target(GeoTargetNone, 0);
-        out.text(count, kHeadingCount, palette.muted, kContentLeft + width - countW - 4.0f,
-                 baseline, countW, 2);
+        out.text(count, kHeadingCount, palette.muted, left_ + width - countW - 4.0f, baseline,
+                 countW, 2);
         out.group(0);
-        const float ruleLeft = kContentLeft + 4.0f + used + 12.0f;
-        const float ruleRight = kContentLeft + width - countW - 16.0f;
+        const float ruleLeft = left_ + 4.0f + used + 12.0f;
+        const float ruleRight = left_ + width - countW - 16.0f;
         if (ruleRight > ruleLeft) {
             out.line(ruleLeft, y + height / 2.0f, ruleRight, y + height / 2.0f, palette.on, 1.5f);
         }
@@ -308,7 +308,7 @@ public:
     /// wraps. Returns the y below it.
     float strip(const Strip& s, float y, float width, const std::optional<Scale>& shared,
                 u32 leftGroup, u32 headGroups[5]) {
-        const float trackX = kContentLeft + kHeadW;
+        const float trackX = left_ + kHeadW;
         const float trackW = width - kHeadW;
         // The parts, smallest to largest or by name.
         std::vector<u32> files = s.files;
@@ -321,6 +321,8 @@ public:
         }
         // The strip's scale fits most of it; the few that would need it far smaller go after a
         // divider, at a scale of their own.
+        // A size band wraps, and so does every strip on a poster, where nothing scrolls.
+        const bool wraps = s.wrap || in.poster;
         const float maxW = s.wrap ? 240.0f : kOverW;
         std::vector<std::pair<double, u32>> needs;
         for (const u32 f : drawn) {
@@ -330,7 +332,15 @@ public:
         std::sort(needs.begin(), needs.end());
         double own = needs.empty() ? 1.0 : needs.back().first;
         std::vector<u32> big;
-        if (!shared && needs.size() >= 8) {
+        if (shared && in.poster) {
+            // On a poster's one scale, a part too big for its row is drawn smaller at the end.
+            for (const u32 f : drawn) {
+                const Drawn d = *drawnOf(tree.file(f));
+                if (d.w / shared->mm > 520.0 || (d.h + d.below) / shared->mm > double(kDrawH)) {
+                    big.push_back(f);
+                }
+            }
+        } else if (!shared && needs.size() >= 8) {
             const double p85 = needs[(needs.size() - 1) * 85 / 100].first;
             if (own > p85 * 2.0) {
                 own = p85;
@@ -350,10 +360,10 @@ public:
         }
         std::optional<Scale> bigScale;
         if (!big.empty()) {
-            bigScale = snap(fitMm(big, 260.0f, kDrawH));
+            bigScale = snap(fitMm(big, in.poster ? 420.0f : 260.0f, kDrawH));
         }
         // Where every part goes: rows of the track, wrapping only for a size band.
-        const u32 lane = s.wrap ? 0u : ++laneCount_;
+        const u32 lane = wraps ? 0u : ++laneCount_;
         struct Placed {
             u32 file;
             float left, w, h, below;
@@ -376,7 +386,7 @@ public:
         std::vector<Divider> dividers;
         u32 row = 0;
         float x = kMargin, segStart = kMargin;
-        const float limit = s.wrap ? trackW : 1e9f;
+        const float limit = wraps ? trackW : 1e9f;
         // Labels repeat: then their subtitles tell them apart.
         std::map<std::string, u32> labels;
         for (const u32 f : files) {
@@ -422,7 +432,7 @@ public:
         }
         const u32 rows = row + 1;
         const float base0 = y + kPadTop + kDrawH;
-        const float contentW = s.wrap ? trackW : std::max(x + kMargin, trackW);
+        const float contentW = wraps ? trackW : std::max(x + kMargin, trackW);
         if (lane != 0) {
             result.lanes.push_back({lane, {trackX, y, trackW, float(rows) * kRowH}, contentW});
         }
@@ -436,7 +446,7 @@ public:
         const auto inBox = [](float top, float box, const TextStyle& style) {
             return top + (box - lineHeightOf(style)) / 2.0f + ascentOf(style);
         };
-        const float headX = kContentLeft + 4.0f, headRoom = kHeadW - 18.0f;
+        const float headX = left_ + 4.0f, headRoom = kHeadW - 18.0f;
         if (!s.eyebrow.empty()) {
             out.group(headGroups[0]);
             out.text(s.eyebrow, kEyebrow, palette.muted, headX, inBox(eyebrowTop, 14.0f, kEyebrow),
@@ -559,8 +569,7 @@ public:
                      trackX + kMargin, base0 - 4.0f, trackW - 2.0f * kMargin);
         }
         const float height = std::max(float(rows) * kRowH, kMinStrip);
-        out.line(0.0f, y + height, kContentLeft + width + kContentRight, y + height, palette.rule,
-                 1.0f);
+        out.line(edgeL_, y + height, edgeR_, y + height, palette.rule, 1.0f);
         return y + height + 1.0f;
     }
 
@@ -607,9 +616,9 @@ public:
                                   textWidth(parts, kDeltaSmall)}) +
                         24.0f;
         const float h = 12.0f + 3.0f * 15.0f + 6.0f;
-        const float laneLeft = kContentLeft + kHeadW;
+        const float laneLeft = left_ + kHeadW;
         const float cx = compare_.x - laneScroll_(compare_.lane);
-        const float x = std::clamp(cx - w / 2.0f, laneLeft + 6.0f, kContentLeft + width - w - 6.0f);
+        const float x = std::clamp(cx - w / 2.0f, laneLeft + 6.0f, left_ + width - w - 6.0f);
         const float y = std::max(2.0f, compare_.top - h - 30.0f);
         const u32 ink = hex(0x231E16), muted = hex(0x6F685C), paper = hex(0xF7F5EE);
         out.rect(x, y, w, h, paper, ink, 1.25f, 8.0f, GeoItemSticker, ink);
@@ -622,6 +631,74 @@ public:
     }
 
     std::function<float(u32)> laneScroll_ = [](u32) { return 0.0f; };
+    // Where strips start, and how far bands and rules run either side: the content's edges, or a
+    // poster's frame.
+    float left_ = kContentLeft, edgeL_ = 0.0f, edgeR_ = 0.0f;
+    usize posterFamilies_ = 0;
+    bool posterBands_ = false;
+    u32 ink() const { return palette.on; }
+
+    /// A poster's one scale: the typical part about 34 points tall. None when the families differ
+    /// in size by more than 20 times, or the folder falls into size bands: each keeps its own.
+    std::optional<Scale> posterScale(const std::vector<Group>& groups) const {
+        std::vector<double> typical, all;
+        bool bands = false;
+        for (const Group& g : groups) {
+            for (const Strip& s : g.strips) {
+                bands = bands || s.wrap;
+                std::vector<double> hs;
+                for (const u32 f :
+                     familyScale(tree, drawable(tree, s.files), kOverW, kDrawH).normal) {
+                    const Drawn d = *drawnOf(tree.file(f));
+                    hs.push_back(d.h + d.above + d.below);
+                }
+                if (hs.empty()) {
+                    continue;
+                }
+                std::sort(hs.begin(), hs.end());
+                typical.push_back(hs[(hs.size() - 1) / 2]);
+                all.insert(all.end(), hs.begin(), hs.end());
+            }
+        }
+        if (bands || all.empty()) {
+            return std::nullopt;
+        }
+        const auto [lo, hi] = std::minmax_element(typical.begin(), typical.end());
+        if (typical.size() > 1 && *hi / std::max(1e-9, *lo) > 20.0) {
+            return std::nullopt;
+        }
+        std::sort(all.begin(), all.end());
+        return snap(all[all.size() / 2] / 34.0);
+    }
+
+    /// A drafting title block, its bottom right at (right, bottom): title, sheet, contents, scale,
+    /// source, and who drew it. Returns its top.
+    float titleBlock(float right, float bottom,
+                     const std::vector<std::pair<std::string, std::string>>& rows) {
+        constexpr float w = 380.0f, rowH = 22.0f, firstH = 32.0f, keyW = 92.0f;
+        const float h = firstH + rowH * float(rows.size() - 1);
+        const float x = right - w, top = bottom - h;
+        out.rect(x, top, w, h, 0, palette.on, 1.5f, 0.0f, GeoItemSheet);
+        out.line(x + keyW, top, x + keyW, bottom, palette.on, 1.0f);
+        constexpr TextStyle key{9.0f, 600, 0.12f, true}, value{11.0f, 500, 0.0f, false},
+            big{15.0f, 600, 0.0f, false};
+        float y = top;
+        for (usize i = 0; i < rows.size(); ++i) {
+            const float rh = i == 0 ? firstH : rowH;
+            if (i > 0) {
+                out.line(x, y, x + w, y, palette.on, 1.0f);
+            }
+            const TextStyle& v = i == 0 ? big : value;
+            const float baseline = y + (rh - lineHeightOf(v)) / 2.0f + ascentOf(v);
+            const u32 g = newGroup();
+            out.group(g);
+            out.text(rows[i].first, key, palette.muted, x + 10.0f, baseline, keyW - 16.0f);
+            out.text(rows[i].second, v, palette.on, x + keyW + 10.0f, baseline, w - keyW - 20.0f);
+            out.group(0);
+            y += rh;
+        }
+        return top;
+    }
 
 private:
     u32 laneCount_ = 0;
@@ -643,14 +720,43 @@ LayoutResult layoutLadders(const LayoutInput& input, Display& display,
     if (tree.folder(input.folder).count == 0) {
         return layoutPlates(input, display); // nothing to draw: as Plates says it
     }
-    const float width = input.width - kContentLeft - kContentRight;
+    float width = input.width - kContentLeft - kContentRight;
     const std::vector<Group> groups = ladders.groupsOf(input.folder);
     std::optional<Scale> shared;
-    if (input.laddersShared) {
+    if (input.poster) {
+        shared = ladders.posterScale(groups);
+    } else if (input.laddersShared) {
         shared = ladders.sharedScale(groups);
     }
     const u32 leftGroup = ladders.newGroup();
     float y = kContentTop;
+    ladders.edgeR_ = input.width;
+    // A poster: every family wrapped on one plate inside a drawing's frame, a title block below.
+    constexpr float kFrame = 7.0f, kInside = 28.0f;
+    const float frameL = kContentLeft, frameR = input.width - kContentRight;
+    if (input.poster) {
+        ladders.left_ = frameL + kInside;
+        ladders.edgeL_ = frameL + kFrame;
+        ladders.edgeR_ = frameR - kFrame;
+        width = frameR - frameL - 2.0f * kInside;
+        const u32 n = tree.folder(input.folder).count;
+        usize families = 0;
+        bool bands = false;
+        for (const Group& g : groups) {
+            families += g.strips.size();
+            for (const Strip& s : g.strips) {
+                bands = bands || s.wrap;
+            }
+        }
+        const std::string summary =
+            shared ? std::format("{} on one plate, every family at {}", count(n, "file"),
+                                 shared->label)
+                   : std::format("{}, each {} to its own scale, stamped beside it",
+                                 count(n, "file"), bands ? "band" : "family");
+        y = ladders.posterHead(summary, "Ladders", width, ladders.left_, kContentTop + kInside);
+        ladders.posterFamilies_ = families;
+        ladders.posterBands_ = bands;
+    }
     struct Stuck {
         usize first, last;
         float top, height;
@@ -683,6 +789,34 @@ LayoutResult layoutLadders(const LayoutInput& input, Display& display,
         }
     }
     ladders.comparison(width);
+    if (input.poster) {
+        const Tree& t = tree;
+        std::string source = t.title();
+        if (const std::string& inside = t.folder(input.folder).path; !inside.empty()) {
+            source += "/" + inside;
+        }
+        const u32 n = t.folder(input.folder).count;
+        const float top = y + 24.0f;
+        const float bottom =
+            top + 32.0f + 22.0f * 5.0f; // the title block's height: a title row and five more
+        ladders.titleBlock(frameR - kInside, bottom,
+                           {{"Title", t.titleOf(input.folder)},
+                            {"Sheet", "1 of 1"},
+                            {"Contents", count(n, "file") + " \xC2\xB7 " +
+                                             count(ladders.posterFamilies_,
+                                                   ladders.posterBands_ ? "band" : "family",
+                                                   ladders.posterBands_ ? "bands" : "families")},
+                            {"Scale", shared ? shared->label : std::string("as stamped")},
+                            {"Source", source},
+                            {"Drawn by", "GeometryView"}});
+        const float frameB = bottom + kInside;
+        // The frame: a heavy rule, and a light one inside it.
+        display.rect(frameL, kContentTop, frameR - frameL, frameB - kContentTop, 0, ladders.ink(),
+                     1.5f);
+        display.rect(frameL + kFrame, kContentTop + kFrame, frameR - frameL - 2.0f * kFrame,
+                     frameB - kContentTop - 2.0f * kFrame, 0, ladders.ink(), 1.0f);
+        y = frameB;
+    }
     result.contentHeight = y + kContentBottom;
     return result;
 }

@@ -25,6 +25,8 @@ struct Seen {
     std::map<std::string, GeoPicture> pictures;
     std::map<std::string, std::string> pngs;
     std::vector<std::string> failures;
+    std::vector<std::pair<uint32_t, GeoPicture>> turns; // a turntable's frames, as told
+    std::vector<std::string> turnPngs;
 };
 
 void receive(void* context, const GeoLibraryEvent* event) {
@@ -43,6 +45,11 @@ void receive(void* context, const GeoLibraryEvent* event) {
         seen.failures.push_back(event->path);
         break;
     case GeoLibraryProgress:
+        break;
+    case GeoLibraryTurnFrame:
+        CHECK(event->total == 4);
+        seen.turns.push_back({event->done, event->picture});
+        seen.turnPngs.push_back(event->picture.png_path);
         break;
     }
 }
@@ -136,6 +143,59 @@ TEST_CASE("a folder scanned, wanted and drawn through the library's C interface"
     Entries kept;
     REQUIRE(geo_library_kept_listing(library, folder.c_str(), collect, &kept));
     CHECK(kept.paths == entries.paths);
+    geo_library_destroy(library);
+    fs::remove_all(root);
+}
+
+TEST_CASE("Peek's turntable: a part turned at one scale, drawn once, then read back") {
+    char pattern[] = "/tmp/geolibraryXXXXXX";
+    REQUIRE(mkdtemp(pattern) != nullptr);
+    const fs::path root = pattern;
+    fs::create_directories(root / "cache");
+    const std::string path = (root / "wedge.stl").string();
+    std::ofstream(path) << triangleStl(20.0);
+
+    Seen seen;
+    GeoLibraryDescriptor descriptor{};
+    descriptor.shader_library_path = GEO_TEST_SHADER_LIBRARY;
+    descriptor.import_helper_path = GEO_TEST_HELPER_PATH;
+    const std::string cache = (root / "cache").string();
+    descriptor.cache_directory = cache.c_str();
+    descriptor.callback = receive;
+    descriptor.context = &seen;
+    GeoLibrary* library = geo_library_create(&descriptor);
+    REQUIRE(library != nullptr);
+    GeoPictureSpec spec{GeoStyleIllustration, GeoColorParts, 128, 2.0f, 0.5f};
+    geo_library_set_picture(library, &spec);
+    const GeoLibraryWant want{path.c_str(), GeoBandVisible, 0.0, 0, 0.0, -1};
+    geo_library_want(library, &want, 1);
+    geo_library_wait_idle(library);
+    REQUIRE(seen.pictures.contains(path));
+
+    geo_library_turn(library, path.c_str(), 4, 96);
+    geo_library_wait_idle(library);
+    REQUIRE(seen.turns.size() == 4);
+    for (uint32_t i = 0; i < 4; ++i) {
+        CAPTURE(i);
+        CHECK(seen.turns[i].first == i); // in order
+        CHECK(seen.turns[i].second.width == 96);
+        // One scale for every turn, so the part does not grow and shrink as it turns.
+        CHECK(seen.turns[i].second.world_per_pixel == seen.turns[0].second.world_per_pixel);
+        CHECK(fs::file_size(seen.turnPngs[i]) > 100);
+    }
+    // Each frame its own picture, the triangle seen from another side.
+    CHECK(seen.turnPngs[0] != seen.turnPngs[1]);
+    CHECK(seen.turns[0].second.ink_rect[2] != seen.turns[1].second.ink_rect[2]);
+    CHECK(geo_library_stats(library).pictures == 1 + 4);
+
+    // Asked again: read back, nothing drawn.
+    geo_library_turn(library, nullptr, 0, 0);
+    seen.turns.clear();
+    seen.turnPngs.clear();
+    geo_library_turn(library, path.c_str(), 4, 96);
+    geo_library_wait_idle(library);
+    CHECK(seen.turns.size() == 4);
+    CHECK(geo_library_stats(library).pictures == 1 + 4);
     geo_library_destroy(library);
     fs::remove_all(root);
 }

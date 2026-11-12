@@ -236,6 +236,14 @@ uint32_t geo_gallery_peeking(const GeoGallery* gallery) {
     return gallery->gallery.peeking();
 }
 
+void geo_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable) {
+    gallery->gallery.setPeekTurnable(turnable);
+}
+
+bool geo_gallery_peek_turnable(const GeoGallery* gallery) {
+    return gallery->gallery.peekTurnable();
+}
+
 float geo_gallery_reveal(const GeoGallery* gallery) {
     return gallery->gallery.reveal();
 }

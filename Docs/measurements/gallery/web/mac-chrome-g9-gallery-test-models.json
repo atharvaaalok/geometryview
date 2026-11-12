@@ -1,0 +1,91 @@
+{
+  "label": "mac-chrome-g9-gallery-test-models",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "devicePixelRatio": 1,
+  "errors": [],
+  "folder": "test-models",
+  "posters": [
+    {
+      "view": 0,
+      "groupsChecked": 33,
+      "over": [],
+      "painted": 271,
+      "maxDeviation": 0.026,
+      "toolbarCut": 0,
+      "toolbarFold": 0,
+      "contentHeight": 719,
+      "pngBytes": 3153312,
+      "pdfBytes": 418042,
+      "pdfMs": 66
+    },
+    {
+      "view": 1,
+      "groupsChecked": 64,
+      "over": [],
+      "painted": 915,
+      "maxDeviation": 0.027,
+      "toolbarCut": 0,
+      "toolbarFold": 2,
+      "contentHeight": 8138,
+      "pngBytes": 14878268,
+      "pdfBytes": 6628694,
+      "pdfMs": 568
+    },
+    {
+      "view": 2,
+      "groupsChecked": 19,
+      "over": [],
+      "painted": 268,
+      "maxDeviation": 0.028,
+      "toolbarCut": 0,
+      "toolbarFold": 0,
+      "contentHeight": 12682,
+      "pngBytes": 19013437,
+      "pdfBytes": 5138793,
+      "pdfMs": 732
+    },
+    {
+      "view": 3,
+      "groupsChecked": 24,
+      "over": [],
+      "painted": 121,
+      "maxDeviation": 0.134,
+      "worstItem": {
+        "kind": 3,
+        "flags": 0,
+        "x": 1311,
+        "y": 428,
+        "width": -5,
+        "height": -9,
+        "line": 419,
+        "painted": 419.13397216796875,
+        "column": 0,
+        "paintedColumn": -4.914306640625,
+        "lineWidth": 1.25,
+        "fontSize": 0,
+        "group": 0
+      },
+      "toolbarCut": 0,
+      "toolbarFold": 0,
+      "contentHeight": 697,
+      "pngBytes": 2283461,
+      "pdfBytes": 425048,
+      "pdfMs": 41
+    },
+    {
+      "view": 4,
+      "groupsChecked": 9,
+      "over": [],
+      "painted": 62,
+      "maxDeviation": 0.028,
+      "toolbarCut": 0,
+      "toolbarFold": 0,
+      "contentHeight": 697,
+      "pngBytes": 2616609,
+      "pdfBytes": 24499789,
+      "pdfMs": 183985
+    }
+  ],
+  "groupsOver": 0,
+  "maxDeviation": 0.134
+}

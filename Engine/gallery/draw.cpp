@@ -203,26 +203,26 @@ const char* styleName(u32 style) {
 
 } // namespace
 
-float Draw::posterHead(std::string_view summary, std::string_view eyebrow, float width) {
-    const float baseline = kContentTop + ascentOf(kPosterTitle);
+float Draw::posterHead(std::string_view summary, std::string_view eyebrow, float width, float left,
+                       float top) {
+    const float baseline = top + ascentOf(kPosterTitle);
     const u32 g = newGroup();
     out.group(g);
     const std::string title = tree.titleOf(in.folder);
-    const float titleW =
-        out.text(title, kPosterTitle, palette.on, kContentLeft, baseline, width * 0.6f);
+    const float titleW = out.text(title, kPosterTitle, palette.on, left, baseline, width * 0.6f);
     out.last().line = baseline;
     const std::string right = std::string(eyebrow) + " \xC2\xB7 " + styleName(in.style);
     const float rightW = textWidth(right, kPosterEyebrow) + kPosterEyebrow.size;
-    const float smallX = kContentLeft + titleW + 18.0f;
-    const float room = kContentLeft + width - rightW - 18.0f - smallX;
+    const float smallX = left + titleW + 18.0f;
+    const float room = left + width - rightW - 18.0f - smallX;
     if (room > 40.0f) {
         out.text(summary, kPosterSmall, palette.muted, smallX, baseline, room);
         out.last().line = baseline;
     }
-    out.text(right, kPosterEyebrow, palette.muted, kContentLeft, baseline, width, 2);
+    out.text(right, kPosterEyebrow, palette.muted, left, baseline, width, 2);
     out.last().line = baseline;
     out.group(0);
-    return kContentTop + 64.0f;
+    return top + 64.0f;
 }
 
 float Draw::posterFoot(float y, float width) {

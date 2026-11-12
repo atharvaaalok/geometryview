@@ -368,6 +368,7 @@ void Gallery::peek(u32 file) {
     const u32 next = file < tree_.fileCount() ? file : kNone;
     if (next != peek_) {
         peek_ = next;
+        peekTurnable_ = false; // another file's turntable is yet to come
         seen(next);
         dirty_ = true;
     }
@@ -501,7 +502,15 @@ void Gallery::layoutPeek() {
     const auto centred = [&](std::string_view text) {
         display_.text(text, kWhere, palette.muted, px, py + picH / 2.0f, inner, 1);
     };
-    if (f.picture && f.picture->mmPerPixel > 0 && f.picture->ink[2] > 0 && f.picture->ink[3] > 0) {
+    if (peekTurnable_) {
+        // The turntable: the painter fits its frames into the area, with room for the hint.
+        constexpr TextStyle kHint{10.5f, 400, 0.04f, false};
+        display_.picture(peek_, px, py, inner, picH - 22.0f);
+        display_.last().flags |= GeoItemTurn;
+        display_.text("Drag to turn \xC2\xB7 \xE2\x86\x90 \xE2\x86\x92 turn", kHint, palette.muted,
+                      px, py + picH - 10.0f, inner, 1);
+    } else if (f.picture && f.picture->mmPerPixel > 0 && f.picture->ink[2] > 0 &&
+               f.picture->ink[3] > 0) {
         const Picture& p = *f.picture;
         const float k =
             std::min({(inner - 48.0f) / p.ink[2], (picH - 48.0f) / p.ink[3], kMaxPointsPerPixel});
@@ -795,6 +804,10 @@ GeoGalleryAction Gallery::key(u32 key) {
         }
         return std::nullopt;
     };
+    if (peek_ != kNone && peekTurnable_ && (key == GeoKeyLeft || key == GeoKeyRight)) {
+        // A part that can turn: ← and → turn it, ↑ and ↓ still go file to file.
+        return {GeoActionTurn, key == GeoKeyLeft ? 0u : 1u};
+    }
     if (view_ == GeoViewCatalogue && (key == GeoKeyLeft || key == GeoKeyRight)) {
         // ← and → turn the book a spread.
         const u32 before = spread_;
@@ -833,7 +846,7 @@ GeoGalleryAction Gallery::key(u32 key) {
                 focused_ = result_.plates.back().index;
             }
             if (peek_ != kNone && selected_ != kNone) {
-                peek_ = selected_; // Peek follows the selection, file to file
+                peek(selected_); // Peek follows the selection, file to file
             }
             seen(selected_);
             dirty_ = true;

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <fcntl.h>
 #include <format>
@@ -181,6 +182,7 @@ struct Service::Event {
         StructureDone,
         PictureDone,
         Evicted,
+        Turn,
     };
     Kind kind = Kind::Gate;
     std::vector<FileWant> wants;
@@ -200,6 +202,7 @@ struct Service::Event {
     u32 done = 0;
     u32 total = 0;
     u64 bytes = 0;
+    i32 turnFrame = -1; // a turntable's frame, for PictureDone
 };
 
 struct Service::PictureJob {
@@ -209,6 +212,7 @@ struct Service::PictureJob {
     PictureSpec spec;
     i32 folderColor = -1;
     std::optional<scene::Facts> facts; // measured ones; read from the blob otherwise
+    i32 turnFrame = -1;                // a turntable's frame, or -1 for the gallery's picture
 };
 
 // Receives an import's segments: the model's, for an estimated box, and its progress.
@@ -314,6 +318,15 @@ void Service::setPicture(const PictureSpec& spec) {
     post(std::move(event));
 }
 
+void Service::turn(const std::string& path, u32 frames, u32 pixels) {
+    Event event;
+    event.kind = Event::Kind::Turn;
+    event.path = path;
+    event.done = frames;
+    event.total = pixels;
+    post(std::move(event));
+}
+
 void Service::setPrefetch(bool allowed) {
     Event event;
     event.kind = Event::Kind::Prefetch;
@@ -340,9 +353,13 @@ void Service::waitIdle() {
 
 std::string Service::pictureKey(const PictureSpec& spec, i32 firstColor,
                                 const std::string& version) {
-    const std::string text =
+    std::string text =
         std::format("{}|{}|{}|{:.3f}|{:.4f}|{}|{}", spec.style, spec.colorMode, spec.pixels,
                     spec.pixelsPerPoint, spec.lineScale, firstColor, version);
+    // A turntable's frame: its turn and scale too. The gallery's pictures keep their keys.
+    if (spec.turn != 0.0f || spec.worldPerPixel != 0.0) {
+        text += std::format("|turn {:.2f}|{:.6g}", spec.turn, spec.worldPerPixel);
+    }
     return std::format("{:016x}", XXH3_64bits(text.data(), text.size()));
 }
 
@@ -539,7 +556,39 @@ void Service::apply(Event& event) {
         routesDirty_ = true;
         break;
     }
+    case Event::Kind::Turn:
+        if (event.done == 0 || event.path.empty()) {
+            turn_.reset(); // a frame being drawn finishes, unheard
+        } else if (!turn_ || turn_->path != event.path || turn_->frames != event.done ||
+                   turn_->pixels != event.total) {
+            const bool painting = turn_ && turn_->painting;
+            turn_ = Turn{event.path, event.done, event.total, 0, painting};
+        }
+        routesDirty_ = true;
+        break;
     case Event::Kind::PictureDone: {
+        if (event.turnFrame >= 0) {
+            // A turntable's frame: told if it is still wanted; the next one follows.
+            FileState& state = files_[event.path];
+            if (turn_ && turn_->path == event.path) {
+                turn_->painting = false;
+                if (event.ok) {
+                    listener_.turnFrame(event.path, u32(event.turnFrame), turn_->frames,
+                                        event.pngPath, event.note);
+                    turn_->next = std::max(turn_->next, u32(event.turnFrame) + 1);
+                    std::lock_guard lock(mutex_);
+                    ++stats_.pictures;
+                } else if (event.missingBlob) {
+                    state.blobReady = false; // evicted: imported again, then drawn
+                } else {
+                    turn_.reset(); // it cannot be drawn turned: Peek keeps its picture
+                }
+            } else if (turn_) {
+                turn_->painting = false;
+            }
+            routesDirty_ = true;
+            break;
+        }
         FileState& state = files_[event.path];
         state.painting = false;
         pictures_.finish(event.path);
@@ -678,6 +727,19 @@ void Service::reroute() {
             structures.push_back(job);
         }
     }
+    // Peek's turntable needs its file's cache file: looked up, or imported first of all.
+    if (turn_) {
+        const FileState& state = files_[turn_->path];
+        const auto other = [&](const Want& w) { return w.id == turn_->path; };
+        const Want job{turn_->path, Band::Open, -1.0, state.bytes};
+        if (!state.looked) {
+            std::erase_if(lookups, other);
+            lookups.push_back(job);
+        } else if (!state.blobReady && !state.importing && !state.failed) {
+            std::erase_if(imports, other);
+            imports.push_back(job);
+        }
+    }
     lookups_.want(lookups);
     structures_.want(structures);
     imports_.want(imports);
@@ -706,11 +768,68 @@ void Service::startJobs() {
             startStructure(*path);
         }
     }
-    if (pictures_.runningCount() == 0) {
-        if (const std::optional<std::string> path = pictures_.next()) {
-            startPicture(*path);
+    // One picture at a time: Peek's turntable first, then the gallery's.
+    if (pictures_.runningCount() == 0 && !(turn_ && turn_->painting)) {
+        if (!startTurnFrame()) {
+            if (const std::optional<std::string> path = pictures_.next()) {
+                startPicture(*path);
+            }
         }
     }
+}
+
+bool Service::startTurnFrame() {
+    if (!turn_ || turn_->next >= turn_->frames) {
+        return false;
+    }
+    const FileState& state = files_[turn_->path];
+    if (!state.blobReady || state.importing || state.key.empty()) {
+        return false;
+    }
+    PictureSpec spec = spec_;
+    spec.pixels = turn_->pixels;
+    // One scale for every turn: the box's diagonal fits whichever way it faces.
+    if (state.facts && state.facts->hasBox) {
+        const auto& f = *state.facts;
+        const double dx = f.max[0] - f.min[0], dy = f.max[1] - f.min[1], dz = f.max[2] - f.min[2];
+        spec.worldPerPixel = std::sqrt(dx * dx + dy * dy + dz * dz) * 1.1 / double(spec.pixels);
+    }
+    const i32 firstColor = firstColorOf(state);
+    // Frames drawn before are read back, not drawn again.
+    while (turn_->next < turn_->frames) {
+        spec.turn = 360.0f * float(turn_->next) / float(turn_->frames);
+        const std::string picture = pictureKey(spec, firstColor, config_.pictureVersion);
+        json::Value noted;
+        PictureNote note;
+        const std::string png = picturePath(state.key, picture);
+        if (!(readJson(notePath(state.key, picture), noted) && PictureNote::fromJson(noted, note) &&
+              exists(png))) {
+            break;
+        }
+        listener_.turnFrame(turn_->path, turn_->next, turn_->frames, png, note);
+        ++turn_->next;
+    }
+    if (turn_->next >= turn_->frames) {
+        return false;
+    }
+    auto job = std::make_unique<PictureJob>();
+    job->path = turn_->path;
+    job->blobPath = state.blobPath;
+    job->key = state.key;
+    job->spec = spec;
+    job->folderColor = state.folderColor;
+    job->turnFrame = i32(turn_->next);
+    if (state.facts && !state.facts->estimated) {
+        job->facts = state.facts;
+    }
+    turn_->painting = true;
+    {
+        std::lock_guard lock(mutex_);
+        ++jobs_;
+        pictureJob_ = std::move(job);
+    }
+    pictureReady_.notify_all();
+    return true;
 }
 
 void Service::startImport(const std::string& path, ImportGate::Ticket ticket) {
@@ -910,6 +1029,7 @@ void Service::paintLoop() {
         Event done;
         done.kind = Event::Kind::PictureDone;
         done.path = job->path;
+        done.turnFrame = job->turnFrame;
         std::optional<scene::Facts> facts = job->facts;
         if (!facts) {
             scene::Facts measured;

@@ -53,7 +53,8 @@ export class Thumbnailer {
       this.#answers.set(id, resolve);
       this.#worker.postMessage({ type: "draw", id, blob, pixels: spec.pixels, style: spec.style,
                                  colorMode: spec.colorMode, pixelsPerPoint: spec.pixelsPerPoint,
-                                 lineScale: spec.lineScale, firstColor, folderColor, keep });
+                                 lineScale: spec.lineScale, firstColor, folderColor, keep,
+                                 turn: spec.turn ?? 0, worldPerPixel: spec.worldPerPixel ?? 0 });
     });
     this.heapMB = answer.heapMB ?? this.heapMB;
     if (this.heapMB > this.#recycleMB) {

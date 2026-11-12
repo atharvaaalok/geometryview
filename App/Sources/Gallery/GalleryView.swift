@@ -125,6 +125,26 @@ final class GalleryView: NSView {
     private var laneScroll: [UInt32: CGFloat] = [:]
     private var laneLayers: [UInt32: (box: CALayer, pool: LayerPool)] = [:]
     private var laneDrag: (lane: UInt32, x: CGFloat, from: CGFloat)?
+
+    /// Peek's turntable: the frames of the file in Peek, fitted alike by the box holding all their
+    /// ink, in a frame's pixels.
+    struct Turntable {
+        let file: UInt32
+        let frames: [CGImage]
+        let ink: CGRect
+    }
+    private var turntable: Turntable?
+    private var turnFrame = 0
+    private var turnDrag: (x: CGFloat, from: Int)?
+    /// The frame shown, inside the picture layer the core's turntable item is painted with.
+    private let turnImage: CALayer = {
+        let layer = CALayer()
+        layer.anchorPoint = .zero
+        layer.contentsGravity = .resize
+        layer.minificationFilter = .trilinear
+        layer.actions = ["contents": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        return layer
+    }()
     /// The style's sheet drawn at a size, for rectangles filled with it (Peek's picture).
     private var sheetImages: [String: CGImage] = [:]
     /// Where each item was painted, by index: the frame of its layer, for the checks.
@@ -392,6 +412,7 @@ final class GalleryView: NSView {
             : (top: scrollY - area.height, bottom: scrollY + 2 * area.height)
         painted = window
         let scale = self.window?.backingScaleFactor ?? 2
+        turnImage.removeFromSuperlayer()  // back in its place below, if Peek still turns
         contentPool.begin()
         fixedPool.begin()
         lanes = Dictionary(gallery.lanes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -478,7 +499,17 @@ final class GalleryView: NSView {
                     width: CGFloat(item.width),
                     height: CGFloat(item.height)
                 )
-                layer.contents = images[item.file]
+                if item.flags & GeoItemTurn.rawValue != 0, let turntable,
+                    turntable.file == item.file
+                {
+                    // Peek's turntable: the layer frames the frame shown, held inside it.
+                    layer.contents = nil
+                    layer.masksToBounds = true
+                    placeTurn(in: layer, turntable)
+                } else {
+                    layer.contents = images[item.file]
+                    layer.masksToBounds = false
+                }
                 layer.contentsGravity = .resize
                 layer.minificationFilter = .trilinear
                 layer.opacity = fade
@@ -894,12 +925,131 @@ final class GalleryView: NSView {
         return (lines, columns)
     }
 
+    // MARK: Peek's turntable
+
+    /// The turntable's frames for the file in Peek, or none: its still picture shows meanwhile.
+    func setTurntable(_ turntable: Turntable?) {
+        self.turntable = turntable
+        turnFrame = 0
+        turnDrag = nil
+        if turntable == nil {
+            turnImage.removeFromSuperlayer()
+        }
+    }
+
+    /// Fits every frame alike into `layer`, as the board does: the box holding all their ink, and
+    /// 12 pixels of room around it, as large as the layer allows.
+    private func placeTurn(in layer: CALayer, _ turntable: Turntable) {
+        guard let first = turntable.frames.first, turntable.ink.width > 0 else {
+            return
+        }
+        let w = layer.bounds.width
+        let h = layer.bounds.height
+        let k = min(w / (turntable.ink.width + 24), h / (turntable.ink.height + 24))
+        turnImage.frame = CGRect(
+            x: w / 2 - turntable.ink.midX * k,
+            y: h / 2 - turntable.ink.midY * k,
+            width: CGFloat(first.width) * k,
+            height: CGFloat(first.height) * k
+        )
+        turnImage.contents = turntable.frames[turnFrame % turntable.frames.count]
+        if turnImage.superlayer !== layer {
+            layer.addSublayer(turnImage)
+        }
+    }
+
+    /// The turntable's frame showing, for the checks.
+    var turnFrameShown: Int { turnFrame }
+
+    /// Shows a frame of the turntable, counted round.
+    private func showTurnFrame(_ frame: Int) {
+        guard let turntable, !turntable.frames.isEmpty else {
+            return
+        }
+        let count = turntable.frames.count
+        turnFrame = ((frame % count) + count) % count
+        turnImage.contents = turntable.frames[turnFrame]
+    }
+
+    /// Where the turntable shows, in the view's points, if Peek turns.
+    private var turnRect: CGRect? {
+        guard turntable != nil, gallery.peeking != nil else {
+            return nil
+        }
+        for item in gallery.items where item.flags & GeoItemTurn.rawValue != 0 {
+            return CGRect(
+                x: CGFloat(item.x),
+                y: CGFloat(item.y),
+                width: CGFloat(item.width),
+                height: CGFloat(item.height)
+            )
+        }
+        return nil
+    }
+
     // MARK: The poster
 
     /// The poster as a picture, `scale` pixels a point: the window's width, and as tall as it is or
     /// as the poster runs, whichever is taller. The live view's content is lent to a page of its own
     /// for the drawing and handed back before anything shows.
-    func posterImage(scale: CGFloat = 2) -> CGImage? {
+    func posterImage(scale wanted: CGFloat = 2) -> CGImage? {
+        var image: CGImage?
+        drawPoster { size in
+            // A very tall poster is drawn smaller: 60 million pixels is plenty.
+            let scale = min(wanted, (60e6 / (size.width * size.height)).squareRoot())
+            guard
+                let context = CGContext(
+                    data: nil,
+                    width: Int(size.width * scale),
+                    height: Int(size.height * scale),
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            else {
+                return nil
+            }
+            context.scaleBy(x: scale, y: scale)
+            return context
+        } finish: { context in
+            image = context.makeImage()
+        }
+        return image
+    }
+
+    /// The poster as a page of a PDF, its size in points: the text and lines drawn as text and
+    /// lines, the pictures as pictures. `context` is a PDF context; a page is begun and ended.
+    func posterPage(into context: CGContext) {
+        drawPoster { size in
+            // The page's box, as Core Graphics takes it: the rectangle's bytes.
+            // A PDF's page is 14,400 points a side at most: a taller poster's is smaller, whole.
+            let k = min(1, 14400 / max(size.width, size.height))
+            var box = CGRect(x: 0, y: 0, width: size.width * k, height: size.height * k)
+            let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size) as CFData
+            context.beginPDFPage([kCGPDFContextMediaBox as String: boxData] as CFDictionary)
+            context.scaleBy(x: k, y: k)
+            return context
+        } finish: { context in
+            context.endPDFPage()
+        }
+    }
+
+    /// The poster's size in points, as `posterImage` and `posterPage` draw it.
+    var posterSize: CGSize {
+        CGSize(
+            width: bounds.width,
+            height: max(bounds.height, area.minY + gallery.contentHeight + contentInsets.bottom)
+        )
+    }
+
+    /// Paints everything, asks `begin` for a context the poster's size in points (scaled already
+    /// for pixels, if any), draws the sheet and the content into it, hands it to `finish`, and
+    /// gives the content back to the view.
+    private func drawPoster(
+        begin: (CGSize) -> CGContext?,
+        finish: (CGContext) -> Void
+    ) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -910,27 +1060,16 @@ final class GalleryView: NSView {
         paint()
         paintEverything = false
         painted = nil
-        let size = CGSize(
-            width: bounds.width,
-            height: max(bounds.height, area.minY + gallery.contentHeight + contentInsets.bottom)
-        )
-        guard let sheetPicture = sheetImage(size, scale: scale),
-            let context = CGContext(
-                data: nil,
-                width: Int(size.width * scale),
-                height: Int(size.height * scale),
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            )
+        let size = posterSize
+        // The sheet's grain and grid as a picture: 2 pixels a point, or fewer for a very tall
+        // poster.
+        let sheetScale = min(2, (60e6 / (size.width * size.height)).squareRoot())
+        guard let sheetPicture = sheetImage(size, scale: sheetScale), let context = begin(size)
         else {
-            return nil
+            paint()
+            return
         }
-        context.draw(
-            sheetPicture,
-            in: CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale)
-        )
+        context.draw(sheetPicture, in: CGRect(origin: .zero, size: size))
         // A page laid out top down, as this view is, holding the content where the view shows it.
         let page = CALayer()
         page.anchorPoint = .zero
@@ -957,14 +1096,16 @@ final class GalleryView: NSView {
         )
         // Laid out top down, as the view is: the page's geometry is turned over, and the context
         // with it, so the layers' contents stand upright.
-        context.translateBy(x: 0, y: size.height * scale)
-        context.scaleBy(x: scale, y: -scale)
+        context.saveGState()
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
         page.render(in: context)
+        context.restoreGState()
+        finish(context)
         lent.removeFromSuperlayer()
         clip.addSublayer(lent)
         lent.frame = frame
         paint()
-        return context.makeImage()
     }
 
     // MARK: For the checks
@@ -1065,6 +1206,12 @@ final class GalleryView: NSView {
                 ].contains($0.target_kind)
                     || ($0.target_kind == GeoTargetPeek.rawValue && $0.target == 1)
             } ?? false
+        if let rect = turnRect, let point = contentPoint(event),
+            rect.contains(CGPoint(x: point.x, y: point.y - scrollY))
+        {
+            NSCursor.resizeLeftRight.set()  // the turntable: drag to turn
+            return
+        }
         (pointing ? NSCursor.pointingHand : NSCursor.arrow).set()
     }
 
@@ -1077,6 +1224,11 @@ final class GalleryView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         guard !gallery.poster, let point = contentPoint(event) else {
+            return
+        }
+        // A drag on Peek's turntable turns the part, a frame every 24 points.
+        if let rect = turnRect, rect.contains(CGPoint(x: point.x, y: point.y - scrollY)) {
+            turnDrag = (point.x, turnFrame)
             return
         }
         laneDrag = lane(at: point).map { ($0.id, point.x, laneScroll[$0.id] ?? 0) }
@@ -1113,6 +1265,10 @@ final class GalleryView: NSView {
 
     /// A drag along a lane scrolls it; on the map, it pans.
     override func mouseDragged(with event: NSEvent) {
+        if let drag = turnDrag, let point = contentPoint(event) {
+            showTurnFrame(drag.from + Int(((point.x - drag.x) / 24).rounded()))
+            return
+        }
         if gallery.view == GeoViewAtlas.rawValue, let point = contentPoint(event) {
             if let from = atlasDrag {
                 gallery.atlasPan(point.x - from.x, point.y - from.y)
@@ -1131,6 +1287,7 @@ final class GalleryView: NSView {
     override func mouseUp(with event: NSEvent) {
         laneDrag = nil
         atlasDrag = nil
+        turnDrag = nil
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -1250,6 +1407,8 @@ final class GalleryView: NSView {
             reload()
         case GeoActionHandled.rawValue, GeoActionPeek.rawValue:
             reload(reveal: reveal)
+        case GeoActionTurn.rawValue:
+            showTurnFrame(turnFrame + (action.target == 0 ? -1 : 1))
         default:
             break
         }

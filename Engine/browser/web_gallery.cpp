@@ -324,6 +324,14 @@ EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_peeking(GeoGallery* gallery) {
     return geo_gallery_peeking(gallery);
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable) {
+    geo_gallery_set_peek_turnable(gallery, turnable);
+}
+
+EMSCRIPTEN_KEEPALIVE bool gv_gallery_peek_turnable(GeoGallery* gallery) {
+    return geo_gallery_peek_turnable(gallery);
+}
+
 EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_selected(GeoGallery* gallery) {
     return geo_gallery_selected(gallery);
 }
