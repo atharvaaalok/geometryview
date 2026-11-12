@@ -60,7 +60,8 @@ stops it. `--port N` chooses another port. While it runs, the browser can instal
 app window (Chrome's Install button, or Safari's File ▸ Add to Dock).
 
 The hosted copy is the same files with sample models: `node Launcher/scripts/site.mjs` assembles it
-in `Launcher/dist/site` (from `test-models/`, which is not in the repository) and zips it.
+in `Launcher/dist/site` and zips it. The samples are the showcase models, which
+`Tools/showcase/make.py` writes into `build/showcase` (see "The README's pictures").
 
 ## The AI tools, from a checkout
 
