@@ -151,18 +151,36 @@ The app has switches for measuring and checking it:
 
 ## The README's pictures
 
-`python3 Tools/media/make_media.py` renders every picture and animation in `Docs/media` from the
-sample models (after `site.mjs`), and `Tools/media/mac_window.sh` pictures the Mac app's window.
+Every picture in the README is drawn by GeometryView from its own showcase models, which
+`Tools/showcase/make.py` writes (its header says how; they need build123d). Then:
+
+```sh
+python3 Tools/media/readme_media.py capture-gallery capture-phone capture-mac   # the screens
+python3 Tools/media/readme_media.py --out Docs/media                            # the pictures
+```
+
+The captures need a release build and the browser engine (`wasm-webgpu`); `capture-mac` exports
+the app's settings first, imports them after, and takes the build off Launch Services. Without
+`--out` the pictures go to `build/media/readme`. Pictures come in light and dark twins of one
+size, at twice the README's 880 px column.
+
+`node Tools/media/readme_board.mjs <folder>` shows README drafts as GitHub renders them (through its
+Markdown API, with github-markdown-css), in light and dark, at a desktop's width and a phone's, with
+the npm page and each draft's weight. Its header says what the folder holds.
 
 ## Releasing
 
 1. `node Launcher/scripts/pack.mjs --portable`, then `node Launcher/scripts/site.mjs` (packing
-   empties `Launcher/dist`), for `geometryview.mcpb` and `geometryview-web.zip`.
-2. A GitHub release with those two files as assets. Publishing it runs the Pages workflow
+   empties `Launcher/dist`), for `geometryview.mcpb` and `geometryview-web.zip`; and
+   `Tools/showcase/make.py release` for `things-that-come-in-sizes.zip`, the folder the README
+   offers.
+2. A GitHub release with those three files as assets. Publishing it runs the Pages workflow
    (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer. The
    `github-pages` environment allows the `main` branch and `v*` tags, the release's.
 3. `cd Launcher && npm publish`, after bumping the version in `package.json` and
-   `mcpb/manifest.json`. Run it in a terminal of your own: npm asks for two-factor approval there.
+   `mcpb/manifest.json` and running `node Launcher/scripts/readme.mjs`, which pins the npm page's
+   pictures to the new tag. Publishing first checks that every link on that page answers, so the
+   tag must be pushed. Run it in a terminal of your own: npm asks for two-factor approval there.
 4. With a Developer ID: `Tools/release/mac_release.sh` signs, notarizes and zips the Mac app and a
    native `.mcpb`, for the same release, as `GeometryView-mac.zip` and `geometryview-mac.mcpb`
    (the README links to the latest release's by name). Its header says how to set it up; `--check`

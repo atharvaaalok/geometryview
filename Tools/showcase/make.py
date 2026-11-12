@@ -6,6 +6,7 @@ and assemblies to look inside. Every model is written here from scratch, MIT lik
     $PY Tools/showcase/make.py model <name ...> [--preview]
     $PY Tools/showcase/make.py manifest [--check]
     $PY Tools/showcase/make.py check [model ...]
+    $PY Tools/showcase/make.py release
 
 The STEP files land in build/showcase (step/ for the assemblies, library/ for the folder), with
 GeometryView cache files in blobs/ and preview sheets in preview/. They are not committed: the
@@ -17,7 +18,9 @@ Parts of many bodies (blade rows, fins) are left out, since they are meant to si
 
 `library` writes the folder, "Things That Come in Sizes", one chapter after another; `--sheet`
 draws each family on a contact sheet with `gcli sheet`. `model` writes an assembly; `--preview`
-draws it from four sides and cut, in Illustration and Studio, on one sheet.
+draws it from four sides and cut, in Illustration and Studio, on one sheet. `release` zips the
+folder, with the license, for the release's assets: build/showcase/things-that-come-in-sizes.zip,
+the same bytes from the same files.
 """
 
 from __future__ import annotations
@@ -170,6 +173,28 @@ def manifest(check: bool) -> int:
     return 0
 
 
+def release() -> int:
+    """The folder as a zip for a release, the README's "Download the folder": its STEP files under
+    the folder's own name, and the license, every entry dated alike so the zip repeats exactly."""
+    import zipfile
+
+    target = common.OUT / "things-that-come-in-sizes.zip"
+    files = sorted(LIBRARY.rglob("*.step"))
+    if not files:
+        print("no folder yet: make.py library first")
+        return 1
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        entries = [(f"{LIBRARY.name}/{f.relative_to(LIBRARY)}", f.read_bytes()) for f in files]
+        entries.append((f"{LIBRARY.name}/LICENSE", (common.ROOT / "LICENSE").read_bytes()))
+        for name, data in entries:
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            z.writestr(info, data)
+    print(f"  {target}: {len(files)} files, {target.stat().st_size / 1e6:.1f} MB")
+    return 0
+
+
 def main() -> int:
     common.environment()
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -184,6 +209,7 @@ def main() -> int:
     man.add_argument("--check", action="store_true")
     chk = sub.add_parser("check")
     chk.add_argument("names", nargs="*", default=MODELS)
+    sub.add_parser("release")
     args = parser.parse_args()
     if args.command == "library":
         library(args.chapters, args.sheet)
@@ -191,6 +217,8 @@ def main() -> int:
         model(args.names, args.preview)
     elif args.command == "check":
         return 1 if check(args.names) else 0
+    elif args.command == "release":
+        return release()
     else:
         return manifest(args.check)
     return 0

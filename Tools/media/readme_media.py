@@ -354,30 +354,6 @@ def plates():
         save(rounded(fit(poster(t["style"], "plates"), WIDTH), 18), f"plates-{theme}")
 
 
-def framed_poster(img: Image.Image, w: int, h: int) -> Image.Image:
-    """A poster in a w x h tile: its margins trimmed, then a landscape poster fitted whole on its
-    own paper, a tall one cut to its head and first rows."""
-    paper = img.getpixel((4, 4))
-    diff = ImageChops.difference(img, Image.new("RGB", img.size, paper)).convert("L").point(lambda v: 255 if v > 18 else 0)
-    x0, y0, x1, y1 = diff.getbbox()
-    pad = int(0.035 * img.width)
-    img = img.crop((max(0, x0 - pad), max(0, y0 - pad), min(img.width, x1 + pad), min(img.height, y1 + pad)))
-    aspect = w / h
-    if img.width / img.height < aspect:  # tall: its head, with room above it for a label
-        canvas = Image.new("RGB", (img.width, int(img.width / aspect)), paper)
-        canvas.paste(img, (0, pad))
-        img = canvas
-    else:  # wide: whole, on its own paper
-        canvas = Image.new("RGB", (img.width, int(img.width / aspect)), paper)
-        canvas.paste(img, (0, (canvas.height - img.height) // 2))
-        img = canvas
-    return img.resize((w, h), Image.LANCZOS)
-
-
-VIEWS = [("plates", "PLATES"), ("sheet", "SHEET"), ("ladders", "LADDERS"), ("atlas", "ATLAS"),
-         ("catalogue", "CATALOGUE")]
-
-
 def pinned(img: Image.Image, label: str, tilt: float, t: dict, size: int = 30) -> Image.Image:
     """A sticker with its label hanging from its top edge, turned a little."""
     st = sticker(img, 16, 4, 8, t["ink"])
@@ -389,32 +365,8 @@ def pinned(img: Image.Image, label: str, tilt: float, t: dict, size: int = 30) -
     return held.rotate(tilt, resample=Image.BICUBIC, expand=True)
 
 
-def views():
-    """The five views as their posters, one size each, pinned up a little askew: three over two."""
-    tw, th = 520, 340
-    tilts = [-1.1, 0.7, -0.5, 0.9, -0.8]
-    for theme, t in THEMES.items():
-        tiles = [pinned(framed_poster(poster(t["style"], v), tw, th), label, tilt, t)
-                 for (v, label), tilt in zip(VIEWS, tilts)]
-        W, gap, top, between = WIDTH, 36, 30, 44
-        h = max(p.height for p in tiles)
-        H = top + 2 * h + between + 36
-        out = Image.new("RGBA", (W, H), t["paper"] + (255,))
-        first = sum(p.width for p in tiles[:3]) + 2 * gap
-        x = (W - first) // 2
-        for p in tiles[:3]:
-            out.alpha_composite(p, (x, top))
-            x += p.width + gap
-        second = sum(p.width for p in tiles[3:]) + gap
-        x = (W - second) // 2
-        for p in tiles[3:]:
-            out.alpha_composite(p, (x, top + h + between))
-            x += p.width + gap
-        save(rounded(out, 24), f"views-{theme}", quality=86)
-
-
 def wall():
-    """The Gallery Issue, as round 1's direction F had it: the posters pinned up under a masthead."""
+    """The Gallery Issue: four of the folder's posters pinned up, a little askew, under a masthead."""
     def cut(style, v, w, h):
         img = poster(style, v)
         img = img.crop((0, 0, img.width, min(img.height, int(img.width * h / w))))
@@ -555,7 +507,7 @@ def chat():
 
 CAPTURES = {"capture-gallery": capture_gallery, "capture-phone": capture_phone, "capture-mac": capture_mac}
 PICTURES = {f.__name__.replace("_", "-"): f for f in
-            (renders, fig1, plates, views, wall, inside, styles, everywhere, chat)}
+            (renders, fig1, plates, wall, inside, styles, everywhere, chat)}
 
 if __name__ == "__main__":
     args = sys.argv[1:]

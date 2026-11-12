@@ -3,6 +3,9 @@
 GeometryView is MIT licensed (see [LICENSE](LICENSE)). It builds on the work below, each under its
 own license. Versions are pinned in [ThirdParty/manifest.toml](ThirdParty/manifest.toml).
 
+The showcase models ([`Tools/showcase`](Tools/showcase), and the folder and sample files made from
+them) and the README's pictures are GeometryView's own, under the same MIT license.
+
 ## Shipped in the app, the browser viewer and the launcher
 
 | Project | License | How it is used |
@@ -47,3 +50,4 @@ SOFTWARE.
 |---|---|
 | [doctest](https://github.com/doctest/doctest) 2.4.12 | MIT; vendored with its [license](ThirdParty/doctest/LICENSE.txt) |
 | [Dawn](https://dawn.googlesource.com/dawn) (native) | BSD-3-Clause; the WebGPU test harness on the Mac |
+| [build123d](https://github.com/gumyr/build123d) 0.13 and [OCP](https://github.com/CadQuery/OCP) 8.0.1 | Apache-2.0; they write the showcase models' STEP files |

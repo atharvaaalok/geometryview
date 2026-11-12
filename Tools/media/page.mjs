@@ -4,7 +4,9 @@
 //
 //   node Tools/media/page.mjs steps.json      or      node Tools/media/page.mjs '[{...}, ...]'
 //
-//   { "size": [w, h, scale], "phone": true }   the window, and an iPhone's user agent (first step)
+//   { "size": [w, h, scale], "phone": true, "dark": true }
+//                                              the window, an iPhone's user agent, and a dark
+//                                              colour scheme (prefers-color-scheme) (first step)
 //   { "go": url }                              navigate
 //   { "until": expression, "timeout": s }      wait for an expression to be true (default 120 s)
 //   { "wait": ms }                             wait
@@ -85,6 +87,9 @@ try {
   if (first.phone) await send("Emulation.setUserAgentOverride", { userAgent: kPhoneAgent });
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale,
                                                      mobile: !!first.phone });
+  if (first.dark) {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  }
   for (const step of steps) {
     const at = () => Math.round(performance.now() - started);
     if (step.go) {
