@@ -23,15 +23,16 @@ final class GalleryCheck {
         return arguments[at + 1]
     }
     static var isCheck: Bool { CommandLine.arguments.contains("--gallery-check") }
-    /// The views the gallery may show: Plates and Sheet, or all five with `--gallery-views all`.
+    /// The views the gallery may show: all five, or Plates and Sheet alone with
+    /// `--gallery-views two`. (`--gallery-views all`, which the checks pass, shows all five.)
     static var views: UInt32 {
         let arguments = CommandLine.arguments
         if let at = arguments.firstIndex(of: "--gallery-views"), at + 1 < arguments.count,
-            arguments[at + 1] == "all"
+            arguments[at + 1] == "two"
         {
-            return 0b11111
+            return (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)
         }
-        return (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)
+        return 0b11111
     }
     static var isLayout: Bool { CommandLine.arguments.contains("--gallery-layout") }
     /// `--gallery-poster`: the folder as a poster in each view, checked and saved as PNG.

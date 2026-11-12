@@ -433,7 +433,8 @@ function applyLook(next, { remember = true } = {}) {
 function galleryFor() {
   if (gallery) return gallery;
   // Plates and Sheet ship first; ?views=all shows the views still being built.
-  const views = params.get("views") === "all" ? 0b11111 : 0b11;
+  // All five views; Plates and Sheet alone with views=two.
+  const views = params.get("views") === "two" ? 0b11 : 0b11111;
   gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery", views }, {
     open: (root, path) => openFromGallery(root, path),
     leave: () => leaveGallery(),
