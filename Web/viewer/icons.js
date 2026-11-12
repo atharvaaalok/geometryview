@@ -34,6 +34,7 @@ export const iconMarkup = {
   sheet: `<path d="M2 3.5h12 M2 7h12 M2 10.5h12 M2 14h12"/><circle cx="4" cy="5.25" r=".6"/><circle cx="7" cy="5.25" r=".6"/><circle cx="10" cy="5.25" r=".6"/><circle cx="13" cy="5.25" r=".6"/><circle cx="4" cy="12.25" r=".6"/><circle cx="7" cy="12.25" r=".6"/>`,
   ladders: `<path d="M1.5 12.5h13 M2.5 12.5v-1.5 M5.5 12.5v-3 M9 12.5v-5 M13 12.5v-8 M1.5 14.5v-2 M5 14.5v-2 M8.5 14.5v-2 M12 14.5v-2"/>`,
   atlas: `<path d="M1.75 3.5l4-1.5 4.5 1.5 4-1.5v10.5l-4 1.5-4.5-1.5-4 1.5z M5.75 2v10.5 M10.25 3.5V14"/>`,
+  poster: `<rect x="2.5" y="1.75" width="11" height="12.5" rx="1"/><path d="M4.5 11h7 M4.5 5l2.5 3 2-2 2.5 3"/>`,
   catalogue: `<path d="M8 3.5c-1.5-1-3.5-1.25-6-1v10c2.5-.25 4.5 0 6 1 1.5-1 3.5-1.25 6-1v-10c-2.5-.25-4.5 0-6 1z M8 3.5v10"/>`,
 };
 

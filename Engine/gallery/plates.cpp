@@ -790,6 +790,27 @@ LayoutResult layoutPlates(const LayoutInput& input, Display& display) {
     const float width = input.width - kContentLeft - kContentRight;
     float y = kContentTop;
     const u32 leftGroup = painter.newGroup();
+    if (input.poster && folder.count > 0) {
+        // Show it off: every folder holding files, as plates on one printed sheet.
+        std::vector<u32> leaves;
+        for (const u32 f : tree.familiesUnder(input.folder)) {
+            if (f != input.folder || folder.folders.empty()) {
+                leaves.push_back(f);
+            }
+        }
+        if (leaves.empty()) {
+            leaves.push_back(input.folder);
+        }
+        y = painter.posterHead(count(folder.count, "file") + " in " +
+                                   count(leaves.size(), "folder") + ", each at its own scale",
+                               "Plate 1", width);
+        const float footRoom = 34.0f;
+        y = painter.plates(leaves, y, width, std::max(168.0f, input.height - y - footRoom - 12.0f),
+                           leftGroup);
+        y = painter.posterFoot(y + 12.0f, width);
+        result.contentHeight = y + kContentBottom;
+        return result;
+    }
     // Folders with nothing to draw get no plate; entered, they say so.
     std::vector<u32> plated;
     for (const u32 f : folder.folders) {

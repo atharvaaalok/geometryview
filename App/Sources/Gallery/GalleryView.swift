@@ -87,6 +87,10 @@ final class GalleryView: NSView {
     var onViewChanged: (() -> Void)?
     /// Called when typing changed the search.
     var onSearchChanged: (() -> Void)?
+    /// Called with Esc while a poster shows.
+    var onLeavePoster: (() -> Void)?
+    /// Paints every item, not only those near the view: for a poster's picture.
+    private var paintEverything = false
 
     /// Where the content sits in the window: right of the Library card, above the toolbar.
     var contentInsets = NSEdgeInsets(top: 96, left: 340, bottom: 84, right: 18) {
@@ -365,7 +369,10 @@ final class GalleryView: NSView {
         if let painted, painted.top <= view.top, painted.bottom >= view.bottom {
             return
         }
-        let window = (top: scrollY - area.height, bottom: scrollY + 2 * area.height)
+        let window =
+            paintEverything
+            ? (top: -CGFloat.infinity, bottom: CGFloat.infinity)
+            : (top: scrollY - area.height, bottom: scrollY + 2 * area.height)
         painted = window
         let scale = self.window?.backingScaleFactor ?? 2
         contentPool.begin()
@@ -759,6 +766,79 @@ final class GalleryView: NSView {
         return (lines, columns)
     }
 
+    // MARK: The poster
+
+    /// The poster as a picture, `scale` pixels a point: the window's width, and as tall as it is or
+    /// as the poster runs, whichever is taller. The live view's content is lent to a page of its own
+    /// for the drawing and handed back before anything shows.
+    func posterImage(scale: CGFloat = 2) -> CGImage? {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        scrollY = 0
+        gallery.setScroll(0)
+        paintEverything = true
+        painted = nil
+        paint()
+        paintEverything = false
+        painted = nil
+        let size = CGSize(
+            width: bounds.width,
+            height: max(bounds.height, area.minY + gallery.contentHeight + contentInsets.bottom)
+        )
+        guard let sheetPicture = sheetImage(size, scale: scale),
+            let context = CGContext(
+                data: nil,
+                width: Int(size.width * scale),
+                height: Int(size.height * scale),
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return nil
+        }
+        context.draw(
+            sheetPicture,
+            in: CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale)
+        )
+        // A page laid out top down, as this view is, holding the content where the view shows it.
+        let page = CALayer()
+        page.anchorPoint = .zero
+        page.frame = CGRect(origin: .zero, size: size)
+        page.isGeometryFlipped = true
+        let holder = CALayer()
+        holder.anchorPoint = .zero
+        holder.frame = CGRect(
+            x: area.minX,
+            y: area.minY,
+            width: area.width,
+            height: size.height - area.minY
+        )
+        page.addSublayer(holder)
+        let lent = content
+        let frame = lent.frame
+        lent.removeFromSuperlayer()
+        holder.addSublayer(lent)
+        lent.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: frame.width,
+            height: max(frame.height, holder.bounds.height)
+        )
+        // Laid out top down, as the view is: the page's geometry is turned over, and the context
+        // with it, so the layers' contents stand upright.
+        context.translateBy(x: 0, y: size.height * scale)
+        context.scaleBy(x: scale, y: -scale)
+        page.render(in: context)
+        lent.removeFromSuperlayer()
+        clip.addSublayer(lent)
+        lent.frame = frame
+        paint()
+        return context.makeImage()
+    }
+
     // MARK: For the checks
 
     /// Scrolls to `top`, as the wheel does.
@@ -841,6 +921,9 @@ final class GalleryView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard !gallery.poster else {
+            return
+        }
         let hit = contentPoint(event).map { gallery.hit($0) }
         if gallery.hover(kind: hit?.target_kind ?? GeoTargetNone.rawValue, target: hit?.target ?? 0)
         {
@@ -863,7 +946,7 @@ final class GalleryView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        guard let point = contentPoint(event) else {
+        guard !gallery.poster, let point = contentPoint(event) else {
             return
         }
         let hit = gallery.hit(point)
@@ -896,6 +979,12 @@ final class GalleryView: NSView {
         case 53: key = GeoKeyEscape
         default: key = nil
         }
+        if gallery.poster {
+            if event.keyCode == 53 {
+                onLeavePoster?()
+            }
+            return  // a poster takes no keys but Esc
+        }
         if let key {
             act(gallery.key(key), reveal: true)
             onSearchChanged?()
@@ -918,6 +1007,10 @@ final class GalleryView: NSView {
     }
 
     override func cancelOperation(_ sender: Any?) {
+        if gallery.poster {
+            onLeavePoster?()
+            return
+        }
         act(gallery.key(GeoKeyEscape))
         onSearchChanged?()
     }

@@ -103,6 +103,12 @@ export class GalleryCore {
     this.#string(message || "This file could not be read.", (p) => this.#m._gv_gallery_set_failure(this.#g, file, p));
   }
 
+  /** The view as a poster, printed with `date` in its foot. */
+  setPoster(poster, date = "") {
+    this.#string(date, (d) => this.#m._gv_gallery_set_poster(this.#g, poster ? 1 : 0, d));
+  }
+  get poster() { return this.#m._gv_gallery_poster(this.#g) !== 0; }
+
   /** A file being read, 0 to 1, or negative once it is not. */
   setReading(file, fraction) { this.#m._gv_gallery_set_reading(this.#g, file, fraction); }
   /** A file changed on disk: a Δ until seen, its picture faded until a new one comes. */

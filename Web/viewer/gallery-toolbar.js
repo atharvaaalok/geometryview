@@ -20,8 +20,14 @@ export class GalleryToolbar {
   #size;
   #sort;
   #look;
+  #poster;
+  /** While a poster shows: Save PNG and Done, over its top margin. */
+  posterBar;
 
-  /** `on` takes view(index), sheet({ scale, cell, sort }) with what changed, and look(). */
+  /**
+   * `on` takes view(index), sheet({ scale, cell, sort }) with what changed, look(), poster() to show
+   * or put away the poster, and save() for its PNG.
+   */
   constructor(on) {
     const views = el("div.segmented.views", { role: "tablist", "aria-label": "View" });
     ViewNames.forEach((name, view) => {
@@ -44,8 +50,14 @@ export class GalleryToolbar {
     this.#sheet = el("div.group", {}, [el("span.rule"), label("SCALE"), this.#scale.element, label("SIZE"),
                                        this.#size, label("SORT"), this.#sort.element]);
     this.#look = pill({ icon: icons.palette, title: Styles[0].title, help: "Look", onPress: () => on.look() });
+    this.#poster = pill({ icon: icons.poster, title: "Poster", help: "Show it off: the view as a poster (⌥P)",
+                          onPress: () => on.poster() });
     this.element = el("nav.card.toolbar.gallery-toolbar", { "aria-label": "Gallery", hidden: true },
-                      [views, this.#sheet, el("span.rule"), this.#look]);
+                      [views, this.#sheet, el("span.rule"), this.#poster, this.#look]);
+    this.posterBar = el("div.card.gallery-poster-bar", { hidden: true, "aria-label": "Poster" }, [
+      pill({ title: "Save PNG", help: "Save the poster as a picture", onPress: () => on.save() }),
+      pill({ title: "Done", help: "Back to the gallery (Esc)", onPress: () => on.poster() }),
+    ]);
   }
 
   /** Shows the view in use among those enabled (a bit each), Sheet's controls, and the style. */

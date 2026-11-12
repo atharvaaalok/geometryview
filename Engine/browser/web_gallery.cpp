@@ -79,6 +79,14 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_set_failure(GeoGallery* gallery, uint32_t f
     geo_gallery_set_failure(gallery, file, message);
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_poster(GeoGallery* gallery, int poster, const char* date) {
+    geo_gallery_set_poster(gallery, poster != 0, date);
+}
+
+EMSCRIPTEN_KEEPALIVE int gv_gallery_poster(GeoGallery* gallery) {
+    return geo_gallery_poster(gallery) ? 1 : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE void gv_gallery_set_reading(GeoGallery* gallery, uint32_t file,
                                                  float fraction) {
     geo_gallery_set_reading(gallery, file, fraction);

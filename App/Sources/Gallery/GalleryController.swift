@@ -78,6 +78,18 @@ final class GalleryController {
         view.search(query)
     }
 
+    /// Shows the view as a poster, dated today, or as the gallery again.
+    func setPoster(_ poster: Bool) {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "d MMMM yyyy"
+        let date = format.string(from: Date())
+        gallery.setPoster(poster, date: date)
+        view.scrollToTop()
+        view.reload()
+        scheduleWant()
+    }
+
     var title: String { gallery.title }
     var subtitle: String { gallery.subtitle }
 

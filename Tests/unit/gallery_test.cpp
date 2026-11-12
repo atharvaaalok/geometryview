@@ -729,3 +729,35 @@ TEST_CASE("a file being read shows its bar; a changed one its Δ until seen, and
     r.setReading(0, 0.51f);  // the same sixteenth: no layout
     CHECK_FALSE(r.layout());
 }
+
+TEST_CASE("a poster prints the view on one sheet, its title above and a rule below") {
+    for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet)}) {
+        for (const u32 style : {0u, 3u}) {
+            CAPTURE(view);
+            CAPTURE(style);
+            Gallery g = measured();
+            g.setStyle(style);
+            g.setView(view);
+            g.click(GeoTargetFile, g.tree().fileAt("motor/nema13.step"), false);
+            g.hover(GeoTargetFile, g.tree().fileAt("bearing/0608.step"));
+            g.setPoster(true, "11 November 2026");
+            g.setViewport(1380.0f, 840.0f);
+            REQUIRE(g.layout());
+            checkAligned(g);
+            CHECK(countText(g, "11 NOVEMBER 2026") == 1);
+            CHECK(countText(g, "GEOMETRYVIEW") == 1);
+            CHECK(countText(g, view == GeoViewPlates ? "PLATE 1" : "SHEET 1") == 1);
+            for (const GeoGalleryItem& item : g.display().items()) {
+                CHECK(item.sticky_until == 0.0f);          // nothing scrolls on paper
+                CHECK((item.flags & GeoItemSticker) == 0); // nothing hovered or selected
+            }
+            if (view == GeoViewSheet) {
+                CHECK(g.result().parts.size() == 61); // every file
+            } else {
+                // Every folder holding files is a plate: bearing, the hex nuts and motor. The top's
+                // own files, beside its folders, get none.
+                CHECK(g.result().plates.size() == 3);
+            }
+        }
+    }
+}

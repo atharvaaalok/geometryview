@@ -189,7 +189,8 @@ public:
         y = baseline + kDescent * kFamilyTitle.size + (mm ? 10.0f : 0.0f) + 8.0f;
 
         const bool all = in.expanded && in.expanded->contains(b.key);
-        const usize shown = all ? files.size() : std::min(files.size(), kBlockShown);
+        const usize shown =
+            all ? files.size() : std::min(files.size(), in.poster ? 400 : kBlockShown);
         const float ch = picH + 32.0f;
         for (usize start = 0; start < shown; start += columns) {
             const u32 partGroup = newGroup(), line1 = newGroup(), line2 = newGroup();
@@ -326,7 +327,9 @@ LayoutResult layoutSheet(const LayoutInput& input, Display& display) {
     const Tree& tree = *input.tree;
     const Folder& folder = tree.folder(input.folder);
     const float width = input.width - kContentLeft - kContentRight;
-    const float cellW = folder.count > 400 ? std::min(input.sheetCell, 104.0f) : input.sheetCell;
+    const float cellW = input.poster         ? (folder.count > 400 ? 64.0f : 92.0f)
+                        : folder.count > 400 ? std::min(input.sheetCell, 104.0f)
+                                             : input.sheetCell;
     const u32 columns = std::max(3u, u32(std::floor((width + kGap) / (cellW + kGap))));
     const float cw = (width - kGap * float(columns - 1)) / float(columns);
     const float picH = cw * 0.72f;
@@ -348,6 +351,12 @@ LayoutResult layoutSheet(const LayoutInput& input, Display& display) {
     columnGroups[0] = leftGroup;
     const std::vector<Heading> headings = sheet.headingsOf(input.folder);
     float y = kContentTop;
+    if (input.poster && !headings.empty()) {
+        const char* how = input.sheetScale == GeoScaleFit      ? "each part fills its cell"
+                          : input.sheetScale == GeoScaleFolder ? "each folder at its own scale"
+                                                               : "all at one scale";
+        y = sheet.posterHead(count(folder.count, "file") + " \xC2\xB7 " + how, "Sheet 1", width);
+    }
     struct Stuck {
         usize first, last;
         float top, height;
@@ -362,8 +371,8 @@ LayoutResult layoutSheet(const LayoutInput& input, Display& display) {
             y = sheet.block(b, y, width, leftGroup, columns, cw, picH, columnGroups, trueMm);
         }
     }
-    // Each heading stays at the top until the next one reaches it.
-    for (usize i = 0; i < stuck.size(); ++i) {
+    // Each heading stays at the top until the next one reaches it; on a poster, nothing scrolls.
+    for (usize i = 0; i < (input.poster ? 0 : stuck.size()); ++i) {
         const float next = i + 1 < stuck.size() ? stuck[i + 1].top : y;
         const float until = std::max(0.0f, next - stuck[i].top - stuck[i].height);
         for (usize item = stuck[i].first; item < stuck[i].last; ++item) {
@@ -375,6 +384,9 @@ LayoutResult layoutSheet(const LayoutInput& input, Display& display) {
     if (headings.empty()) {
         // Nothing to draw: as Plates says it.
         return layoutPlates(input, display);
+    }
+    if (input.poster) {
+        y = sheet.posterFoot(y, width);
     }
     result.contentHeight = y + kContentBottom;
     return result;

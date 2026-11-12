@@ -262,6 +262,12 @@ const char* geo_gallery_search(const GeoGallery* gallery);
 /// Files in the folder that the search found, or UINT32_MAX with no search.
 uint32_t geo_gallery_matches(const GeoGallery* gallery);
 
+/// Shows the view as a poster, to export: printed on one sheet, the folder's title above and a
+/// footer rule below with `date`, every cell drawn and nothing hovered, selected or peeked. The
+/// front end sets the viewport to the page it prints.
+void geo_gallery_set_poster(GeoGallery* gallery, bool poster, const char* date);
+bool geo_gallery_poster(const GeoGallery* gallery);
+
 /// A file being read: how far, from 0 to 1, shown as a mustard bar on its measured box; negative
 /// once it is not. A picture ends it.
 void geo_gallery_set_reading(GeoGallery* gallery, uint32_t file, float fraction);

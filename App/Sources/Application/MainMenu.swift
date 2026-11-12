@@ -95,6 +95,13 @@ enum MainMenu {
             item.tag = index
             menu.addItem(item)
         }
+        let poster = NSMenuItem(
+            title: "Show as Poster",
+            action: #selector(MainWindow.togglePoster(_:)),
+            keyEquivalent: "p"
+        )
+        poster.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(poster)
         menu.addItem(.separator())
         menu.addItem(actionItem("Fit to View", GeoActionFit))
         menu.addItem(
@@ -193,6 +200,13 @@ enum MainMenu {
         )
         connect.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(connect)
+        let export = NSMenuItem(
+            title: "Export Poster as PNG…",
+            action: #selector(MainWindow.exportPoster(_:)),
+            keyEquivalent: "e"
+        )
+        export.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(export)
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Close",

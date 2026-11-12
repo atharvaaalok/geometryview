@@ -29,6 +29,10 @@ struct LayoutInput {
     u32 sort = GeoSortName;
     /// What a search found in the folder, or null with no search.
     const std::unordered_set<u32>* matches = nullptr;
+    /// A poster: the view printed on one sheet, its title above and a footer rule below, with
+    /// nothing hovered or selected; `posterDate` is printed in the foot.
+    bool poster = false;
+    std::string_view posterDate;
 };
 
 /// What a layout found out, beside its items: where things are, for keys and wanted pictures.

@@ -240,6 +240,14 @@ float geo_gallery_reveal(const GeoGallery* gallery) {
     return gallery->gallery.reveal();
 }
 
+void geo_gallery_set_poster(GeoGallery* gallery, bool poster, const char* date) {
+    gallery->gallery.setPoster(poster, date != nullptr ? date : "");
+}
+
+bool geo_gallery_poster(const GeoGallery* gallery) {
+    return gallery->gallery.poster();
+}
+
 void geo_gallery_set_reading(GeoGallery* gallery, uint32_t file, float fraction) {
     if (file < gallery->gallery.tree().fileCount()) {
         gallery->gallery.setReading(file, fraction);

@@ -24,7 +24,7 @@ test("the icons the chrome uses are all there", async () => {
   for (const name of ["eye", "eyeSlash", "ghost", "scope", "undo", "redo", "seeThrough", "scissors",
                       "palette", "cube", "fit", "chevron", "assembly", "search", "folder",
                       "folderPlus", "file", "plus", "close", "parts", "plates", "sheet", "ladders",
-                      "atlas", "catalogue"]) {
+                      "atlas", "catalogue", "poster"]) {
     assert.ok(iconMarkup[name], name);
   }
 });

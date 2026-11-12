@@ -125,6 +125,7 @@ final class MainWindow: NSWindow {
             next.choose(chosen)
             apply(next, remember: false)
         }
+        check.usePoster = { [weak self] poster in self?.setPoster(poster) }
         Task {
             await check.run(root: root.url, folder: folder)
         }
@@ -273,12 +274,14 @@ final class MainWindow: NSWindow {
         galleryController.onFolderChanged = { [weak self] in self?.refreshMasthead() }
         galleryController.onChanged = { [weak self] in self?.refreshGalleryToolbar() }
         galleryController.onSearchChanged = { [weak self] in self?.refreshGallerySearch() }
+        galleryController.view.onLeavePoster = { [weak self] in self?.setPoster(false) }
         galleryController.setStyle(look.engineLook.style)
         galleryToolbar.onView = { [weak self] view in self?.galleryController.setView(view) }
         galleryToolbar.onSheet = { [weak self] options in
             self?.galleryController.setSheet(options)
         }
         galleryToolbar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
+        galleryToolbar.onPoster = { [weak self] in self?.togglePoster(nil) }
         libraryCard.onSearch = { [weak self] query in self?.galleryController.search(query) }
         libraryCard.onSearchDone = { [weak self] in
             guard let self, inGallery else {
@@ -704,6 +707,11 @@ final class MainWindow: NSWindow {
     /// Ticks the menu's look items.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(togglePoster(_:)):
+            item.state = galleryController.gallery.poster ? .on : .off
+            return inGallery
+        case #selector(exportPoster(_:)):
+            return inGallery
         case #selector(chooseGalleryView(_:)):
             let enabled = galleryController.gallery.views & (1 << UInt32(item.tag)) != 0
             item.isHidden = !enabled
@@ -816,6 +824,61 @@ final class MainWindow: NSWindow {
             query: galleryController.gallery.search,
             found: galleryController.gallery.matches
         )
+    }
+
+    /// Show as Poster (⌥⌘P): the view printed on one sheet, the cards and toolbar put away. Esc
+    /// or the same item again comes back.
+    @objc func togglePoster(_ sender: Any?) {
+        guard inGallery else {
+            return
+        }
+        setPoster(!galleryController.gallery.poster)
+    }
+
+    private func setPoster(_ poster: Bool) {
+        galleryController.view.contentInsets =
+            poster
+            ? NSEdgeInsets(top: 30, left: 30, bottom: 30, right: 30)
+            : NSEdgeInsets(top: 96, left: 340, bottom: 84, right: 18)
+        for view in [masthead, libraryCard, galleryToolbar] as [NSView] {
+            view.isHidden = poster
+        }
+        if poster {
+            dismissCard()
+        }
+        galleryController.setPoster(poster)
+    }
+
+    /// Export Poster as PNG… (⇧⌘E): the view as a poster, saved where the person chooses.
+    @objc func exportPoster(_ sender: Any?) {
+        guard inGallery else {
+            return
+        }
+        let wasPoster = galleryController.gallery.poster
+        if !wasPoster {
+            setPoster(true)
+        }
+        let image = galleryController.view.posterImage()
+        if !wasPoster {
+            setPoster(false)
+        }
+        guard let image else {
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(galleryController.title) poster.png"
+        panel.beginSheetModal(for: self) { response in
+            guard response == .OK, let url = panel.url,
+                let data = NSBitmapImageRep(cgImage: image).representation(
+                    using: .png,
+                    properties: [:]
+                )
+            else {
+                return
+            }
+            try? data.write(to: url)
+        }
     }
 
     /// View as Plates (⌘1) … : the gallery's views, while it shows.
