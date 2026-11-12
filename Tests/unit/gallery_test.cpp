@@ -1049,6 +1049,45 @@ TEST_CASE("a part's card stays inside the view, the leftmost one's too, in every
     }
 }
 
+TEST_CASE("a part is hit where it stands, not over its picture's clear margins") {
+    std::vector<Entry> entries;
+    Gallery g = sizesWithATower(entries);
+    REQUIRE(g.setView(GeoViewPlates));
+    g.layout();
+    REQUIRE(countText(g, "DETAIL A ") == 1);
+    REQUIRE(countText(g, "DETAIL B ") == 1);
+    const u32 washer = g.tree().fileAt("washer-m1.step");
+    // Anywhere in a part's own box hits that part: its bubble and its label too, though the
+    // tower's square picture reaches over the bubble beside it.
+    for (const LayoutResult::Place& place : g.result().parts) {
+        CAPTURE(g.tree().file(place.index).path);
+        for (int i = 0; i <= 6; ++i) {
+            for (int j = 0; j <= 4; ++j) {
+                const float x = place.x + 4.0f + (place.w - 8.0f) * float(i) / 6.0f;
+                const float y = place.y + 4.0f + (place.h - 8.0f) * float(j) / 4.0f;
+                CAPTURE(x);
+                CAPTURE(y);
+                const GeoGalleryHit at = g.hit(x, y);
+                CHECK(at.target_kind == GeoTargetFile);
+                CHECK(at.target == place.index);
+            }
+        }
+    }
+    // And → steps through them in order, from the speck.
+    g.click(GeoTargetFile, washer, false);
+    std::vector<u32> order = {washer};
+    for (usize i = 1; i < g.result().parts.size(); ++i) {
+        g.key(GeoKeyRight);
+        g.layout();
+        order.push_back(g.selected());
+    }
+    std::vector<u32> placed;
+    for (const LayoutResult::Place& place : g.result().parts) {
+        placed.push_back(place.index);
+    }
+    CHECK(order == placed);
+}
+
 // ---- G6: Ladders
 // ----------------------------------------------------------------------------------
 

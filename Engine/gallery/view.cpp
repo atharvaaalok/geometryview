@@ -603,7 +603,8 @@ void Gallery::layoutPeek() {
 
 GeoGalleryHit Gallery::hit(float x, float y) const {
     GeoGalleryHit hit{GeoTargetNone, 0, 0};
-    // The topmost item with a target under the point; text and pictures by their boxes. Peek's
+    // The topmost item with a target under the point: text by its box, a picture by its part's.
+    // Peek's
     // card covers the view: only what is on it, in the view's points, can be hit.
     const std::vector<GeoGalleryItem>& items = display_.items();
     const bool peeking = peek_ != kNone;
@@ -632,6 +633,19 @@ GeoGalleryHit Gallery::hit(float x, float y) const {
             x = contentX + laneScroll(it->lane);
         }
         float x0 = it->x, y0 = it->y, x1 = it->x + it->width, y1 = it->y + it->height;
+        // A picture is hit where its part is, not over the whole picture: a tall, narrow part's
+        // square picture is mostly clear, and its margins lie over the parts beside it.
+        if (it->kind == GeoItemPicture && (it->flags & GeoItemTurn) == 0 &&
+            it->file < tree_.fileCount()) {
+            if (const std::optional<Picture>& p = tree_.file(it->file).picture;
+                p && p->width > 0 && p->part[2] > 0.0f && p->part[3] > 0.0f) {
+                const float k = it->width / float(p->width); // points a pixel, as drawn
+                x0 = it->x + p->part[0] * k;
+                y0 = it->y + p->part[1] * k;
+                x1 = x0 + p->part[2] * k;
+                y1 = y0 + p->part[3] * k;
+            }
+        }
         if (x0 > x1) {
             std::swap(x0, x1);
         }
