@@ -31,6 +31,7 @@ typedef enum GeoGalleryItemFlags {
     GeoItemFixed = 16,  // placed in the view, not the content: it does not scroll (Peek)
     GeoItemSheet = 32,  // a rectangle filled with the drawing style's own sheet, as the gallery's
     GeoItemStale = 64,  // drawn at 45%: a picture being drawn again, its file changed
+    GeoItemLost = 128,  // drawn at 35%: a folder that can no longer be read, as last seen
 } GeoGalleryItemFlags;
 
 /// What a click on an item means.
@@ -38,8 +39,9 @@ typedef enum GeoGalleryTargetKind {
     GeoTargetNone = 0,
     GeoTargetFolder = 1,
     GeoTargetFile = 2,
-    GeoTargetMore = 3, // "show all" of a size band cut short
-    GeoTargetPeek = 4, // Peek's card (0), where a click does nothing, or its close button (1)
+    GeoTargetMore = 3,      // "show all" of a size band cut short
+    GeoTargetPeek = 4,      // Peek's card (0), where a click does nothing, or its close button (1)
+    GeoTargetReconnect = 5, // the way back to a folder that can no longer be read
 } GeoGalleryTargetKind;
 
 typedef struct GeoGalleryItem {
@@ -114,6 +116,7 @@ typedef enum GeoGalleryActionKind {
     GeoActionOpenFile = 3,    // target: the file, to open in the viewer
     GeoActionPeek = 4,        // target: the file
     GeoActionLeave = 5,       // at the top already: close the gallery
+    GeoActionReconnect = 6,   // ask again to read the folder
 } GeoGalleryActionKind;
 
 typedef struct GeoGalleryAction {
@@ -267,6 +270,10 @@ uint32_t geo_gallery_matches(const GeoGallery* gallery);
 /// front end sets the viewport to the page it prints.
 void geo_gallery_set_poster(GeoGallery* gallery, bool poster, const char* date);
 bool geo_gallery_poster(const GeoGallery* gallery);
+
+/// The folder can no longer be read (in the browser, its permission lapsed): what was last seen
+/// shows faded, under a card with one way back, Reconnect, whose click returns GeoActionReconnect.
+void geo_gallery_set_lost(GeoGallery* gallery, bool lost);
 
 /// A file being read: how far, from 0 to 1, shown as a mustard bar on its measured box; negative
 /// once it is not. A picture ends it.

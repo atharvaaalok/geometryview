@@ -18,6 +18,28 @@ export class GalleryLibrary {
   #on;
   #worker = null;
   #folders = null; // the store's folders, which read a connected folder's files
+  #lost = false;
+
+  /** The folder can no longer be read: show only what was kept. */
+  setLost(lost) {
+    this.#lost = lost;
+    if (!lost) {
+      this.#done.clear();
+      this.#failed.clear();
+    }
+  }
+
+  // What was kept of a file, without reading it: its key from the last listing's size and time.
+  async #kept(w) {
+    const root = this.#root, spec = this.#spec;
+    if (!root || !spec) return;
+    const key = await keyOf({ source: root.name, path: w.path, size: w.bytes, modified: w.modified,
+                              version: this.#version });
+    const picture = await pictureKeyOf({ ...spec, folderColor: w.folderColor, version: this.#version });
+    const kept = await keptPicture(key, picture);
+    if (kept?.facts) this.#on.facts?.(w.path, kept.facts);
+    if (kept?.png && kept.note) this.#on.picture?.(w.path, kept.png, kept.note);
+  }
   #root = null; // { id, name }
   #spec = null;
   #done = new Set(); // paths with their facts and picture in the current spec
@@ -51,13 +73,17 @@ export class GalleryLibrary {
     this.#done.clear();
   }
 
-  /** Replaces what is wanted: [{ path, band (1 in view .. 3 elsewhere), order, folderColor, bytes }]. */
+  /**
+   * Replaces what is wanted: [{ path, band (1 in view .. 3 elsewhere), order, folderColor, bytes,
+   * modified }]. While the folder cannot be read, only what was kept is shown, found by the size and
+   * time the last listing gave.
+   */
   want(wants) {
     const jobs = [];
     for (const w of wants) {
       if (this.#done.has(w.path) || this.#failed.has(w.path)) continue;
       jobs.push({ id: w.path, band: kBands[w.band] ?? "prefetch", order: w.order, bytes: w.bytes ?? 0,
-                  run: (signal) => this.#draw(w.path, w.folderColor, signal) });
+                  run: (signal) => (this.#lost ? this.#kept(w) : this.#draw(w.path, w.folderColor, signal)) });
     }
     this.#importers.want(jobs, {
       onDone: (path) => this.#done.add(path),
@@ -73,6 +99,8 @@ export class GalleryLibrary {
     if (!root || !spec) return;
     const file = await this.#folders.file(root.id, path);
     if (!file) throw new Error("This file could not be read.");
+    // Its size and time, kept with the listing, find its picture again if the folder cannot be read.
+    this.#on.measured?.(path, file.size, file.lastModified);
     const key = await keyOf({ source: root.name, path, size: file.size, modified: file.lastModified,
                               version: this.#version });
     const picture = await pictureKeyOf({ ...spec, folderColor, version: this.#version });

@@ -14,6 +14,7 @@ import { Actions, cssColour, Flags, Kinds, Targets, TrackKinds, Transitions } fr
 const kAscent = 1.025, kLine = 1.3; // IBM Plex Mono, in ems, as the core reckons
 const kFaded = 0.22; // what a search did not find
 const kStale = 0.45; // a picture being drawn again
+const kLost = 0.35; // a folder that can no longer be read, as last seen
 const kEase = "cubic-bezier(0.3, 0.7, 0.2, 1)";
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -224,7 +225,8 @@ export class GalleryView {
           continue;
       }
       const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
-      const opacity = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1);
+      const opacity = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1) *
+        (item.flags & Flags.Lost ? kLost : 1);
       node.style.opacity = opacity === 1 ? "" : String(opacity);
       // Headings stay above what scrolls under them.
       node.style.zIndex = String(sticky ? items.length + i : i);
@@ -375,7 +377,8 @@ export class GalleryView {
     for (const item of items) {
       if (item.flags & Flags.Fixed) continue;
       const base = item.kind === Kinds.Rect && item.flags & Flags.Hatched ? 0.8 : 1;
-      g.globalAlpha = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1);
+      g.globalAlpha = base * (item.flags & Flags.Fading ? kFaded : 1) * (item.flags & Flags.Stale ? kStale : 1) *
+        (item.flags & Flags.Lost ? kLost : 1);
       switch (item.kind) {
         case Kinds.Rect: this.#canvasRect(g, item, width, height); break;
         case Kinds.Text: this.#canvasText(g, item); break;
@@ -619,7 +622,7 @@ export class GalleryView {
     const hit = this.#core.hit(x, y);
     if (this.#core.hover(hit.kind, hit.target)) this.reload();
     const pointing = hit.kind === Targets.Folder || hit.kind === Targets.File || hit.kind === Targets.More ||
-      (hit.kind === Targets.Peek && hit.target === 1);
+      hit.kind === Targets.Reconnect || (hit.kind === Targets.Peek && hit.target === 1);
     this.#clip.style.cursor = pointing ? "pointer" : "";
   }
 

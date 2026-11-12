@@ -3,9 +3,10 @@
 // carries it across; this reads the items from the module's memory.
 
 export const Kinds = Object.freeze({ Rect: 0, Text: 1, Picture: 2, Line: 3 });
-export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64 });
-export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4 });
-export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5 });
+export const Flags = Object.freeze({ Dashed: 1, Hatched: 2, Sticker: 4, Fading: 8, Fixed: 16, Sheet: 32, Stale: 64, Lost: 128 });
+export const Targets = Object.freeze({ None: 0, Folder: 1, File: 2, More: 3, Peek: 4, Reconnect: 5 });
+export const Actions = Object.freeze({ None: 0, Handled: 1, EnterFolder: 2, OpenFile: 3, Peek: 4, Leave: 5,
+                                       Reconnect: 6 });
 export const Keys = Object.freeze({ Left: 0, Right: 1, Up: 2, Down: 3, Enter: 4, Space: 5, Escape: 6, FolderUp: 7 });
 export const Views = Object.freeze({ Plates: 0, Sheet: 1, Ladders: 2, Atlas: 3, Catalogue: 4 });
 export const ViewNames = Object.freeze(["Plates", "Sheet", "Ladders", "Atlas", "Catalogue"]);
@@ -108,6 +109,9 @@ export class GalleryCore {
     this.#string(date, (d) => this.#m._gv_gallery_set_poster(this.#g, poster ? 1 : 0, d));
   }
   get poster() { return this.#m._gv_gallery_poster(this.#g) !== 0; }
+
+  /** The folder can no longer be read: what was last seen, faded, with Reconnect. */
+  setLost(lost) { this.#m._gv_gallery_set_lost(this.#g, lost ? 1 : 0); }
 
   /** A file being read, 0 to 1, or negative once it is not. */
   setReading(file, fraction) { this.#m._gv_gallery_set_reading(this.#g, file, fraction); }

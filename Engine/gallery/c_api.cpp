@@ -248,6 +248,10 @@ bool geo_gallery_poster(const GeoGallery* gallery) {
     return gallery->gallery.poster();
 }
 
+void geo_gallery_set_lost(GeoGallery* gallery, bool lost) {
+    gallery->gallery.setLost(lost);
+}
+
 void geo_gallery_set_reading(GeoGallery* gallery, uint32_t file, float fraction) {
     if (file < gallery->gallery.tree().fileCount()) {
         gallery->gallery.setReading(file, fraction);
