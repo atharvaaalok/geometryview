@@ -35,6 +35,17 @@ TEST_CASE("folder names read as headings, for any library") {
     CHECK(folderTitle("Nuts And Bolts") == "Nuts And Bolts"); // as written
 }
 
+TEST_CASE("a title shrinks to fit before it is cut short") {
+    const TextStyle big{30.0f, 600, 0.0f, false};
+    const std::string title = "Things That Come in Sizes"; // 25 characters, 450 points at 30
+    CHECK(fitted(title, big, 500.0f, 20.0f).size == 30.0f);
+    CHECK(fitted(title, big, 360.0f, 20.0f).size == doctest::Approx(24.0f));
+    const TextStyle least = fitted(title, big, 200.0f, 20.0f);
+    CHECK(least.size == 20.0f);
+    CHECK(setText(title, least, 200.0f).ends_with("\xE2\x80\xA6"));      // and below that, cut
+    CHECK(fitted(title, TextStyle{12.0f}, 100.0f, 20.0f).size == 12.0f); // never grows
+}
+
 TEST_CASE("file names drop their extension and ordering prefix, and an id gives way") {
     CHECK(fileNames("M6.step").label == "M6");
     CHECK(fileNames("01_bracket.STEP").label == "bracket");

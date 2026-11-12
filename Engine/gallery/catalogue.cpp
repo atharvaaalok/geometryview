@@ -665,7 +665,8 @@ public:
 
     void cover(int side) {
         eyebrow("Parts catalogue", side, 90.0f);
-        out.text(book_.title, st(30.0f, 600), palette.on, X(side, kMargin), Y(136.0f), kText * s);
+        out.text(book_.title, fitted(book_.title, st(30.0f, 600), kText * s, 20.0f * s), palette.on,
+                 X(side, kMargin), Y(136.0f), kText * s);
         const bool one = book_.chapters.size() == 1 && book_.chapters[0].only;
         u32 total = 0;
         for (const Family& f : book_.families) {
@@ -857,7 +858,8 @@ public:
         const Chapter& ch = book_.chapters[p.chapter];
         eyebrow(std::format("Chapter {}", ch.no), side, 200.0f);
         out.target(GeoTargetFolder, ch.folder);
-        out.text(ch.title, st(30.0f, 600), palette.on, X(side, kMargin), Y(250.0f), kText * s);
+        out.text(ch.title, fitted(ch.title, st(30.0f, 600), kText * s, 20.0f * s), palette.on,
+                 X(side, kMargin), Y(250.0f), kText * s);
         out.target(GeoTargetNone, 0);
         out.text(count(ch.count, "part") + " in " + count(ch.families.size(), "folder"), st(12.0f),
                  palette.muted, X(side, kMargin), Y(276.0f), kText * s);
