@@ -73,6 +73,10 @@ targets:
       properties:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # The shell's Documents folder shows in Files, under On My iPhone (with
+        # LSSupportsOpeningDocumentsInPlace below); Xcode's INFOPLIST_KEY_ setting for it is not
+        # one it writes, so it is here.
+        UIFileSharingEnabled: true
         # STEP and STL files open in the shell from Files and the share sheet.
         CFBundleDocumentTypes:
           - CFBundleTypeName: STEP model
@@ -107,7 +111,6 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_UIFileSharingEnabled: YES
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
         # The spike's copy script reads build outputs outside the project.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
