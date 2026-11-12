@@ -29,6 +29,8 @@ add_custom_command(OUTPUT "${app_icon}"
 )
 add_custom_target(app_icon DEPENDS "${app_icon}")
 add_dependencies(GeometryView app_icon)
+# A new icon relinks the app, as the chrome's icons below do, so the bundle gets it and is signed again.
+set_property(TARGET GeometryView APPEND PROPERTY LINK_DEPENDS "${app_icon}")
 
 file(GLOB font_files CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/ThirdParty/ibm-plex-mono/*.ttf")
 # The chrome's icons, shared with the web viewer (App/Sources/Design/Icons.swift reads them). A
