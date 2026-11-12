@@ -48,16 +48,16 @@ def element(a: float, z0: float, z1: float, back: float, front: float) -> Solid:
 def optics() -> list:
     glass = [part(element(a, z0, z1, b, f), name) for name, a, z0, z1, b, f in ELEMENTS]
     spacers = bodies("element_spacers", [ring(15.6, 14.2, 1.2, 47.0), ring(14.6, 13.2, 3.2, 15.8),
-                                         ring(14.6, 12.6, 3.4, 7.4)])
-    retaining = bodies("retaining_rings", [ring(18.6, 15.4, 1.4, 52.4), ring(17.0, 11.0, 1.2, 3.6)])
+                                         ring(13.3, 11.6, 2.4, 7.4)])
+    retaining = bodies("retaining_rings", [ring(18.5, 15.4, 1.4, 52.4), ring(13.3, 10.6, 1.0, 3.8)])
     # The optics barrel: a stepped tube holding each element by its edge.
-    cell = (Profile(19.0, 3.0).line(21.0, 3.0).line(21.0, 54.5).line(18.6, 54.5).line(18.6, 48.0)
+    cell = (Profile(19.0, 5.0).line(21.0, 5.0).line(21.0, 54.5).line(18.6, 54.5).line(18.6, 48.0)
             .line(17.2, 48.0).line(17.2, 42.0).line(15.4, 42.0).line(15.4, 36.5).line(14.8, 36.5)
-            .line(14.8, 19.0).line(14.8, 10.5).line(13.4, 10.5).line(13.4, 4.6).line(19.0, 4.6)
+            .line(14.8, 19.0).line(14.8, 10.5).line(13.4, 10.5).line(13.4, 6.0).line(19.0, 6.0)
             .face())
     barrel = Solid.revolve(cell, 360, Axis.Z)
     # Windows in the cell at the iris, where its blades pass.
-    barrel = barrel - ring(22, 13, 3.0, 33.2)
+    barrel = barrel - ring(22, 13, 3.6, 33.0)
     return glass + [spacers, retaining, part(barrel, "optics_barrel")]
 
 
@@ -85,8 +85,8 @@ def focus() -> list:
     helicoid_inner = part(inner.moved(Location((0, 0, 14.0))), "focus_helicoid_inner")
     helicoid_outer = part(outer.moved(Location((0, 0, 14.0))), "focus_helicoid_outer")
     # The grip: a rubber band, chamfered top and bottom, its face cut with fine axial grooves.
-    grip = (Profile(29.2, 28.6).line(31.6, 28.6).line(32.6, 29.6).line(32.6, 43.4).line(31.6, 44.4)
-            .line(29.2, 44.4).face())
+    grip = (Profile(29.6, 28.6).line(31.6, 28.6).line(32.6, 29.6).line(32.6, 43.4).line(31.6, 44.4)
+            .line(29.6, 44.4).face())
     grip = Solid.revolve(grip, 360, Axis.Z)
     groove = Solid.make_box(1.2, 1.0, 12.4).moved(Location((32.0, -0.5, 30.3)))
     for i in range(60):
@@ -121,14 +121,15 @@ def mount() -> list:
     screws = bodies("mount_screws", [at(screw, x=26.2 * math.cos(math.radians(a)),
                                          y=26.2 * math.sin(math.radians(a)), z=5.0, rz=a)
                                       for a in (20, 110, 200, 290)])
-    pcb = (Solid.make_cylinder(21.0, 0.8) - Solid.make_cylinder(19.6, 1.0).moved(Location((0, 0, -0.1))))
-    pcb = pcb & Solid.make_box(12, 12, 0.8).moved(Location((-6, -21.5, 0)))
-    pins = [Solid.make_cylinder(0.45, 1.2).moved(Location((20.3 * math.cos(math.radians(a)),
-                                                            20.3 * math.sin(math.radians(a)), -0.6)))
+    # The contact board on the mount's face, its pins standing up from it.
+    pcb = (Solid.make_cylinder(25.2, 0.8) - Solid.make_cylinder(22.4, 1.0).moved(Location((0, 0, -0.1))))
+    pcb = pcb & Solid.make_box(12, 12, 0.8).moved(Location((-6, -26.0, 0)))
+    pins = [Solid.make_cylinder(0.45, 1.2).moved(Location((23.8 * math.cos(math.radians(a)),
+                                                            23.8 * math.sin(math.radians(a)), 0.8)))
             for a in range(-104, -76, 4)]
     for pin in pins:
         pcb = pcb + pin
-    return [part(flange, "bayonet_mount"), screws, part(pcb.moved(Location((0, 0, 4.6))), "contact_pcb")]
+    return [part(flange, "bayonet_mount"), screws, part(pcb.moved(Location((0, 0, 5.0))), "contact_pcb")]
 
 
 def build():

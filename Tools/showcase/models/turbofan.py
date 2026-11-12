@@ -65,7 +65,7 @@ def row(name: str, count: int, z: float, r0: float, r1: float, chord: float, sta
 
 
 def fan() -> list:
-    spinner = Profile(0, -478).spline((40, -455), (78, -410), (96, -372)).line(96, -360).line(0, -360).turn()
+    spinner = Profile(0, -478).spline((40, -455), (78, -410), (96, -372)).line(0, -372).turn()
     disk = Profile(0, -372).line(96, -372).line(100, -330).line(108, -300).line(40, -300).line(40, -280) \
         .line(0, -280).turn()
     blades = bodies("fan_blades", [at(blade(-352, 98, 300, 78, 118, 10, 3.5, 22, 62), rz=i * 18)
@@ -128,7 +128,7 @@ def hp_turbine() -> list:
         if i == 1:
             out.append(row("hpt_vanes_2", 44, 231, 134, 171, 15, stator=True))
         out.append(part(ring(hub - 1, 52, 14, z - 7) + ring(70, 52, 34, z - 17), f"hpt_disk_{i}"))
-    out.append(part(Profile(172, 190).line(180, 190).line(186, 268).line(176, 268).turn(), "turbine_housing"))
+    out.append(part(Profile(172, 200).line(180, 200).line(186, 268).line(176, 268).turn(), "turbine_housing"))
     return out
 
 
@@ -138,15 +138,15 @@ def lp_turbine() -> list:
         out.append(row(f"lpt_vanes_{i}", 52 + 4 * i, z - 17, hub + 2, tip, 18, stator=True))
         out.append(row(f"lpt_blades_{i}", 58 + 6 * i, z, hub, tip, 20))
         out.append(part(ring(hub - 1, 36, 12, z - 6), f"lpt_disk_{i}"))
-    out.append(part(Profile(186, 270).line(194, 270).line(214, 420).line(206, 420).turn(), "lpt_housing"))
+    out.append(part(Profile(186, 270).line(194, 270).line(216, 420).line(208, 420).turn(), "lpt_housing"))
     return out
 
 
 def spools() -> list:
-    lp = Profile(22, -300).line(30, -300).line(30, 405).line(22, 405).turn()
+    lp = Profile(22, -280).line(30, -280).line(30, 405).line(22, 405).turn()
     hp = Profile(40, -160).line(52, -160).line(52, 255).line(40, 255).turn()
     out = [part(lp, "lp_shaft"), part(hp, "hp_shaft")]
-    for i, (z, r_in, r_out) in enumerate([(-312, 30, 48), (30, 52, 74), (412, 30, 48)], 1):
+    for i, (z, r_in, r_out) in enumerate([(-262, 30, 48), (30, 52, 74), (412, 30, 48)], 1):
         ball_r = (r_out - r_in) * 0.22
         mid = (r_in + r_out) / 2
         inner_ring = ring(mid - ball_r * 0.6, r_in, 2 * ball_r, z - ball_r)
@@ -159,19 +159,22 @@ def spools() -> list:
 
 def nacelle() -> list:
     """The nacelle round the fan and bypass duct, and the core cowl round the core."""
+    # Where the fan case lines it, the nacelle's inside steps out round the case: two surfaces in one
+    # place would fight to be drawn.
     shell = (Profile(298, -562).spline((318, -574), (334, -556), (340, -500))
              .spline((342, -380), (334, -150), (318, 250)).line(300, 250)
-             .spline((292, 60), (300, -230)).line(304, -230).line(304, -470)
+             .spline((292, 60), (300, -230)).line(304, -230).line(312, -230).line(312, -470).line(304, -470)
              .spline((296, -520), (298, -562)).turn())
     fan_case = Profile(304, -470).line(312, -470).line(312, -230).line(304, -230).turn()
-    cowl = (Profile(178, -300).spline((196, -280), (206, -200)).spline((210, 0), (204, 260), (186, 430))
-            .line(178, 430).spline((196, 260), (202, 0), (196, -200)).line(178, -300).turn())
+    # The core cowl, round the core's casings and wide enough at the back for the last turbine.
+    cowl = (Profile(178, -300).spline((196, -280), (208, -200)).spline((214, 0), (220, 250), (226, 400))
+            .line(226, 430).line(221, 430).spline((216, 250), (210, 0), (198, -200)).line(178, -300).turn())
     return [part(shell, "nacelle_shell"), part(fan_case, "fan_case"), part(cowl, "core_cowl_shell")]
 
 
 def exhaust() -> list:
     plug = Profile(0, 420).line(118, 420).spline((108, 470), (70, 520), (0, 565)).turn()
-    nozzle = Profile(204, 420).line(212, 420).line(190, 478).line(182, 478).turn()
+    nozzle = Profile(208, 420).line(216, 420).line(200, 480).line(192, 480).turn()
     return [part(plug, "exhaust_cone"), part(nozzle, "core_nozzle_shell")]
 
 

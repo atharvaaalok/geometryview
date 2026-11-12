@@ -47,7 +47,7 @@ def base() -> list:
     foot = Solid.make_cylinder(9, 6).moved(Pos(0, 0, -6))
     feet = bodies("feet", [foot.moved(Pos(92 * math.cos(math.radians(a)), 92 * math.sin(math.radians(a)), 0))
                            for a in (45, 135, 225, 315)])
-    plate = (Solid.make_cylinder(BASE_R + 1.5, 26, angle=40) - Solid.make_cylinder(BASE_R - 1, 30).moved(Pos(0, 0, -2)))
+    plate = (Solid.make_cylinder(BASE_R + 1.5, 26, angle=40) - Solid.make_cylinder(BASE_R, 30).moved(Pos(0, 0, -2)))
     plate = at(plate, z=28, rz=-110)
     return [part(case + floor, "base_case"), part(lid, "base_lid"), feet, part(plate, "name_plate")]
 
@@ -89,9 +89,10 @@ def gear_train() -> list:
         for k in range(4):
             wheel = wheel + at(Solid.make_box(wheel_r - 4, 4, GEAR_T).moved(Pos(0, -2, 0)), rz=45 + k * 90)
         wheel = wheel - Solid.make_cylinder(bore, GEAR_T * 3).moved(Pos(0, 0, -GEAR_T))
-        out.append(part(wheel.moved(Pos(0, 0, z)), f"{name}_gear"))
+        # In mesh: a wheel's tooth points at the pinion (-90 degrees) where the pinion has a gap.
+        out.append(part(at(wheel, z=z, rz=-90), f"{name}_gear"))
         pinion = involute_gear(pinion_teeth, MODULE, GEAR_T, bore=8)
-        out.append(part(at(pinion, y=-CENTRES, z=z, rz=180 / pinion_teeth), f"pinion_{i + 1}"))
+        out.append(part(at(pinion, y=-CENTRES, z=z, rz=90 + 180 / pinion_teeth), f"pinion_{i + 1}"))
     return out
 
 
@@ -108,8 +109,9 @@ def arbors() -> list:
 def arms_and_bodies() -> tuple[list, list]:
     arms, worlds = [], []
     for name, r_in, r_out, _, arm_z, reach, angle, radius in PLANETS:
-        collar = ring(r_out + 4, r_in, 8, arm_z - 1)
-        bar = Solid.make_box(reach, 7, 4).moved(Pos(0, -3.5, arm_z + 1))
+        # A collar on the planet's own tube, and the bar out from the collar, clear of the tubes inside.
+        collar = ring(r_out + 4, r_out, 8, arm_z - 1)
+        bar = Solid.make_box(reach - r_out - 2, 7, 4).moved(Pos(r_out + 2, -3.5, arm_z + 1))
         post = Solid.make_cylinder(2.2, 22).moved(Pos(reach, 0, arm_z + 4))
         cup = Solid.make_cylinder(4, 2).moved(Pos(reach, 0, arm_z + 24))
         arm = collar + at(bar + post + cup, rz=angle)
@@ -119,16 +121,17 @@ def arms_and_bodies() -> tuple[list, list]:
         cz = arm_z + 26 + radius
         worlds.append(part(Solid.make_sphere(radius).moved(Pos(cx, cy, cz)), name))
         if name == "earth":
-            moon_arm = Solid.make_box(24, 3, 2).moved(Pos(0, -1.5, 0))
-            moon_arm = at(moon_arm + Solid.make_cylinder(1.2, 8).moved(Pos(24, 0, 0)), rz=angle + 50)
-            arms.append(part(moon_arm.moved(Pos(cx, cy, arm_z + 24 + 6)), "moon_arm"))
-            mx = cx + 24 * math.cos(math.radians(angle + 50))
-            my = cy + 24 * math.sin(math.radians(angle + 50))
-            worlds.append(part(Solid.make_sphere(3.5).moved(Pos(mx, my, arm_z + 24 + 6 + 8 + 3.5)), "moon"))
+            # The moon's arm leaves the earth's post below the planet.
+            moon_arm = Solid.make_box(26, 3, 2).moved(Pos(2.2, -1.5, 0))
+            moon_arm = at(moon_arm + Solid.make_cylinder(1.2, 22).moved(Pos(28, 0, 0)), rz=angle + 50)
+            arms.append(part(moon_arm.moved(Pos(cx, cy, arm_z + 12)), "moon_arm"))
+            mx = cx + 28 * math.cos(math.radians(angle + 50))
+            my = cy + 28 * math.sin(math.radians(angle + 50))
+            worlds.append(part(Solid.make_sphere(3.5).moved(Pos(mx, my, arm_z + 12 + 22 + 3.5)), "moon"))
         if name == "saturn":
             rings = ring(radius * 1.9, radius * 1.3, 1.6, -0.8)
             worlds.append(part(rings.moved(Pos(0, 0, 0) * Rot(X=22)).moved(Pos(cx, cy, cz)), "saturn_rings"))
-    worlds.insert(0, part(Solid.make_sphere(30).moved(Pos(0, 0, 236 + 28)), "sun"))
+    worlds.insert(0, part(Solid.make_sphere(30).moved(Pos(0, 0, 236 + 29.5)), "sun"))
     return arms, worlds
 
 
