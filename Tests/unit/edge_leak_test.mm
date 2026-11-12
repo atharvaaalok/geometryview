@@ -62,4 +62,20 @@ TEST_CASE("a part's edges behind another's face stay hidden, in an assembly with
     }
 }
 
+TEST_CASE("a thin wall hides what is just behind it, in an assembly with a coarse tolerance") {
+    @autoreleasepool {
+        const std::string blob = test::importThinTube(GEO_TEST_WORKER_PATH);
+        const std::string png = (fs::temp_directory_path() / "edge-leak-tube.png").string();
+        const GeoRenderOptions options = test::thinTubeView();
+        REQUIRE(
+            geo_render_blob_to_png(GEO_TEST_SHADER_LIBRARY, blob.c_str(), png.c_str(), &options));
+        u32 width = 0, height = 0;
+        const std::vector<u8> gray = readGray(png, width, height);
+        REQUIRE(!gray.empty());
+        test::checkWallHidesItsInside(gray, width, height);
+        fs::remove(png);
+        unlink(blob.c_str());
+    }
+}
+
 #endif

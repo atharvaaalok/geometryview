@@ -178,6 +178,31 @@ each segment; the edge pass costs what it did, and the flatness check costs the 
 measurable (it stops at the first curved face).
 
 
+## Addendum (2026-11-12): the chord lift only where one face meets the edge
+
+The lift above was still too much for a part thinner than it. The TF-1 turbofan's fan blades taper
+to nothing at their leading and trailing edges, and its level-0 lift is 0.63 mm: zoomed in, slivers
+of each blade's far outline showed through the blade beside the near one.
+
+An edge is found in its faces' own triangles (`Import/mesh/edges.cpp`), so a segment between two
+faces lies on both exactly; only a segment with a face on one side can have facets beside it sitting
+in front. The chord lift now applies only to those (`rawB == kEdgeNoFace`, in `edges.metal` and
+`edges.wgsl`); a segment between two faces moves by the 1-point floor alone.
+
+- `thin_tube.step` (Tests/data) is a tube with a 2 mm wall in an assembly whose lift is about 8 mm.
+  Before, its foot's inside circle showed through the wall; `edge_leak_test.mm` and its twin in
+  `webgpu_test.mm` now require nothing above the foot's outline. Both fail before the change.
+- Ink kept, at level 0, Technical, 1600 × 1100: demo_drive, PLE120, the U8II motor and the turbofan
+  whole are unchanged to the pixel; cut views move about 200 pixels of 35-130 thousand each way;
+  zoomed into the fan, 135 pixels of far outline are gone.
+
+Most of what showed on the fan was not the lift, though: at level 0 its chord error, 0.31 mm, is
+more than half a blade's thickness near its edges, so the two sides' facets cross there, and the
+outline jumps between the near side and the far, a zigzag of stubs. Each refinement level halves it;
+by level 2 the blades are clean. A part thinner than twice its chord error is drawn this way until
+refined, as in any tessellating viewer; the showcase's blades now keep a finite edge (0.8 mm), as
+real ones do.
+
 ## Addendum: a clear sheet (2026-11-11, ADR 0017)
 
 The composite writes two sources: ink, and the colour beneath times what is kept of it. Blending

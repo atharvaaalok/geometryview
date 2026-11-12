@@ -31,11 +31,13 @@ fn pixelWorldOf(p: vec3f) -> f32 {
     return frame.worldPerPixel;
 }
 
-// Toward the eye by the definition's chord error (`chordLift`, world units), or the floor if that
-// is more: an edge lies on its own faces exactly, but on a curved face the facets beside it can
-// sit a hair in front of it, and the line would show in dashes; and a line has width, which a
-// concave crease's faces would cut into. No more than that, or the edges of what is just behind
-// show through.
+// Toward the eye by the floor, or by the definition's chord error (`chordLift`, world units) where
+// that is more and the segment has a face on one side only. A segment between two faces lies on
+// both faces' triangles exactly, and needs only the floor: a line has width, which a concave
+// crease's faces would cut into. Where only one face meets it, the facets beside it on a curved
+// face can sit a hair in front, and the line would show in dashes. No more than that, or the edges
+// of what is just behind show through: the far side of a part thinner than the lift, such as a fan
+// blade at its edges.
 fn lift(p: vec3f, chordLift: f32) -> vec3f {
     let offset = max(chordLift, frame.edgeFloor * style.pixelsPerPoint * pixelWorldOf(p));
     var toward = -frame.forward;
@@ -103,7 +105,7 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
 
     let a = transformPoint(o, decodePosition(d, min(segmentA, lastVertex)));
     let b = transformPoint(o, decodePosition(d, min(segmentB, lastVertex)));
-    let chordLift = d.edgeLift * length(o.row0.xyz);
+    let chordLift = select(0.0, d.edgeLift * length(o.row0.xyz), rawB == kEdgeNoFace);
     let clipA = frame.viewProjection * vec4f(lift(a, chordLift), 1.0);
     let clipB = frame.viewProjection * vec4f(lift(b, chordLift), 1.0);
     if (kind == 0u || clipA.w <= 1e-6 || clipB.w <= 1e-6) {

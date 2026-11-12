@@ -9,9 +9,11 @@
 #include "step/step_import.h"
 #include "step_fixture.h"
 
-#include <doctest/doctest.h>
 #include <algorithm>
 #include <cstdlib>
+#include <doctest/doctest.h>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -94,6 +96,70 @@ inline void checkNothingShowsThrough(const std::vector<u8>& gray, u32 width, u32
             leaked += gray[usize(y) * width + x] < 160 ? 1 : 0;
         }
     }
+    CHECK(leaked == 0);
+}
+
+// A tube 40 mm across with a 2 mm wall, in an assembly made coarse by a speck 20 m away, so its
+// definition's chord lift is about 8 mm, four times its wall (Tests/data/thin_tube.step, written by
+// build123d: a cylinder of radius 20 less one of 18, 30 tall). Seen from a little above, the inside
+// circle at its foot is 2 mm behind the wall's front: lifted by the chord error it showed through
+// as a second ellipse, as the far side of a fan blade at its edges showed through the blade. A
+// segment between two faces is lifted only by the floor, and stays hidden.
+inline std::string importThinTube(const char* workerPath) {
+    std::ifstream file(GEO_TEST_DATA_DIR "/thin_tube.step", std::ios::binary);
+    REQUIRE(file);
+    const std::string text((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+    char path[] = "/tmp/geotubeXXXXXX";
+    const int fd = mkstemp(path);
+    REQUIRE(fd >= 0);
+    import::StepOptions options;
+    options.workerPath = workerPath;
+    import::StepStats stats;
+    std::string error;
+    const bool ok = import::importStep({reinterpret_cast<const u8*>(text.data()), text.size()}, fd,
+                                       nullptr, options, stats, error);
+    close(fd);
+    REQUIRE_MESSAGE(ok, error);
+    return path;
+}
+
+inline GeoRenderOptions thinTubeView() {
+    GeoRenderOptions options = hiddenBoxView();
+    options.elevation_degrees = 25.0;
+    options.isolate = "tube";
+    return options;
+}
+
+// Below the tube's front, across its middle, the foot's outline is the only ink: nothing a few
+// pixels above it, where the inside circle would show through the wall.
+inline void checkWallHidesItsInside(const std::vector<u8>& gray, u32 width, u32 height) {
+    u32 left = width, right = 0;
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            if (gray[usize(y) * width + x] < 96) {
+                left = std::min(left, x);
+                right = std::max(right, x);
+            }
+        }
+    }
+    REQUIRE(right > left + 200);
+    u32 columns = 0, leaked = 0;
+    for (u32 x = left + (right - left) * 3 / 10; x < right - (right - left) * 3 / 10; ++x) {
+        u32 foot = 0;
+        for (u32 y = height; y-- > 0;) {
+            if (gray[usize(y) * width + x] < 96) {
+                foot = y;
+                break;
+            }
+        }
+        REQUIRE(foot > 40);
+        ++columns;
+        for (u32 y = foot - 40; y < foot - 6; ++y) {
+            leaked += gray[usize(y) * width + x] < 160 ? 1 : 0;
+        }
+    }
+    CHECK(columns > 100);
     CHECK(leaked == 0);
 }
 
