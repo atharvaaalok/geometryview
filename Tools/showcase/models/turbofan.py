@@ -21,20 +21,30 @@ LEVEL = 2
 AXIS = 480.0  # height of the engine's axis above the floor
 
 
+# How thick a blade's leading and trailing edges stay, as real ones do. A thinner edge is thinner
+# than twice the engine's coarsest chord error (0.31 mm a side at level 0), so its two sides' facets
+# would cross there, and the outline would zigzag between them until refined.
+EDGE = 0.8
+
+
 def section(r: float, chord: float, thick: float, stagger: float, z: float,
-            camber: float = 0.05, n: int = 6) -> Wire:
+            camber: float = 0.05, n: int = 10) -> Wire:
     """An airfoil at radius r, its chord turned `stagger` degrees from the axis."""
-    # Round at both edges (a sine's thickness), so the closed spline never folds at the trailing
-    # edge, which a loft cannot pass through.
-    pts = []
-    for k in range(n + 1):
-        s = k / n
-        half = 0.5 * thick * math.sin(math.pi * s) ** 0.7
-        pts.append(((s - 0.5) * chord, camber * chord * 4 * s * (1 - s) + half))
-    for k in range(n - 1, 0, -1):
-        s = k / n
-        half = 0.5 * thick * math.sin(math.pi * s) ** 0.7
-        pts.append(((s - 0.5) * chord, camber * chord * 4 * s * (1 - s) - half))
+    # A sine's thickness, never less than EDGE, sampled closer together near the edges, and round
+    # at both: a point beyond each edge turns the closed spline there without folding, which a
+    # loft cannot pass through.
+    stations = [(1 - math.cos(math.pi * k / n)) / 2 for k in range(n + 1)]
+
+    def half(s: float) -> float:
+        return max(0.5 * thick * math.sin(math.pi * s) ** 0.7, EDGE / 2)
+
+    def mean(s: float) -> float:
+        return camber * chord * 4 * s * (1 - s)
+
+    pts = [(-0.5 * chord - EDGE / 2, 0.0)]
+    pts += [((s - 0.5) * chord, mean(s) + half(s)) for s in stations]
+    pts += [(0.5 * chord + EDGE / 2, 0.0)]
+    pts += [((s - 0.5) * chord, mean(s) - half(s)) for s in reversed(stations)]
     st = math.radians(stagger)
     along = Vector(0, math.sin(st), math.cos(st))
     across = Vector(0, math.cos(st), -math.sin(st))
