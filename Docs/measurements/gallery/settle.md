@@ -47,6 +47,9 @@ at its root, as the recording that prompted this showed it.
 | Mac, warm: a first picture laid out from its note at once | 5 | 3 | 17 | 100 | 0 | 0.16 s |
 | Mac, warm: covers from fixed candidates, kept; strips in fixed slots | 4 | 0 | 0 | 0 | 0 | none |
 | Mac, cold: the same | 360 | 67 | 72 | 2 | 3 | 17.3 s |
+| Mac, warm: arrivals settle in steps (0.1 s after a burst begins, then every 0.75 s at most) | 4 | 1 | 7 | 1 | 0 | 0.11 s |
+| Mac, cold: the same | 281 | 11 | 30 | 1 | 1 | 13.9 s |
+| Web, cold: candidates smallest first, then settling in steps | – | 3 | 35 | 1 | 0 | 51.8 s |
 
 What a warm open still did then was all in its first 0.16 s, as facts arrive 128 look-ups at a
 time: covers re-picked from the parts measured so far, and strips stepped through them. With each
@@ -58,3 +61,10 @@ folder's own shelf taking in each newly measured part in size order, and a part'
 to its outline when its picture comes.
 - Web, cold: one import at a time, so the first change comes at 23.7 s and changes go on past
   90 s.
+
+Settling in steps: facts, failures and a file's first picture wait in the core until the front
+end settles, 0.1 s after the first arrival of a burst, then at most every 0.75 s while it goes
+on (a picture replacing one shown, and what a rescan re-applies, apply at once). A cold open of
+test-models now changes 11 times instead of 67, and a warm one once, in its first 0.11 s, as the
+last look-ups land. On the web, which reads one file at a time, a cold open changes 3 times in
+90 s; it first did 40, still changing at 90 s.

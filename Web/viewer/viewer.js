@@ -1651,6 +1651,7 @@ async function runGalleryTest() {
     const started = performance.now();
     while (g.waitingInView > 0 && performance.now() - started < Number(params.get("wait") ?? 240000)) await sleep(250);
     await sleep(400);
+    g.settleNow(); // what has arrived, laid out now rather than at the next step
     g.view.repaint();
     await new Promise(requestAnimationFrame);
     return Math.round(performance.now() - started) / 1000;

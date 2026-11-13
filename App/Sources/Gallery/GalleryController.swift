@@ -55,6 +55,8 @@ final class GalleryController {
     init(views: UInt32 = (1 << GeoViewPlates.rawValue) | (1 << GeoViewSheet.rawValue)) {
         view = GalleryView(gallery: gallery)
         gallery.views = views
+        // What arrives waits for a settle, so a folder being read moves in steps (settleSoon).
+        gallery.setBatching(true)
         gallery.setSheet(scale: sheet.scale, cell: sheet.cell, sort: sheet.sort)
         gallery.setLadders(shared: laddersShared)
         view.onAction = { [weak self] action in self?.act(action) }
@@ -114,11 +116,13 @@ final class GalleryController {
                 while waitingInView > 0, Date().timeIntervalSince(start) < 20 {
                     try? await Task.sleep(for: .milliseconds(150))
                 }
+                settleNow()
                 view.posterPage(into: context)
             }
             catalogue(spread: open)
         } else {
             progress?(1, 1)
+            settleNow()
             view.posterPage(into: context)
         }
         context.closePDF()
@@ -297,6 +301,8 @@ final class GalleryController {
                 gallery.setFailure(file, message)
             }
         }
+        // What was known is no arrival: laid out at once.
+        gallery.settle()
     }
 
     private func rescanned(_ list: [ScanEntry]) {
@@ -412,6 +418,7 @@ final class GalleryController {
             }
             facts[rel] = f
             gallery.setFacts(file, f)
+            settleSoon()
         case .picture(let path, let png, let picture):
             guard let rel = relative(path), let file = gallery.file(at: rel) else {
                 return
@@ -422,6 +429,7 @@ final class GalleryController {
             // whole until the new one shows.
             if pictures[rel] == nil {
                 gallery.setPicture(file, picture)
+                settleSoon()
             }
             pictures[rel] = (png, picture, styleRaw)
             loadImage(png, for: rel)
@@ -431,6 +439,7 @@ final class GalleryController {
             }
             failures[rel] = message
             gallery.setFailure(file, message)
+            settleSoon()
         case .progress(let path, let done, let total):
             guard total > 0, let rel = relative(path), let file = gallery.file(at: rel) else {
                 return
@@ -584,6 +593,37 @@ final class GalleryController {
     private var repaintScheduled = false
 
     /// Facts and pictures arrive in bursts: one layout for each burst.
+    private var settleScheduled = false
+    private var lastSettle: Date?
+
+    /// Lays out what has arrived a moment after a burst begins, and at most every 0.75 s while
+    /// it goes on: a folder being read moves in steps, and a warm one, told everything at once,
+    /// in one.
+    private func settleSoon() {
+        guard !settleScheduled else {
+            return
+        }
+        settleScheduled = true
+        let since = lastSettle.map { Date().timeIntervalSince($0) } ?? .infinity
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.1, 0.75 - since)) { [weak self] in
+            self?.settleNow()
+        }
+    }
+
+    /// Lays out at once whatever waits, for the checks and for a poster: true if anything did.
+    @discardableResult
+    func settleNow() -> Bool {
+        settleScheduled = false
+        lastSettle = Date()
+        guard gallery.settle() else {
+            return false
+        }
+        view.reload()
+        onSearchChanged?()
+        scheduleWant()
+        return true
+    }
+
     private func scheduleReload(repaint: Bool = false) {
         repaintScheduled = repaintScheduled || repaint
         guard !reloadScheduled else {

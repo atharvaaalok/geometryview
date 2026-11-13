@@ -10,6 +10,9 @@ namespace geo::gallery {
 void Gallery::setEntries(std::string_view title, std::span<const Entry> entries) {
     tree_.build(title, entries);
     freshStart();     // what was kept names files of the old tree
+    waitingFacts_.clear(); // and so does what waits
+    waitingPictures_.clear();
+    waitingFailures_.clear();
     listing_ = false; // listed; a front end showing an empty stand-in says it is still listing
     folder_ = 0;
     viewOf_.clear();
@@ -22,6 +25,62 @@ void Gallery::setEntries(std::string_view title, std::span<const Entry> entries)
 }
 
 void Gallery::setFacts(u32 file, Facts facts) {
+    if (batching_) {
+        waitingFacts_[file] = std::move(facts);
+        return;
+    }
+    applyFacts(file, std::move(facts));
+}
+
+void Gallery::setPicture(u32 file, const Picture& picture) {
+    // A file's first picture moves things: it waits. One replacing a picture shown only re-inks,
+    // and its pixels come with it: at once.
+    if (batching_ && !tree_.file(file).picture) {
+        waitingPictures_[file] = picture;
+        return;
+    }
+    waitingPictures_.erase(file);
+    applyPicture(file, picture);
+}
+
+void Gallery::setFailure(u32 file, std::string message) {
+    if (batching_) {
+        waitingFailures_[file] = std::move(message);
+        return;
+    }
+    applyFailure(file, std::move(message));
+}
+
+bool Gallery::settle() {
+    if (unsettled() == 0) {
+        return false;
+    }
+    const bool searching = matches_.has_value();
+    std::unordered_map<u32, Facts> facts;
+    std::unordered_map<u32, Picture> pictures;
+    std::unordered_map<u32, std::string> failures;
+    facts.swap(waitingFacts_);
+    pictures.swap(waitingPictures_);
+    failures.swap(waitingFailures_);
+    // As if each had been told now: the search found once, after all of them.
+    matches_.reset();
+    for (auto& [file, f] : facts) {
+        applyFacts(file, std::move(f));
+    }
+    for (const auto& [file, p] : pictures) {
+        applyPicture(file, p);
+    }
+    for (auto& [file, message] : failures) {
+        applyFailure(file, std::move(message));
+    }
+    if (searching) {
+        findMatches();
+    }
+    dirty_ = true;
+    return true;
+}
+
+void Gallery::applyFacts(u32 file, Facts facts) {
     if (tree_.file(file).facts == facts) {
         return; // told again: nothing to lay out
     }
@@ -32,7 +91,7 @@ void Gallery::setFacts(u32 file, Facts facts) {
     dirty_ = true;
 }
 
-void Gallery::setPicture(u32 file, const Picture& picture) {
+void Gallery::applyPicture(u32 file, const Picture& picture) {
     if (const File& known = tree_.file(file);
         known.picture == picture && !known.stale && known.reading < 0.0f) {
         return; // told again, its pixels perhaps new: nothing to lay out
@@ -124,7 +183,7 @@ void Gallery::seen(u32 file) {
     }
 }
 
-void Gallery::setFailure(u32 file, std::string message) {
+void Gallery::applyFailure(u32 file, std::string message) {
     if (tree_.file(file).failure == message) {
         return;
     }

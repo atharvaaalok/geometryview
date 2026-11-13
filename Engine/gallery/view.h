@@ -131,6 +131,17 @@ public:
     const std::optional<std::unordered_set<u32>>& matches() const { return matches_; }
     void peek(u32 file);
     u32 peeking() const { return peek_; }
+    /// Whether what arrives waits for settle(): facts, failures, and a file's first picture,
+    /// which change where things are. A picture that replaces one shown applies at once, so its
+    /// new pixels never meet its old place. Front ends settle a moment after a burst begins and
+    /// at most so often after, so a folder being read moves in steps, not at every file.
+    void setBatching(bool batching) { batching_ = batching; }
+    /// Applies everything waiting; returns whether anything was.
+    bool settle();
+    /// How many arrivals wait for settle().
+    usize unsettled() const {
+        return waitingFacts_.size() + waitingPictures_.size() + waitingFailures_.size();
+    }
     /// Whether the folder is still being listed: an empty one says nothing until it is. A gallery
     /// given no entries yet says nothing either; setEntries ends it, so a front end that shows an
     /// empty stand-in while it lists a folder sets it again.
@@ -188,6 +199,14 @@ private:
     bool listing_ = true;       // nothing listed yet, or the folder is still being listed
     // What the layouts keep until a natural moment: covers' picks, groups' scales, covers' rows.
     Kept kept_;
+    // Arrivals waiting for settle(), while batching.
+    bool batching_ = false;
+    std::unordered_map<u32, Facts> waitingFacts_;
+    std::unordered_map<u32, Picture> waitingPictures_;
+    std::unordered_map<u32, std::string> waitingFailures_;
+    void applyFacts(u32 file, Facts facts);
+    void applyPicture(u32 file, const Picture& picture);
+    void applyFailure(u32 file, std::string message);
     /// A natural moment (another view, folder, size or setting): the next layout starts afresh,
     /// as if everything known had been known all along.
     void freshStart() { kept_.clear(); }
