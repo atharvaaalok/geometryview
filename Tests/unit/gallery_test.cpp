@@ -860,6 +860,53 @@ TEST_CASE("in the sheet, every picture's ink stays in its cell, clear of every l
     }
 }
 
+namespace {
+
+// Gives the file labelled `label` the door handle's picture: a handle beside a flat reference
+// image, its shadow far below the handle and the image's outline far to its right.
+void doorIn(Gallery& g, std::string_view label) {
+    for (u32 f = 0; f < g.tree().fileCount(); ++f) {
+        if (g.tree().file(f).names.label != label) {
+            continue;
+        }
+        Facts facts;
+        facts.size = {167.0, 18.2, 66.5};
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        g.setFacts(f, facts);
+        Picture p;
+        p.width = p.height = 512;
+        p.mmPerPixel = 0.32214;
+        p.part = {28.0f, 156.0f, 181.0f, 71.0f};
+        p.ink = {12.0f, 154.0f, 464.0f, 263.0f};
+        g.setPicture(f, p);
+        return;
+    }
+    FAIL("no file labelled ", label);
+}
+
+// Every picture's ink inside its file's place in the layout, within `slack` points.
+usize checkInkInPlaces(const Gallery& g, float slack = 0.5f) {
+    usize checked = 0;
+    for (const auto& [file, ink] : inkBoxes(g)) {
+        for (const LayoutResult::Place& place : g.result().parts) {
+            if (place.kind != GeoTargetFile || place.index != file) {
+                continue;
+            }
+            CAPTURE(g.tree().file(file).names.label);
+            CHECK(ink[0] >= place.x - slack);
+            CHECK(ink[0] + ink[2] <= place.x + place.w + slack);
+            CHECK(ink[1] >= place.y - slack);
+            CHECK(ink[1] + ink[3] <= place.y + place.h + slack);
+            ++checked;
+        }
+    }
+    return checked;
+}
+
+} // namespace
+
 TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
     for (const u32 style : {0u, 3u}) {
         for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
@@ -1601,6 +1648,22 @@ TEST_CASE("atlas: each level in draws more, and zooming keeps the point under th
     for (const Spread& spread : spreads(g.display().items(), nullptr, nullptr)) {
         CHECK(spread.spread < 0.01f);
     }
+}
+
+TEST_CASE("atlas: closest, every part's ink stays in its cell") {
+    Gallery g = measured();
+    g.setViews(0b1111);
+    g.setView(GeoViewAtlas);
+    g.layout();
+    const AtlasCamera cam = g.atlasCamera();
+    g.setAtlasCamera(cam.fit * 6.0f, cam.x, cam.y);
+    g.layout();
+    CHECK(checkInkInPlaces(g) >= 3);
+    // The door handle drawn in one of the cells in view.
+    REQUIRE(!g.result().parts.empty());
+    doorIn(g, g.tree().file(g.result().parts[0].index).names.label);
+    g.layout();
+    CHECK(checkInkInPlaces(g) >= 3);
 }
 
 TEST_CASE("atlas: the card takes clicks, and a search drops pins") {
