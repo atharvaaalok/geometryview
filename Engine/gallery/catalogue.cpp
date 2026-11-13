@@ -533,7 +533,7 @@ public:
         for (const u32 f : ok) {
             const Drawn d = *drawnOf(tree.file(f));
             totalW += inkW(f);
-            tallest = std::max(tallest, d.h + d.below);
+            tallest = std::max(tallest, inkHeight(d));
         }
         const usize rows = std::min<usize>(maxRows, std::max<usize>(1, ok.size()));
         const double rowW = double(w) * double(rows) - double(gap) * double(ok.size());
@@ -1026,11 +1026,12 @@ public:
                 out.rect(X(side, kMargin - 6.0f), Y(y - 15.0f), (kText + 12.0f) * s, rowH * s,
                          selected ? palette.wash : palette.lift, 0, 0.0f, 3.0f);
             }
-            // The part small, at most 0.4 pt a millimetre, so rows keep their sizes apart.
+            // The part small, at most 0.4 pt a millimetre, so rows keep their sizes apart; all its
+            // ink in its column, 28 points wide and 17 tall.
             if (const auto d = drawnOf(file)) {
-                const double mm = std::max({d->w / 28.0, (d->h + d->below) / 17.0, 2.5});
-                const float pw = float(d->w / mm);
-                part(f, X(side, kMargin + (28.0f - pw) / 2.0f),
+                const double mm = std::max({inkWidth(*d) / 28.0, inkHeight(*d) / 17.0, 2.5});
+                const float inkLeft = (28.0f - float(inkWidth(*d) / mm)) / 2.0f;
+                part(f, X(side, kMargin + inkLeft + float(d->left / mm)),
                      Y(y + 3.0f) - float(d->below / mm) * s, mm / s, 0, false);
             }
             const u32 g = newGroup();
