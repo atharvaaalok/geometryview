@@ -264,6 +264,8 @@ export class GalleryCore {
   }
   /** Whether the file in Peek can turn: its turntable's frames have come. */
   setPeekTurnable(turnable) { this.#m._gv_gallery_set_peek_turnable(this.#g, turnable); }
+  /** Whether the folder is still being listed: an empty one says nothing until it is. */
+  setListing(listing) { this.#m._gv_gallery_set_listing(this.#g, listing); }
   get peekTurnable() { return Boolean(this.#m._gv_gallery_peek_turnable(this.#g)); }
 
   /** The selected file, or null. */

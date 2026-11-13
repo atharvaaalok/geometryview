@@ -36,6 +36,8 @@ struct LayoutInput {
     std::string_view posterDate;
     /// Ladders: every strip at one scale.
     bool laddersShared = false;
+    /// The folder is still being listed: a folder with nothing yet says nothing, not "0 files".
+    bool listing = false;
 };
 
 /// What a layout found out, beside its items: where things are, for keys and wanted pictures.

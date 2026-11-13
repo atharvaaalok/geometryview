@@ -129,6 +129,16 @@ public:
     const std::optional<std::unordered_set<u32>>& matches() const { return matches_; }
     void peek(u32 file);
     u32 peeking() const { return peek_; }
+    /// Whether the folder is still being listed: an empty one says nothing until it is. A gallery
+    /// given no entries yet says nothing either; setEntries ends it, so a front end that shows an
+    /// empty stand-in while it lists a folder sets it again.
+    void setListing(bool listing) {
+        if (listing != listing_) {
+            listing_ = listing;
+            dirty_ = true;
+        }
+    }
+    bool listing() const { return listing_; }
     void setPeekTurnable(bool turnable) {
         turnable = turnable && peek_ != kNone;
         if (turnable != peekTurnable_) {
@@ -173,6 +183,7 @@ private:
     std::optional<std::unordered_set<u32>> matches_;
     u32 peek_ = kNone;
     bool peekTurnable_ = false; // its turntable's frames have come
+    bool listing_ = true;       // nothing listed yet, or the folder is still being listed
     bool poster_ = false;
     bool lost_ = false;
     bool laddersShared_ = false;

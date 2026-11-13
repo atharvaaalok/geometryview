@@ -54,10 +54,24 @@ private final class LayerPool {
         return layer
     }
 
+    private static let still: [String: any CAAction] = Dictionary(
+        uniqueKeysWithValues: [
+            "contents", "bounds", "position", "hidden", "opacity", "transform", "sublayers",
+            "string", "foregroundColor", "fontSize", "backgroundColor", "borderColor",
+            "borderWidth", "cornerRadius", "path", "strokeColor", "fillColor", "lineWidth",
+            "shadowColor", "shadowOpacity", "shadowOffset", "shadowPath",
+        ].map { ($0, NSNull() as any CAAction) }
+    )
+
     private func take<L: CALayer>(_ pool: inout [L], _ used: inout Int, make: () -> L) -> L {
         if used == pool.count {
             let layer = make()
             layer.anchorPoint = .zero
+            // Nothing a paint changes fades: a text layer draws its new string after the paint's
+            // transaction, where Core Animation would cross-fade it from the old one, and a layer
+            // reused for another item would show the last one's words for a moment. The
+            // transitions' own animations are explicit, and still play.
+            layer.actions = Self.still
             parent.addSublayer(layer)
             pool.append(layer)
         }

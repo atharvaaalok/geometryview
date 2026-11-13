@@ -9,6 +9,7 @@ namespace geo::gallery {
 
 void Gallery::setEntries(std::string_view title, std::span<const Entry> entries) {
     tree_.build(title, entries);
+    listing_ = false; // listed; a front end showing an empty stand-in says it is still listing
     folder_ = 0;
     viewOf_.clear();
     peek_ = kNone;
@@ -197,6 +198,7 @@ bool Gallery::layout() {
         input.matches = nullptr;
     }
     input.laddersShared = laddersShared_;
+    input.listing = listing_;
     switch (view_) {
     case GeoViewSheet:
         result_ = layoutSheet(input, display_);

@@ -924,7 +924,7 @@ LayoutResult layoutPlates(const LayoutInput& input, Display& display) {
         }
     } else if (!folder.files.empty()) {
         y = painter.files(input.folder, y, width, leftGroup);
-    } else {
+    } else if (!input.listing) {
         y = painter.empty(input.folder, y, width, input.height);
     }
     result.contentHeight = y + kContentBottom;
