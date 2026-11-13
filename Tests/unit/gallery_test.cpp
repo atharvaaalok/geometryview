@@ -905,9 +905,9 @@ usize checkInkInPlaces(const Gallery& g, float slack = 0.5f) {
     return checked;
 }
 
-// No picture's ink over another file's text, or over another file's part. Returns the pictures
-// checked.
-usize checkInkClear(const Gallery& g, float slack = 0.5f) {
+// No picture's ink over another file's text, or over another file's part; with `own`, not over
+// its own file's text either. Returns the pictures checked.
+usize checkInkClear(const Gallery& g, bool own = false, float slack = 0.5f) {
     struct Box {
         u32 file;
         std::array<float, 4> rect; // x, y, w, h
@@ -944,7 +944,7 @@ usize checkInkClear(const Gallery& g, float slack = 0.5f) {
     for (const Box& ink : inks) {
         CAPTURE(g.tree().file(ink.file).names.label);
         for (const Box& other : texts) {
-            if (other.file != ink.file && other.rect[2] > 0.0f) {
+            if ((own || other.file != ink.file) && other.rect[2] > 0.0f) {
                 CHECK(apart(ink.rect, other.rect));
             }
         }
@@ -989,6 +989,32 @@ TEST_CASE("plates and ladders: no picture's ink lies over another file's name or
                 g.layout();
                 CHECK(checkInkClear(g) > 2);
             }
+        }
+    }
+}
+
+TEST_CASE("catalogue: on every spread, no picture's ink lies over any name or another part") {
+    for (const bool door : {false, true}) {
+        for (const u32 style : {0u, 3u}) {
+            CAPTURE(door);
+            CAPTURE(style);
+            Gallery g = measured();
+            if (door) {
+                doorIn(g, "#0610");
+            }
+            g.setViews(0b11111);
+            g.setStyle(style);
+            REQUIRE(g.setView(GeoViewCatalogue));
+            g.layout();
+            usize checked = 0;
+            for (u32 spread = 0; spread < g.catalogueSpreads(); ++spread) {
+                CAPTURE(spread);
+                g.setCatalogueSpread(spread);
+                g.layout();
+                // A part's ink stays in its column, clear of its own row's name too.
+                checked += checkInkClear(g, /*own=*/true);
+            }
+            CHECK(checked > 60);
         }
     }
 }
