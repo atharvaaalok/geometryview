@@ -237,3 +237,22 @@ and time, without reading anything.
 - A picture drawn above half a point a pixel is flagged `GeoItemDetail`; the front ends ask for
   those in view (`geo_gallery_details`) and the library draws them at twice the pixels, kept like
   pictures. Every picture in memory stays its usual size; only the few drawn large get more.
+
+## Addendum (2026-11-13): a picture's ink stays in its place
+
+**25. Parts are sized and aligned by their own box, and all their ink is kept in their place.**
+- A picture's ink can reach well past its part: a shadow twice the part's height, a line, or the
+  outline of a flat reference image beside it. Sheet stood each row on a line raised by its
+  deepest shadow, so one picture moved its neighbours, and parts rose over the labels above.
+- Sheet's cells now share one line, with a fixed room for shadows under it (a fifth of the picture
+  area, 3 pt without shadows; `Palette::shadows` from the render style). Each part is fitted so
+  that all its ink stays a point inside its cell (`inkWidth`, `inkHeight`, `inkInside` in
+  `draw.h`). A part whose shadow is deeper than the room is drawn at most 1.5× smaller to stand on
+  the line, past that it stands higher in its own cell and aligns with nothing. Folder and True
+  keep their scale where the ink fits and say SMALLER where it doesn't; Folder's scale is set by
+  part boxes alone.
+- Nothing about a cell depends on another file's picture, so a picture arriving can't move its
+  neighbours.
+- Pictures keep the scene's framing: the thumbnailer frames, grounds and shadows a file as the
+  viewer fits it. What a picture draws past its part is the layout's to contain, not the
+  picture's to leave out.

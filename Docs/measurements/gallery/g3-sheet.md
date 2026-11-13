@@ -72,8 +72,19 @@ end actually started:
 ## Shadows in Sheet
 
 The first screenshots showed a deep shadow (designlib's `stepper_17hs19.zones`) cast over its own
-label. Sheet now fits each part with its shadow, and stands a row's parts on one line raised by
+label. Sheet then fitted each part with its shadow, and stood a row's parts on one line raised by
 the row's deepest shadow (`aaeb115`). The numbers here are from after that change.
+
+That line moved with the row's pictures, and a part with a shallow shadow rose by the difference.
+In a folder of 74 GrabCAD parts (Sheet, Fit, by size, 124 pt cells), one door handle beside a flat
+reference image cast a 62 pt shadow, and the other parts of its row stood 40–51 pt above their
+cells, over the labels of the row before; the image's outline lay across the next cell. Since
+2026-11-13 every cell has the same line, with a fixed room for shadows under it (a fifth of the
+picture area), and each part is fitted so all its ink stays in its cell: on that folder no part
+leaves its cell, the door handle stands higher in its own, and the Mac's gallery check finds 0
+groups over 0.5 pt in every view and style. Over the 1,972 shadowed pictures kept on the
+development Mac, a part drawn in Fit comes out 0.88 of its old size at the median, and 6% stand
+higher than the line.
 
 ## Search and Peek
 
