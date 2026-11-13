@@ -189,7 +189,9 @@ final class GalleryController {
             if let kept = library?.keptListing(root) {
                 load(kept)
             } else {
+                // Nothing kept: until the scan lists it, the folder says nothing, not "0 files".
                 load([])
+                gallery.setListing(true)
             }
             scanning = true
             Task { [weak self] in
@@ -199,9 +201,11 @@ final class GalleryController {
                     return
                 }
                 self?.scanning = false
+                self?.gallery.setListing(false)
                 if let entries {
                     self?.rescanned(entries)
                 }
+                self?.scheduleReload()
             }
         }
         gallery.setFolder(relative)

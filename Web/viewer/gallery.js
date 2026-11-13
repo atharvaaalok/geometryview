@@ -95,13 +95,18 @@ export class Gallery {
       this.view.clearImages();
       this.#detailFiles = "";
       this.#library.setRoot(this.#store.folders, root);
-      this.#load([]);
+      // What was listed last time shows at once while the folder is walked again, as on the Mac;
+      // with nothing kept, the folder says nothing until the walk lists it.
+      const kept = keptListing(root.id);
+      this.#load(kept ?? []);
+      this.core.setListing(!kept);
       this.#walking = this.#walk(root);
     }
     this.core.setFolder(path);
     this.view.scrollToTop();
     this.view.reload();
     this.#on.folderChanged?.();
+    this.#scheduleWant();
     await this.#walking;
     this.core.setFolder(path);
     this.view.reload();
@@ -241,6 +246,7 @@ export class Gallery {
       unreadable = entries.length === 0;
     }
     if (this.root?.id === root.id) {
+      this.core.setListing(false);
       // A folder that cannot be read shows as last seen, faded, with Reconnect; else what was found.
       const kept = unreadable ? keptListing(root.id) : null;
       this.#setLost(Boolean(kept));

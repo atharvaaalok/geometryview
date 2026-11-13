@@ -337,12 +337,14 @@ TEST_CASE("the C interface lays out and reports alignment as painted") {
 
 TEST_CASE("a gallery with nothing in it says so") {
     Gallery g;
+    g.setEntries("", {}); // listed, and nothing found
     g.setViewport(800.0f, 600.0f);
     CHECK(g.layout());
     CHECK(g.display().textBuffer().find("No STEP or STL files here.") != std::string::npos);
     CHECK(g.wanted().empty());
     CHECK(g.key(GeoKeyEscape).kind == GeoActionLeave);
     GeoGallery* c = geo_gallery_create();
+    geo_gallery_set_entries(c, "", nullptr, 0);
     geo_gallery_layout(c);
     CHECK(geo_gallery_item_count(c) == 3);
     CHECK(std::string(geo_gallery_folder(c)).empty());
@@ -1109,6 +1111,21 @@ TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
             }
         }
     }
+}
+
+TEST_CASE("a folder being listed says nothing yet; once listed and empty, it says so") {
+    Gallery g;
+    g.setViewport(1080.0f, 720.0f);
+    g.layout(); // given nothing yet
+    CHECK(countText(g, "0 files") == 0);
+    g.setEntries("Parts", {});
+    g.setListing(true); // an empty stand-in while the folder is listed
+    g.layout();
+    CHECK(countText(g, "No STEP or STL files here.") == 0);
+    CHECK(countText(g, "0 files") == 0);
+    g.setListing(false);
+    REQUIRE(g.layout());
+    CHECK(countText(g, "No STEP or STL files here.") == 1);
 }
 
 TEST_CASE("a file being read shows its bar; a changed one its Δ until seen, and nothing moves") {

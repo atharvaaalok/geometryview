@@ -262,6 +262,11 @@ final class GalleryHandle {
 
     var peekTurnable: Bool { geo_gallery_peek_turnable(gallery) }
 
+    /// Whether the folder is still being listed: an empty one says nothing until it is.
+    func setListing(_ listing: Bool) {
+        geo_gallery_set_listing(gallery, listing)
+    }
+
     func peek(_ file: UInt32?) {
         geo_gallery_peek(gallery, file ?? UInt32.max)
     }

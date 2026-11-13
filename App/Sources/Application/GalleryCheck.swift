@@ -679,6 +679,16 @@ final class GalleryCheck {
         return out
     }
 
+    /// Animations running on the gallery's layers that are not its own transitions ("gallery."):
+    /// Core Animation's implicit fades, which a paint should never start.
+    private func implicitAnimations() -> Int {
+        func count(_ layer: CALayer) -> Int {
+            let own = (layer.animationKeys() ?? []).filter { !$0.hasPrefix("gallery.") }.count
+            return own + (layer.sublayers ?? []).reduce(0) { $0 + count($1) }
+        }
+        return controller.view.layer.map(count) ?? 0
+    }
+
     /// The scale bars' lengths shown, in order: "1 mm", "200 mm".
     private func scaleBars() -> [String] {
         let gallery = controller.gallery
@@ -713,6 +723,7 @@ final class GalleryCheck {
         var firstChange: Double?
         var lastChange: Double?
         var firstPart: Double?
+        var implicit = 0
         var events: [[Any]] = []
         let note = { (t: Double, what: String, path: String) in
             if events.count < 400 {
@@ -725,6 +736,7 @@ final class GalleryCheck {
             samples += 1
             let now = partsDrawn()
             let bars = scaleBars()
+            implicit += implicitAnimations()
             if firstPart == nil, !now.isEmpty {
                 firstPart = t
             }
@@ -775,6 +787,7 @@ final class GalleryCheck {
             "mode": mode, "seconds": Date().timeIntervalSince(start), "samples": samples,
             "changes": changes, "moved": moved, "went": went, "came": came,
             "rescaled": rescaled, "drawnAtEnd": previous.count, "events": events,
+            "implicitAnimations": implicit,
             "firstPart": firstPart ?? -1, "firstChange": firstChange ?? -1,
             "lastChange": lastChange ?? -1,
         ]
@@ -787,7 +800,7 @@ final class GalleryCheck {
         }
         print(
             "gallery-settle \(mode): \(changes) changes, \(moved) moved, \(went) went, "
-                + "\(rescaled) rescaled; last change at \(String(format: "%.1f", lastChange ?? -1)) s"
+                + "\(rescaled) rescaled, \(implicit) implicit animations; last change at \(String(format: "%.1f", lastChange ?? -1)) s"
         )
         return out
     }

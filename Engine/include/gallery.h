@@ -342,6 +342,10 @@ uint32_t geo_gallery_peeking(const GeoGallery* gallery);
 /// a GeoItemTurn picture over the whole picture area, with a hint, and ← → turn it
 /// (GeoActionTurn) instead of moving to the next file. Peeking another file sets it false.
 void geo_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable);
+/// Whether the folder is still being listed, with no listing kept from before: until it is, a
+/// folder with nothing in it yet says nothing, rather than "0 files". A gallery given no entries
+/// yet says nothing either; geo_gallery_set_entries ends it.
+void geo_gallery_set_listing(GeoGallery* gallery, bool listing);
 bool geo_gallery_peek_turnable(const GeoGallery* gallery);
 
 /// Where to scroll so the selection shows, after a switch or a key; negative if it shows already.

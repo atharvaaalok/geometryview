@@ -248,6 +248,10 @@ void geo_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable) {
     gallery->gallery.setPeekTurnable(turnable);
 }
 
+void geo_gallery_set_listing(GeoGallery* gallery, bool listing) {
+    gallery->gallery.setListing(listing);
+}
+
 bool geo_gallery_peek_turnable(const GeoGallery* gallery) {
     return gallery->gallery.peekTurnable();
 }

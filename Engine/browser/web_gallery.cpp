@@ -334,6 +334,10 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_set_peek_turnable(GeoGallery* gallery, bool
     geo_gallery_set_peek_turnable(gallery, turnable);
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_listing(GeoGallery* gallery, bool listing) {
+    geo_gallery_set_listing(gallery, listing);
+}
+
 EMSCRIPTEN_KEEPALIVE bool gv_gallery_peek_turnable(GeoGallery* gallery) {
     return geo_gallery_peek_turnable(gallery);
 }
