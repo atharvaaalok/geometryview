@@ -409,11 +409,14 @@ public:
             }
             const float picH = cell.h - labRoom - 6.0f;
             if (const std::optional<Drawn> d = drawnOf(file); d && picH > 6.0f) {
+                // All its ink in the cell: the part, its shadow and anything drawn past it.
                 const double mm =
-                    std::max(d->w / double(cell.w - 8.0f), (d->h + d->below) / double(picH));
-                const float w = float(d->w / mm);
-                part(f, cell.x + (cell.w - w) / 2.0f, cell.y + 3.0f + picH - float(d->below / mm),
-                     mm, 0);
+                    std::max({d->w / double(cell.w - 8.0f), inkWidth(*d) / double(cell.w - 4.0f),
+                              inkHeight(*d) / double(picH)});
+                part(f,
+                     inkInside(*d, mm, cell.x + cell.w / 2.0f, cell.x + 2.0f,
+                               cell.x + cell.w - 2.0f),
+                     cell.y + 3.0f + picH - float(d->below / mm), mm, 0);
             }
             const float nameBase = cell.y + cell.h - labRoom + ascentOf(kCellName);
             const u32 row = u32(i / p.cols);
