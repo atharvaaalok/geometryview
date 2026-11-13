@@ -42,7 +42,7 @@ and the web must agree within 1 point.
 | Colour | A file of several parts keeps its part colours. A file of one part takes its folder's colour, cycling mustard, mint, tomato and blush by folder, so folders read apart, in every style that colours parts (`first_color`). |
 | Background | Clear, so a part stands on the window's own sheet in every style. The sheet is drawn from `geo_style_sheet`. |
 | Sizes | Rendered at 2× the largest size shown (256 px for a 128 pt cell), with lines drawn for the size: `line_scale` = clamp(cell / 320, 0.5, 1). Layout sizes and aligns parts by their own box (`part_rect`), and keeps all of a picture's ink (`ink_rect`: its shadow and any lines past the part) in the part's cell, slot or shelf. |
-| Cache | Keyed like the import cache (path, device, inode, size, time), plus style, size and the engine's version (ADR 0017). Tiles in view come first, and a changed file re-inks alone. |
+| Cache | Keyed like the import cache (path, device, inode, size, time), plus style, size and how the engine draws pictures (`kPictureDrawing`, ADR 0017), so an update that draws them the same keeps them. Tiles in view come first, and a changed file re-inks alone. |
 
 ## Scale
 

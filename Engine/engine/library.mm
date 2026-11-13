@@ -3,6 +3,7 @@
 #include "library.h"
 
 #include "base/json.h"
+#include "core/offscreen_view.h"
 #include "library/gate.h"
 #include "library/scan.h"
 #include "library/service.h"
@@ -232,8 +233,11 @@ GeoLibrary* geo_library_create(const GeoLibraryDescriptor* descriptor) {
     config.slots =
         descriptor->slots != 0 ? descriptor->slots : std::max(2u, library::performanceCores() / 2);
     config.workers = descriptor->workers != 0 ? descriptor->workers : 2;
-    // Pictures are drawn again when the engine draws differently.
-    config.pictureVersion = std::format("{}|1", geo_engine_version());
+    // Pictures are drawn again when the engine draws them differently, not with every version of
+    // the app. Drawing 1 keeps the key 0.5.0 gave its pictures, so they are kept.
+    config.pictureVersion = engine::kPictureDrawing == 1
+                                ? std::string("0.5.0|1")
+                                : std::format("drawing {}", engine::kPictureDrawing);
     if (access(config.paths.cacheDirectory.c_str(), W_OK) != 0) {
         return nullptr;
     }

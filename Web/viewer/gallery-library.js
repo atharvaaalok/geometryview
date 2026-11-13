@@ -26,6 +26,7 @@ export class GalleryLibrary {
   #importers;
   #thumbnailer;
   #version;
+  #drawing; // how pictures are drawn: part of their keys
   #on;
   #worker = null;
   #folders = null; // the store's folders, which read a connected folder's files
@@ -46,7 +47,7 @@ export class GalleryLibrary {
     if (!root || !spec) return;
     const key = await keyOf({ source: root.name, path: w.path, size: w.bytes, modified: w.modified,
                               version: this.#version });
-    const picture = await pictureKeyOf({ ...spec, folderColor: w.folderColor, version: this.#version });
+    const picture = await pictureKeyOf({ ...spec, folderColor: w.folderColor, version: this.#version, drawing: this.#drawing });
     const kept = await keptPicture(key, picture);
     if (kept?.facts) this.#on.facts?.(w.path, kept.facts);
     if (kept?.png && kept.note) this.#on.picture?.(w.path, kept.png, kept.note);
@@ -66,11 +67,12 @@ export class GalleryLibrary {
   // only to import it: the shell's are its own, and fetching a file there reads all of it.
   #walkStats;
 
-  constructor({ importers, thumbnailer, version, phone = false, walkStats = false }, on) {
+  constructor({ importers, thumbnailer, version, drawing = 1, phone = false, walkStats = false }, on) {
     this.#walkStats = walkStats;
     this.#importers = importers;
     this.#thumbnailer = thumbnailer;
     this.#version = version;
+    this.#drawing = drawing;
     this.#phone = phone;
     this.#on = on;
   }
@@ -143,7 +145,7 @@ export class GalleryLibrary {
     if (!root || !spec) return;
     const located = await this.#locate(path, stat);
     const { key } = located;
-    const picture = await pictureKeyOf({ ...spec, folderColor, version: this.#version });
+    const picture = await pictureKeyOf({ ...spec, folderColor, version: this.#version, drawing: this.#drawing });
     // Kept before: its facts at once, and its picture if drawn in this spec.
     const kept = await keptPicture(key, picture);
     if (kept?.facts) this.#on.facts?.(path, kept.facts);
@@ -179,7 +181,7 @@ export class GalleryLibrary {
     const located = await this.#locate(path, stat).catch(() => null);
     if (!located) return null;
     const { key } = located;
-    const picture = await pictureKeyOf({ ...detail, folderColor, version: this.#version });
+    const picture = await pictureKeyOf({ ...detail, folderColor, version: this.#version, drawing: this.#drawing });
     const kept = await keptPicture(key, picture);
     if (kept?.png && kept.note) return { png: kept.png, note: kept.note };
     if (signal.aborted) return null;

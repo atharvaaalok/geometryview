@@ -149,6 +149,8 @@ export class Engine {
   }
   // The cache file version this engine reads.
   get cacheVersion() { return this.#module._geo_web_cache_version(); }
+  /** How the gallery's pictures are drawn: part of a kept picture's key. */
+  get pictureDrawing() { return this.#module._geo_web_picture_drawing(); }
 
   // The look every app starts with, as setLook takes it: the engine's, so all agree.
   defaultLook() {
