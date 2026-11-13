@@ -368,6 +368,9 @@ export class Gallery {
     return true;
   }
 
+  /** Files whose facts the library has told, for the checks. */
+  get factsKnown() { return this.#facts.size; }
+
   /** The picture last told for the file at `path`, for the checks: where its part is in it. */
   pictureNote(path) {
     return this.#pictures.get(path)?.note ?? null;

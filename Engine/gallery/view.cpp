@@ -1005,10 +1005,13 @@ std::vector<GeoGalleryWant> Gallery::wanted() const {
         }
     }
     // A plate in view wants its cover's candidates, before any is measured: its cover is drawn
-    // from those; then the files its strip has slots for.
+    // from those, smallest file first, so it fills as soon as it can where files are read one at a
+    // time; then the files its strip has slots for.
     for (const LayoutResult::Place& p : result_.plates) {
         const bool inView = p.y + p.h >= top && p.y <= bottom;
-        const std::vector<u32> candidates = coverCandidates(tree_, p.index);
+        std::vector<u32> candidates = coverCandidates(tree_, p.index);
+        std::stable_sort(candidates.begin(), candidates.end(),
+                         [&](u32 a, u32 b) { return tree_.file(a).bytes < tree_.file(b).bytes; });
         for (usize i = 0; i < candidates.size(); ++i) {
             add(candidates[i], inView ? 1 : 2, std::fabs(p.y - middle) + double(i));
         }
