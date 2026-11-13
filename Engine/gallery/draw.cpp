@@ -46,6 +46,24 @@ double largest(const Drawn& d) {
     return std::max(d.w, d.h);
 }
 
+double inkWidth(const Drawn& d) {
+    return d.w + d.left + d.right;
+}
+
+double inkHeight(const Drawn& d) {
+    return d.h + d.above + d.below;
+}
+
+float inkInside(const Drawn& d, double mmPerPoint, float centre, float lo, float hi) {
+    const float w = float(d.w / mmPerPoint);
+    const float least = lo + float(d.left / mmPerPoint);
+    const float most = hi - w - float(d.right / mmPerPoint);
+    if (least > most) {
+        return (least + most) / 2.0f;
+    }
+    return std::clamp(centre - w / 2.0f, least, most);
+}
+
 std::vector<u32> bySize(const Tree& tree, std::vector<u32> files) {
     std::stable_sort(files.begin(), files.end(), [&](u32 a, u32 b) {
         const double sa = tree.file(a).size(), sb = tree.file(b).size();

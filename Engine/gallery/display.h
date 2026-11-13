@@ -28,6 +28,7 @@ struct Palette {
     u32 wash, washLine;         // what a search found, or the selection
     std::array<u32, 4> folders; // mustard, mint, tomato, blush
     bool dark = false;
+    bool shadows = true; // the style's pictures cast a shadow
 };
 Palette paletteOf(u32 style);
 
