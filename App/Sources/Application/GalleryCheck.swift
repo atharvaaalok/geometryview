@@ -708,43 +708,46 @@ final class GalleryCheck {
         }
     }
 
-    /// Watches the folder, just shown in Plates, settle, every 50 ms, until nothing in view is
-    /// waiting and nothing has changed for 3 s (at most 90 s).
+    /// Watches the folder, just shown in Plates, settle: what each layout draws, compared with the
+    /// last (nothing the gallery shows changes between layouts), until nothing in view is waiting
+    /// and nothing has changed for 3 s (at most 90 s).
     private func watchSettle(root: URL, folder: URL, mode: String) async -> [String: Any] {
         let start = Date()
-        var previous: [String: CGRect] = [:]
-        var previousBars: [String] = []
-        var moved = 0
-        var went = 0
-        var came = 0
-        var rescaled = 0
-        var changes = 0
-        var samples = 0
-        var firstChange: Double?
-        var lastChange: Double?
-        var firstPart: Double?
-        var implicit = 0
-        var events: [[Any]] = []
-        let note = { (t: Double, what: String, path: String) in
-            if events.count < 400 {
-                events.append([(t * 100).rounded() / 100, what, path])
+        final class Watch {
+            var previous: [String: CGRect] = [:]
+            var previousBars: [String] = []
+            var moved = 0
+            var went = 0
+            var came = 0
+            var rescaled = 0
+            var changes = 0
+            var layouts = 0
+            var implicit = 0
+            var firstChange: Double?
+            var lastChange: Double?
+            var firstPart: Double?
+            var firstFacts: Double?
+            var events: [[Any]] = []
+            func note(_ t: Double, _ what: String, _ path: String) {
+                if events.count < 400 {
+                    events.append([(t * 100).rounded() / 100, what, path])
+                }
             }
         }
-        while true {
-            try? await Task.sleep(for: .milliseconds(50))
+        let watch = Watch()
+        let look = { [self] in
             let t = Date().timeIntervalSince(start)
-            samples += 1
+            watch.layouts += 1
             let now = partsDrawn()
             let bars = scaleBars()
-            implicit += implicitAnimations()
-            if firstPart == nil, !now.isEmpty {
-                firstPart = t
+            if watch.firstPart == nil, !now.isEmpty {
+                watch.firstPart = t
             }
             var changed = false
             for (key, rect) in now {
-                guard let before = previous[key] else {
-                    if !previous.isEmpty {
-                        came += 1
+                guard let before = watch.previous[key] else {
+                    if !watch.previous.isEmpty {
+                        watch.came += 1
                         changed = true
                     }
                     continue
@@ -753,43 +756,54 @@ final class GalleryCheck {
                     || abs(rect.width - before.width) > 0.5
                     || abs(rect.height - before.height) > 0.5
                 {
-                    moved += 1
+                    watch.moved += 1
                     changed = true
-                    note(t, "moved", key)
+                    watch.note(t, "moved", key)
                 }
             }
-            for key in previous.keys where now[key] == nil {
-                went += 1
+            for key in watch.previous.keys where now[key] == nil {
+                watch.went += 1
                 changed = true
-                note(t, "went", key)
+                watch.note(t, "went", key)
             }
-            if !previousBars.isEmpty, bars != previousBars {
-                rescaled += 1
+            if !watch.previousBars.isEmpty, bars != watch.previousBars {
+                watch.rescaled += 1
                 changed = true
-                note(t, "rescaled", bars.joined(separator: ", "))
+                watch.note(t, "rescaled", bars.joined(separator: ", "))
             }
             if changed {
-                changes += 1
-                firstChange = firstChange ?? t
-                lastChange = t
+                watch.changes += 1
+                watch.firstChange = watch.firstChange ?? t
+                watch.lastChange = t
             }
-            previous = now
-            previousBars = bars
-            let quiet = t - (lastChange ?? firstPart ?? t)
+            watch.previous = now
+            watch.previousBars = bars
+        }
+        controller.view.onLaidOut = look
+        look()
+        while true {
+            try? await Task.sleep(for: .milliseconds(50))
+            let t = Date().timeIntervalSince(start)
+            watch.implicit += implicitAnimations()
+            if watch.firstFacts == nil, controller.factsKnown > 0 {
+                watch.firstFacts = t
+            }
+            let quiet = t - (watch.lastChange ?? watch.firstPart ?? t)
             if (t > 1 && !controller.scanning && controller.waitingInView == 0 && quiet >= 3)
                 || t > 90
             {
                 break
             }
         }
+        controller.view.onLaidOut = nil
         let stats = controller.stats()
         var out: [String: Any] = [
-            "mode": mode, "seconds": Date().timeIntervalSince(start), "samples": samples,
-            "changes": changes, "moved": moved, "went": went, "came": came,
-            "rescaled": rescaled, "drawnAtEnd": previous.count, "events": events,
-            "implicitAnimations": implicit,
-            "firstPart": firstPart ?? -1, "firstChange": firstChange ?? -1,
-            "lastChange": lastChange ?? -1,
+            "mode": mode, "seconds": Date().timeIntervalSince(start), "layouts": watch.layouts,
+            "changes": watch.changes, "moved": watch.moved, "went": watch.went, "came": watch.came,
+            "rescaled": watch.rescaled, "drawnAtEnd": watch.previous.count, "events": watch.events,
+            "implicitAnimations": watch.implicit, "firstFacts": watch.firstFacts ?? -1,
+            "firstPart": watch.firstPart ?? -1, "firstChange": watch.firstChange ?? -1,
+            "lastChange": watch.lastChange ?? -1,
         ]
         if let stats {
             out["library"] = [
@@ -799,8 +813,11 @@ final class GalleryCheck {
             ]
         }
         print(
-            "gallery-settle \(mode): \(changes) changes, \(moved) moved, \(went) went, "
-                + "\(rescaled) rescaled, \(implicit) implicit animations; last change at \(String(format: "%.1f", lastChange ?? -1)) s"
+            "gallery-settle \(mode): \(watch.layouts) layouts, \(watch.changes) changes, "
+                + "\(watch.moved) moved, \(watch.went) went, \(watch.rescaled) rescaled, "
+                + "\(watch.implicit) implicit animations; first part at "
+                + String(format: "%.2f", watch.firstPart ?? -1) + " s, last change at "
+                + String(format: "%.2f", watch.lastChange ?? -1) + " s"
         )
         return out
     }

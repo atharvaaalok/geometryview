@@ -281,10 +281,14 @@ final class GalleryController {
             }
         }
         for (path, p) in pictures {
-            if let file = gallery.file(at: path), let image = decoded[path] {
-                gallery.setPicture(file, p.picture)
+            guard let file = gallery.file(at: path) else {
+                continue
+            }
+            // A fresh tree has no old picture to keep whole: every note is laid out at once.
+            gallery.setPicture(file, p.picture)
+            if let image = decoded[path] {
                 view.setImage(image, for: file)
-            } else if gallery.file(at: path) != nil {
+            } else {
                 loadImage(p.png, for: path)
             }
         }
@@ -357,11 +361,15 @@ final class GalleryController {
         guard let root, let library else {
             return
         }
+        // Joined as text: URL.appendingPathComponent asks the file system whether each path is a
+        // folder, and with every file of a large folder wanted that held the main thread for
+        // seconds before the first part showed.
+        let rootPath = root.path
         let wants = gallery.wanted().map { want -> LibraryHandle.Want in
             let path = gallery.path(of: want.file)
             let entry = entries[path]
             return LibraryHandle.Want(
-                path: root.appendingPathComponent(path).path,
+                path: rootPath + "/" + path,
                 band: GeoLibraryBand(rawValue: want.band),
                 order: want.order,
                 bytes: entry?.bytes ?? 0,
@@ -381,7 +389,7 @@ final class GalleryController {
             return
         }
         let files = gallery.details()
-        let paths = files.map { root.appendingPathComponent(gallery.path(of: $0)).path }
+        let paths = files.map { root.path + "/" + gallery.path(of: $0) }
         guard paths != detailPaths else {
             return
         }
@@ -405,10 +413,16 @@ final class GalleryController {
             facts[rel] = f
             gallery.setFacts(file, f)
         case .picture(let path, let png, let picture):
-            guard let rel = relative(path), gallery.file(at: rel) != nil else {
+            guard let rel = relative(path), let file = gallery.file(at: rel) else {
                 return
             }
-            // Laid out once decoded, so the old picture stays whole until the new one shows.
+            // A file's first picture is laid out at once, from its note, so the layout is final
+            // before its pixels are decoded and they only fill in. One that replaces a picture
+            // shown (another style, a changed file) is laid out once decoded, so the old one stays
+            // whole until the new one shows.
+            if pictures[rel] == nil {
+                gallery.setPicture(file, picture)
+            }
             pictures[rel] = (png, picture, styleRaw)
             loadImage(png, for: rel)
         case .failed(let path, let message):
@@ -471,7 +485,7 @@ final class GalleryController {
             library?.turn(path: nil, frames: 0, pixels: 0)
             return
         }
-        turnPath = root.appendingPathComponent(gallery.path(of: file)).path
+        turnPath = root.path + "/" + gallery.path(of: file)
         turnImages = Array(repeating: nil, count: Self.turnFrames)
         turnPictures = Array(repeating: nil, count: Self.turnFrames)
         library.turn(path: turnPath, frames: Self.turnFrames, pixels: Self.turnPixels)
