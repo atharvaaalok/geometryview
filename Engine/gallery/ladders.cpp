@@ -405,13 +405,16 @@ public:
             const float labW = std::min(
                 88.0f,
                 float(std::max<usize>(characters(file.names.label), dup ? 9 : 0)) * 6.1f + 10.0f);
-            const float slot = std::max(w, labW);
+            // Its slot holds all its ink; the part in its middle, moved the least to keep it so.
+            const float inkL = float(d.left / mm), inkR = float(d.right / mm);
+            const float slot = std::max(w + inkL + inkR, labW);
             if (x + slot > limit - kMargin && x > segStart + 1.0f) {
                 endSegment(x - kGap + 8.0f, mm);
                 ++row;
                 x = segStart = kMargin;
             }
-            placed.push_back({f, x + (slot - w) / 2.0f, w, h, below, mm, row, slot});
+            const float left = std::clamp((slot - w) / 2.0f, inkL, std::max(inkL, slot - w - inkR));
+            placed.push_back({f, x + left, w, h, below, mm, row, slot});
             x += slot + kGap;
         };
         for (const u32 f : normal) {
