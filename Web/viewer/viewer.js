@@ -1613,8 +1613,8 @@ async function watchSettle(g, mode) {
   }
   const round = (v) => v === null ? -1 : Math.round(v * 100) / 100;
   return { mode, seconds: round((performance.now() - start) / 1000), samples, changes, moved, went, came,
-           rescaled, drawnAtEnd: previous.size, firstPart: round(firstPart), firstChange: round(firstChange),
-           lastChange: round(lastChange) };
+           rescaled, drawnAtEnd: previous.size, factsAtEnd: g.factsKnown, firstPart: round(firstPart),
+           firstChange: round(firstChange), lastChange: round(lastChange) };
 }
 
 async function runGalleryTest() {
