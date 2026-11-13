@@ -11,6 +11,12 @@ import GeometryViewEngine
 ///                        gallery-check.json to the temporary folder and quits.
 ///   --gallery-layout     writes the folder's display list, in Illustration, as
 ///                        gallery-layout.json, for comparing with the browser's, and quits
+///   --gallery-settle <warm|cold>
+///                        opens the folder in Plates and watches it settle: every 50 ms, where
+///                        each part is drawn. Counts parts that moved, parts that went (a
+///                        cover's pick swapped, say), scale bars that changed, and when the last
+///                        change came; writes them to gallery-settle.json and quits. "cold" is a
+///                        label: run it with GEOMETRYVIEW_GALLERY_CACHES naming an empty folder.
 ///
 /// The folder must be inside a connected folder, as the app reaches only those.
 @MainActor
@@ -35,6 +41,14 @@ final class GalleryCheck {
         return 0b11111
     }
     static var isLayout: Bool { CommandLine.arguments.contains("--gallery-layout") }
+    /// `--gallery-settle warm|cold`: watches the folder settle, and quits.
+    static var settleMode: String? {
+        let arguments = CommandLine.arguments
+        guard let at = arguments.firstIndex(of: "--gallery-settle"), at + 1 < arguments.count else {
+            return nil
+        }
+        return arguments[at + 1]
+    }
     /// `--gallery-poster`: the folder as a poster in each view, checked and saved as PNG.
     static var isPoster: Bool { CommandLine.arguments.contains("--gallery-poster") }
     /// Shows or puts away the poster, as the window does.
@@ -97,6 +111,13 @@ final class GalleryCheck {
                 NSApp.terminate(nil)
                 return
             }
+        }
+
+        if let mode = Self.settleMode {
+            report["settle"] = await watchSettle(root: root, folder: folder, mode: mode)
+            write(report, to: "gallery-settle.json")
+            NSApp.terminate(nil)
+            return
         }
 
         if Self.isPoster {
@@ -614,6 +635,160 @@ final class GalleryCheck {
         // The masthead's ×, in the gallery.
         hooks.pressClose()
         out["close"] = ["galleryAfter": hooks.inGallery(), "viewHidden": controller.view.isHidden]
+        return out
+    }
+
+    /// Where each part is drawn, by its file's path and the time it shows in the list (a part can
+    /// be on a cover and in a strip): the part's own box, from its picture's note, or its measured
+    /// box while it is drawn in construction lines.
+    private func partsDrawn() -> [String: CGRect] {
+        let gallery = controller.gallery
+        var out: [String: CGRect] = [:]
+        var seen: [String: Int] = [:]
+        for item in gallery.items {
+            let file: UInt32
+            var rect = CGRect(
+                x: CGFloat(item.x),
+                y: CGFloat(item.y),
+                width: CGFloat(item.width),
+                height: CGFloat(item.height)
+            )
+            if item.kind == GeoItemPicture.rawValue, item.flags & GeoItemTurn.rawValue == 0 {
+                file = item.file
+                if let note = controller.pictureNote(at: gallery.path(of: file)), note.width > 0 {
+                    let k = CGFloat(item.width) / CGFloat(note.width)
+                    rect = CGRect(
+                        x: CGFloat(item.x) + CGFloat(note.part.0) * k,
+                        y: CGFloat(item.y) + CGFloat(note.part.1) * k,
+                        width: CGFloat(note.part.2) * k,
+                        height: CGFloat(note.part.3) * k
+                    )
+                }
+            } else if item.kind == GeoItemRect.rawValue, item.flags & GeoItemDashed.rawValue != 0,
+                item.target_kind == GeoTargetFile.rawValue
+            {
+                file = item.target
+            } else {
+                continue
+            }
+            let path = gallery.path(of: file)
+            let n = seen[path, default: 0]
+            seen[path] = n + 1
+            out["\(path)#\(n)"] = rect
+        }
+        return out
+    }
+
+    /// The scale bars' lengths shown, in order: "1 mm", "200 mm".
+    private func scaleBars() -> [String] {
+        let gallery = controller.gallery
+        return gallery.items.compactMap { item -> String? in
+            guard item.kind == GeoItemText.rawValue else {
+                return nil
+            }
+            let text = gallery.text(of: item)
+            let units = ["mm", "m", "\u{00B5}m"]
+            let parts = text.split(separator: " ")
+            guard parts.count == 2, Double(parts[0].replacingOccurrences(of: ",", with: "")) != nil,
+                units.contains(String(parts[1]))
+            else {
+                return nil
+            }
+            return text
+        }
+    }
+
+    /// Watches the folder, just shown in Plates, settle, every 50 ms, until nothing in view is
+    /// waiting and nothing has changed for 3 s (at most 90 s).
+    private func watchSettle(root: URL, folder: URL, mode: String) async -> [String: Any] {
+        let start = Date()
+        var previous: [String: CGRect] = [:]
+        var previousBars: [String] = []
+        var moved = 0
+        var went = 0
+        var came = 0
+        var rescaled = 0
+        var changes = 0
+        var samples = 0
+        var firstChange: Double?
+        var lastChange: Double?
+        var firstPart: Double?
+        var events: [[Any]] = []
+        let note = { (t: Double, what: String, path: String) in
+            if events.count < 400 {
+                events.append([(t * 100).rounded() / 100, what, path])
+            }
+        }
+        while true {
+            try? await Task.sleep(for: .milliseconds(50))
+            let t = Date().timeIntervalSince(start)
+            samples += 1
+            let now = partsDrawn()
+            let bars = scaleBars()
+            if firstPart == nil, !now.isEmpty {
+                firstPart = t
+            }
+            var changed = false
+            for (key, rect) in now {
+                guard let before = previous[key] else {
+                    if !previous.isEmpty {
+                        came += 1
+                        changed = true
+                    }
+                    continue
+                }
+                if abs(rect.minX - before.minX) > 0.5 || abs(rect.minY - before.minY) > 0.5
+                    || abs(rect.width - before.width) > 0.5
+                    || abs(rect.height - before.height) > 0.5
+                {
+                    moved += 1
+                    changed = true
+                    note(t, "moved", key)
+                }
+            }
+            for key in previous.keys where now[key] == nil {
+                went += 1
+                changed = true
+                note(t, "went", key)
+            }
+            if !previousBars.isEmpty, bars != previousBars {
+                rescaled += 1
+                changed = true
+                note(t, "rescaled", bars.joined(separator: ", "))
+            }
+            if changed {
+                changes += 1
+                firstChange = firstChange ?? t
+                lastChange = t
+            }
+            previous = now
+            previousBars = bars
+            let quiet = t - (lastChange ?? firstPart ?? t)
+            if (t > 1 && !controller.scanning && controller.waitingInView == 0 && quiet >= 3)
+                || t > 90
+            {
+                break
+            }
+        }
+        let stats = controller.stats()
+        var out: [String: Any] = [
+            "mode": mode, "seconds": Date().timeIntervalSince(start), "samples": samples,
+            "changes": changes, "moved": moved, "went": went, "came": came,
+            "rescaled": rescaled, "drawnAtEnd": previous.count, "events": events,
+            "firstPart": firstPart ?? -1, "firstChange": firstChange ?? -1,
+            "lastChange": lastChange ?? -1,
+        ]
+        if let stats {
+            out["library"] = [
+                "pictures": Int(stats.pictures), "lookups": Int(stats.lookups),
+                "imports": Int(stats.imports), "structures": Int(stats.structures),
+                "cancelled": Int(stats.cancelled), "failures": Int(stats.failures),
+            ]
+        }
+        print(
+            "gallery-settle \(mode): \(changes) changes, \(moved) moved, \(went) went, "
+                + "\(rescaled) rescaled; last change at \(String(format: "%.1f", lastChange ?? -1)) s"
+        )
         return out
     }
 

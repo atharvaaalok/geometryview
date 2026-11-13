@@ -14,6 +14,7 @@ import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
 import { Gallery } from "./gallery.js";
+import { Flags as ItemFlags, Kinds, Targets } from "./gallery-core.js";
 import { GalleryToolbar } from "./gallery-toolbar.js";
 import { kContentInsets as kGalleryInsets } from "./gallery-view.js";
 import { evict as evictImports, forget as forgetKeptKey, forgetNamed, keptImport, keptSource as keptSourceOf,
@@ -1547,6 +1548,75 @@ async function runWorkerTest() {
 // alignment group as painted, and how far anything was painted from where the core laid it. Then
 // the view is scrolled through its tallest folder while long tasks are counted, and the 3D view's
 // frames while the gallery covers it.
+// Watches the gallery settle, as the Mac's --gallery-settle does: every 50 ms, where each part is
+// drawn (its own box, from its picture's note, or its measured box in construction lines), until
+// nothing in view waits and nothing has changed for 3 s, at most 90 s. Counts parts that moved,
+// went or came, and scale bars that changed.
+async function watchSettle(g, mode) {
+  const start = performance.now();
+  const partsDrawn = () => {
+    const out = new Map(), seen = new Map();
+    for (const item of g.core.items) {
+      let file, rect = [item.x, item.y, item.width, item.height];
+      if (item.kind === Kinds.Picture && (item.flags & ItemFlags.Turn) === 0) {
+        file = item.file;
+        const note = g.pictureNote(g.core.path(file));
+        if (note?.width > 0) {
+          const k = item.width / note.width;
+          rect = [item.x + note.part[0] * k, item.y + note.part[1] * k, note.part[2] * k, note.part[3] * k];
+        }
+      } else if (item.kind === Kinds.Rect && (item.flags & ItemFlags.Dashed) !== 0 && item.targetKind === Targets.File) {
+        file = item.target;
+      } else {
+        continue;
+      }
+      const path = g.core.path(file);
+      const n = seen.get(path) ?? 0;
+      seen.set(path, n + 1);
+      out.set(`${path}#${n}`, rect);
+    }
+    return out;
+  };
+  const scaleBars = () => g.core.items.filter((item) => item.kind === Kinds.Text)
+    .map((item) => g.core.text(item)).filter((text) => /^[\d.,]+ (mm|m|µm)$/.test(text));
+  let previous = new Map(), previousBars = [];
+  let moved = 0, went = 0, came = 0, rescaled = 0, changes = 0, samples = 0;
+  let firstPart = null, firstChange = null, lastChange = null;
+  for (;;) {
+    await sleep(50);
+    const t = (performance.now() - start) / 1000;
+    ++samples;
+    const now = partsDrawn(), bars = scaleBars();
+    if (firstPart === null && now.size > 0) firstPart = t;
+    let changed = false;
+    for (const [key, rect] of now) {
+      const before = previous.get(key);
+      if (!before) {
+        if (previous.size > 0) { ++came; changed = true; }
+        continue;
+      }
+      if (rect.some((v, i) => Math.abs(v - before[i]) > 0.5)) { ++moved; changed = true; }
+    }
+    for (const key of previous.keys()) {
+      if (!now.has(key)) { ++went; changed = true; }
+    }
+    if (previousBars.length > 0 && bars.join() !== previousBars.join()) { ++rescaled; changed = true; }
+    if (changed) {
+      ++changes;
+      firstChange ??= t;
+      lastChange = t;
+    }
+    previous = now;
+    previousBars = bars;
+    const quiet = t - (lastChange ?? firstPart ?? t);
+    if ((t > 1 && g.waitingInView === 0 && quiet >= 3) || t > 90) break;
+  }
+  const round = (v) => v === null ? -1 : Math.round(v * 100) / 100;
+  return { mode, seconds: round((performance.now() - start) / 1000), samples, changes, moved, went, came,
+           rescaled, drawnAtEnd: previous.size, firstPart: round(firstPart), firstChange: round(firstChange),
+           lastChange: round(lastChange) };
+}
+
 async function runGalleryTest() {
   const dir = params.get("folder") ?? "test-models";
   const name = dir.split("/").pop();
@@ -1566,6 +1636,16 @@ async function runGalleryTest() {
   await library.refresh();
   const root = { id, name };
   const g = galleryFor();
+  if (params.has("settle")) {
+    // ?settle=cold: the folder shown in Plates and watched until it settles (this page's
+    // storage starts empty, so cold is what it sees).
+    g.setStyle(0);
+    g.setView(0);
+    const shown = showGallery(root, "");
+    await post({ folder: dir, settle: await watchSettle(g, params.get("settle")) });
+    await shown;
+    return;
+  }
   await showGallery(root, "");
   const settle = async () => {
     const started = performance.now();

@@ -361,6 +361,11 @@ export class Gallery {
     return true;
   }
 
+  /** The picture last told for the file at `path`, for the checks: where its part is in it. */
+  pictureNote(path) {
+    return this.#pictures.get(path)?.note ?? null;
+  }
+
   /** Files in view still waiting for their picture, for the checks. */
   get waitingInView() {
     return this.core.wanted().filter((w) => {

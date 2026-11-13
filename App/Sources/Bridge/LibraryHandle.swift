@@ -35,9 +35,14 @@ final class LibraryHandle {
     }
 
     init?() {
+        // GEOMETRYVIEW_GALLERY_CACHES keeps the library's cache somewhere else: an empty folder
+        // shows a folder as the first time it is opened (the gallery's settle check, cold).
+        let elsewhere = ProcessInfo.processInfo.environment["GEOMETRYVIEW_GALLERY_CACHES"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
         guard let shaders = Bundle.main.path(forResource: "default", ofType: "metallib"),
             let helper = Bundle.main.path(forAuxiliaryExecutable: "geometryview-import"),
-            let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            let caches = elsewhere
+                ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
                 .appendingPathComponent("GeometryView", isDirectory: true)
         else {
             return nil

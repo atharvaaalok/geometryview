@@ -119,13 +119,20 @@ final class MainWindow: NSWindow {
             })
         else {
             print("gallery: \(path) is not inside a connected folder")
-            if GalleryCheck.isCheck || GalleryCheck.isLayout {
+            if GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil {
                 NSApp.terminate(nil)
             }
             return
         }
+        if GalleryCheck.settleMode != nil {
+            // Watched from its first frame: in Illustration and Plates before it shows.
+            var next = look
+            next.choose(.illustration)
+            apply(next, remember: false)
+            _ = galleryController.setView(GeoViewPlates.rawValue)
+        }
         showGallery(root: root.url, folder: folder)
-        guard GalleryCheck.isCheck || GalleryCheck.isLayout else {
+        guard GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil else {
             return
         }
         let check = GalleryCheck(controller: galleryController, engine: engine) { [weak self] style in
