@@ -100,6 +100,9 @@ final class GalleryView: NSView {
     var onAction: ((GeoGalleryAction) -> Void)?
     /// Called when what is in view changed: another folder, a scroll, a new layout.
     var onViewChanged: (() -> Void)?
+    /// Called after every layout that changed the display list, for the checks: whatever the
+    /// gallery shows changes only then.
+    var onLaidOut: (() -> Void)?
     /// Called when typing changed the search.
     var onSearchChanged: (() -> Void)?
     /// Called with Esc while a poster shows.
@@ -268,6 +271,7 @@ final class GalleryView: NSView {
             scrollLane(lane, to: along.x)
         }
         if changed {
+            onLaidOut?()
             onViewChanged?()
         }
     }
