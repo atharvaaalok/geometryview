@@ -1019,6 +1019,68 @@ TEST_CASE("catalogue: on every spread, no picture's ink lies over any name or an
     }
 }
 
+TEST_CASE("in every view, no picture's ink lies over another file's name or part") {
+    for (const bool door : {false, true}) {
+        for (const u32 style : {0u, 3u, 5u}) {
+            CAPTURE(door);
+            CAPTURE(style);
+            const auto make = [&] {
+                Gallery g = measured();
+                if (door) {
+                    doorIn(g, "#0610");
+                }
+                g.setViews(0b11111);
+                g.setStyle(style);
+                return g;
+            };
+            for (const std::string folder : {"", "bearing"}) {
+                CAPTURE(folder);
+                for (const u32 view : {u32(GeoViewPlates), u32(GeoViewSheet), u32(GeoViewLadders),
+                                       u32(GeoViewAtlas)}) {
+                    CAPTURE(view);
+                    Gallery g = make();
+                    REQUIRE(g.setFolder(folder));
+                    REQUIRE(g.setView(view));
+                    g.layout();
+                    checkInkClear(g);
+                    if (view == GeoViewSheet) {
+                        for (const u32 scale : {u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+                            CAPTURE(scale);
+                            g.setSheet(scale, 124.0f, GeoSortSize);
+                            g.layout();
+                            checkInkClear(g);
+                        }
+                    }
+                    if (view == GeoViewLadders) {
+                        g.setLadders(true);
+                        g.layout();
+                        checkInkClear(g);
+                    }
+                    if (view == GeoViewAtlas) {
+                        // Each level in, to the closest.
+                        const AtlasCamera cam = g.atlasCamera();
+                        for (const float zoom : {2.5f, 6.0f, 12.0f}) {
+                            CAPTURE(zoom);
+                            g.setAtlasCamera(cam.fit * zoom, cam.x, cam.y);
+                            g.layout();
+                            checkInkClear(g);
+                        }
+                    }
+                }
+            }
+            Gallery g = make();
+            REQUIRE(g.setView(GeoViewCatalogue));
+            g.layout();
+            for (u32 spread = 0; spread < g.catalogueSpreads(); ++spread) {
+                CAPTURE(spread);
+                g.setCatalogueSpread(spread);
+                g.layout();
+                checkInkClear(g, /*own=*/true);
+            }
+        }
+    }
+}
+
 TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
     for (const u32 style : {0u, 3u}) {
         for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
