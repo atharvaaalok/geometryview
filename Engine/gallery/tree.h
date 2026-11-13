@@ -33,6 +33,8 @@ struct Facts {
     u32 parts = 0;
     std::string product; // the name inside the file
     u64 triangles = 0;   // as drawn, 0 when not known
+
+    bool operator==(const Facts&) const = default;
 };
 
 /// A file's picture: its pixels' size, its scale, and where in it the part and its ink are.
@@ -41,6 +43,8 @@ struct Picture {
     double mmPerPixel = 0.0;
     std::array<float, 4> part{}; // x, y, width, height in pixels
     std::array<float, 4> ink{};
+
+    bool operator==(const Picture&) const = default;
 };
 
 struct File {

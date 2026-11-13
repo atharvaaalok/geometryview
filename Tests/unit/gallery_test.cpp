@@ -1113,6 +1113,30 @@ TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
     }
 }
 
+TEST_CASE("the same facts, picture or failure told again lay nothing out") {
+    Gallery g = measured();
+    g.layout();
+    const File& f = g.tree().file(3);
+    const Facts facts = *f.facts;
+    const Picture picture = *f.picture;
+    g.setFacts(3, facts);
+    g.setPicture(3, picture);
+    CHECK_FALSE(g.layout());
+    Picture moved = picture;
+    moved.part[1] += 4.0f;
+    g.setPicture(3, moved);
+    CHECK(g.layout()); // a new note is laid out
+    g.setFailure(5, "This file could not be read.");
+    CHECK(g.layout());
+    g.setFailure(5, "This file could not be read.");
+    CHECK_FALSE(g.layout());
+    // A stale picture told again comes back to life: that is new.
+    g.setChanged(3, true);
+    g.layout();
+    g.setPicture(3, moved);
+    CHECK(g.layout());
+}
+
 TEST_CASE("a folder being listed says nothing yet; once listed and empty, it says so") {
     Gallery g;
     g.setViewport(1080.0f, 720.0f);

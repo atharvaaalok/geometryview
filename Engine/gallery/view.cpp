@@ -21,6 +21,9 @@ void Gallery::setEntries(std::string_view title, std::span<const Entry> entries)
 }
 
 void Gallery::setFacts(u32 file, Facts facts) {
+    if (tree_.file(file).facts == facts) {
+        return; // told again: nothing to lay out
+    }
     tree_.setFacts(file, std::move(facts));
     if (matches_) {
         findMatches(); // the name inside the file is searched too
@@ -29,6 +32,10 @@ void Gallery::setFacts(u32 file, Facts facts) {
 }
 
 void Gallery::setPicture(u32 file, const Picture& picture) {
+    if (const File& known = tree_.file(file);
+        known.picture == picture && !known.stale && known.reading < 0.0f) {
+        return; // told again, its pixels perhaps new: nothing to lay out
+    }
     tree_.setPicture(file, picture);
     File& f = tree_.file(file);
     f.reading = -1.0f;
@@ -116,6 +123,9 @@ void Gallery::seen(u32 file) {
 }
 
 void Gallery::setFailure(u32 file, std::string message) {
+    if (tree_.file(file).failure == message) {
+        return;
+    }
     tree_.setFailure(file, std::move(message));
     dirty_ = true;
 }

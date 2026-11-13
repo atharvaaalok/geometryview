@@ -281,10 +281,14 @@ final class GalleryController {
             }
         }
         for (path, p) in pictures {
-            if let file = gallery.file(at: path), let image = decoded[path] {
-                gallery.setPicture(file, p.picture)
+            guard let file = gallery.file(at: path) else {
+                continue
+            }
+            // A fresh tree has no old picture to keep whole: every note is laid out at once.
+            gallery.setPicture(file, p.picture)
+            if let image = decoded[path] {
                 view.setImage(image, for: file)
-            } else if gallery.file(at: path) != nil {
+            } else {
                 loadImage(p.png, for: path)
             }
         }
@@ -409,10 +413,16 @@ final class GalleryController {
             facts[rel] = f
             gallery.setFacts(file, f)
         case .picture(let path, let png, let picture):
-            guard let rel = relative(path), gallery.file(at: rel) != nil else {
+            guard let rel = relative(path), let file = gallery.file(at: rel) else {
                 return
             }
-            // Laid out once decoded, so the old picture stays whole until the new one shows.
+            // A file's first picture is laid out at once, from its note, so the layout is final
+            // before its pixels are decoded and they only fill in. One that replaces a picture
+            // shown (another style, a changed file) is laid out once decoded, so the old one stays
+            // whole until the new one shows.
+            if pictures[rel] == nil {
+                gallery.setPicture(file, picture)
+            }
             pictures[rel] = (png, picture, styleRaw)
             loadImage(png, for: rel)
         case .failed(let path, let message):
