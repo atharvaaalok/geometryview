@@ -66,7 +66,8 @@ export class Gallery {
     this.view.element.hidden = true;
     this.#phone = phone;
     this.#library = new GalleryLibrary({ importers, thumbnailer: new Thumbnailer(phone ? { recycleMB: 128 } : {}),
-                                         version: engine.cacheVersion, phone, walkStats: store.kind === "shell" }, {
+                                         version: engine.cacheVersion, drawing: engine.pictureDrawing, phone,
+                                         walkStats: store.kind === "shell" }, {
       facts: (path, facts) => this.#receiveFacts(path, facts),
       measured: (path, bytes, modified) => this.#measured(path, bytes, modified),
       reading: (path, fraction) => {

@@ -15,6 +15,13 @@
 
 namespace geo::engine {
 
+/// How offscreen renders, the gallery's pictures among them, are drawn. Kept pictures are keyed
+/// by it, not by the app's version: bump it when what they draw changes (a style, the framing, the
+/// ground, the lines), and only then, so they are drawn again when they look different and kept
+/// across updates that don't change them. Tests/unit/golden_test.mm holds it to the thumbnail
+/// goldens.
+inline constexpr int kPictureDrawing = 1;
+
 struct OffscreenView {
     scene::Scene scene;
     render::ViewState view;

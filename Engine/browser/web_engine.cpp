@@ -12,6 +12,7 @@
 // A file arrives as a cache file's bytes, streamed through geo_web_stream_*: its segments go
 // straight to GPU buffers as they arrive, and memory keeps only what the CPU reads.
 #include "core/core.h"
+#include "core/offscreen_view.h"
 #include "scene/segment.h"
 #include "webgpu/renderer.h"
 
@@ -413,6 +414,11 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_tool(u32 tool) {
 /// The cache file version this engine reads: an older kept import must be made again.
 EMSCRIPTEN_KEEPALIVE u32 geo_web_cache_version() {
     return format::kVersion;
+}
+
+/// How the gallery's pictures are drawn (core/offscreen_view.h): part of a kept picture's key.
+EMSCRIPTEN_KEEPALIVE u32 geo_web_picture_drawing() {
+    return u32(engine::kPictureDrawing);
 }
 
 EMSCRIPTEN_KEEPALIVE void geo_web_default_look(double* out) {

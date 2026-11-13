@@ -3,10 +3,11 @@
 // the new images by eye. Needs the OCCT worker, since the assembly is STEP.
 //
 // Also the gallery's pictures: small, with light lines, on a clear background.
+#include "core/offscreen_view.h"
+#include "drive_fixture.h"
 #include "engine.h"
 #include "render/style.h"
 #include "step/step_import.h"
-#include "drive_fixture.h"
 #include "step_fixture.h"
 
 #import <CoreGraphics/CoreGraphics.h>
@@ -16,6 +17,9 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
+#include <map>
 #include <unistd.h>
 #include <vector>
 
@@ -245,6 +249,31 @@ TEST_CASE("the gallery's small pictures match their golden images") {
         }
         unlink(blob.c_str());
     }
+}
+
+// Kept pictures are keyed by kPictureDrawing, not the app's version (core/offscreen_view.h), so
+// they are drawn again only when they look different. The thumbnail goldens show how they look:
+// each drawing's goldens are recorded here, and new goldens need a new drawing.
+TEST_CASE("the gallery's pictures look different only under a new kPictureDrawing") {
+    // Drawing → hash of its thumbnail goldens. To record new goldens, add an entry for
+    // kPictureDrawing + 1 and bump kPictureDrawing; never change an entry.
+    const std::map<int, u64> drawings = {
+        {1, 0x40b3f856cc0fc489ull}, // 0.5.0's pictures
+    };
+    u64 hash = 0xcbf29ce484222325ull;
+    for (const char* style :
+         {"illustration", "metal", "clay", "blueprint", "technical", "studio"}) {
+        std::ifstream in(fs::path(GEO_TEST_GOLDEN_DIR) / std::format("thumb-{}.png", style),
+                         std::ios::binary);
+        const std::vector<char> bytes{std::istreambuf_iterator<char>(in), {}};
+        REQUIRE(!bytes.empty());
+        for (const char byte : bytes) { // FNV-1a, over every golden in turn
+            hash = (hash ^ u8(byte)) * 0x100000001b3ull;
+        }
+    }
+    CAPTURE(std::format("{:#018x}", hash));
+    CHECK(drawings.rbegin()->first == engine::kPictureDrawing);
+    CHECK(drawings.rbegin()->second == hash);
 }
 
 #endif

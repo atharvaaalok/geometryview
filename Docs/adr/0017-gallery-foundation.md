@@ -123,3 +123,13 @@ The gallery needs these to scale to a folder, without slowing down the file a pe
   caches beside the import cache.
 - **ADR 0014 / 0015** (WebGPU, web runtime): alpha, `renderOffscreenAsync`, the thumbnail worker
   module, the import queue, OPFS v2.
+
+## Addendum (2026-11-13): pictures keyed by their drawing
+
+Picture keys hashed the app's version, so every update drew every picture in every folder again,
+though nothing in them had changed; a folder opened just after 0.5.0 was installed redrew all
+1,862 of its pictures, and its gallery changed for over 30 s. Keys now carry `kPictureDrawing`
+(`core/offscreen_view.h`), bumped only when pictures are drawn differently. On the Mac drawing 1
+keeps the key 0.5.0 gave (`"0.5.0|1"`); in the browser, which keyed pictures by the cache file's
+version alone and so never drew them again, drawing 1 adds nothing to the key. A golden test holds
+each drawing to the thumbnail goldens: new goldens need a new drawing.
