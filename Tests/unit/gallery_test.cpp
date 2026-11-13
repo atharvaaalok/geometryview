@@ -905,7 +905,93 @@ usize checkInkInPlaces(const Gallery& g, float slack = 0.5f) {
     return checked;
 }
 
+// No picture's ink over another file's text, or over another file's part. Returns the pictures
+// checked.
+usize checkInkClear(const Gallery& g, float slack = 0.5f) {
+    struct Box {
+        u32 file;
+        std::array<float, 4> rect; // x, y, w, h
+    };
+    std::vector<Box> inks, parts, texts;
+    const std::string& buffer = g.display().textBuffer();
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind == GeoItemPicture && (item.flags & GeoItemTurn) == 0) {
+            const Picture& p = *g.tree().file(item.file).picture;
+            const float k = item.width / float(p.width);
+            inks.push_back(
+                {item.file,
+                 {item.x + p.ink[0] * k, item.y + p.ink[1] * k, p.ink[2] * k, p.ink[3] * k}});
+            parts.push_back(
+                {item.file,
+                 {item.x + p.part[0] * k, item.y + p.part[1] * k, p.part[2] * k, p.part[3] * k}});
+        } else if (item.kind == GeoItemText) {
+            // Its letters, from the baseline up to their capitals.
+            const std::string text = buffer.substr(item.text, item.text_length);
+            const float used = float(characters(text)) * (0.6f * item.font_size + item.tracking);
+            const float left = item.align == 1   ? item.x + (item.width - used) / 2.0f
+                               : item.align == 2 ? item.x + item.width - used
+                                                 : item.x;
+            const u32 owner = item.target_kind == GeoTargetFile ? item.target : kNone;
+            texts.push_back(
+                {owner,
+                 {left, item.baseline - 0.75f * item.font_size, used, 0.75f * item.font_size}});
+        }
+    }
+    const auto apart = [&](const std::array<float, 4>& a, const std::array<float, 4>& b) {
+        return a[0] + a[2] <= b[0] + slack || b[0] + b[2] <= a[0] + slack ||
+               a[1] + a[3] <= b[1] + slack || b[1] + b[3] <= a[1] + slack;
+    };
+    for (const Box& ink : inks) {
+        CAPTURE(g.tree().file(ink.file).names.label);
+        for (const Box& other : texts) {
+            if (other.file != ink.file && other.rect[2] > 0.0f) {
+                CHECK(apart(ink.rect, other.rect));
+            }
+        }
+        for (const Box& other : parts) {
+            if (other.file != ink.file) {
+                CAPTURE(g.tree().file(other.file).names.label);
+                CHECK(apart(ink.rect, other.rect));
+            }
+        }
+    }
+    return inks.size();
+}
+
 } // namespace
+
+TEST_CASE("plates and ladders: no picture's ink lies over another file's name or part") {
+    for (const bool door : {false, true}) {
+        for (const u32 style : {0u, 3u}) {
+            CAPTURE(door);
+            CAPTURE(style);
+            const auto make = [&] {
+                Gallery g = measured();
+                if (door) {
+                    doorIn(g, "#0610");
+                }
+                g.setViews(0b1111);
+                g.setStyle(style);
+                return g;
+            };
+            for (const std::string folder : {"", "bearing", "motor"}) {
+                CAPTURE(folder);
+                Gallery g = make();
+                REQUIRE(g.setFolder(folder));
+                g.layout();
+                CHECK(checkInkClear(g) > 2);
+            }
+            for (const bool shared : {false, true}) {
+                CAPTURE(shared);
+                Gallery g = make();
+                g.setView(GeoViewLadders);
+                g.setLadders(shared);
+                g.layout();
+                CHECK(checkInkClear(g) > 2);
+            }
+        }
+    }
+}
 
 TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
     for (const u32 style : {0u, 3u}) {

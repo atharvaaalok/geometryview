@@ -122,6 +122,7 @@ public:
         struct Item {
             u32 file;
             float w, h, below, left, slot;
+            float inkL = 0.0f, inkR = 0.0f, above = 0.0f; // ink past the part, in points
             double mm;
             int detail = 0; // the part again at detail:1, in a bubble beside it; 0 for none
             char letter = 0;
@@ -139,8 +140,12 @@ public:
                 it.w = float(d.w / it.mm);
                 it.h = float(d.h / it.mm);
                 it.below = float(d.below / it.mm);
+                it.inkL = float(d.left / it.mm);
+                it.inkR = float(d.right / it.mm);
+                it.above = float(d.above / it.mm);
             }
-            it.slot = std::max(it.w, options.minSlot);
+            // Its slot holds all its ink, so nothing it draws reaches its neighbours.
+            it.slot = std::max(it.w + it.inkL + it.inkR, options.minSlot);
             items.push_back(it);
         }
         // Tiny beside huge: a part too small to see at the shelf's scale gets a detail bubble, the
@@ -186,7 +191,7 @@ public:
         for (const std::vector<Item>& r : rows) {
             float above = 0.0f, below = 0.0f;
             for (const Item& it : r) {
-                above = std::max(above, it.detail ? kBubble : it.h);
+                above = std::max(above, it.detail ? kBubble : it.h + it.above);
                 below = std::max(below, it.below);
             }
             const float baseline = y + above;
@@ -196,9 +201,12 @@ public:
             float cx = kContentLeft;
             for (const Item& it : r) {
                 const File& file = tree.file(it.file);
-                // A detailed part stands in its ring at the slot's left, its bubble to the right.
+                // A detailed part stands in its ring at the slot's left, its bubble to the right;
+                // any other in the middle of its slot, moved the least that keeps its ink in it.
                 const float left =
-                    it.detail ? cx + (kRing - it.w) / 2.0f : cx + (it.slot - it.w) / 2.0f;
+                    it.detail ? cx + (kRing - it.w) / 2.0f
+                              : std::clamp(cx + (it.slot - it.w) / 2.0f, cx + it.inkL,
+                                           std::max(cx + it.inkL, cx + it.slot - it.w - it.inkR));
                 const float centre = it.detail ? cx + it.slot / 2.0f : left + it.w / 2.0f;
                 const float boxLeft = it.detail ? cx : left, boxW = it.detail ? it.slot : it.w;
                 const float boxTop = baseline - (it.detail ? kBubble : it.h);
@@ -247,7 +255,11 @@ public:
                 }
                 const u32 text = selected && !palette.dark ? hex(0x231E16) : palette.on;
                 const u32 textMuted = selected && !palette.dark ? hex(0x231E16) : palette.muted;
-                const float labelW = it.slot + options.gap - 6.0f;
+                // Its label centred under it, as wide as its slot's share of the row allows.
+                const float shareL = cx - options.gap / 2.0f + 3.0f;
+                const float shareR = cx + it.slot + options.gap / 2.0f - 3.0f;
+                const float labelW =
+                    std::max(0.0f, 2.0f * std::min(centre - shareL, shareR - centre));
                 const float labelX = centre - labelW / 2.0f;
                 const bool grouped = !(hovered && !selected);
                 // Its name, then what tells it apart, then its size.
@@ -400,10 +412,11 @@ public:
             return std::nullopt;
         }
         constexpr float gapX = 8.0f, gapY = 10.0f;
+        // A part with all its ink beside and above it, and a little room.
         const auto padded = [&](u32 f) {
             const Drawn d = *drawnOf(tree.file(f));
             const double pad = 0.04 * largest(d);
-            return std::array<double, 2>{d.w + pad, d.h + pad};
+            return std::array<double, 2>{inkWidth(d) + pad, d.h + d.above + pad};
         };
         const auto deepest = [&](const std::vector<u32>& rowFiles) {
             double below = 0;
@@ -469,16 +482,19 @@ public:
             const float base = rowY + used[i];
             float widths = 0;
             for (const u32 f : rowFiles) {
-                widths += float(drawnOf(tree.file(f))->w / best->mm);
+                widths += float(inkWidth(*drawnOf(tree.file(f))) / best->mm);
             }
             widths += gapX * float(rowFiles.size() - 1);
             float px = x + (W - widths) / 2.0f;
             const u32 g = newGroup();
             const float foot = base - 3.0f - sunk[i];
             for (const u32 f : rowFiles) {
-                const auto size = part(f, px, foot, best->mm, g);
-                result.covers.push_back({GeoTargetFile, f, px, foot - size[1], size[0], size[1]});
-                px += size[0] + gapX;
+                // Each part where its ink begins, so the ink of one ends a gap before the next.
+                const Drawn d = *drawnOf(tree.file(f));
+                const float left = px + float(d.left / best->mm);
+                const auto size = part(f, left, foot, best->mm, g);
+                result.covers.push_back({GeoTargetFile, f, left, foot - size[1], size[0], size[1]});
+                px += float(inkWidth(d) / best->mm) + gapX;
             }
             rowY = base + gapY;
         }
@@ -572,10 +588,14 @@ public:
             usize shown = 0;
             const u32 g = inGroup(groups.strip);
             for (usize i = 0; i < all.size() && shown < fit; i += step, ++shown) {
+                // Each on the strip's line, 13 points tall at most with what it draws above, its
+                // shadow within the 4 points under the line, the next after its ink.
                 const Drawn d = *drawnOf(tree.file(all[i]));
-                const double mmTiny = std::max(d.w / 13.0, d.h / 13.0);
-                const auto size = part(all[i], sx, stripY + 15.0f, mmTiny, g, /*marks=*/false);
-                sx += size[0] + 2.0f;
+                const double mmTiny =
+                    std::max({inkWidth(d) / 13.0, (d.h + d.above) / 13.0, d.below / 4.0});
+                part(all[i], sx + float(d.left / mmTiny), stripY + 15.0f, mmTiny, g,
+                     /*marks=*/false);
+                sx += float(inkWidth(d) / mmTiny) + 2.0f;
             }
             out.group(0);
             const std::string more = grouped(f.count) + " in all";
