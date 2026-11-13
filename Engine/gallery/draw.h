@@ -31,6 +31,12 @@ std::optional<Drawn> drawnOf(const File& file);
 /// The files of `files` with a size to draw.
 std::vector<u32> drawable(const Tree& tree, const std::vector<u32>& files);
 double largest(const Drawn& d);
+/// The width and height of all the part's ink: the part with its shadow and lines past it.
+double inkWidth(const Drawn& d);
+double inkHeight(const Drawn& d);
+/// The left edge, in points, of the part drawn at `mmPerPoint` and centred on `centre`, moved the
+/// least that keeps all its ink between `lo` and `hi`; centred between them if it can't be.
+float inkInside(const Drawn& d, double mmPerPoint, float centre, float lo, float hi);
 /// Files by their largest side, then by name.
 std::vector<u32> bySize(const Tree& tree, std::vector<u32> files);
 /// "M1–M36" when the names read as one series, else the span of sizes.

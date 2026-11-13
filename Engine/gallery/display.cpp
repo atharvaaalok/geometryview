@@ -1,5 +1,7 @@
 #include "gallery/display.h"
 
+#include "render/style.h"
+
 #include <algorithm>
 
 namespace geo::gallery {
@@ -56,6 +58,9 @@ Palette paletteOf(u32 style) {
         p.band = hex(0xF2EFE7);
         break;
     }
+    p.shadows =
+        render::styleNamed(render::StyleName(std::min<u32>(style, u32(render::kStyleCount - 1))))
+            .shadow.on;
     return p;
 }
 

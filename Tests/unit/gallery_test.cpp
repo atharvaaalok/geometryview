@@ -702,33 +702,191 @@ TEST_CASE("back up from a folder shown as a sheet, it still shrinks into its pla
     CHECK(t.rect[2] == plate.w);
 }
 
-TEST_CASE("in the sheet, every part's shadow stays above its labels") {
-    for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
-        CAPTURE(scale);
-        Gallery g = measured();
-        g.setView(GeoViewSheet);
-        g.setSheet(scale, 128.0f, GeoSortName);
-        g.layout();
-        const std::vector<GeoGalleryItem>& items = g.display().items();
-        usize checked = 0;
-        for (usize i = 0; i < items.size(); ++i) {
-            if (items[i].kind != GeoItemPicture) {
-                continue;
-            }
-            const Picture& p = *g.tree().file(items[i].file).picture;
-            const float k = items[i].width / float(p.width);
-            const float inkBottom = items[i].y + (p.ink[1] + p.ink[3]) * k;
-            // The file's label is the next text with its target.
-            for (usize j = i + 1; j < items.size(); ++j) {
-                if (items[j].kind == GeoItemText && items[j].target == items[i].file) {
-                    CHECK(inkBottom <= items[j].baseline - 1.025f * 10.5f + 0.01f);
+namespace {
+
+// A folder of sixteen handles, 120 to 180 mm, pictured as measure() does. With `door`, h09 is
+// drawn as a door handle beside a flat reference image: its shadow falls far below the handle and
+// the image's outline far to its right (`doorInk`), or, without, just the handle.
+Gallery handles(bool door = true, bool doorInk = true) {
+    Gallery g;
+    std::vector<Entry> entries;
+    for (int i = 0; i < 16; ++i) {
+        entries.push_back({std::format("handles/h{:02}.step", i)});
+    }
+    g.setEntries("Parts", entries);
+    for (u32 f = 0; f < g.tree().fileCount(); ++f) {
+        const bool special = door && g.tree().file(f).names.label == "h09";
+        Facts facts;
+        const double s = 120.0 + double(f) * 4.0;
+        facts.size = special ? std::array<double, 3>{167.0, 18.2, 66.5}
+                             : std::array<double, 3>{s, s * 0.6, s * 0.4};
+        facts.hasBox = true;
+        facts.estimated = false;
+        facts.parts = 1;
+        g.setFacts(f, facts);
+        Picture p;
+        p.width = p.height = 512;
+        if (special) {
+            p.mmPerPixel = 0.32214;
+            p.part = {28.0f, 156.0f, 181.0f, 71.0f};
+            p.ink = doorInk ? std::array<float, 4>{12.0f, 154.0f, 464.0f, 263.0f} : p.part;
+        } else {
+            p.mmPerPixel = s * 1.3 / 512.0;
+            p.part = {80.0f + float(f % 5), 100.0f, 340.0f, 300.0f - float(f % 3) * 20.0f};
+            p.ink = {70.0f, 95.0f, 370.0f, 340.0f};
+        }
+        g.setPicture(f, p);
+    }
+    g.setViewport(1080.0f, 720.0f);
+    return g;
+}
+
+// Each drawn picture's ink, in points, by file.
+std::map<u32, std::array<float, 4>> inkBoxes(const Gallery& g) {
+    std::map<u32, std::array<float, 4>> out;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind != GeoItemPicture || (item.flags & GeoItemTurn) != 0) {
+            continue;
+        }
+        const Picture& p = *g.tree().file(item.file).picture;
+        const float k = item.width / float(p.width);
+        out[item.file] = {item.x + p.ink[0] * k, item.y + p.ink[1] * k, p.ink[2] * k, p.ink[3] * k};
+    }
+    return out;
+}
+
+// Each drawn picture's rectangle, by file.
+std::map<u32, std::array<float, 4>> pictureRects(const Gallery& g) {
+    std::map<u32, std::array<float, 4>> out;
+    for (const GeoGalleryItem& item : g.display().items()) {
+        if (item.kind == GeoItemPicture) {
+            out[item.file] = {item.x, item.y, item.width, item.height};
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("in the sheet, every picture's ink stays in its cell, clear of every label") {
+    for (const bool door : {false, true}) {
+        for (const u32 style : {0u, 3u}) {
+            for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+                CAPTURE(door);
+                CAPTURE(style);
+                CAPTURE(scale);
+                Gallery g = door ? handles() : measured();
+                if (door) {
+                    REQUIRE(g.setFolder("handles"));
+                }
+                g.setStyle(style);
+                g.setView(GeoViewSheet);
+                g.setSheet(scale, 124.0f, GeoSortName);
+                g.layout();
+                const std::vector<GeoGalleryItem>& items = g.display().items();
+                const std::string& buffer = g.display().textBuffer();
+                usize checked = 0;
+                for (const auto& [file, ink] : inkBoxes(g)) {
+                    CAPTURE(g.tree().file(file).names.label);
+                    const LayoutResult::Place* cell = nullptr;
+                    for (const LayoutResult::Place& place : g.result().parts) {
+                        if (place.kind == GeoTargetFile && place.index == file) {
+                            cell = &place;
+                        }
+                    }
+                    REQUIRE(cell != nullptr);
+                    // Inside its cell.
+                    CHECK(ink[0] >= cell->x - 0.5f);
+                    CHECK(ink[0] + ink[2] <= cell->x + cell->w + 0.5f);
+                    CHECK(ink[1] >= cell->y - 0.5f);
+                    for (const GeoGalleryItem& item : items) {
+                        if (item.kind != GeoItemText) {
+                            continue;
+                        }
+                        if (item.target == file && item.target_kind == GeoTargetFile) {
+                            // Above its own label's two lines (its stamp is in the cell's corner).
+                            if (item.font_size == 10.5f || item.font_size == 9.5f) {
+                                CHECK(ink[1] + ink[3] <=
+                                      item.baseline - 1.025f * item.font_size + 0.01f);
+                            }
+                            continue;
+                        }
+                        // Clear of every other text: its letters from the baseline up to their
+                        // capitals.
+                        const std::string text = buffer.substr(item.text, item.text_length);
+                        const float used =
+                            float(characters(text)) * (0.6f * item.font_size + item.tracking);
+                        const float left = item.align == 1   ? item.x + (item.width - used) / 2.0f
+                                           : item.align == 2 ? item.x + item.width - used
+                                                             : item.x;
+                        const float top = item.baseline - 0.75f * item.font_size;
+                        const bool apart =
+                            ink[0] + ink[2] <= left + 0.5f || ink[0] >= left + used - 0.5f ||
+                            ink[1] + ink[3] <= top + 0.5f || ink[1] >= item.baseline - 0.5f;
+                        CAPTURE(text);
+                        CHECK(apart);
+                    }
                     ++checked;
-                    break;
+                }
+                CHECK(checked >= (door ? 16u : 20u));
+                checkAligned(g);
+                if (door && scale == GeoScaleFit && style == 0) {
+                    // The door handle stands higher in its cell, aligned with nothing; the rest of
+                    // its row stand on one line.
+                    std::map<u32, u32> groups;
+                    for (const GeoGalleryItem& item : items) {
+                        if (item.kind == GeoItemPicture) {
+                            groups[item.file] = item.group;
+                        }
+                    }
+                    u32 handle = kNone, row = 0;
+                    for (const auto& [file, group] : groups) {
+                        if (g.tree().file(file).names.label == "h09") {
+                            handle = file;
+                        }
+                    }
+                    REQUIRE(handle != kNone);
+                    CHECK(groups[handle] == 0);
+                    for (const auto& [file, group] : groups) {
+                        if (file != handle && g.tree().file(file).names.label >= "h08") {
+                            row = row == 0 ? group : row;
+                            CHECK(group == row); // the second row, h08 to h15
+                        }
+                    }
+                    CHECK(row != 0);
                 }
             }
         }
-        CHECK(checked > 20);
-        checkAligned(g);
+    }
+}
+
+TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
+    for (const u32 style : {0u, 3u}) {
+        for (const u32 scale : {u32(GeoScaleFit), u32(GeoScaleFolder), u32(GeoScaleTrue)}) {
+            CAPTURE(style);
+            CAPTURE(scale);
+            const auto layout = [&](Gallery g) {
+                REQUIRE(g.setFolder("handles"));
+                g.setStyle(style);
+                g.setView(GeoViewSheet);
+                g.setSheet(scale, 124.0f, GeoSortName);
+                g.layout();
+                std::map<std::string, std::array<float, 4>> out;
+                for (const auto& [file, rect] : pictureRects(g)) {
+                    if (g.tree().file(file).names.label != "h09") {
+                        out[g.tree().file(file).names.label] = rect;
+                    }
+                }
+                return out;
+            };
+            const auto plain = layout(handles(true, false));
+            CHECK(plain.size() == 15);
+            CHECK(layout(handles(true, true)) == plain);
+            if (scale == GeoScaleFit) {
+                // Each cell on its own: another picture altogether changes no other cell.
+                CHECK(layout(handles(false)) == plain);
+            }
+        }
     }
 }
 

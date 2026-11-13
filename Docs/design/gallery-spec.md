@@ -41,7 +41,7 @@ and the web must agree within 1 point.
 | Camera | Orthographic, azimuth 35°, elevation 30°, the file framed alone (fit margin 1.12). The drawing style comes from the Look card; Illustration by default. |
 | Colour | A file of several parts keeps its part colours. A file of one part takes its folder's colour, cycling mustard, mint, tomato and blush by folder, so folders read apart, in every style that colours parts (`first_color`). |
 | Background | Clear, so a part stands on the window's own sheet in every style. The sheet is drawn from `geo_style_sheet`. |
-| Sizes | Rendered at 2× the largest size shown (256 px for a 128 pt cell), with lines drawn for the size: `line_scale` = clamp(cell / 320, 0.5, 1). Layout uses the part's own box (`part_rect`); soft shadows may spill past it. |
+| Sizes | Rendered at 2× the largest size shown (256 px for a 128 pt cell), with lines drawn for the size: `line_scale` = clamp(cell / 320, 0.5, 1). Layout sizes and aligns parts by their own box (`part_rect`), and keeps all of a picture's ink (`ink_rect`: its shadow and any lines past the part) in the part's cell, slot or shelf. |
 | Cache | Keyed like the import cache (path, device, inode, size, time), plus style, size and the engine's version (ADR 0017). Tiles in view come first, and a changed file re-inks alone. |
 
 ## Scale
@@ -49,7 +49,7 @@ and the web must agree within 1 point.
 | Mode | Rule |
 |---|---|
 | Fit | Each part fills its place, at most 1.5× its render. |
-| Folder | One scale per folder, so a folder's sizes compare honestly. Files more than 2–3× the folder's median size go on a "larger files · drawn n× smaller" row, or are marked SMALLER where cells are fixed. |
+| Folder | One scale per folder, so a folder's sizes compare honestly. Files more than 2–3× the folder's median size go on a "larger files · drawn n× smaller" row, or are marked SMALLER where cells are fixed. A part whose ink doesn't fit its cell at the folder's scale is drawn to fit, marked SMALLER. |
 | True | One scale for everything in view. A part under 10 pt is drawn larger, with a DETAIL n:1 stamp (2, 5, 10, 20, 50 or 100), the drawing-office convention. |
 | Scale bar | An ink bar of 1, 2 or 5 × 10ⁿ mm, 40–120 pt long, with its length above it, as in the viewer. |
 
@@ -108,7 +108,7 @@ Ease (0.3, 0.7, 0.2, 1); all of it instant under Reduce Motion.
 | View | Rules |
 |---|---|
 | Plates | Subfolders as plates, with columns chosen to draw plates largest with the fewest empty cells. A cover is up to nine parts sampled across sizes at one scale, on one to three baselines; hover leafs through more. Crop marks at rest, a sticker on hover. A folder's files stand on a shelf at one scale, with a scale bar. |
-| Sheet | Headings per subfolder stay at the top while scrolling, on the sheet's band colour. Cells of a chosen size (72–200 pt), parts standing on the cell's baseline, two-line labels. At most 240 cells per folder before "show all". |
+| Sheet | Headings per subfolder stay at the top while scrolling, on the sheet's band colour. Cells of a chosen size (72–200 pt), two-line labels. Parts stand on one line in every cell, a fifth of the picture area above its floor (3 pt for styles without shadows); a part whose shadow is deeper stands higher in its own cell, and nothing it draws leaves its cell. At most 240 cells per folder before "show all". |
 | Ladders | One strip per folder, smallest to largest, on a ruler at the strip's scale (ticks of 1, 2 or 5 × 10ⁿ mm). Hover shows calipers with the measured box; choose one, then hover another for the difference. Each strip at its own scale, or one shared. |
 | Atlas | Regions are subfolders, their areas growing with the square root of their file count, nested by the tree. Three levels of detail by zoom, a minimap card, and pins dropped by search. |
 | Catalogue | Two-page spreads: a cover, contents (every part at once), chapter openers, a spread per folder (a true-scale plate and a table of measured sizes), and an index. A thumb index follows the tree. |
