@@ -252,6 +252,18 @@ void geo_gallery_set_listing(GeoGallery* gallery, bool listing) {
     gallery->gallery.setListing(listing);
 }
 
+void geo_gallery_set_batching(GeoGallery* gallery, bool batching) {
+    gallery->gallery.setBatching(batching);
+}
+
+bool geo_gallery_settle(GeoGallery* gallery) {
+    return gallery->gallery.settle();
+}
+
+uint32_t geo_gallery_unsettled(const GeoGallery* gallery) {
+    return uint32_t(gallery->gallery.unsettled());
+}
+
 bool geo_gallery_peek_turnable(const GeoGallery* gallery) {
     return gallery->gallery.peekTurnable();
 }

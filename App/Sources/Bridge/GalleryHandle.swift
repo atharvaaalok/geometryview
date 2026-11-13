@@ -267,6 +267,20 @@ final class GalleryHandle {
         geo_gallery_set_listing(gallery, listing)
     }
 
+    /// Whether what arrives waits for settle(): facts, failures and a file's first picture.
+    func setBatching(_ batching: Bool) {
+        geo_gallery_set_batching(gallery, batching)
+    }
+
+    /// Applies everything waiting; returns whether anything was.
+    @discardableResult
+    func settle() -> Bool {
+        geo_gallery_settle(gallery)
+    }
+
+    /// How many arrivals wait for settle().
+    var unsettled: Int { Int(geo_gallery_unsettled(gallery)) }
+
     func peek(_ file: UInt32?) {
         geo_gallery_peek(gallery, file ?? UInt32.max)
     }

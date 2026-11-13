@@ -430,6 +430,7 @@ final class GalleryCheck {
             var run = measure()
             run["view"] = name
             run["contentHeight"] = Double(controller.gallery.contentHeight)
+            controller.settleNow()
             if let image = controller.view.posterImage() {
                 run["pixels"] = [image.width, image.height]
                 let output = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -827,6 +828,7 @@ final class GalleryCheck {
         while controller.waitingInView > 0, Date().timeIntervalSince(start) < 120 {
             try? await Task.sleep(for: .milliseconds(200))
         }
+        controller.settleNow()  // what has arrived, laid out now rather than at the next step
         // A last burst of pictures to lay out and paint.
         try? await Task.sleep(for: .milliseconds(400))
         controller.view.reload()

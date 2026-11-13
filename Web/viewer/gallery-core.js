@@ -266,6 +266,12 @@ export class GalleryCore {
   setPeekTurnable(turnable) { this.#m._gv_gallery_set_peek_turnable(this.#g, turnable); }
   /** Whether the folder is still being listed: an empty one says nothing until it is. */
   setListing(listing) { this.#m._gv_gallery_set_listing(this.#g, listing); }
+  /** Whether what arrives waits for settle(): facts, failures and a file's first picture. */
+  setBatching(batching) { this.#m._gv_gallery_set_batching(this.#g, batching); }
+  /** Applies everything waiting; returns whether anything was. */
+  settle() { return Boolean(this.#m._gv_gallery_settle(this.#g)); }
+  /** How many arrivals wait for settle(). */
+  get unsettled() { return this.#m._gv_gallery_unsettled(this.#g); }
   get peekTurnable() { return Boolean(this.#m._gv_gallery_peek_turnable(this.#g)); }
 
   /** The selected file, or null. */

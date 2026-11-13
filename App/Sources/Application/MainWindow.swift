@@ -1030,6 +1030,7 @@ final class MainWindow: NSWindow {
         if !wasPoster {
             setPoster(true)
         }
+        galleryController.settleNow()  // what has arrived, on the poster
         let image = galleryController.view.posterImage()
         if !wasPoster {
             setPoster(false)
@@ -1112,6 +1113,7 @@ final class MainWindow: NSWindow {
             if !wasPoster {
                 setPoster(true)
             }
+            galleryController.settleNow()  // what has arrived, on the poster
             let image = galleryController.view.posterImage()
             if !wasPoster {
                 setPoster(false)

@@ -338,6 +338,18 @@ EMSCRIPTEN_KEEPALIVE void gv_gallery_set_listing(GeoGallery* gallery, bool listi
     geo_gallery_set_listing(gallery, listing);
 }
 
+EMSCRIPTEN_KEEPALIVE void gv_gallery_set_batching(GeoGallery* gallery, bool batching) {
+    geo_gallery_set_batching(gallery, batching);
+}
+
+EMSCRIPTEN_KEEPALIVE bool gv_gallery_settle(GeoGallery* gallery) {
+    return geo_gallery_settle(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_unsettled(GeoGallery* gallery) {
+    return geo_gallery_unsettled(gallery);
+}
+
 EMSCRIPTEN_KEEPALIVE bool gv_gallery_peek_turnable(GeoGallery* gallery) {
     return geo_gallery_peek_turnable(gallery);
 }

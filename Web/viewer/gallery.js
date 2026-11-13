@@ -45,6 +45,8 @@ export class Gallery {
     this.#store = store;
     this.#on = on;
     this.core = new GalleryCore(engine.module);
+    // What arrives waits for a settle, so a folder being read moves in steps (#settleSoon).
+    this.core.setBatching(true);
     this.core.setViews(views);
     try {
       Object.assign(this.#sheet, JSON.parse(localStorage.getItem("gallery.sheet") ?? "{}"));
@@ -403,6 +405,8 @@ export class Gallery {
       const file = this.core.fileAt(path);
       if (file !== null) this.core.setFailure(file, message);
     }
+    // What was known is no arrival: laid out at once.
+    this.core.settle();
   }
 
   // ---- The library ----
@@ -429,16 +433,19 @@ export class Gallery {
     const f = layoutFacts(facts);
     this.#facts.set(path, f);
     this.core.setFacts(file, f);
-    this.#scheduleReload();
+    this.#settleSoon();
   }
 
   #receivePicture(path, png, note) {
     const file = this.core.fileAt(path);
     if (file === null) return;
+    const first = !this.#pictures.has(path);
     this.#pictures.set(path, { png, note });
     this.core.setPicture(file, note);
     this.view.setImage(file, URL.createObjectURL(png));
-    this.#scheduleReload(true);
+    // A first picture moves things: it comes with the next settle. Another only re-inks.
+    if (first) this.#settleSoon();
+    else this.#scheduleReload(true);
   }
 
   #receiveFailure(path, message) {
@@ -446,7 +453,28 @@ export class Gallery {
     if (file === null) return;
     this.#failures.set(path, message);
     this.core.setFailure(file, message);
+    this.#settleSoon();
+  }
+
+  // Lays out what has arrived a moment after a burst begins, and at most every 0.75 s while it
+  // goes on: a folder being read moves in steps, and a warm one, told everything at once, in one.
+  #settleSoon() {
+    if (this.#settleTimer !== null) return;
+    const since = this.#lastSettle === null ? Infinity : (performance.now() - this.#lastSettle) / 1000;
+    this.#settleTimer = setTimeout(() => this.settleNow(), Math.max(0.1, 0.75 - since) * 1000);
+  }
+  #settleTimer = null;
+  #lastSettle = null;
+
+  /** Lays out at once whatever waits, for the checks: true if anything did. */
+  settleNow() {
+    clearTimeout(this.#settleTimer);
+    this.#settleTimer = null;
+    this.#lastSettle = performance.now();
+    if (!this.core.settle()) return false;
     this.#scheduleReload();
+    this.#scheduleWant();
+    return true;
   }
 
   // Facts and pictures arrive in bursts: one layout a frame.

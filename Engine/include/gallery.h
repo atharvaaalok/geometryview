@@ -346,6 +346,13 @@ void geo_gallery_set_peek_turnable(GeoGallery* gallery, bool turnable);
 /// folder with nothing in it yet says nothing, rather than "0 files". A gallery given no entries
 /// yet says nothing either; geo_gallery_set_entries ends it.
 void geo_gallery_set_listing(GeoGallery* gallery, bool listing);
+/// Whether what arrives waits for geo_gallery_settle: facts, failures and a file's first picture,
+/// which change where things are. A picture replacing one shown applies at once.
+void geo_gallery_set_batching(GeoGallery* gallery, bool batching);
+/// Applies everything waiting; returns whether anything was.
+bool geo_gallery_settle(GeoGallery* gallery);
+/// How many arrivals wait for geo_gallery_settle.
+uint32_t geo_gallery_unsettled(const GeoGallery* gallery);
 bool geo_gallery_peek_turnable(const GeoGallery* gallery);
 
 /// Where to scroll so the selection shows, after a switch or a key; negative if it shows already.

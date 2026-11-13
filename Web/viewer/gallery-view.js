@@ -570,6 +570,8 @@ export class GalleryView {
    * pixels is plenty.
    */
   async posterCanvas(scale = 2) {
+    // What has arrived, on the poster.
+    if (this.#core.settle()) this.reload();
     const host = this.element.getBoundingClientRect();
     const area = this.#stage.getBoundingClientRect();
     const left = area.left - host.left, top = area.top - host.top;

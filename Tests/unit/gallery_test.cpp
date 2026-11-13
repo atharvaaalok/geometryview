@@ -1282,6 +1282,66 @@ TEST_CASE("a folder of many files is banded from its first files measured") {
     CHECK(countText(g, "SMALLEST TO LARGEST") + countText(g, "Smallest to largest") == 0);
 }
 
+TEST_CASE("while batching, what arrives waits for settle; a hover meanwhile lays out nothing new") {
+    Gallery g = listed();
+    g.setBatching(true);
+    g.layout();
+    const auto empty = coverParts(g);
+    CHECK(empty.empty());
+    measure(g);
+    CHECK(g.unsettled() > 0);
+    CHECK_FALSE(g.layout()); // nothing applied, nothing to lay out
+    g.hover(GeoTargetFolder, g.result().plates[0].index);
+    g.layout();
+    CHECK(coverParts(g).empty()); // a hover lets nothing through
+    CHECK(g.settle());
+    CHECK(g.unsettled() == 0);
+    REQUIRE(g.layout());
+    CHECK(coverParts(g).size() >= 6);
+    CHECK_FALSE(g.settle()); // nothing waits
+}
+
+TEST_CASE("while batching, a picture replacing one shown applies at once") {
+    Gallery g = measured();
+    g.setBatching(true);
+    g.layout();
+    Picture p = *g.tree().file(3).picture;
+    p.part[1] += 6.0f;
+    g.setPicture(3, p);
+    CHECK(g.unsettled() == 0);
+    CHECK(*g.tree().file(3).picture == p);
+    CHECK(g.layout());
+}
+
+TEST_CASE("told everything at once, a folder lays out once") {
+    Gallery g = listed();
+    g.setBatching(true);
+    g.layout();
+    // A warm open: the library tells every file's facts and picture in a burst, then the front
+    // end settles.
+    for (const GeoGalleryWant& w : g.wanted()) {
+        measureOne(g, w.file);
+    }
+    CHECK(g.settle());
+    REQUIRE(g.layout());
+    const auto first = coverParts(g);
+    CHECK(first.size() >= 6);
+    CHECK_FALSE(g.settle());
+    CHECK_FALSE(g.layout());
+    Gallery fresh = measured();
+    fresh.layout();
+    CHECK(coverParts(fresh) == first);
+}
+
+TEST_CASE("a new listing drops what waits for the old one") {
+    Gallery g = listed();
+    g.setBatching(true);
+    measure(g);
+    CHECK(g.unsettled() > 0);
+    g.setEntries("Parts", library());
+    CHECK(g.unsettled() == 0);
+}
+
 TEST_CASE("the same facts, picture or failure told again lay nothing out") {
     Gallery g = measured();
     g.layout();
