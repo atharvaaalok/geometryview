@@ -250,6 +250,11 @@ final class GalleryController {
     /// Files whose facts the library has told, for the checks.
     var factsKnown: Int { facts.count }
 
+    /// The picture last told for the file at `path`, for the checks: where its part is in it.
+    func pictureNote(at path: String) -> GeoGalleryPicture? {
+        pictures[path]?.picture
+    }
+
     var waitingInView: Int {
         gallery.wanted().filter { want in
             let path = gallery.path(of: want.file)
