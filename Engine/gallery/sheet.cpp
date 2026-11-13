@@ -168,7 +168,7 @@ public:
             familyScale(tree, ok, cw - 14.0f, picH - roomOf(picH) - 8.0f, 1.0, 2.0);
         std::optional<double> mm;
         if (in.sheetScale == GeoScaleFolder) {
-            mm = family.mmPerPoint;
+            mm = keepScale("sheet|" + b.key, family.mmPerPoint);
         } else if (in.sheetScale == GeoScaleTrue) {
             mm = trueMm;
         }
@@ -371,8 +371,10 @@ LayoutResult layoutSheet(const LayoutInput& input, Display& display) {
         sizes.push_back(largest(*drawnOf(tree.file(f))));
     }
     std::sort(sizes.begin(), sizes.end());
-    const double trueMm =
-        sizes.empty() ? 1.0 : sizes[std::min(sizes.size() - 1, sizes.size() * 9 / 10)] / (cw * 0.9);
+    const double trueMm = sheet.keepScale(
+        "sheet-true|" + folder.path,
+        sizes.empty() ? 1.0
+                      : sizes[std::min(sizes.size() - 1, sizes.size() * 9 / 10)] / (cw * 0.9));
 
     const u32 leftGroup = sheet.newGroup();
     std::vector<u32> columnGroups(columns);

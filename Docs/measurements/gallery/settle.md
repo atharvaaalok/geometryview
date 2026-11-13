@@ -45,8 +45,16 @@ at its root, as the recording that prompted this showed it.
 | | layouts | changes | moved | went | scale bars | last change |
 |---|---|---|---|---|---|---|
 | Mac, warm: a first picture laid out from its note at once | 5 | 3 | 17 | 100 | 0 | 0.16 s |
+| Mac, warm: covers from fixed candidates, kept; strips in fixed slots | 4 | 0 | 0 | 0 | 0 | none |
+| Mac, cold: the same | 360 | 67 | 72 | 2 | 3 | 17.3 s |
 
-What a warm open still does is all in its first 0.16 s, as facts arrive 128 look-ups at a time:
-covers re-pick from the parts measured so far, and strips step through them.
+What a warm open still did then was all in its first 0.16 s, as facts arrive 128 look-ups at a
+time: covers re-picked from the parts measured so far, and strips stepped through them. With each
+cover drawn from twelve candidates asked for first, keeping the parts it shows and a scale that
+only coarsens until a natural moment, and each strip slot keeping its file, a warm open lays out
+four times and changes nothing; a cold one no longer swaps parts out (2 went, from 642), and with
+nothing it shows reshuffled no import is cancelled (from 240). What a cold open still moves is a
+folder's own shelf taking in each newly measured part in size order, and a part's box giving way
+to its outline when its picture comes.
 - Web, cold: one import at a time, so the first change comes at 23.7 s and changes go on past
   90 s.

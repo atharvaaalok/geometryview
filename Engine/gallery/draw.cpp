@@ -141,6 +141,15 @@ std::string rangeOf(const Tree& tree, const std::vector<u32>& files) {
     return millimetres(kept.front()) + "\xE2\x80\x93" + millimetres(kept.back());
 }
 
+double Draw::keepScale(const std::string& key, double mmPerPoint) {
+    if (in.kept == nullptr) {
+        return mmPerPoint;
+    }
+    double& kept = in.kept->scales[key];
+    kept = std::max(kept, mmPerPoint);
+    return kept;
+}
+
 std::array<float, 2> Draw::part(u32 file, float x, float bottom, double mmPerPoint, u32 group,
                                 bool marks) {
     const File& f = tree.file(file);

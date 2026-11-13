@@ -9,6 +9,7 @@ namespace geo::gallery {
 
 void Gallery::setEntries(std::string_view title, std::span<const Entry> entries) {
     tree_.build(title, entries);
+    freshStart();     // what was kept names files of the old tree
     listing_ = false; // listed; a front end showing an empty stand-in says it is still listing
     folder_ = 0;
     viewOf_.clear();
@@ -48,6 +49,7 @@ void Gallery::setPoster(bool poster, std::string date) {
         poster_ = poster;
         posterDate_ = std::move(date);
         pendingMotion_ = GeoTransitionNone;
+        freshStart();
         dirty_ = true;
     }
 }
@@ -141,6 +143,7 @@ void Gallery::setViewport(float width, float height) {
     if (width != width_ || height != height_) {
         width_ = width;
         height_ = height;
+        freshStart();
         dirty_ = true;
     }
 }
@@ -153,6 +156,7 @@ bool Gallery::setFolder(std::string_view path) {
     if (folder != folder_) {
         viewOf_[folder_] = view_;
         folder_ = folder;
+        freshStart();
         if (const auto it = viewOf_.find(folder);
             it != viewOf_.end() && (views_ & (1u << it->second))) {
             view_ = it->second;
@@ -209,6 +213,7 @@ bool Gallery::layout() {
     }
     input.laddersShared = laddersShared_;
     input.listing = listing_;
+    input.kept = &kept_;
     switch (view_) {
     case GeoViewSheet:
         result_ = layoutSheet(input, display_);
@@ -316,6 +321,7 @@ bool Gallery::setView(u32 view) {
     }
     beginMotion(GeoTransitionSwitch);
     view_ = view;
+    freshStart();
     hoverKind_ = GeoTargetNone;
     focused_ = kNone; // plates are Plates' own; the selection carries across
     dirty_ = true;
@@ -330,6 +336,7 @@ void Gallery::setSheet(u32 scale, float cell, u32 sort) {
         sheetScale_ = scale;
         sheetCell_ = cell;
         sort_ = sort;
+        freshStart();
         dirty_ = true;
     }
 }
@@ -735,6 +742,7 @@ GeoGalleryAction Gallery::enter(u32 folder) {
     viewOf_[folder_] = view_;
     folder_ = folder;
     view_ = next;
+    freshStart();
     selected_ = focused_ = kNone;
     hoverKind_ = GeoTargetNone;
     peek_ = kNone;
@@ -996,15 +1004,17 @@ std::vector<GeoGalleryWant> Gallery::wanted() const {
             }
         }
     }
-    // A plate in view wants a sample of its files, spread through them, before any is measured:
-    // its cover is drawn from those.
+    // A plate in view wants its cover's candidates, before any is measured: its cover is drawn
+    // from those; then the files its strip has slots for.
     for (const LayoutResult::Place& p : result_.plates) {
         const bool inView = p.y + p.h >= top && p.y <= bottom;
-        const std::vector<u32> under = tree_.filesUnder(p.index);
-        const usize n = std::min<usize>(under.size(), 12);
-        for (usize i = 0; i < n; ++i) {
-            add(under[i * under.size() / n], inView ? 1 : 2, std::fabs(p.y - middle) + double(i));
+        const std::vector<u32> candidates = coverCandidates(tree_, p.index);
+        for (usize i = 0; i < candidates.size(); ++i) {
+            add(candidates[i], inView ? 1 : 2, std::fabs(p.y - middle) + double(i));
         }
+    }
+    for (usize i = 0; i < result_.stripFiles.size(); ++i) {
+        add(result_.stripFiles[i], 2, 1e5 + double(i));
     }
     // Files not drawn yet in this folder's own shelf are in view too, so they get their facts.
     for (const u32 f : tree_.folder(folder_).files) {
