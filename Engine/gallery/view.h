@@ -67,6 +67,7 @@ public:
         if (std::min(spread, last) != spread_) {
             spread_ = std::min(spread, last);
             selected_ = kNone;
+            freshStart();
             dirty_ = true;
         }
     }
@@ -75,6 +76,7 @@ public:
     void setLadders(bool shared) {
         if (shared != laddersShared_) {
             laddersShared_ = shared;
+            freshStart();
             dirty_ = true;
         }
     }
@@ -184,6 +186,11 @@ private:
     u32 peek_ = kNone;
     bool peekTurnable_ = false; // its turntable's frames have come
     bool listing_ = true;       // nothing listed yet, or the folder is still being listed
+    // What the layouts keep until a natural moment: covers' picks, groups' scales, covers' rows.
+    Kept kept_;
+    /// A natural moment (another view, folder, size or setting): the next layout starts afresh,
+    /// as if everything known had been known all along.
+    void freshStart() { kept_.clear(); }
     bool poster_ = false;
     bool lost_ = false;
     bool laddersShared_ = false;

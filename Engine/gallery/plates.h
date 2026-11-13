@@ -9,10 +9,29 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace geo::gallery {
+
+/// What the layouts keep from one to the next until a natural moment (another view, folder or
+/// size, a setting changed), so what arrives fills in rather than reshuffles: the parts each cover
+/// shows, each group's scale (which only coarsens), and each cover's rows.
+struct Kept {
+    std::unordered_map<std::string, std::vector<u32>> picks;
+    std::unordered_map<std::string, double> scales;
+    std::unordered_map<std::string, usize> rows;
+    void clear() {
+        picks.clear();
+        scales.clear();
+        rows.clear();
+    }
+};
+
+/// The files a plate's cover is drawn from: twelve spread through it by name, shared among its
+/// subfolders, the same however many are measured. They are asked for first.
+std::vector<u32> coverCandidates(const Tree& tree, u32 folder);
 
 /// What a layout is asked to show.
 struct LayoutInput {
@@ -38,6 +57,8 @@ struct LayoutInput {
     bool laddersShared = false;
     /// The folder is still being listed: a folder with nothing yet says nothing, not "0 files".
     bool listing = false;
+    /// What the layouts keep until a natural moment; none to lay out afresh.
+    Kept* kept = nullptr;
 };
 
 /// What a layout found out, beside its items: where things are, for keys and wanted pictures.
@@ -51,6 +72,7 @@ struct LayoutResult {
     std::vector<Place> plates;         // subfolders, in order
     std::vector<Place> parts;          // files on shelves, in order
     std::vector<Place> covers;         // files drawn on plates' covers
+    std::vector<u32> stripFiles;       // the files plates' strips have slots for
     std::vector<std::string> bands;    // keys of size bands cut short, by their "more" target index
     u32 groups = 0;                    // alignment groups made
     std::vector<GeoGalleryLane> lanes; // bands that scroll sideways on their own

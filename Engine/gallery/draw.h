@@ -50,6 +50,9 @@ public:
           palette(paletteOf(input.style)) {}
 
     u32 newGroup() { return ++result.groups; }
+    /// The scale `mmPerPoint` for the group `key`, never finer than it was since the last natural
+    /// moment: arrivals can shrink a group to fit, never swell it back.
+    double keepScale(const std::string& key, double mmPerPoint);
     /// A file's part, its bottom at `bottom`, its left edge at `x`, at `mmPerPoint`: its picture,
     /// or its measured box in construction lines. Returns its size in points.
     /// With `marks`, a file being read shows its bar and a changed one its Δ.

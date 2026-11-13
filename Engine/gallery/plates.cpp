@@ -331,10 +331,10 @@ public:
         return r;
     }
 
-    // The parts a cover draws from: those under the folder, without those far larger than the
+    // The parts a cover draws from: its candidates measured, without those far larger than the
     // rest, smallest first.
     std::vector<u32> coverPool(u32 folder) {
-        const std::vector<u32> files = drawable(tree, tree.filesUnder(folder));
+        const std::vector<u32> files = drawable(tree, coverCandidates(tree, folder));
         const FamilyScale family = familyScale(tree, files, 1, 1, 0.8, 3.0);
         return bySize(tree, family.normal);
     }
@@ -354,16 +354,53 @@ public:
         return out;
     }
 
+    // The parts a cover shows: those it showed before, while they stay in its pool, and as many
+    // more of the ideal ones as it has room for. Until three are measured (or all, if fewer), none.
     std::vector<u32> coverOf(u32 folder, usize n) {
+        const std::vector<u32> ideal = idealCover(folder, n);
+        const std::vector<u32> candidates = coverCandidates(tree, folder);
+        const std::vector<u32> measured = drawable(tree, candidates);
+        if (measured.size() < std::min<usize>(3, candidates.size())) {
+            return {};
+        }
+        if (in.kept == nullptr) {
+            return ideal;
+        }
+        std::vector<u32>& kept = in.kept->picks[tree.folder(folder).path];
+        // A shown part leaves only if it fails, or proves far larger than the rest once enough
+        // are measured to say so.
+        const std::vector<u32> pool =
+            measured.size() >= 4 ? familyScale(tree, measured, 1, 1, 0.8, 3.0).normal : measured;
+        std::erase_if(kept,
+                      [&](u32 f) { return std::find(pool.begin(), pool.end(), f) == pool.end(); });
+        for (const u32 f : ideal) {
+            if (kept.size() >= n) {
+                break;
+            }
+            if (std::find(kept.begin(), kept.end(), f) == kept.end()) {
+                kept.push_back(f);
+            }
+        }
+        return bySize(tree, kept);
+    }
+
+    // The parts a cover would show, all its candidates known: n spread from smallest to largest.
+    std::vector<u32> idealCover(u32 folder, usize n) {
         const Folder& f = tree.folder(folder);
         if (f.folders.empty()) {
             return samples(coverPool(folder), n);
         }
         // A folder of folders shows each subfolder's middle sizes side by side, so no one giant
         // part stands for the lot.
+        const std::vector<u32> candidates = drawable(tree, coverCandidates(tree, folder));
         std::vector<std::vector<u32>> groups;
         for (const u32 family : tree.familiesUnder(folder)) {
-            const std::vector<u32> files = drawable(tree, tree.folder(family).files);
+            std::vector<u32> files;
+            for (const u32 c : candidates) {
+                if (tree.file(c).folder == family) {
+                    files.push_back(c);
+                }
+            }
             if (!files.empty()) {
                 groups.push_back(files);
             }
@@ -405,9 +442,11 @@ public:
 
     // Parts at one scale on one to three baselines in the art box, whichever draws them largest.
     // Each row's parts stand on one line, raised by the row's deepest shadow so every shadow ends
-    // 3 points above the row's foot: clear of the rule under the art box. Returns the scale, in
-    // millimetres a point.
-    std::optional<double> cover(const std::vector<u32>& parts, float x, float y, float W, float H) {
+    // 3 points above the row's foot: clear of the rule under the art box. Until a natural moment
+    // the cover `key` keeps its rows while its parts still fit them, and its scale only coarsens.
+    // Returns the scale, in millimetres a point.
+    std::optional<double> cover(const std::vector<u32>& parts, float x, float y, float W, float H,
+                                const std::string& key) {
         if (parts.empty() || W < 20.0f || H < 20.0f) {
             return std::nullopt;
         }
@@ -429,7 +468,9 @@ public:
             double mm = 0;
             std::vector<std::vector<u32>> rows;
         };
-        std::optional<Best> best;
+        std::optional<Best> best, keptRows;
+        const usize rowsBefore =
+            in.kept != nullptr && in.kept->rows.contains(key) ? in.kept->rows.at(key) : 0;
         for (usize r = 1; r <= std::min<usize>(3, parts.size()); ++r) {
             const usize per = (parts.size() + r - 1) / r;
             std::vector<std::vector<u32>> rows;
@@ -462,7 +503,18 @@ public:
             if (!best || mm < best->mm * 0.97) {
                 best = Best{mm, rows};
             }
+            if (r == rowsBefore) {
+                keptRows = Best{mm, rows};
+            }
         }
+        // The rows it had, while its parts draw nearly as large in them.
+        if (keptRows && keptRows->mm <= best->mm * 1.25) {
+            best = keptRows;
+        }
+        if (in.kept != nullptr) {
+            in.kept->rows[key] = best->rows.size();
+        }
+        best->mm = keepScale("cover|" + key, best->mm);
         // Each row: its tallest part, its deepest shadow under the foot, and 3 points below that.
         std::vector<float> used, sunk;
         float total = 0;
@@ -556,7 +608,8 @@ public:
         const float artH = std::max(30.0f, h - top - rhythm.bottomText - 8.0f);
         const usize n = usize(
             std::max(3.0f, std::min(f.folders.empty() ? 8.0f : 9.0f, std::floor(artW / 38.0f))));
-        const std::optional<double> mm = cover(coverOf(folder, n), x + 12.0f, y + top, artW, artH);
+        const std::optional<double> mm =
+            cover(coverOf(folder, n), x + 12.0f, y + top, artW, artH, tree.folder(folder).path);
         out.group(inGroup(groups.base));
         out.line(x + 14.0f, y + top + artH + 3.0f, x + w - 14.0f, y + top + artH + 3.0f,
                  palette.rule, 1.0f);
@@ -581,21 +634,27 @@ public:
         if (f.count > 40) {
             // A strip of what is inside, and how many in all.
             const float stripY = y + top + artH + rhythm.stripTop;
-            const std::vector<u32> all = drawable(tree, tree.filesUnder(folder));
+            // A slot of 15 points for each of a spread of its files, by name: each slot keeps its
+            // file, empty until it is measured.
+            const std::vector<u32> all = tree.filesUnder(folder);
             const usize fit = usize(std::max(4.0f, std::floor((w - 28.0f - 74.0f) / 15.0f)));
-            const usize step = std::max<usize>(1, all.size() / fit);
-            float sx = x + 14.0f;
-            usize shown = 0;
+            const usize shown = std::min(fit, all.size());
             const u32 g = inGroup(groups.strip);
-            for (usize i = 0; i < all.size() && shown < fit; i += step, ++shown) {
-                // Each on the strip's line, 13 points tall at most with what it draws above, its
-                // shadow within the 4 points under the line, the next after its ink.
-                const Drawn d = *drawnOf(tree.file(all[i]));
+            for (usize i = 0; i < shown; ++i) {
+                const u32 file = all[i * all.size() / shown];
+                result.stripFiles.push_back(file);
+                const std::optional<Drawn> d = drawnOf(tree.file(file));
+                if (!d) {
+                    continue;
+                }
+                // On the strip's line, 13 points wide and tall at most with what it draws above,
+                // its shadow within the 4 points under the line, its ink in the middle of its slot.
                 const double mmTiny =
-                    std::max({inkWidth(d) / 13.0, (d.h + d.above) / 13.0, d.below / 4.0});
-                part(all[i], sx + float(d.left / mmTiny), stripY + 15.0f, mmTiny, g,
-                     /*marks=*/false);
-                sx += float(inkWidth(d) / mmTiny) + 2.0f;
+                    std::max({inkWidth(*d) / 13.0, (d->h + d->above) / 13.0, d->below / 4.0});
+                const float slot = x + 14.0f + float(i) * 15.0f;
+                part(file,
+                     slot + (15.0f - float(inkWidth(*d) / mmTiny)) / 2.0f + float(d->left / mmTiny),
+                     stripY + 15.0f, mmTiny, g, /*marks=*/false);
             }
             out.group(0);
             const std::string more = grouped(f.count) + " in all";
@@ -692,7 +751,10 @@ public:
                 waiting.push_back(f);
             }
         }
-        if (good.size() <= kFamilyMax) {
+        // Shelf or bands by how many files it has, not how many are measured yet, so it doesn't
+        // turn into bands while it is read.
+        const std::string& path = tree.folder(folder).path;
+        if (own.size() <= kFamilyMax) {
             std::vector<double> sizes;
             for (const u32 f : good) {
                 sizes.push_back(largest(*drawnOf(tree.file(f))));
@@ -716,7 +778,7 @@ public:
             double normalMm = 1.0;
             if (!normal.empty()) {
                 FamilyScale family = familyScale(tree, normal, 150.0f, 132.0f, 0.8, 1e9);
-                family.mmPerPoint = sharp(normal, family.mmPerPoint);
+                family.mmPerPoint = keepScale("shelf|" + path, sharp(normal, family.mmPerPoint));
                 normalMm = family.mmPerPoint;
                 const std::string range = rangeOf(tree, good);
                 std::string meta = count(good.size(), "file");
@@ -730,7 +792,7 @@ public:
             }
             if (!oversize.empty()) {
                 FamilyScale big = familyScale(tree, oversize, 440.0f, 150.0f, 1.0, 1e9);
-                big.mmPerPoint = sharp(oversize, big.mmPerPoint);
+                big.mmPerPoint = keepScale("big|" + path, sharp(oversize, big.mmPerPoint));
                 const double ratio = normal.empty() ? 1.0 : big.mmPerPoint / normalMm;
                 y += 18.0f;
                 y = section(
@@ -756,7 +818,8 @@ public:
                 }
                 inBand = bySize(tree, inBand);
                 const std::string key = tree.folder(folder).path + "|" + band.title;
-                const FamilyScale family = familyScale(tree, inBand, 96.0f, 84.0f, 0.9, 1e9);
+                FamilyScale family = familyScale(tree, inBand, 96.0f, 84.0f, 0.9, 1e9);
+                family.mmPerPoint = keepScale("band|" + key, family.mmPerPoint);
                 y = section(y, width, band.title, count(inBand.size(), "file"), family.mmPerPoint,
                             leftGroup);
                 const bool all = in.expanded && in.expanded->contains(key);
@@ -862,6 +925,41 @@ FamilyScale familyScale(const Tree& tree, const std::vector<u32>& files, float w
     if (!need.empty()) {
         const usize at = std::min(need.size() - 1, usize(double(need.size()) * fraction));
         out.mmPerPoint = need[at] > 0 ? need[at] : 1.0;
+    }
+    return out;
+}
+
+std::vector<u32> coverCandidates(const Tree& tree, u32 folder) {
+    constexpr usize kCandidates = 12;
+    const Folder& f = tree.folder(folder);
+    std::vector<std::vector<u32>> groups;
+    if (f.folders.empty()) {
+        groups.push_back(tree.filesUnder(folder));
+    } else {
+        for (const u32 family : tree.familiesUnder(folder)) {
+            if (!tree.folder(family).files.empty()) {
+                groups.push_back(tree.folder(family).files);
+            }
+        }
+    }
+    // More subfolders than candidates: a spread of them, one file each.
+    if (groups.size() > kCandidates) {
+        std::vector<std::vector<u32>> spread;
+        for (usize i = 0; i < kCandidates; ++i) {
+            spread.push_back(groups[i * groups.size() / kCandidates]);
+        }
+        groups = std::move(spread);
+    }
+    std::vector<u32> out;
+    if (groups.empty()) {
+        return out;
+    }
+    const usize per = std::max<usize>(1, (kCandidates + groups.size() - 1) / groups.size());
+    for (const std::vector<u32>& files : groups) {
+        const usize k = std::min(per, files.size());
+        for (usize i = 0; i < k; ++i) {
+            out.push_back(files[i * files.size() / k]);
+        }
     }
     return out;
 }

@@ -104,9 +104,18 @@ std::vector<Entry> library(usize big = 50) {
     return entries;
 }
 
+void measureOne(Gallery& g, u32 f);
+
 // Facts and a picture for each file: a box growing with its index, drawn as the thumbnailer would.
 void measure(Gallery& g) {
     for (u32 f = 0; f < g.tree().fileCount(); ++f) {
+        measureOne(g, f);
+    }
+}
+
+// Facts and a picture for one file, as measure() gives every file.
+void measureOne(Gallery& g, u32 f) {
+    {
         Facts facts;
         const double s = 4.0 + double(f % 17) * 3.0;
         facts.size = {s, s * 0.8, s * 0.6};
@@ -1111,6 +1120,166 @@ TEST_CASE("in the sheet, a part's shadow and stray ink move nothing but it") {
             }
         }
     }
+}
+
+namespace {
+
+// A library listed, nothing measured yet, at the usual size.
+Gallery listed(usize big = 50) {
+    Gallery g;
+    const std::vector<Entry> entries = library(big);
+    g.setEntries("Parts", entries);
+    g.setViewport(1080.0f, 720.0f);
+    return g;
+}
+
+// The files drawn on covers, and each one's part rectangle.
+std::map<u32, std::array<float, 4>> coverParts(const Gallery& g) {
+    std::map<u32, std::array<float, 4>> out;
+    for (const LayoutResult::Place& p : g.result().covers) {
+        out[p.index] = {p.x, p.y, p.w, p.h};
+    }
+    return out;
+}
+
+// Every file in an order no layout would choose: a stride through them.
+std::vector<u32> shuffled(const Gallery& g) {
+    const u32 n = g.tree().fileCount();
+    std::vector<u32> out;
+    for (u32 i = 0; i < n; ++i) {
+        out.push_back((i * 37 + 11) % n);
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    for (u32 f = 0; f < n; ++f) {
+        if (std::find(out.begin(), out.end(), f) == out.end()) {
+            out.push_back(f);
+        }
+    }
+    std::vector<u32> order;
+    for (u32 i = 0; i < n; ++i) {
+        order.push_back((i * 37 + 11) % n);
+    }
+    return order;
+}
+
+} // namespace
+
+TEST_CASE("a cover keeps the parts it shows while more files are measured") {
+    Gallery g = listed();
+    g.layout();
+    std::map<u32, std::array<float, 4>> shown;
+    usize waves = 0;
+    const std::vector<u32> order = shuffled(g);
+    for (usize at = 0; at < order.size(); at += 5, ++waves) {
+        for (usize i = at; i < std::min(order.size(), at + 5); ++i) {
+            measureOne(g, order[i]);
+        }
+        g.layout();
+        const auto now = coverParts(g);
+        for (const auto& [file, rect] : shown) {
+            CAPTURE(g.tree().file(file).path);
+            CAPTURE(waves);
+            REQUIRE(now.contains(file)); // shown once, shown still
+            // Its scale only coarsens: never drawn larger than before.
+            CHECK(now.at(file)[2] <= rect[2] + 0.01f);
+        }
+        shown = now;
+    }
+    CHECK(shown.size() >= 6);
+    // A natural moment lays them out afresh, as if all had been known from the start.
+    REQUIRE(g.setView(GeoViewSheet));
+    g.layout();
+    REQUIRE(g.setView(GeoViewPlates));
+    g.layout();
+    Gallery fresh = measured();
+    fresh.layout();
+    CHECK(coverParts(g) == coverParts(fresh));
+}
+
+TEST_CASE("a cover is final once its candidates are known") {
+    Gallery g = listed();
+    g.layout();
+    // Each plate's candidates first, as the gallery asks for them first.
+    for (const LayoutResult::Place& plate : g.result().plates) {
+        for (const u32 f : coverCandidates(g.tree(), plate.index)) {
+            measureOne(g, f);
+        }
+    }
+    g.layout();
+    const auto first = coverParts(g);
+    CHECK(first.size() >= 6);
+    measure(g);
+    g.layout();
+    CHECK(coverParts(g) == first);
+    Gallery fresh = measured();
+    fresh.layout();
+    CHECK(coverParts(fresh) == first); // and the same as if all were known
+}
+
+TEST_CASE("the first files a gallery of plates wants are its covers' candidates") {
+    Gallery g = listed();
+    g.layout();
+    const std::vector<GeoGalleryWant> wanted = g.wanted();
+    std::set<u32> candidates;
+    for (const LayoutResult::Place& plate : g.result().plates) {
+        for (const u32 f : coverCandidates(g.tree(), plate.index)) {
+            candidates.insert(f);
+        }
+    }
+    REQUIRE(wanted.size() >= candidates.size());
+    for (usize i = 0; i < candidates.size(); ++i) {
+        CAPTURE(i);
+        CHECK(candidates.contains(wanted[i].file));
+        CHECK(wanted[i].band == 1);
+    }
+}
+
+TEST_CASE("a strip's slots keep their files while they are measured") {
+    Gallery g = listed();
+    g.layout();
+    // By file and the line it stands on: a file can be on its plate's cover too.
+    std::map<std::pair<u32, int>, float> slot;
+    const std::vector<u32> order = shuffled(g);
+    for (usize at = 0; at < order.size(); at += 7) {
+        for (usize i = at; i < std::min(order.size(), at + 7); ++i) {
+            measureOne(g, order[i]);
+        }
+        g.layout();
+        const std::vector<u32>& strip = g.result().stripFiles;
+        REQUIRE(!strip.empty());
+        for (const GeoGalleryItem& item : g.display().items()) {
+            if (item.kind != GeoItemPicture ||
+                std::find(strip.begin(), strip.end(), item.file) == strip.end() ||
+                item.width > 60.0f) {
+                continue;
+            }
+            const float centre = item.x + item.width / 2.0f;
+            const std::pair<u32, int> key{item.file, int(std::lround(item.line))};
+            if (const auto it = slot.find(key); it != slot.end()) {
+                CAPTURE(g.tree().file(item.file).path);
+                CHECK(std::fabs(centre - it->second) < 0.01f);
+            }
+            slot[key] = centre;
+        }
+    }
+    CHECK(slot.size() > 10);
+}
+
+TEST_CASE("a folder of many files is banded from its first files measured") {
+    Gallery g = listed(100);
+    REQUIRE(g.setFolder("bearing"));
+    for (u32 f = 0; f < g.tree().fileCount(); ++f) {
+        if (g.tree().file(f).path.starts_with("bearing/") && f % 9 == 0) {
+            measureOne(g, f);
+        }
+    }
+    g.layout();
+    // Not "Smallest to largest", which a shelf of up to 80 says: it is banded already.
+    CHECK(countText(g, "SMALLEST TO LARGEST") + countText(g, "Smallest to largest") == 0);
+    measure(g);
+    g.layout();
+    CHECK(countText(g, "SMALLEST TO LARGEST") + countText(g, "Smallest to largest") == 0);
 }
 
 TEST_CASE("the same facts, picture or failure told again lay nothing out") {
