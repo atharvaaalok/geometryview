@@ -1,6 +1,7 @@
 // Sheet: every file once, folder by folder, like a contact sheet. Headings per subfolder stay at
 // the top of the view while their files scroll under them; the files stand in cells of one size, on
-// the cells' baseline, at the scale Sheet's control says. Docs/design/gallery-spec.md, "Views".
+// one line a fixed room above the cells' floor, at the scale Sheet's control says, and all of a
+// part's ink stays in its own cell. Docs/design/gallery-spec.md, "Views".
 #include "gallery/draw.h"
 #include "gallery/plates.h"
 
@@ -18,6 +19,21 @@ constexpr TextStyle kFamilyMeta{11.5f, 400, 0.0f, false};
 constexpr TextStyle kStamp{9.0f, 600, 0.08f, true};
 constexpr usize kBlockShown = 240; // cells in a block before "show all"
 constexpr float kGap = 6.0f, kRowGap = 2.0f;
+// Under the line the parts stand on, room for their shadows: a fifth of the picture area, or a
+// little for styles that cast none. A part's ink keeps kInk inside its cell.
+constexpr float kShadowRoom = 0.2f, kLineRoom = 3.0f, kInk = 1.0f;
+// A part whose shadow is deeper than the room is drawn smaller to stand on the line, but no more
+// than this much smaller than it would be standing higher in its cell.
+constexpr double kShrinkToStand = 1.5;
+
+// How a file is drawn in its cell: its scale, the stamp that says it is not the folder's, and
+// where its part stands.
+struct Fitted {
+    double mm = 1.0;
+    std::string stamp;
+    float left = 0.0f, foot = 0.0f;
+    bool onLine = true;
+};
 
 struct Block {
     std::string title;
@@ -149,7 +165,7 @@ public:
         }
         const std::vector<u32> ok = drawable(tree, files);
         const FamilyScale family =
-            familyScale(tree, ok, cw - 14.0f, picH - 8.0f, 1.0, 2.0, /*shadows=*/true);
+            familyScale(tree, ok, cw - 14.0f, picH - roomOf(picH) - 8.0f, 1.0, 2.0);
         std::optional<double> mm;
         if (in.sheetScale == GeoScaleFolder) {
             mm = family.mmPerPoint;
@@ -193,21 +209,13 @@ public:
             all ? files.size() : std::min(files.size(), in.poster ? 400 : kBlockShown);
         const float ch = picH + 32.0f;
         for (usize start = 0; start < shown; start += columns) {
+            // The row's parts stand on one line, the same in every cell, so what one part draws
+            // never moves another.
             const u32 partGroup = newGroup(), line1 = newGroup(), line2 = newGroup();
-            // The row's parts stand on one line, raised by its deepest shadow, so every shadow
-            // stays above the labels.
-            float below = 0.0f;
-            for (usize c = 0; c < columns && start + c < shown; ++c) {
-                const File& f = tree.file(files[start + c]);
-                if (const std::optional<Drawn> d = drawnOf(f)) {
-                    below = std::max(below, float(d->below / scaleOf(f, *d, cw, picH, mm).first));
-                }
-            }
             for (usize c = 0; c < columns && start + c < shown; ++c) {
                 const u32 file = files[start + c];
                 const float cx = kContentLeft + float(c) * (cw + kGap);
-                cell(file, cx, y, cw, picH, ch, mm, below, partGroup, line1, line2,
-                     columnGroups[c]);
+                cell(file, cx, y, cw, picH, ch, mm, partGroup, line1, line2, columnGroups[c]);
             }
             y += ch + kRowGap;
         }
@@ -222,20 +230,36 @@ public:
         return y + 20.0f;
     }
 
-    /// The scale a file is drawn at in its cell, and the stamp that says it is not the folder's:
-    /// the scale that fits it and its shadow, no finer than its picture's pixels allow.
-    std::pair<double, std::string> scaleOf(const File& f, const Drawn& d, float cw, float picH,
-                                           std::optional<double> mm) const {
-        double fit = std::max(d.w / double(cw - 10.0f), (d.h + d.below) / double(picH - 4.0f));
-        if (f.picture && f.picture->mmPerPixel > 0) {
-            fit = std::max(fit, f.picture->mmPerPixel / kMaxPointsPerPixel);
+    /// The shadows' room under the line, in a picture area `picH` high.
+    float roomOf(float picH) const {
+        return palette.shadows ? std::round(kShadowRoom * picH) : kLineRoom;
+    }
+
+    /// How a file is drawn in its cell at (x, y): the scale that fits all its ink in the cell, no
+    /// finer than its picture's pixels allow, standing on the line when its shadow fits the room
+    /// (or when standing costs little), else higher in its cell, its shadow on the cell's floor.
+    /// Folder and True keep their scale where the ink fits, and say SMALLER where it doesn't.
+    Fitted fitOf(const File& f, const Drawn& d, float x, float y, float cw, float picH,
+                 std::optional<double> mm) const {
+        const double room = roomOf(picH);
+        const double across =
+            std::max(d.w / double(cw - 10.0f), inkWidth(d) / double(cw - 2 * kInk));
+        const double up =
+            std::max(d.h / (picH - room - 4.0), (d.h + d.above) / (picH - room - kInk));
+        const double stand = std::max({across, up, d.below / room});
+        const double raise = std::max({across, up, inkHeight(d) / double(picH - kInk)});
+        const double sharp = f.picture && f.picture->mmPerPixel > 0
+                                 ? f.picture->mmPerPixel / kMaxPointsPerPixel
+                                 : 0.0;
+        const double fit = std::max(stand <= kShrinkToStand * raise ? stand : raise, sharp);
+        Fitted out;
+        out.mm = mm.value_or(fit);
+        if (mm && out.mm < std::max(raise, sharp)) {
+            out.mm = fit;
+            out.stamp = "SMALLER";
         }
-        double scale = mm.value_or(fit);
-        std::string stamp;
-        if (mm && scale < fit) {
-            scale = fit;
-            stamp = "SMALLER";
-        }
+        double& scale = out.mm;
+        std::string& stamp = out.stamp;
         if (in.sheetScale == GeoScaleTrue && mm && stamp.empty() && largest(d) / scale < 10.0) {
             // Too small to see at true scale: drawn larger, the drawing office's way.
             for (const int n : {2, 5, 10, 20, 50, 100}) {
@@ -246,11 +270,18 @@ public:
                 }
             }
         }
-        return {scale, stamp};
+        // On the line, unless its ink must stand lower or higher to stay in the cell.
+        const float line = y + picH - float(room);
+        const float lowest = y + kInk + float((d.h + d.above) / scale);
+        const float highest = y + picH - float(d.below / scale);
+        out.foot = lowest <= highest ? std::clamp(line, lowest, highest) : highest;
+        out.onLine = std::abs(out.foot - line) < 0.01f;
+        out.left = inkInside(d, scale, x + cw / 2.0f, x + kInk, x + cw - kInk);
+        return out;
     }
 
     void cell(u32 file, float x, float y, float cw, float picH, float ch, std::optional<double> mm,
-              float below, u32 partGroup, u32 line1, u32 line2, u32 column) {
+              u32 partGroup, u32 line1, u32 line2, u32 column) {
         const File& f = tree.file(file);
         const bool hovered = in.hoverKind == GeoTargetFile && in.hover == file;
         const bool selected = in.selected == file;
@@ -278,13 +309,13 @@ public:
         }
         const u32 fade = faded ? u32(GeoItemFading) : 0u;
         const usize first = out.items().size();
-        const float baseline = y + picH - below;
         std::string stamp;
         if (const std::optional<Drawn> d = drawnOf(f)) {
-            const auto [scale, why] = scaleOf(f, *d, cw, picH, mm);
-            stamp = why;
-            const float w = float(d->w / scale);
-            part(file, x + 4.0f + (cw - 8.0f - w) / 2.0f, baseline, scale, grouped(partGroup));
+            const Fitted fitted = fitOf(f, *d, x, y, cw, picH, mm);
+            stamp = fitted.stamp;
+            // A part standing off the line aligns with nothing.
+            part(file, fitted.left, fitted.foot, fitted.mm,
+                 fitted.onLine ? grouped(partGroup) : 0u);
         } else {
             out.rect(x + cw / 2.0f - 26.0f, y + 4.0f + picH / 2.0f - 22.0f, 52.0f, 40.0f, 0,
                      palette.on, 1.5f, 4.0f, f.failed() ? u32(GeoItemHatched) : u32(GeoItemDashed));
