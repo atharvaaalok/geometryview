@@ -82,9 +82,9 @@ cells, over the labels of the row before; the image's outline lay across the nex
 2026-11-13 every cell has the same line, with a fixed room for shadows under it (a fifth of the
 picture area), and each part is fitted so all its ink stays in its cell: on that folder no part
 leaves its cell, the door handle stands higher in its own, and the Mac's gallery check finds 0
-groups over 0.5 pt in every view and style. Over the 1,972 shadowed pictures kept on the
-development Mac, a part drawn in Fit comes out 0.88 of its old size at the median, and 6% stand
-higher than the line.
+groups over 0.5 pt in every view and style. Simulated with the same rule on the 1,972 shadowed
+pictures kept on the development Mac (124 pt cells), a part drawn in Fit comes out 0.88 of its old
+size at the median, and 6% stand higher than the line.
 
 ## Search and Peek
 
