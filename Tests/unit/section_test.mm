@@ -76,6 +76,12 @@ struct Cut {
         renderer->renderOffscreen(view);
     }
 
+    // Draws again, after the face state changed.
+    void redraw() {
+        renderer->syncState(state);
+        renderer->renderOffscreen(view);
+    }
+
     double ndcX(int x) const { return 2.0 * (double(x) + 0.5) / kSize - 1.0; }
     double ndcY(int y) const { return 1.0 - 2.0 * (double(y) + 0.5) / kSize; }
 
@@ -163,6 +169,29 @@ TEST_CASE("a cut face is its own part's, on the plane, where another part touche
         const u32 leftPart = checkCutFace(cut, left);
         const u32 rightPart = checkCutFace(cut, right);
         CHECK(leftPart != rightPart);
+    }
+}
+
+TEST_CASE("a part opened by a hidden face is not capped where it is cut, and others still are") {
+    @autoreleasepool {
+        const Box left{{0, 0, 0}, {4, 4, 4}}, right{{4, 0, 0}, {8, 4, 4}};
+        Cut cut({left, right});
+        const u32 leftPart = checkCutFace(cut, left);
+        // One of the left box's faces hidden: it no longer encloses anything, so the cut shows its
+        // inside, below the plane, and no cap; the box beside it keeps its cut face.
+        cut.state.set({leftPart, 0}, kStateHidden, true);
+        cut.redraw();
+        checkCutFace(cut, right);
+        usize checked = 0, onPlane = 0;
+        cut.forEach([&](Vec3 p, double margin) { return inside(left, p, margin); },
+                    [&](int x, int y, Vec3) {
+                        ++checked;
+                        if (const std::optional<Cut::Seen> seen = cut.seen(x, y)) {
+                            onPlane += seen->world.z > kPlaneZ - 0.05 ? 1 : 0;
+                        }
+                    });
+        REQUIRE(checked > 100);
+        CHECK(onPlane == 0);
     }
 }
 

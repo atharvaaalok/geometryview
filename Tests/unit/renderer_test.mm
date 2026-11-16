@@ -337,20 +337,162 @@ TEST_CASE("closed and open surfaces in one scene both draw") {
     }
 }
 
-TEST_CASE("a hidden face is neither drawn nor picked") {
+TEST_CASE("a hidden face is neither drawn nor picked, and the inside shows through the gap") {
+    for (const bool perspective : {false, true}) {
+        @autoreleasepool {
+            CAPTURE(perspective);
+            Stage stage(box(), perspective);
+            render::ViewState view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            REQUIRE(visibleIds(stage, view).size() == 3);
+            // The face in the middle of the picture, and every pixel it covers.
+            const auto middle = stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth);
+            REQUIRE(middle.has_value());
+            const u32 hidden = middle->id;
+            struct Covered {
+                int x, y;
+                Vec3 at; // where the face was
+            };
+            std::vector<Covered> covered;
+            for (u32 y = 0; y < kHeight; y += 2) {
+                for (u32 x = 0; x < kWidth; x += 2) {
+                    const auto hit = stage.renderer->readPixel(int(x), int(y), view.depth);
+                    if (hit && hit->id == hidden) {
+                        covered.push_back({int(x), int(y), worldHit(stage, view, int(x), int(y))});
+                    }
+                }
+            }
+            REQUIRE(covered.size() > 200);
+            const auto target = stage.scene.resolve(hidden);
+            stage.state.set({target->globalOccurrence, target->face}, kStateHidden, true);
+            view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            CHECK_FALSE(visibleIds(stage, view).contains(hidden));
+            // Where it was, the box's inside: its walls, seen from within, behind where it was.
+            usize inside = 0;
+            for (const Covered& c : covered) {
+                const auto hit = stage.renderer->readPixel(c.x, c.y, view.depth);
+                if (hit && hit->id != hidden) {
+                    const Vec3 p = worldHit(stage, view, c.x, c.y);
+                    inside +=
+                        onBoxSurface(p, 0.02) && simd_dot(p - c.at, stage.camera.back()) < -0.01
+                            ? 1
+                            : 0;
+                }
+            }
+            CHECK(double(inside) >= 0.95 * double(covered.size()));
+        }
+    }
+}
+
+TEST_CASE("seen from behind, a part opened by a hidden face looks as it did") {
     @autoreleasepool {
         Stage stage(box());
         render::ViewState view = stage.view();
         stage.renderer->renderOffscreen(view);
-        const std::set<u32> before = visibleIds(stage, view);
-        REQUIRE(before.size() == 3);
-        const auto target = stage.scene.resolve(*before.begin());
+        const auto middle = stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth);
+        REQUIRE(middle.has_value());
+        const auto target = stage.scene.resolve(middle->id);
+        // From the other side, the hidden face is behind the faces in front: nothing changes,
+        // though the part now draws both sides.
+        stage.camera.lookAt(simd_make_double3(-3, -2, -4), stage.bounds.center(),
+                            simd_make_double3(0, 1, 0));
+        nav::fit(stage.camera, stage.bounds, stage.viewport, 1.2);
+        const std::vector<u8> plain = stage.renderer->renderOffscreen(stage.view());
         stage.state.set({target->globalOccurrence, target->face}, kStateHidden, true);
-        view = stage.view();
-        stage.renderer->renderOffscreen(view);
-        const std::set<u32> after = visibleIds(stage, view);
-        // The hidden face's place is taken by the inside of the box, seen through the gap.
-        CHECK_FALSE(after.contains(*before.begin()));
+        const std::vector<u8> hidden = stage.renderer->renderOffscreen(stage.view());
+        REQUIRE(plain.size() == hidden.size());
+        usize changed = 0;
+        for (usize i = 0; i < plain.size(); i += 4) {
+            changed += std::abs(int(plain[i]) - int(hidden[i])) > 8 ||
+                               std::abs(int(plain[i + 1]) - int(hidden[i + 1])) > 8 ||
+                               std::abs(int(plain[i + 2]) - int(hidden[i + 2])) > 8
+                           ? 1
+                           : 0;
+        }
+        CHECK(double(changed) < 0.001 * double(plain.size() / 4));
+    }
+}
+
+TEST_CASE("hiding a face and bringing it back draws the same picture as before") {
+    @autoreleasepool {
+        Stage stage(box());
+        const std::vector<u8> plain = stage.renderer->renderOffscreen(stage.view());
+        const render::ViewState view = stage.view();
+        const auto middle = stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth);
+        REQUIRE(middle.has_value());
+        const auto target = stage.scene.resolve(middle->id);
+        stage.state.set({target->globalOccurrence, target->face}, kStateHidden, true);
+        const std::vector<u8> hidden = stage.renderer->renderOffscreen(stage.view());
+        CHECK(hidden != plain);
+        stage.state.set({target->globalOccurrence, target->face}, kStateHidden, false);
+        CHECK(stage.renderer->renderOffscreen(stage.view()) == plain);
+        stage.state.set({target->globalOccurrence, target->face}, kStateHidden, true);
+        CHECK(stage.renderer->renderOffscreen(stage.view()) == hidden);
+    }
+}
+
+namespace {
+
+// A closed tube along z, radii 1 and 0.8, from z = -1 to 1, in `segments` facets, wound outward:
+// four faces once imported, its outer wall, its bore and its two ends.
+std::vector<float> tube(int segments) {
+    std::vector<float> c;
+    const auto at = [](float radius, int i, int n, float z) {
+        const float a = 2.0f * float(M_PI) * float(i) / float(n);
+        return std::array<float, 3>{radius * std::cos(a), radius * std::sin(a), z};
+    };
+    for (int i = 0; i < segments; ++i) {
+        const int j = (i + 1) % segments; // the last facet meets the first exactly: closed
+        addQuad(c, at(1, i, segments, -1), at(1, j, segments, -1), at(1, j, segments, 1),
+                at(1, i, segments, 1));
+        addQuad(c, at(0.8f, i, segments, -1), at(0.8f, i, segments, 1), at(0.8f, j, segments, 1),
+                at(0.8f, j, segments, -1));
+        addQuad(c, at(1, i, segments, 1), at(1, j, segments, 1), at(0.8f, j, segments, 1),
+                at(0.8f, i, segments, 1));
+        addQuad(c, at(1, i, segments, -1), at(0.8f, i, segments, -1), at(0.8f, j, segments, -1),
+                at(1, j, segments, -1));
+    }
+    return c;
+}
+
+} // namespace
+
+TEST_CASE("a tube opened by hiding its outer wall shows the near half of its bore") {
+    // The bore's near half faces away from the eye: it is drawn only if neither the rasterizer
+    // nor the meshlets' normal cones cull the opened part's back faces. The tube has dozens of
+    // meshlets, so the cones are tested.
+    for (const bool perspective : {false, true}) {
+        @autoreleasepool {
+            CAPTURE(perspective);
+            Stage stage(tube(512), perspective);
+            stage.camera.lookAt(simd_make_double3(5, 0, 0), simd_make_double3(0, 0, 0),
+                                simd_make_double3(0, 0, 1));
+            nav::fit(stage.camera, stage.bounds, stage.viewport, 1.2);
+            render::ViewState view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            const auto middle = stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth);
+            REQUIRE(middle.has_value());
+            const auto wall = stage.scene.resolve(middle->id);
+            stage.state.set({wall->globalOccurrence, wall->face}, kStateHidden, true);
+            view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            // Across the middle row, within the bore: every hit on the bore's near half.
+            usize hits = 0, near = 0;
+            for (int x = 0; x < int(kWidth); ++x) {
+                if (!stage.renderer->readPixel(x, kHeight / 2, view.depth)) {
+                    continue;
+                }
+                const Vec3 p = worldHit(stage, view, x, kHeight / 2);
+                if (std::abs(p.y) > 0.7) {
+                    continue; // where the bore meets the ends' edges
+                }
+                ++hits;
+                near += p.x > 0.0 && std::abs(std::hypot(p.x, p.y) - 0.8) < 0.02 ? 1 : 0;
+            }
+            CHECK(hits > 40);
+            CHECK(double(near) >= 0.95 * double(hits));
+        }
     }
 }
 

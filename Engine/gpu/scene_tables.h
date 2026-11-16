@@ -7,7 +7,9 @@
 #include "gpu/gpu_context.h"
 #include "scene/scene.h"
 
+#include <span>
 #include <unordered_map>
+#include <vector>
 
 namespace geo::gpu {
 
@@ -42,6 +44,15 @@ public:
         return {batches_, meshletRefs_, openBatchStart_, surfaceBatchCount_};
     }
 
+    /// Closed parts opened by a hidden or ghosted face, drawn as open surfaces are; the closed
+    /// batches leave them out. `opened()` holds a bit per occurrence saying which: it and the
+    /// batches are made together and never change, so a frame always draws a matching pair.
+    BatchRange openedBatches() const { return {openedBatches_, openedRefs_, 0, openedBatchCount_}; }
+    id<MTLBuffer> opened() const { return opened_; }
+    /// Makes the opened parts those of `candidates` (occurrences, in order) that are closed. Does
+    /// nothing if they are the parts already opened.
+    void syncOpened(GpuContext& context, Retirement& retirement, std::span<const u32> candidates);
+
 private:
     struct SegmentResidency {
         id<MTLBuffer> buffer;
@@ -50,6 +61,10 @@ private:
     std::unordered_map<const scene::Segment*, SegmentResidency> segments_;
     id<MTLBuffer> definitions_, occurrences_, batches_, meshletRefs_;
     id<MTLBuffer> edgeBatches_, edgeRefs_;
+    id<MTLBuffer> openedBatches_, openedRefs_, opened_;
+    std::vector<u32> closedMeshlets_; // per occurrence; 0 for an open one or one without geometry
+    std::vector<u32> openedParts_;
+    usize openedBatchCount_ = 0;
     usize edgeBatchCount_ = 0;
     u64 triangles_ = 0;
     u64 edgeSegments_ = 0;

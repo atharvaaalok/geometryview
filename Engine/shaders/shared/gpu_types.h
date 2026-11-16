@@ -54,6 +54,7 @@ enum BufferIndex : unsigned {
     kBufferDefinitions = 1,
     kBufferOccurrences = 2,
     kBufferBatches = 3, // bound from a draw's own first batch
+    kBufferOpened = 4,  // a bit per occurrence: opened, so drawn with the opened batches
     kBufferOccurrenceState = 5,
     kBufferFaceState = 6,
     kBufferMeshletRefs = 7,
@@ -125,6 +126,9 @@ enum StateFlags : uint32_t {
     kStateFaceHidden = 1u << 4,
     kStateFaceGhost = 1u << 5,
     kStateFaceSelected = 1u << 6,
+    // A closed part with a face hidden or ghosted is opened: its inside shows through the gap, so
+    // it draws both sides, as an open surface does, and has no cap where a section cuts it.
+    kStateOpened = kStateFaceHidden | kStateFaceGhost,
 };
 
 // Per occurrence: its own flags, and where its per-face bytes start. Occurrences with no face-level
@@ -141,6 +145,9 @@ struct OccurrenceState {
 enum BatchKind : uint32_t {
     kBatchRun = 0,    // meshlets [first, first + count) of `occurrence`
     kBatchPacked = 1, // MeshletRefs [first, first + count)
+    // Or'd into a kind: a batch of the opened parts' list, drawn as open surfaces are. The closed
+    // batches leave those parts out, and these draw only them.
+    kBatchOpened = 1u << 8,
 };
 
 struct Batch {

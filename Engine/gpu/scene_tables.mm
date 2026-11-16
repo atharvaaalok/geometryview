@@ -94,6 +94,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     auto* gpuOccurrences = static_cast<GpuOccurrence*>(occurrences.contents);
     BatchList closed, open, edges;
     std::vector<MeshletRef> allRefs, edgeRefs;
+    std::vector<u32> closedMeshlets(occurrenceCount, 0);
 
     u32 definitionBase = 0, occurrenceBase = 0, idBase = 0;
     u64 triangles = 0, edgeSegments = 0;
@@ -157,8 +158,10 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
             }
             triangles += geometry->triangleCount;
             edgeSegments += geometry->edgeSegmentCount;
-            BatchList& target = (geometry->flags & kDefinitionOpen) != 0 ? open : closed;
+            const bool isOpen = (geometry->flags & kDefinitionOpen) != 0;
+            BatchList& target = isOpen ? open : closed;
             target.add(global, geometry->meshletCount, allRefs);
+            closedMeshlets[global] = isOpen ? 0 : geometry->meshletCount;
             edges.add(global, geometry->edgeChunkCount, edgeRefs);
         }
         definitionBase += u32(model.definitionInfos.size());
@@ -215,7 +218,71 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
          {definitions, occurrences, batches, meshletRefs, edgeBatches, edgeChunkRefs}) {
         [context.residency addAllocation:resource];
     }
+    // Occurrences are numbered afresh: no part is opened until the next state says so.
+    closedMeshlets_ = std::move(closedMeshlets);
+    openedParts_.assign(1, ~u32(0)); // differs from any set, so the empty one is made next
+    syncOpened(context, retirement, {});
     [context.residency commit];
+}
+
+void SceneTables::syncOpened(GpuContext& context, Retirement& retirement,
+                             std::span<const u32> candidates) {
+    std::vector<u32> parts;
+    for (const u32 occurrence : candidates) {
+        if (occurrence < closedMeshlets_.size() && closedMeshlets_[occurrence] != 0) {
+            parts.push_back(occurrence);
+        }
+    }
+    if (parts == openedParts_) {
+        return;
+    }
+    BatchList list;
+    std::vector<MeshletRef> refs;
+    for (const u32 occurrence : parts) {
+        list.add(occurrence, closedMeshlets_[occurrence], refs);
+    }
+    list.flushPacked(refs, true);
+    for (Batch& batch : list.batches) {
+        batch.kind |= kBatchOpened;
+    }
+    // A bit per occurrence, at least one word so the shaders always have it.
+    std::vector<u32> bits(std::max<usize>(1, (closedMeshlets_.size() + 31) / 32), 0);
+    for (const u32 occurrence : parts) {
+        bits[occurrence / 32] |= 1u << (occurrence % 32);
+    }
+
+    id<MTLBuffer> batches =
+        list.batches.empty() ? nil : context.makeShared(list.batches.size() * sizeof(Batch));
+    if (batches != nil) {
+        std::copy(list.batches.begin(), list.batches.end(), static_cast<Batch*>(batches.contents));
+    }
+    id<MTLBuffer> meshletRefs =
+        refs.empty() ? nil : context.makeShared(refs.size() * sizeof(MeshletRef));
+    if (meshletRefs != nil) {
+        std::copy(refs.begin(), refs.end(), static_cast<MeshletRef*>(meshletRefs.contents));
+    }
+    id<MTLBuffer> opened = context.makeShared(bits.size() * sizeof(u32));
+    std::copy(bits.begin(), bits.end(), static_cast<u32*>(opened.contents));
+
+    // A frame in flight may still draw with the old ones.
+    std::vector<id<MTLBuffer>> oldBuffers;
+    for (id<MTLBuffer> old : {openedBatches_, openedRefs_, opened_}) {
+        if (old != nil) {
+            oldBuffers.push_back(old);
+        }
+    }
+    retirement.retire(context.frameCount, std::move(oldBuffers));
+    for (id<MTLBuffer> resource : {batches, meshletRefs, opened}) {
+        if (resource != nil) {
+            [context.residency addAllocation:resource];
+        }
+    }
+    [context.residency commit];
+    openedBatches_ = batches;
+    openedRefs_ = meshletRefs;
+    opened_ = opened;
+    openedBatchCount_ = list.batches.size();
+    openedParts_ = std::move(parts);
 }
 
 } // namespace geo::gpu

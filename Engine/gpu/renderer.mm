@@ -204,13 +204,22 @@ struct Renderer::State {
         drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
     }
 
+    // What draws both sides: open surfaces, and closed parts opened by a hidden or ghosted face,
+    // whose inside shows through the gap. The closed batches leave those parts out.
+    void drawTwoSided(id<MTL4RenderCommandEncoder> encoder,
+                      NSUInteger meshThreads = kMeshletMaxTriangles,
+                      id<MTL4ArgumentTable> table = nil) {
+        drawBatches(encoder, tables.openBatches(), meshThreads, table);
+        drawBatches(encoder, tables.openedBatches(), meshThreads, table);
+    }
+
     // Closed surfaces cull back faces, except while a section is open: the back faces seen
     // through a cut are its caps.
     void drawSurfaces(id<MTL4RenderCommandEncoder> encoder) {
         [encoder setCullMode:section ? MTLCullModeNone : MTLCullModeBack];
         drawBatches(encoder, tables.closedBatches());
         [encoder setCullMode:MTLCullModeNone];
-        drawBatches(encoder, tables.openBatches());
+        drawTwoSided(encoder);
     }
 
     // Caps where the cut plane lies inside a closed part, found by counting the closed surfaces
@@ -247,6 +256,7 @@ struct Renderer::State {
                 [table setAddress:tables.definitions().gpuAddress atIndex:kBufferDefinitions];
                 [table setAddress:tables.occurrences().gpuAddress atIndex:kBufferOccurrences];
                 // Each draw binds its own batches and their refs (drawBatches).
+                [table setAddress:tables.opened().gpuAddress atIndex:kBufferOpened];
                 [table setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
                 [table setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
                 [table setAddress:palette.gpuAddress atIndex:kBufferPalette];
@@ -271,7 +281,7 @@ struct Renderer::State {
         [encoder setRenderPipelineState:pipelines.shadow[section]];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.closedBatches());
-        drawBatches(encoder, tables.openBatches());
+        drawTwoSided(encoder);
         [encoder endEncoding];
     }
 
@@ -303,7 +313,7 @@ struct Renderer::State {
                                              1e-6, 1e-4}];
             [encoder setCullMode:MTLCullModeFront];
             drawBatches(encoder, tables.closedBatches());
-            drawBatches(encoder, tables.openBatches());
+            drawTwoSided(encoder);
             [encoder
                 setViewport:MTLViewport{0, 0, double(targets.width), double(targets.height), 0, 1}];
         }
@@ -328,14 +338,14 @@ struct Renderer::State {
             [encoder setCullMode:MTLCullModeBack];
             drawBatches(encoder, tables.closedBatches());
             [encoder setCullMode:MTLCullModeNone];
-            drawBatches(encoder, tables.openBatches());
+            drawTwoSided(encoder);
             [encoder setRenderPipelineState:pipelines.shellFront[physical][section]];
             [encoder setDepthStencilState:pipelines.blendOnce];
             [encoder setStencilReferenceValue:0];
             [encoder setCullMode:MTLCullModeBack];
             drawBatches(encoder, tables.closedBatches());
             [encoder setCullMode:MTLCullModeNone];
-            drawBatches(encoder, tables.openBatches());
+            drawTwoSided(encoder);
         }
 
         // Ghosts last, blended over everything opaque and writing no depth.
@@ -601,7 +611,7 @@ OccurrenceIds Renderer::renderOccurrenceIds(const render::ViewState& view, u32 s
         [encoder setCullMode:MTLCullModeBack];
         s.drawBatches(encoder, s.tables.closedBatches(), kMeshletMaxTriangles, s.classifyTable);
         [encoder setCullMode:MTLCullModeNone];
-        s.drawBatches(encoder, s.tables.openBatches(), kMeshletMaxTriangles, s.classifyTable);
+        s.drawTwoSided(encoder, kMeshletMaxTriangles, s.classifyTable);
         [encoder endEncoding];
     }
     [s.commandBuffer endCommandBuffer];
@@ -680,12 +690,19 @@ void Renderer::syncState(const model::FaceState& state) {
     std::memcpy(s.occurrenceStates.contents, words.data(), words.size_bytes());
     std::memcpy(s.faceStates.contents, faces.data(), faces.size_bytes());
 
-    s.hasGhosts = std::any_of(words.begin(), words.end(), [](const OccurrenceState& word) {
-        return (word.flags & (kStateGhost | kStateFaceGhost)) != 0;
-    });
-    s.hasSelection = std::any_of(words.begin(), words.end(), [](const OccurrenceState& word) {
-        return (word.flags & (kStateSelected | kStateFaceSelected)) != 0;
-    });
+    // One sweep for what the passes need to know, and the parts a hidden or ghosted face opens.
+    s.hasGhosts = false;
+    s.hasSelection = false;
+    std::vector<u32> opened;
+    for (u32 i = 0; i < words.size(); ++i) {
+        const u32 flags = words[i].flags;
+        s.hasGhosts = s.hasGhosts || (flags & (kStateGhost | kStateFaceGhost)) != 0;
+        s.hasSelection = s.hasSelection || (flags & (kStateSelected | kStateFaceSelected)) != 0;
+        if ((flags & kStateOpened) != 0 && (flags & kStateHidden) == 0) {
+            opened.push_back(i);
+        }
+    }
+    s.tables.syncOpened(s.context, s.retirement, opened);
 }
 
 void Renderer::resize(u32 width, u32 height) {
