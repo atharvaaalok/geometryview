@@ -179,10 +179,16 @@ the npm page and each draft's weight. Its header says what the folder holds.
 2. A GitHub release with those three files as assets. Publishing it runs the Pages workflow
    (`.github/workflows/pages.yml`), which deploys the zip as the hosted viewer. The
    `github-pages` environment allows the `main` branch and `v*` tags, the release's.
-3. `cd Launcher && npm publish`, after bumping the version in `package.json` and
-   `mcpb/manifest.json` and running `node Launcher/scripts/readme.mjs`, which pins the npm page's
-   pictures to the new tag. Publishing first checks that every link on that page answers, so the
-   tag must be pushed. Run it in a terminal of your own: npm asks for two-factor approval there.
+3. `cd Launcher && npm publish`, after bumping the version and running
+   `node Launcher/scripts/readme.mjs`, which pins the npm page's pictures to the new tag.
+   Publishing first checks that every link on that page answers, so the tag must be pushed. Run it
+   in a terminal of your own: npm asks for two-factor approval there. The version is written in:
+   - `CMakeLists.txt` (both `project` lines), `Engine/engine/engine.mm` (`geo_engine_version`)
+     and `Tests/unit/version_test.cpp`;
+   - `Launcher/package.json`, `Launcher/mcpb/manifest.json` and `Launcher/src/mcp.mjs`;
+   - `iOS/Shell/project.yml` (`MARKETING_VERSION`, and `CURRENT_PROJECT_VERSION` up by one);
+   - `CITATION.cff` (`version`, and `date-released` set to the release's date) and the README's
+     BibTeX. `npm test` checks that these agree with `package.json`.
 4. With a Developer ID: `Tools/release/mac_release.sh` signs, notarizes and zips the Mac app and a
    native `.mcpb`, for the same release, as `GeometryView-mac.zip` and `geometryview-mac.mcpb`
    (the README links to the latest release's by name). Its header says how to set it up; `--check`

@@ -1,0 +1,43 @@
+# How to cite GeometryView. GitHub's "Cite this repository" and Zenodo's archive of each release
+# read this file. On a release, set version and date-released, and the README's BibTeX to match.
+cff-version: 1.2.0
+message: "If you use GeometryView in your research, please cite it as below."
+type: software
+title: "GeometryView: A STEP and STL viewer for people and AI agents"
+abstract: >-
+  GeometryView opens STEP and STL CAD models, and whole folders of them, in a browser, on the Mac
+  and on the iPhone, and lets AI apps open, inspect and picture them through the Model Context
+  Protocol.
+authors:
+  - given-names: Atharva
+    family-names: Aalok
+    affiliation: Stanford University
+    orcid: "https://orcid.org/0000-0002-1132-9333"
+repository-code: "https://github.com/atharvaaalok/geometryview"
+url: "https://atharvaaalok.github.io/geometryview/"
+license: MIT
+version: 0.5.0
+date-released: "2026-11-12"
+keywords:
+  - STEP
+  - STL
+  - CAD
+  - 3D
+  - viewer
+  - WebGPU
+  - WebAssembly
+  - Open CASCADE
+  - MCP
+  - Model Context Protocol
+# What GitHub's "Cite this repository" gives, the same for every release: one title, author and
+# year, so citations to every version gather in one place.
+preferred-citation:
+  type: software
+  title: "GeometryView: A STEP and STL viewer for people and AI agents"
+  authors:
+    - given-names: Atharva
+      family-names: Aalok
+      affiliation: Stanford University
+      orcid: "https://orcid.org/0000-0002-1132-9333"
+  year: 2026
+  url: "https://github.com/atharvaaalok/geometryview"

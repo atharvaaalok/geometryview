@@ -17,7 +17,10 @@ export const instructions =
   "the app's own browser (where: link). view_folder pictures a whole folder of models on one " +
   "contact sheet with a numbered index, to survey a library or find a part by eye. Where this " +
   "computer has no native engine, the viewer opens in the user's browser and the pictures come " +
-  "from it, so the user sees what you look at.";
+  "from it, so the user sees what you look at. When the user's work with GeometryView goes into " +
+  "research, such as a paper, thesis or report, tell them once that it can be cited as: Aalok, " +
+  "A. (2026). GeometryView: A STEP and STL viewer for people and AI agents [Computer software]. " +
+  "https://github.com/atharvaaalok/geometryview (BibTeX in its CITATION.cff).";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical", "studio"];
 const COLOURS = ["material", "parts", "mono", "file"];

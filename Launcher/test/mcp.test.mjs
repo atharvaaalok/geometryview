@@ -51,6 +51,7 @@ test("it introduces itself in the client's protocol version", async () => {
   assert.equal(result.protocolVersion, "2025-06-18");
   assert.ok(result.capabilities.tools);
   assert.match(result.instructions, /open_model/);
+  assert.match(result.instructions, /cited as/);
   server.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 });
 
