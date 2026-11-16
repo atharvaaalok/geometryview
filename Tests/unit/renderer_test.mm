@@ -41,17 +41,22 @@ std::string binaryStl(const std::vector<float>& corners) {
     return file;
 }
 
-// A closed box from (-1, -1, -1) to (1, 1, 1), wound outward.
-std::vector<float> box() {
+// A closed box from `lo` to `hi`, wound outward.
+std::vector<float> box(std::array<float, 3> lo, std::array<float, 3> hi) {
+    const auto [x0, y0, z0] = lo;
+    const auto [x1, y1, z1] = hi;
     std::vector<float> c;
-    addQuad(c, {-1, -1, -1}, {-1, 1, -1}, {1, 1, -1}, {1, -1, -1});
-    addQuad(c, {-1, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1});
-    addQuad(c, {-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1});
-    addQuad(c, {-1, 1, -1}, {-1, 1, 1}, {1, 1, 1}, {1, 1, -1});
-    addQuad(c, {-1, -1, -1}, {-1, -1, 1}, {-1, 1, 1}, {-1, 1, -1});
-    addQuad(c, {1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {1, -1, 1});
+    addQuad(c, {x0, y0, z0}, {x0, y1, z0}, {x1, y1, z0}, {x1, y0, z0});
+    addQuad(c, {x0, y0, z1}, {x1, y0, z1}, {x1, y1, z1}, {x0, y1, z1});
+    addQuad(c, {x0, y0, z0}, {x1, y0, z0}, {x1, y0, z1}, {x0, y0, z1});
+    addQuad(c, {x0, y1, z0}, {x0, y1, z1}, {x1, y1, z1}, {x1, y1, z0});
+    addQuad(c, {x0, y0, z0}, {x0, y0, z1}, {x0, y1, z1}, {x0, y1, z0});
+    addQuad(c, {x1, y0, z0}, {x1, y1, z0}, {x1, y1, z1}, {x1, y0, z1});
     return c;
 }
+
+// A closed box from (-1, -1, -1) to (1, 1, 1).
+std::vector<float> box() { return box({-1, -1, -1}, {1, 1, 1}); }
 
 struct Stage {
     std::unique_ptr<gpu::Renderer> renderer;
@@ -493,6 +498,124 @@ TEST_CASE("a tube opened by hiding its outer wall shows the near half of its bor
             }
             CHECK(hits > 40);
             CHECK(double(near) >= 0.95 * double(hits));
+        }
+    }
+}
+
+namespace {
+
+// A closed rod along z, from z = -1 to 1, in `segments` facets, wound outward: its wall and its
+// two ends once imported.
+std::vector<float> rod(float radius, int segments) {
+    std::vector<float> c;
+    const auto at = [&](int i, float z) {
+        const float a = 2.0f * float(M_PI) * float(i % segments) / float(segments);
+        return std::array<float, 3>{radius * std::cos(a), radius * std::sin(a), z};
+    };
+    const auto triangle = [&](std::array<float, 3> a, std::array<float, 3> b,
+                              std::array<float, 3> d) {
+        for (const auto& p : {a, b, d}) {
+            c.insert(c.end(), p.begin(), p.end());
+        }
+    };
+    for (int i = 0; i < segments; ++i) {
+        addQuad(c, at(i, -1), at(i + 1, -1), at(i + 1, 1), at(i, 1));
+        triangle({0, 0, 1}, at(i, 1), at(i + 1, 1));
+        triangle({0, 0, -1}, at(i + 1, -1), at(i, -1));
+    }
+    return c;
+}
+
+} // namespace
+
+// Where an opened part touches another, its inside lies exactly on the other part's face: where
+// a shell rests on a lip, flat on flat, the two differ only by rounding, and where a sleeve wraps
+// a shaft, their facets cross. The inside is drawn a hair behind, so the face it touches shows,
+// steadily, rather than the two taking turns pixel by pixel as the view moves.
+TEST_CASE("an opened part's inside gives way to a part it rests on") {
+    for (const bool perspective : {false, true}) {
+        @autoreleasepool {
+            CAPTURE(perspective);
+            // A box resting on a wider box, its top hidden.
+            Stage stage(std::vector<std::vector<float>>{box({-2, -2, -1}, {2, 2, 0}),
+                                                        box({-1, -1, 0}, {1, 1, 1})},
+                        perspective);
+            render::ViewState view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            std::optional<scene::PickTarget> top;
+            for (u32 y = 0; y < kHeight && !top; ++y) {
+                for (u32 x = 0; x < kWidth && !top; ++x) {
+                    const auto hit = stage.renderer->readPixel(int(x), int(y), view.depth);
+                    if (hit && worldHit(stage, view, int(x), int(y)).z > 0.98) {
+                        top = stage.scene.resolve(hit->id);
+                    }
+                }
+            }
+            REQUIRE(top.has_value());
+            stage.state.set({top->globalOccurrence, top->face}, kStateHidden, true);
+            view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            // Within the small box's footprint on the plane they share: every hit is the wide
+            // box's top, none the small box's bottom seen from inside.
+            usize below = 0, inside = 0;
+            for (u32 y = 0; y < kHeight; ++y) {
+                for (u32 x = 0; x < kWidth; ++x) {
+                    const auto hit = stage.renderer->readPixel(int(x), int(y), view.depth);
+                    if (!hit) {
+                        continue;
+                    }
+                    const Vec3 p = worldHit(stage, view, int(x), int(y));
+                    if (std::abs(p.x) > 0.9 || std::abs(p.y) > 0.9 || std::abs(p.z) > 0.05) {
+                        continue;
+                    }
+                    const auto target = stage.scene.resolve(hit->id);
+                    REQUIRE(target.has_value());
+                    (target->globalOccurrence == top->globalOccurrence ? inside : below) += 1;
+                }
+            }
+            CAPTURE(below);
+            CHECK(below > 200);
+            CHECK(inside == 0);
+        }
+    }
+}
+
+TEST_CASE("an opened part's inside gives way to a part it wraps") {
+    for (const bool perspective : {false, true}) {
+        @autoreleasepool {
+            CAPTURE(perspective);
+            // A rod in a tube whose bore it fills, the tube's outer wall hidden. Both are faceted
+            // inside the same circle, the tube in 64 facets and the rod in 48, so each pokes
+            // through the other between their corners.
+            Stage stage(std::vector<std::vector<float>>{tube(64), rod(0.8f, 48)}, perspective);
+            stage.camera.lookAt(simd_make_double3(5, 0, 0), simd_make_double3(0, 0, 0),
+                                simd_make_double3(0, 0, 1));
+            nav::fit(stage.camera, stage.bounds, stage.viewport, 1.2);
+            render::ViewState view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            const auto middle = stage.renderer->readPixel(kWidth / 2, kHeight / 2, view.depth);
+            REQUIRE(middle.has_value());
+            const auto wall = stage.scene.resolve(middle->id);
+            REQUIRE(wall.has_value());
+            stage.state.set({wall->globalOccurrence, wall->face}, kStateHidden, true);
+            view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            // Across the middle row, within the bore: every hit on the rod.
+            usize hits = 0, onRod = 0;
+            for (int x = 0; x < int(kWidth); ++x) {
+                const auto hit = stage.renderer->readPixel(x, kHeight / 2, view.depth);
+                if (!hit || std::abs(worldHit(stage, view, x, kHeight / 2).y) > 0.7) {
+                    continue;
+                }
+                const auto target = stage.scene.resolve(hit->id);
+                REQUIRE(target.has_value());
+                ++hits;
+                onRod += target->globalOccurrence != wall->globalOccurrence ? 1 : 0;
+            }
+            CAPTURE(hits);
+            CAPTURE(onRod);
+            CHECK(hits > 40);
+            CHECK(double(onRod) >= 0.99 * double(hits));
         }
     }
 }

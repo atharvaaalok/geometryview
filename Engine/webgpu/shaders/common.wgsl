@@ -348,6 +348,16 @@ fn pixelWorldAt(z: f32) -> f32 {
     return select(frame.worldPerPixel, frame.worldPerPixel * z, frame.perspective != 0u);
 }
 
+// How far one pixel spans in the world at p: the same everywhere in an orthographic view, and in
+// proportion to depth in perspective.
+fn pixelWorldOf(p: vec3f) -> f32 {
+    return pixelWorldAt(max(dot(p - frame.eye, frame.forward), 0.0));
+}
+
+// The least an opened part's inside is drawn behind where it is, in pixels at its depth: enough
+// for depth precision where it lies flat on another part's face.
+const kInsideSinkPixels = 0.5;
+
 fn texelColor(texel: u32) -> vec3f {
     return unpack4x8unorm(texel).rgb;
 }

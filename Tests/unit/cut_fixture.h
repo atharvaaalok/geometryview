@@ -49,6 +49,11 @@ inline std::vector<CutBox> reachingBoxes() {
     return {{{0, 0, 0}, {4, 4, 4}}, {{3, 1, 1}, {6, 3, 1.5}}};
 }
 
+/// A small box resting on a wide one: the small one's bottom lies flat on the wide one's top.
+inline std::vector<CutBox> restingBoxes() {
+    return {{{0, 0, 0}, {6, 6, 2}}, {{1.5, 1.5, 2}, {4.5, 4.5, 4}}};
+}
+
 /// A flat box whose top is two faces meeting smoothly along its middle.
 inline std::vector<CutBox> splitTopBox() {
     return {{{0, 0, 0}, {4, 4, 2}, false, true}};

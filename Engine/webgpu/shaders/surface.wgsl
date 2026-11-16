@@ -62,6 +62,24 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
 
     var out: SurfaceVertex;
     out.position = frame.viewProjection * vec4f(world, 1.0);
+    // An opened part's inside, a face turned away from the eye, is drawn a hair behind where it
+    // is. Where it lies on another part's face, as a shell resting on a lip or a sleeve around a
+    // shaft, that face then shows, steadily, rather than the two taking turns pixel by pixel as the
+    // view moves. By twice the chord error, which two parts' facets can cross by, and at least
+    // half a pixel for depth precision. Only depth moves: the point slides along its own view ray,
+    // so it covers the same pixels, and section planes cut it where they did. See ADR 0007.
+    let opened = (d.flags & kDefinitionOpen) == 0u && (state.flags & kStateOpened) != 0u;
+    if (opened && !kShadowPass) {
+        var away = frame.forward;
+        if (frame.perspective != 0u) {
+            away = normalize(world - frame.eye);
+        }
+        if (dot(normal, away) > 0.0) {
+            let sink = max(d.edgeLift * length(o.row0.xyz),
+                           kInsideSinkPixels * pixelWorldOf(world));
+            out.position = frame.viewProjection * vec4f(world + away * sink, 1.0);
+        }
+    }
     out.normal = frame.viewRotation * normal;
     out.id = o.idBase + face + 1u;
     out.world = world;
@@ -69,8 +87,7 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     let tag = 1u + slot.x % kTagValues;
     // An open surface, or a closed part opened by a hidden or ghosted face: its back faces are its
     // inside, and a cut through it has no cap.
-    let open = select(0u, kFlagOpen, (d.flags & kDefinitionOpen) != 0u ||
-                                     (state.flags & kStateOpened) != 0u);
+    let open = select(0u, kFlagOpen, (d.flags & kDefinitionOpen) != 0u || opened);
     let shell = (state.look & kLookShell) != 0u;
     let faceGhost = (flags & kStateGhost) != 0u && (state.flags & kStateGhost) == 0u;
     out.flags = flags | open | select(0u, kFlagShell, shell) | select(0u, kFlagFaceGhost, faceGhost) |

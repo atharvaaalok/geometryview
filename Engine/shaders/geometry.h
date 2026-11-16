@@ -57,6 +57,18 @@ static inline bool sphereInView(float3 center, float radius, constant FrameUnifo
     return x <= frame.halfWidth + radius && y <= frame.halfHeight + radius;
 }
 
+// How far one pixel spans in the world at p: the same everywhere in an orthographic view, and in
+// proportion to depth in perspective.
+static inline float pixelWorldAt(float3 p, constant FrameUniforms& frame) {
+    return frame.perspective != 0
+               ? frame.worldPerPixel * metal::max(metal::dot(p - frame.eye, frame.forward), 0.0)
+               : frame.worldPerPixel;
+}
+
+// The least an opened part's inside is drawn behind where it is, in pixels at its depth: enough
+// for depth precision where it lies flat on another part's face.
+constant float kInsideSinkPixels = 0.5;
+
 // The flags a face shows: its occurrence's own, combined with any of its own.
 static inline uint faceFlags(OccurrenceState state, const device uchar* faceStates, uint face) {
     return (state.flags & (kStateHidden | kStateGhost | kStateSelected)) |

@@ -217,16 +217,11 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     // can sit a hair in front, and the line would show in dashes. No more than that, or the
     // edges of what is just behind show through: the far side of a part thinner than the lift,
     // such as a fan blade at its edges.
-    const auto pixelWorld = [&](float3 p) {
-        return frame.perspective != 0
-                   ? frame.worldPerPixel * max(dot(p - frame.eye, frame.forward), 0.0)
-                   : frame.worldPerPixel;
-    };
     const float chordLift =
         rawB == kEdgeNoFace ? definition.edgeLift * metal::length(occurrence.rows[0].xyz) : 0.0;
     const auto lift = [&](float3 p) {
         const float offset =
-            max(chordLift, frame.edgeFloor * style.pixelsPerPoint * pixelWorld(p));
+            max(chordLift, frame.edgeFloor * style.pixelsPerPoint * pixelWorldAt(p, frame));
         const float3 toward = frame.perspective != 0 ? normalize(frame.eye - p) : -frame.forward;
         return p + toward * offset;
     };
@@ -270,7 +265,7 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
         const float4 clip = mix(clipA, clipB, t);
         v.position = float4(s / halfViewport * clip.w, clip.z, clip.w);
         v.across = side * halfWidth;
-        v.along = mix(alongA / pixelWorld(a), alongB / pixelWorld(b), t);
+        v.along = mix(alongA / pixelWorldAt(a, frame), alongB / pixelWorldAt(b, frame), t);
         if (kSection) {
             const float3 at = mix(a, b, t);
             for (uint p = 0; p < kMaxSectionPlanes; ++p) {

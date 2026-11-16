@@ -203,6 +203,20 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     const uint flags = faceFlags(state, faceStates, face);
     SurfaceVertex out;
     out.position = frame.viewProjection * float4(world, 1.0);
+    // An opened part's inside, a face turned away from the eye, is drawn a hair behind where it
+    // is. Where it lies on another part's face, as a shell resting on a lip or a sleeve around a
+    // shaft, that face then shows, steadily, rather than the two taking turns pixel by pixel as the
+    // view moves. By twice the chord error, which two parts' facets can cross by, and at least
+    // half a pixel for depth precision. Only depth moves: the point slides along its own view ray,
+    // so it covers the same pixels, and section planes cut it where they did. See ADR 0007.
+    if (opened && !kShadowPass) {
+        const float3 away = frame.perspective != 0 ? normalize(world - frame.eye) : frame.forward;
+        if (dot(normal, away) > 0.0) {
+            const float sink = max(definition.edgeLift * length(occurrence.rows[0].xyz),
+                                   kInsideSinkPixels * pixelWorldAt(world, frame));
+            out.position = frame.viewProjection * float4(world + away * sink, 1.0);
+        }
+    }
     out.normal = frame.viewRotation * normal;
     out.id = occurrence.idBase + face + 1;
     // Neighbouring bodies have different tags, unless their indices differ by a multiple of 127.

@@ -791,6 +791,60 @@ TEST_CASE("the WebGPU renderer inks the rim of a hidden or ghosted face as Metal
     }
 }
 
+// An opened part resting on another: its inside gives way to the face it lies on in both
+// renderers. Each face of the small box hidden in turn, so its bottom is seen from inside on the
+// wide box's top, and from below through the wide box's own hidden bottom.
+TEST_CASE("the WebGPU renderer draws an opened part's inside behind a face it touches") {
+    @autoreleasepool {
+        const std::string blob = test::importBoxes(test::restingBoxes(), GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        for (const bool perspective : {false, true}) {
+            for (u32 face = 0; face < 6; ++face) {
+                CAPTURE(perspective);
+                CAPTURE(face);
+                GeoRenderOptions options = geo_default_render_options();
+                options.width = kWidth;
+                options.height = kHeight;
+                options.overlay = false;
+                options.perspective = perspective;
+                options.azimuth_degrees = 30.0;
+                options.elevation_degrees = 50.0;
+                options.look.cast_shadow = false;
+                const auto change = [&](engine::OffscreenView& frame, render::Backend& backend) {
+                    model::FaceState state;
+                    state.resize(frame.scene.faceCounts());
+                    REQUIRE(frame.scene.faceCounts()[1] == 6);
+                    state.set({1, face}, kStateHidden, true);
+                    backend.syncState(state);
+                };
+                const std::vector<u8> expected = renderScenario(*metal, blob, options, change);
+                const std::vector<u8> image = renderScenario(*web, blob, options, change);
+                REQUIRE(image.size() == expected.size());
+                if (const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES")) {
+                    const std::string name = std::format("resting-{}-{}", int(perspective), face);
+                    engine::writePng(std::format("{}/{}-metal.png", keep, name).c_str(), expected,
+                                     kWidth, kHeight);
+                    engine::writePng(std::format("{}/{}-webgpu.png", keep, name).c_str(), image,
+                                     kWidth, kHeight);
+                }
+                const Difference d = compare(image, expected);
+                CAPTURE(d.mean);
+                CAPTURE(d.changed);
+                CHECK(d.mean < 0.05);
+                CHECK(d.changed < 0.0005);
+            }
+        }
+        unlink(blob.c_str());
+    }
+}
+
 // Picking reads ids and depths back a few frames late, but what it reads must be what Metal
 // reads at once: the same face and nearly the same depth, across the view and the cube's grid.
 TEST_CASE("the WebGPU renderer picks as Metal does") {
