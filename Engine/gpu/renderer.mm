@@ -173,16 +173,20 @@ struct Renderer::State {
         }
     }
 
-    // Draws up to kMaxBatchesPerDraw batches at a time.
+    // Draws up to kMaxBatchesPerDraw batches at a time, each draw from its own first batch: the
+    // batch list is bound there, so object threadgroup g draws batch first + g.
     void drawBatches(id<MTL4RenderCommandEncoder> encoder, BatchRange range,
                      NSUInteger meshThreads = kMeshletMaxTriangles,
                      id<MTL4ArgumentTable> table = nil) {
         table = table != nil ? table : surfaceTable;
+        if (range.empty()) {
+            return;
+        }
+        [table setAddress:range.refs.gpuAddress atIndex:kBufferMeshletRefs];
         for (usize start = range.first; start < range.last; start += kMaxBatchesPerDraw) {
             const usize groups = std::min<usize>(kMaxBatchesPerDraw, range.last - start);
-            [table
-                setAddress:tables.drawBases().gpuAddress + start / kMaxBatchesPerDraw * sizeof(u32)
-                   atIndex:kBufferDrawBase];
+            [table setAddress:range.batches.gpuAddress + start * sizeof(Batch)
+                      atIndex:kBufferBatches];
             [encoder setArgumentTable:table
                              atStages:MTLRenderStageObject | MTLRenderStageMesh |
                                       MTLRenderStageFragment];
@@ -194,14 +198,10 @@ struct Renderer::State {
 
     // Edges into the ink attachment. The tile resolve inks the colour from it.
     void drawEdges(id<MTL4RenderCommandEncoder> encoder, bool ghostLines) {
-        [surfaceTable setAddress:tables.edgeBatches().gpuAddress atIndex:kBufferBatches];
-        [surfaceTable setAddress:tables.edgeRefs().gpuAddress atIndex:kBufferMeshletRefs];
         [encoder setRenderPipelineState:pipelines.edges[ghostLines][section]];
         [encoder setDepthStencilState:pipelines.depthTest];
         [encoder setCullMode:MTLCullModeNone];
         drawBatches(encoder, tables.allEdgeBatches(), kEdgeChunkSegments);
-        [surfaceTable setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
-        [surfaceTable setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
     }
 
     // Closed surfaces cull back faces, except while a section is open: the back faces seen
@@ -246,8 +246,7 @@ struct Renderer::State {
             for (id<MTL4ArgumentTable> table : {surfaceTable, classifyTable}) {
                 [table setAddress:tables.definitions().gpuAddress atIndex:kBufferDefinitions];
                 [table setAddress:tables.occurrences().gpuAddress atIndex:kBufferOccurrences];
-                [table setAddress:tables.batches().gpuAddress atIndex:kBufferBatches];
-                [table setAddress:tables.meshletRefs().gpuAddress atIndex:kBufferMeshletRefs];
+                // Each draw binds its own batches and their refs (drawBatches).
                 [table setAddress:occurrenceStates.gpuAddress atIndex:kBufferOccurrenceState];
                 [table setAddress:faceStates.gpuAddress atIndex:kBufferFaceState];
                 [table setAddress:palette.gpuAddress atIndex:kBufferPalette];

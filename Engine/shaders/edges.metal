@@ -65,7 +65,6 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
                 const device GpuDefinition* definitions [[buffer(kBufferDefinitions)]],
                 const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
                 const device Batch* batches [[buffer(kBufferBatches)]],
-                constant uint& drawBase [[buffer(kBufferDrawBase)]],
                 const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                 const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                 uint group [[threadgroup_position_in_grid]]) {
@@ -99,7 +98,7 @@ void edgeObject(object_data EdgePayload& payload [[payload]], mesh_grid_properti
         return radius >= kMinChunkPixels * pixelWorld && sphereInView(center, radius, frame);
     };
 
-    const device Batch& batch = batches[drawBase + group];
+    const device Batch& batch = batches[group]; // bound from the draw's own first batch
     uint count = 0;
     if (batch.kind == kBatchRun) {
         const device GpuOccurrence& occurrence = occurrences[batch.occurrence];

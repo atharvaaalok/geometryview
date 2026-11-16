@@ -127,11 +127,11 @@ void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_propertie
                    const device GpuDefinition* definitions [[buffer(kBufferDefinitions)]],
                    const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
                    const device Batch* batches [[buffer(kBufferBatches)]],
-                   constant uint& drawBase [[buffer(kBufferDrawBase)]],
                    const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                    const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                    uint group [[threadgroup_position_in_grid]]) {
-    const device Batch& batch = batches[drawBase + group];
+    // Each draw binds its batches from its own first one.
+    const device Batch& batch = batches[group];
     uint count = 0;
     if (batch.kind == kBatchRun) {
         if (passKeeps(states[batch.occurrence].flags)) {
