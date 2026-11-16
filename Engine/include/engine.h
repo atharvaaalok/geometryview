@@ -97,7 +97,7 @@ typedef enum GeoColorMode {
 /// How ghosts are drawn.
 typedef enum GeoGhostStyle {
     GeoGhostShell = 1, // a faint skin, outline kept
-    GeoGhostLines = 2, // dashed edges only
+    GeoGhostLines = 2, // dashed edges only; a face ghosted alone keeps a faint skin
     GeoGhostBoth = 3,  // skin and dashed edges
 } GeoGhostStyle;
 

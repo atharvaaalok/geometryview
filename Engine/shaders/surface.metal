@@ -30,6 +30,9 @@ constant uint kShellLayer [[function_constant(7)]];
 constant uint kFlagOpen = 0x80;
 // Set when the occurrence is part of the see-through shell.
 constant uint kFlagShell = 0x08;
+// Set on a face ghosted on its own, in a part not ghosted whole. It keeps a skin in every ghost
+// style: drawn as lines only, it would look hidden.
+constant uint kFlagFaceGhost = 0x20;
 
 // Where a point's shadow lands on the ground.
 static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
@@ -206,7 +209,9 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     const uint tag = 1 + occurrenceIndex % kTagValues;
     const uint open = (definition.flags & kDefinitionOpen) != 0 || opened ? kFlagOpen : 0;
     const bool shell = (look & kLookShell) != 0;
-    out.flags = flags | open | (shell ? kFlagShell : 0) | tag << 8 | (look & kLookIndex) << 16;
+    const bool faceGhost = (flags & kStateGhost) != 0 && (state.flags & kStateGhost) == 0;
+    out.flags = flags | open | (shell ? kFlagShell : 0) | (faceGhost ? kFlagFaceGhost : 0) |
+                tag << 8 | (look & kLookIndex) << 16;
     if (kOccurrenceIds) {
         out.id = occurrenceIndex + 1;
     }
@@ -523,7 +528,7 @@ fragment CapOutput capFragment(SurfaceFragmentIn in [[stage_in]],
 
 static SurfaceOutput shade(SurfaceFragmentIn in, bool frontFacing, constant FrameUniforms& frame,
                            constant StyleUniforms& style, const device uint* palette) {
-    const uint flags = in.flags & 0x77u; // state, without the shell and open bits
+    const uint flags = in.flags & 0x07u; // state, without the shell, face ghost and open bits
     uint tag = (in.flags >> 8) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.
     const float hatch = kSection ? capHatch(in.position.xy, tag, frame, style) : 0.0;
@@ -576,15 +581,20 @@ static SurfaceOutput shade(SurfaceFragmentIn in, bool frontFacing, constant Fram
                 uint2(0, kTagShell | tag)};
     }
     if (kGhostPass) {
-        // A faint skin over what lies behind, or none at all for a ghost drawn as lines only.
-        // Hovered with the ghost tool held, it shows enough to be clicked back.
+        // A faint skin over what lies behind, or none at all for a part ghosted as lines only. A
+        // face ghosted on its own always has one. Hovered with the ghost tool held, it shows
+        // enough to be clicked back.
         color = mix(color, style.sheetTop, 0.45);
-        float alpha = (style.ghostStyle & kGhostShell) != 0 ? style.ghostAlpha : 0.0;
+        const bool skin = (style.ghostStyle & kGhostShell) != 0 || (in.flags & kFlagFaceGhost) != 0;
+        float alpha = skin ? style.ghostAlpha : 0.0;
         if (hovered) {
             color = mix(color, style.hover, style.hoverAmount);
             alpha = max(alpha, style.ghostAlpha) * 1.6;
         }
-        return {float4(color, alpha), in.id, in.position.z, uint2(tag)};
+        // The tag says whether the skin dims what is behind; the cap bit is kept.
+        const uint body = 1 + ((tag & ~uint(kTagCap)) - 1) % kGhostTagValues;
+        const uint ghostTag = (tag & kTagCap) | (skin ? kTagSkin : 0) | body;
+        return {float4(color, alpha), in.id, in.position.z, uint2(ghostTag)};
     }
     if (hovered) {
         // On a selection hover lifts only half as much, so the selection stays readable.
@@ -614,7 +624,8 @@ struct ResolveTile {
 // Also inks every sample from the ink attachment. Doing it here, in the pass's one tile dispatch,
 // matters: any mid-pass step that reads the tiles after a million meshlets cost from 5 to over
 // 100 ms. Creases and highlights were drawn before ghosts, so a ghost's skin in front, known from
-// its tag, dims them; ghosts' own dashed lines were drawn after and are not dimmed.
+// its tag, dims them; a ghost drawn as lines only does not, and ghosts' own dashed lines were
+// drawn after and are not dimmed.
 kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile,
                         texture2d<uint, access::write> ids [[texture(kTexturePickIds)]],
                         texture2d<float, access::write> depths [[texture(kTexturePickDepths)]],
@@ -624,13 +635,13 @@ kernel void resolveTile(imageblock<ResolveTile, imageblock_layout_implicit> tile
                         ushort2 pixel [[thread_position_in_threadgroup]],
                         ushort2 tileIndex [[threadgroup_position_in_grid]]) {
     const half ink = half(style.inkAlpha);
-    const half skin = (style.ghostStyle & kGhostShell) != 0 ? half(style.ghostAlpha) : 0.0h;
+    const half skin = half(style.ghostAlpha);
     for (ushort s = 0; s < tile.get_num_samples(); ++s) {
         ResolveTile t = tile.read(pixel, s, imageblock_data_rate::sample);
         half solid = 1.0h - (1.0h - t.ink.r * ink) * (1.0h - t.ink.b);
         if ((t.tags.g & kTagShell) != 0) {
             solid *= half(0.8 * frame.seeThrough); // what shows through the faded shell
-        } else if (t.tags.g != 0) {
+        } else if ((t.tags.g & kTagSkin) != 0) {
             solid *= 1.0h - skin;
         }
         const half ghost = t.ink.g * half(style.ghostLineAlpha) * ink;

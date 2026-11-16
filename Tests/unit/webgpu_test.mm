@@ -616,6 +616,24 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
                      state.set({2, 0}, kStateGhost, true);
                  })(frame, backend);
              }},
+            // Ghosts as lines only: a part ghosted whole has no skin and dims nothing behind it,
+            // and a face ghosted alone keeps its skin.
+            {"ghost-face-lines",
+             GeoStyleIllustration,
+             false,
+             {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 engine::LookState looks;
+                 GeoLook look = geo_default_look();
+                 look.ghost_style = GeoGhostLines;
+                 looks.set(engine::lookSettings(look));
+                 looks.apply(backend, frame.scene);
+                 withState([&](model::FaceState& state) {
+                     state.set(whole(1), kStateGhost, true);
+                     state.set({2, 1}, kStateGhost, true);
+                 })(frame, backend);
+             },
+             true},
         };
         for (const Case& c : cases) {
             const std::string caseName = c.name;

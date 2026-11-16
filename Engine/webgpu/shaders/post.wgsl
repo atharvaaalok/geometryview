@@ -26,8 +26,8 @@ fn screenVertex(@builtin(vertex_index) vertexId: u32) -> ScreenVertex {
 // ---- The ink resolve -----------------------------------------------------------------------
 
 // Inks one sample's colour from its ink: creases and highlights were drawn before ghosts, so a
-// ghost's skin in front, known from its tag, dims them; ghosts' own dashed lines were drawn after
-// and are not dimmed. Blended into the accumulated colour at one share per sample.
+// ghost's skin in front, known from its tag, dims them; a ghost drawn as lines only does not, and
+// ghosts' own dashed lines were drawn after and are not dimmed. Blended into the accumulated colour at one share per sample.
 @fragment
 fn resolveFragment(in: ScreenVertex) -> @location(0) vec4f {
     let p = vec2i(in.position.xy);
@@ -35,12 +35,11 @@ fn resolveFragment(in: ScreenVertex) -> @location(0) vec4f {
     let ink = textureLoad(inkTexture, p, 0);
     let tags = textureLoad(tagTexture, p, 0).rg;
     let inkAlpha = style.inkAlpha;
-    let skin = select(0.0, style.ghostAlpha, (style.ghostStyle & kGhostShell) != 0u);
     var solid = 1.0 - (1.0 - ink.r * inkAlpha) * (1.0 - ink.b);
     if ((tags.g & kTagShell) != 0u) {
         solid *= 0.8 * frame.seeThrough; // what shows through the faded shell
-    } else if (tags.g != 0u) {
-        solid *= 1.0 - skin;
+    } else if ((tags.g & kTagSkin) != 0u) {
+        solid *= 1.0 - style.ghostAlpha;
     }
     let ghost = ink.g * style.ghostLineAlpha * inkAlpha;
     let cover = 1.0 - (1.0 - solid) * (1.0 - ghost);
@@ -217,10 +216,12 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
         }
     }
 
-    // A ghost or the faded shell in front dims the outlines behind it, as it dims everything else.
+    // A ghost's skin or the faded shell in front dims the outlines behind it, as it dims
+    // everything else. A ghost drawn as lines only has no skin and dims nothing.
     let shellInFront = (c.g & kTagShell) != 0u;
+    let layerInFront = shellInFront || (c.g & kTagSkin) != 0u;
     let layerAlpha = select(style.ghostAlpha, 1.0 - 0.8 * frame.seeThrough, shellInFront);
-    if (c.g != 0u) {
+    if (layerInFront) {
         solid *= 1.0 - layerAlpha;
     }
     var layerInk = style.ghostInk;
@@ -251,7 +252,7 @@ fn compositeFragment(in: ScreenVertex) -> @location(0) vec4f {
             }
         }
         shade = mix(1.0, sum / total, style.ao);
-        if (c.g != 0u) {
+        if (layerInFront) {
             shade = mix(shade, 1.0, layerAlpha);
         }
     }

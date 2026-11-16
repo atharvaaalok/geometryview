@@ -119,10 +119,12 @@ fragment CompositeOut compositeFragment(float4 position [[position]],
         }
     }
 
-    // A ghost or the faded shell in front dims the outlines behind it, as it dims everything else.
+    // A ghost's skin or the faded shell in front dims the outlines behind it, as it dims
+    // everything else. A ghost drawn as lines only has no skin and dims nothing.
     const bool shellInFront = (c.g & kTagShell) != 0;
+    const bool layerInFront = shellInFront || (c.g & kTagSkin) != 0;
     const float layerAlpha = shellInFront ? 1.0 - 0.8 * frame.seeThrough : style.ghostAlpha;
-    if (c.g != 0) {
+    if (layerInFront) {
         solid *= 1.0 - layerAlpha;
     }
     const float layerInk = shellInFront || (c.g == 0 && ghost > 0.0 && frame.seeThrough > 0.0)
@@ -152,7 +154,7 @@ fragment CompositeOut compositeFragment(float4 position [[position]],
             }
         }
         shade = mix(1.0, sum / total, style.ao);
-        if (c.g != 0) {
+        if (layerInFront) {
             shade = mix(shade, 1.0, layerAlpha);
         }
     }

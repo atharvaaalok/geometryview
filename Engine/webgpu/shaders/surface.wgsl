@@ -33,6 +33,9 @@ override kShellLayer: u32 = 0u;
 // when the occurrence is part of the see-through shell.
 const kFlagOpen = 0x80u;
 const kFlagShell = 0x08u;
+// Set on a face ghosted on its own, in a part not ghosted whole. It keeps a skin in every ghost
+// style: drawn as lines only, it would look hidden.
+const kFlagFaceGhost = 0x20u;
 
 struct SurfaceVertex {
     @builtin(position) position: vec4f,
@@ -69,8 +72,9 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     let open = select(0u, kFlagOpen, (d.flags & kDefinitionOpen) != 0u ||
                                      (state.flags & kStateOpened) != 0u);
     let shell = (state.look & kLookShell) != 0u;
-    out.flags = flags | open | select(0u, kFlagShell, shell) | (tag << 8u) |
-                ((state.look & kLookIndex) << 16u);
+    let faceGhost = (flags & kStateGhost) != 0u && (state.flags & kStateGhost) == 0u;
+    out.flags = flags | open | select(0u, kFlagShell, shell) | select(0u, kFlagFaceGhost, faceGhost) |
+                (tag << 8u) | ((state.look & kLookIndex) << 16u);
     if (kOccurrenceIds) {
         out.id = slot.x + 1u;
     }
@@ -362,7 +366,7 @@ fn capFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) -> C
 }
 
 fn shade(in: SurfaceVertex, frontFacing: bool, depth: f32) -> SurfaceOutput {
-    let flags = in.flags & 0x77u; // state, without the shell and open bits
+    let flags = in.flags & 0x07u; // state, without the shell, face ghost and open bits
     var tag = (in.flags >> 8u) & 0xFFu;
     // Computed before any branch, since hatch width comes from screen derivatives.
     var hatch = 0.0;
@@ -422,15 +426,20 @@ fn shade(in: SurfaceVertex, frontFacing: bool, depth: f32) -> SurfaceOutput {
                              vec2u(0u, kTagShell | tag));
     }
     if (kGhostPass) {
-        // A faint skin over what lies behind, or none at all for a ghost drawn as lines only.
-        // Hovered with the ghost tool held, it shows enough to be clicked back.
+        // A faint skin over what lies behind, or none at all for a part ghosted as lines only. A
+        // face ghosted on its own always has one. Hovered with the ghost tool held, it shows
+        // enough to be clicked back.
         color = mix(color, style.sheetTop, 0.45);
-        var alpha = select(0.0, style.ghostAlpha, (style.ghostStyle & kGhostShell) != 0u);
+        let skin = (style.ghostStyle & kGhostShell) != 0u || (in.flags & kFlagFaceGhost) != 0u;
+        var alpha = select(0.0, style.ghostAlpha, skin);
         if (hovered) {
             color = mix(color, style.hover, style.hoverAmount);
             alpha = max(alpha, style.ghostAlpha) * 1.6;
         }
-        return SurfaceOutput(vec4f(color, alpha), in.id, depth, vec2u(tag));
+        // The tag says whether the skin dims what is behind; the cap bit is kept.
+        let body = 1u + ((tag & ~kTagCap) - 1u) % kGhostTagValues;
+        let ghostTag = (tag & kTagCap) | select(0u, kTagSkin, skin) | body;
+        return SurfaceOutput(vec4f(color, alpha), in.id, depth, vec2u(ghostTag));
     }
     if (hovered) {
         // On a selection hover lifts only half as much, so the selection stays readable.

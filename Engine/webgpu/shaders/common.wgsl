@@ -167,6 +167,8 @@ const kStateOpened = 48u;
 const kTagCap = 0x80u;
 const kTagShell = 0x80u;
 const kTagValues = 127u;
+const kTagSkin = 0x40u;
+const kGhostTagValues = 63u;
 
 const kLookShell = 0x8000u;
 const kLookIndex = 0x7FFFu;

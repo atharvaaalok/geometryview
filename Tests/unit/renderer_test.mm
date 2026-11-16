@@ -4,6 +4,7 @@
 #include "import.h"
 #include "nav/camera.h"
 #include "render/overlay.h"
+#include "render/style.h"
 #include "render/view.h"
 #include "scene/scene.h"
 
@@ -515,6 +516,113 @@ TEST_CASE("a ghost is drawn translucent and clicks pass through it unless the to
         view.uniforms.ghostPickable = 1;
         stage.renderer->renderOffscreen(view);
         CHECK(visibleIds(stage, view).contains(front));
+    }
+}
+
+namespace {
+
+// The default style with `ghostStyle`, a GhostStyle.
+void setGhostStyle(Stage& stage, u32 ghostStyle) {
+    render::LookSettings settings;
+    settings.ghostStyle = ghostStyle;
+    stage.renderer->setStyle(
+        render::makeStyleUniforms(render::styleNamed(settings.style), settings, 2.0f), false);
+}
+
+float luminance(const Stage& stage, const std::vector<u8>& bgra, u32 x, u32 y) {
+    const std::array<u8, 3> rgb = stage.pixel(bgra, int(x), int(y));
+    return 0.2126f * float(rgb[0]) + 0.7152f * float(rgb[1]) + 0.0722f * float(rgb[2]);
+}
+
+} // namespace
+
+// Ghosting a part as dashed lines only leaves it with no skin, but a face ghosted alone that way
+// would look exactly hidden: so it keeps a skin, whatever the ghost style.
+TEST_CASE("a face ghosted alone keeps a skin in every ghost style, so it never looks hidden") {
+    @autoreleasepool {
+        Stage stage(box());
+        render::ViewState view = stage.view();
+        const std::vector<u8> plain = stage.renderer->renderOffscreen(view);
+        const auto target = stage.scene.resolve(*visibleIds(stage, view).begin());
+        REQUIRE(target.has_value());
+        const model::Target face{target->globalOccurrence, target->face};
+        for (const u32 ghostStyle : {u32(kGhostShell), u32(kGhostLines), u32(kGhostBoth)}) {
+            CAPTURE(ghostStyle);
+            setGhostStyle(stage, ghostStyle);
+            stage.state.set(face, kStateHidden, true);
+            view = stage.view();
+            const std::vector<u8> hidden = stage.renderer->renderOffscreen(view);
+            stage.state.set(face, kStateHidden, false);
+            stage.state.set(face, kStateGhost, true);
+            view = stage.view();
+            const std::vector<u8> ghosted = stage.renderer->renderOffscreen(view);
+            stage.state.set(face, kStateGhost, false);
+            // Where the face was, the ghost's skin lies over the inside the gap shows.
+            usize covered = 0, skinned = 0;
+            for (u32 y = 0; y < kHeight; ++y) {
+                for (u32 x = 0; x < kWidth; ++x) {
+                    const float gap = luminance(stage, hidden, x, y);
+                    if (std::abs(luminance(stage, plain, x, y) - gap) > 5.0f) {
+                        ++covered;
+                        skinned += std::abs(luminance(stage, ghosted, x, y) - gap) > 5.0f ? 1 : 0;
+                    }
+                }
+            }
+            REQUIRE(covered > 1000);
+            CAPTURE(covered);
+            CHECK(double(skinned) / double(covered) > 0.5);
+        }
+    }
+}
+
+// What is behind a part ghosted as dashed lines only is drawn as if the part were hidden: no skin,
+// and its outlines not dimmed. Only the ghost's own dashes differ.
+TEST_CASE("a part ghosted whole as lines has no skin and dims nothing behind it") {
+    @autoreleasepool {
+        std::vector<float> behind = box();
+        for (usize i = 0; i < behind.size(); i += 3) {
+            behind[i] -= 2.0f;
+            behind[i + 1] -= 1.0f;
+            behind[i + 2] -= 3.4f;
+        }
+        Stage stage(std::vector<std::vector<float>>{box(), behind});
+        setGhostStyle(stage, kGhostLines);
+        render::ViewState view = stage.view();
+        const std::vector<u8> plain = stage.renderer->renderOffscreen(view);
+        const model::Target front{0, model::Target::kWholeOccurrence};
+        stage.state.set(front, kStateHidden, true);
+        view = stage.view();
+        const std::vector<u8> hidden = stage.renderer->renderOffscreen(view);
+        stage.state.set(front, kStateHidden, false);
+        stage.state.set(front, kStateGhost, true);
+        view = stage.view();
+        const std::vector<u8> ghosted = stage.renderer->renderOffscreen(view);
+
+        // Over where the front part was: how much differs at all, and how much of the ink behind
+        // it is as dark as with the part hidden.
+        usize footprint = 0, changed = 0, inkBehind = 0, inkKept = 0;
+        for (u32 y = 0; y < kHeight; ++y) {
+            for (u32 x = 0; x < kWidth; ++x) {
+                const float gap = luminance(stage, hidden, x, y);
+                if (std::abs(luminance(stage, plain, x, y) - gap) <= 5.0f) {
+                    continue;
+                }
+                ++footprint;
+                const float seen = luminance(stage, ghosted, x, y);
+                changed += std::abs(seen - gap) > 5.0f ? 1 : 0;
+                if (gap < 100.0f) {
+                    ++inkBehind;
+                    inkKept += seen < gap + 10.0f ? 1 : 0;
+                }
+            }
+        }
+        REQUIRE(footprint > 1000);
+        REQUIRE(inkBehind > 50);
+        CAPTURE(footprint);
+        CAPTURE(inkBehind);
+        // Its own dashes and outline change about a quarter of it here; a skin would change it all.
+        CHECK(double(changed) / double(footprint) < 0.4);
+        CHECK(double(inkKept) / double(inkBehind) > 0.9);
     }
 }
 
