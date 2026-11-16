@@ -223,3 +223,21 @@ The 20 goldens did not change.
   was as dark as a crease (1% with it ghosted; the outline's grey is about 60), and now all of it
   is. In a Lines ghost with one half hidden, no dash fell on the seam, and now 60% of it is
   marked, its dashes and gaps. Metal and WebGPU agree to the pixel.
+
+## Addendum (2026-11-16): a ghosted face keeps its skin
+
+- **A face ghosted alone has a skin in every ghost style.** With ghosts as Lines, a ghost's skin
+  is transparent, and a single ghosted face's rims are ordinary creases, since the faces beside
+  it are solid: it looked exactly hidden. A part ghosted whole keeps Lines as before, its dashed
+  edges and outline. As Proto Godela found, a ghosted face may look unlike a ghosted part.
+- The vertex stage sets `kFlagFaceGhost` (0x20) on a face ghosted while its part is not, and the
+  ghost pass gives it the style's ghost alpha. The fragment's state mask is `0x07`.
+- **Only a skin dims what is behind it.** A ghost's green tag carries `kTagSkin` (0x40) when it
+  has one, its body running from 1 to 63 below it; the cap bit is kept. The tile resolve (creases)
+  and the composite (outlines and occlusion) dim behind `kTagSkin` or the shell, where they used
+  to dim behind any ghost: the composite dimmed outlines behind a Lines ghost though nothing was
+  drawn in front of them. Two ghosts whose indices differ by a multiple of 63 share a tag and
+  have no outline between them.
+- Measured on a box with its front face ghosted alone, as Lines: 5% of the face's pixels differed
+  from the face hidden; now all of them do. Behind a box ghosted whole as Lines, 51% of the dark
+  ink kept its darkness; now all of it does. The 20 goldens did not change.

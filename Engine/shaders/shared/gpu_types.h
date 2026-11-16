@@ -32,6 +32,10 @@ enum TagBits : unsigned {
     kTagCap = 0x80,   // in red: a section cap
     kTagShell = 0x80, // in green: the see-through shell, rather than a ghost
     kTagValues = 127, // tags run from 1 to this
+    // In green, below the shell bit: a ghost with a skin, which dims what is behind it. A ghost's
+    // own tag then runs from 1 to kGhostTagValues.
+    kTagSkin = 0x40,
+    kGhostTagValues = 63,
 };
 
 // An occurrence's look index has its top bit set when the occurrence is part of the shell that
