@@ -241,6 +241,14 @@ typedef struct GeoEngineStats {
 /// Returns the engine version as a static string.
 const char* geo_engine_version(void);
 
+typedef enum GeoCitationFormat {
+    GeoCitationText = 0,   // a line of text, in APA's style
+    GeoCitationBibTeX = 1, // a BibTeX entry with this version
+} GeoCitationFormat;
+
+/// How to cite GeometryView, as a static string: the same as the repository's CITATION.cff.
+const char* geo_citation(GeoCitationFormat format);
+
 /// Creates the engine and starts its thread. Returns null if the GPU is unsupported or the shader
 /// library cannot be loaded.
 GeoEngine* geo_engine_create(const GeoEngineDescriptor* descriptor);

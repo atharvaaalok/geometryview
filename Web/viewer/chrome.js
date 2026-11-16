@@ -553,7 +553,8 @@ export class DropZone {
 export class ShortcutsSheet {
   element;
 
-  constructor() {
+  // `onCite(format)` copies how to cite GeometryView, "bibtex" or "text", from the press itself.
+  constructor({ onCite } = {}) {
     const entries = [
       [["Click"], "Select. Shift or ⌘ adds"],
       [["1", "2", "3"], "Clicks select faces, bodies or parts"],
@@ -577,8 +578,17 @@ export class ShortcutsSheet {
     const grid = el("div.grid", {}, entries.flatMap(([keys, meaning]) => [
       el("div.keys", {}, keys.map(keyCap)), el("div", { text: meaning }),
     ]));
+    // How to cite it in research, the same as the repository's CITATION.cff.
+    const cite = el("div.cite", {}, [
+      el("h2", { text: "Cite GeometryView" }),
+      el("p", { text: "If you use GeometryView in your research, please cite it." }),
+      el("div.buttons", {}, [
+        el("button.pill", { type: "button", text: "Copy BibTeX", onclick: () => onCite?.("bibtex") }),
+        el("button.pill", { type: "button", text: "Copy text", onclick: () => onCite?.("text") }),
+      ]),
+    ]);
     this.element = el("div.sheet", { hidden: true, onclick: () => { this.element.hidden = true; } }, [
-      el("section.card", { onclick: (e) => e.stopPropagation() }, [el("h2", { text: "Shortcuts" }), grid]),
+      el("section.card", { onclick: (e) => e.stopPropagation() }, [el("h2", { text: "Shortcuts" }), grid, cite]),
     ]);
   }
 }

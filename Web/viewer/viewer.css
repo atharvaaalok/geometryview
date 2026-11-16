@@ -543,6 +543,9 @@ body.phone .library .actions ~ .count { display: none; }
 .sheet h2 { font-size: var(--text-l); font-weight: 600; color: var(--ink); margin-bottom: 12px; letter-spacing: 0; }
 .sheet .grid { display: grid; grid-template-columns: auto auto; gap: 8px 12px; align-items: center; font-size: var(--text-s); }
 .sheet .keys { display: flex; gap: 4px; justify-content: flex-end; }
+.sheet .cite { margin-top: 16px; padding-top: 12px; border-top: var(--line) solid var(--ink); font-size: var(--text-s); }
+.sheet .cite h2 { margin-bottom: 6px; }
+.sheet .cite .buttons { display: flex; gap: 8px; margin-top: 10px; }
 
 /* ---- Phones: the tree and cards give way to the view ------------------------------------ */
 

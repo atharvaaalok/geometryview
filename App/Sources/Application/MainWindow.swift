@@ -852,6 +852,11 @@ final class MainWindow: NSWindow {
         shortcuts.isHidden = false
     }
 
+    /// A short notice over the view, such as what was just copied.
+    func notice(_ text: String) {
+        holdHint.notice(text)
+    }
+
     private func run(_ command: KeyCommand) {
         switch command {
         case .perform(GeoActionClearSelection):

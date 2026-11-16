@@ -3,6 +3,8 @@ file(GLOB base_sources CONFIGURE_DEPENDS base/*.cpp)
 add_library(geo_base STATIC ${base_sources})
 target_include_directories(geo_base PUBLIC .)
 target_link_libraries(geo_base PUBLIC geo_options PRIVATE geo_warnings)
+# The release, written once: base/about.cpp gives it to every app.
+target_compile_definitions(geo_base PRIVATE GEO_VERSION="${PROJECT_VERSION}")
 
 add_library(geo_format STATIC "${CMAKE_SOURCE_DIR}/Import/format/blob.cpp")
 target_include_directories(geo_format PUBLIC "${CMAKE_SOURCE_DIR}/Import")
