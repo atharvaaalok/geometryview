@@ -11,6 +11,7 @@
 //
 // A file arrives as a cache file's bytes, streamed through geo_web_stream_*: its segments go
 // straight to GPU buffers as they arrive, and memory keeps only what the CPU reads.
+#include "base/about.h"
 #include "core/core.h"
 #include "core/offscreen_view.h"
 #include "scene/segment.h"
@@ -414,6 +415,19 @@ EMSCRIPTEN_KEEPALIVE void geo_web_set_tool(u32 tool) {
 /// The cache file version this engine reads: an older kept import must be made again.
 EMSCRIPTEN_KEEPALIVE u32 geo_web_cache_version() {
     return format::kVersion;
+}
+
+/// The release, as the Mac app gives it.
+EMSCRIPTEN_KEEPALIVE const char* geo_web_version() {
+    static const std::string version(about::version());
+    return version.c_str();
+}
+
+/// How to cite GeometryView (GeoCitationFormat): a line of text, or a BibTeX entry.
+EMSCRIPTEN_KEEPALIVE const char* geo_web_citation(u32 format) {
+    static const std::string text = about::citationText();
+    static const std::string bibtex = about::citationBibtex();
+    return format == GeoCitationBibTeX ? bibtex.c_str() : text.c_str();
 }
 
 /// How the gallery's pictures are drawn (core/offscreen_view.h): part of a kept picture's key.

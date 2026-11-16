@@ -2,6 +2,7 @@
 // with Metal on a display link, importing through helper processes.
 #include "engine.h"
 
+#include "base/about.h"
 #include "base/assert.h"
 #include "base/spsc_ring.h"
 #include "base/time.h"
@@ -507,7 +508,16 @@ struct GeoEngine final : engine::Host {
     }
 };
 
-const char* geo_engine_version(void) { return "0.5.0"; }
+const char* geo_engine_version(void) {
+    static const std::string version(geo::about::version());
+    return version.c_str();
+}
+
+const char* geo_citation(GeoCitationFormat format) {
+    static const std::string text = geo::about::citationText();
+    static const std::string bibtex = geo::about::citationBibtex();
+    return format == GeoCitationBibTeX ? bibtex.c_str() : text.c_str();
+}
 
 GeoEngine* geo_engine_create(const GeoEngineDescriptor* descriptor) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();

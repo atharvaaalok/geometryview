@@ -193,7 +193,7 @@ const galleryToolbar = new GalleryToolbar({
 const holdHint = new HoldHint();
 const hoverChip = new HoverChip();
 const dropZone = new DropZone();
-const shortcuts = new ShortcutsSheet();
+const shortcuts = new ShortcutsSheet({ onCite: (format) => copyCitation(format) });
 const picker = el("input", { type: "file", accept: ".step,.stp,.stl,.geoblob", multiple: true, hidden: true });
 picker.addEventListener("change", () => {
   openFiles([...picker.files], picker.dataset.adding === "1");
@@ -627,6 +627,18 @@ async function copyPicture() {
   } catch {
     // A browser that won't copy a picture still saves it.
     if (await blob.catch(() => null)) savePicture();
+  }
+}
+
+// How to cite GeometryView, onto the clipboard: a BibTeX entry with this version, or a line of
+// text. Written in the press itself, as browsers ask.
+async function copyCitation(format) {
+  try {
+    if (!engine) throw new Error("The engine has not started.");
+    await navigator.clipboard.writeText(engine.citation(format));
+    holdHint.notice("Citation copied");
+  } catch {
+    holdHint.notice("Couldn't copy the citation");
   }
 }
 

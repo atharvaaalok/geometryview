@@ -151,6 +151,12 @@ export class Engine {
   get cacheVersion() { return this.#module._geo_web_cache_version(); }
   /** How the gallery's pictures are drawn: part of a kept picture's key. */
   get pictureDrawing() { return this.#module._geo_web_picture_drawing(); }
+  /** The release, as the Mac app gives it. */
+  get version() { return this.#module.UTF8ToString(this.#module._geo_web_version()); }
+  /** How to cite GeometryView: "text", a line in APA's style, or "bibtex", an entry. */
+  citation(format) {
+    return this.#module.UTF8ToString(this.#module._geo_web_citation(format === "bibtex" ? 1 : 0));
+  }
 
   // The look every app starts with, as setLook takes it: the engine's, so all agree.
   defaultLook() {

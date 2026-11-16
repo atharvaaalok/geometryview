@@ -275,7 +275,8 @@ If you use GeometryView in your research, please cite it:
 ```
 
 Set `version` to the one you used. [CITATION.cff](CITATION.cff) holds the same, and GitHub's
-"Cite this repository" gives it in other formats.
+"Cite this repository" gives it in other formats. The Mac app's Help menu and the viewer's **?**
+copy it for you, and AI apps that use GeometryView know it.
 
 ## License
 

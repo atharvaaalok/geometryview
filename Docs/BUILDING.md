@@ -183,12 +183,13 @@ the npm page and each draft's weight. Its header says what the folder holds.
    `node Launcher/scripts/readme.mjs`, which pins the npm page's pictures to the new tag.
    Publishing first checks that every link on that page answers, so the tag must be pushed. Run it
    in a terminal of your own: npm asks for two-factor approval there. The version is written in:
-   - `CMakeLists.txt` (both `project` lines), `Engine/engine/engine.mm` (`geo_engine_version`)
+   - `CMakeLists.txt` (both `project` lines; the engine gives it to every app, `Engine/base/about.cpp`)
      and `Tests/unit/version_test.cpp`;
    - `Launcher/package.json`, `Launcher/mcpb/manifest.json` and `Launcher/src/mcp.mjs`;
    - `iOS/Shell/project.yml` (`MARKETING_VERSION`, and `CURRENT_PROJECT_VERSION` up by one);
    - `CITATION.cff` (`version`, and `date-released` set to the release's date) and the README's
-     BibTeX. `npm test` checks that these agree with `package.json`.
+     BibTeX. `npm test` checks that these agree with `package.json`, and the engine's tests that
+     the citation file's version is the engine's.
 4. With a Developer ID: `Tools/release/mac_release.sh` signs, notarizes and zips the Mac app and a
    native `.mcpb`, for the same release, as `GeometryView-mac.zip` and `geometryview-mac.mcpb`
    (the README links to the latest release's by name). Its header says how to set it up; `--check`

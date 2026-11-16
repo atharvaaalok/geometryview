@@ -73,6 +73,22 @@ enum MainMenu {
                 keyEquivalent: ""
             )
         )
+        // How to cite GeometryView in research, onto the clipboard.
+        menu.addItem(.separator())
+        menu.addItem(
+            NSMenuItem(
+                title: "Copy Citation as BibTeX",
+                action: #selector(AppDelegate.copyCitationBibTeX(_:)),
+                keyEquivalent: ""
+            )
+        )
+        menu.addItem(
+            NSMenuItem(
+                title: "Copy Citation as Text",
+                action: #selector(AppDelegate.copyCitationText(_:)),
+                keyEquivalent: ""
+            )
+        )
         let item = NSMenuItem()
         item.submenu = menu
         NSApp.helpMenu = menu

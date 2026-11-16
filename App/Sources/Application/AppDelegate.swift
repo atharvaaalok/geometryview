@@ -82,6 +82,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window?.chooseFile(adding: false)
     }
 
+    /// Help ▸ Copy Citation: how to cite GeometryView in research, the same as the repository's
+    /// CITATION.cff, as a BibTeX entry with this version or as a line of text.
+    @objc func copyCitationBibTeX(_ sender: Any?) {
+        copyCitation(GeoCitationBibTeX)
+    }
+
+    @objc func copyCitationText(_ sender: Any?) {
+        copyCitation(GeoCitationText)
+    }
+
+    private func copyCitation(_ format: GeoCitationFormat) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(String(cString: geo_citation(format)), forType: .string)
+        window?.notice("Citation copied")
+    }
+
     @objc func addDocument(_ sender: Any?) {
         window?.chooseFile(adding: true)
     }
