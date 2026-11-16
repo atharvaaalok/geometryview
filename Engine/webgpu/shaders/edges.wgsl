@@ -87,7 +87,12 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
     let flagsB = faceFlags(state, faceB);
     let shownA = (flagsA & kStateHidden) == 0u;
     let shownB = (flagsB & kStateHidden) == 0u;
-    let solid = (shownA && (flagsA & kStateGhost) == 0u) || (shownB && (flagsB & kStateGhost) == 0u);
+    let solidA = shownA && (flagsA & kStateGhost) == 0u;
+    let solidB = shownB && (flagsB & kStateGhost) == 0u;
+    let solid = solidA || solidB;
+    // The rim of a hidden or ghosted face, the border of what it opened, is drawn even where the
+    // faces meet smoothly; elsewhere a smooth edge is drawn only as a highlight.
+    let rim = solidA != solidB;
     let idA = o.idBase + faceA + 1u;
     let idB = o.idBase + faceB + 1u;
     let hovered = (shownA && idA >= frame.hoverFirst && idA < frame.hoverEnd) ||
@@ -97,9 +102,10 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
 
     var kind = 0u;
     if (kGhostLinePass) {
-        kind = select(0u, kInked, !solid && (shownA || shownB) && edgeClass != kEdgeSmooth);
+        kind = select(0u, kInked, !solid && (shownA || shownB) &&
+                                  (edgeClass != kEdgeSmooth || shownA != shownB));
     } else {
-        kind = select(0u, kInked, solid && edgeClass != kEdgeSmooth && style.crease > 0.0) |
+        kind = select(0u, kInked, solid && (edgeClass != kEdgeSmooth || rim) && style.crease > 0.0) |
                select(0u, kHighlighted, hovered || selected);
     }
 

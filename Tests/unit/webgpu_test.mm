@@ -702,6 +702,77 @@ TEST_CASE("the WebGPU renderer cuts parts that reach into each other as Metal do
     }
 }
 
+// A smooth edge beside a hidden or ghosted face is inked in both renderers: each face of a box
+// whose top is two faces meeting smoothly hidden alone, ghosted alone, and hidden in a part ghosted
+// whole as dashed lines.
+TEST_CASE("the WebGPU renderer inks the rim of a hidden or ghosted face as Metal does") {
+    @autoreleasepool {
+        const std::string blob = test::importBoxes(test::splitTopBox(), GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        GeoRenderOptions options = geo_default_render_options();
+        options.width = kWidth;
+        options.height = kHeight;
+        options.overlay = false;
+        options.azimuth_degrees = 20.0;
+        options.elevation_degrees = 50.0;
+        options.look.style = GeoStyleTechnical;
+        options.look.cast_shadow = false;
+        struct Way {
+            const char* name;
+            u8 flag;
+            bool inGhostLines; // the part ghosted whole, its ghost drawn as dashed lines
+        };
+        for (const Way way : {Way{"hidden", kStateHidden, false}, Way{"ghost", kStateGhost, false},
+                              Way{"hidden-in-ghost-lines", kStateHidden, true}}) {
+            for (u32 face = 0; face < 7; ++face) {
+                const std::string wayName = way.name;
+                CAPTURE(wayName);
+                CAPTURE(face);
+                const auto change = [&](engine::OffscreenView& frame, render::Backend& backend) {
+                    model::FaceState state;
+                    state.resize(frame.scene.faceCounts());
+                    REQUIRE(frame.scene.faceCounts()[0] == 7);
+                    if (way.inGhostLines) {
+                        engine::LookState looks;
+                        GeoLook look = options.look;
+                        look.ghost_style = GeoGhostLines;
+                        looks.set(engine::lookSettings(look));
+                        looks.apply(backend, frame.scene);
+                        state.set({0, model::Target::kWholeOccurrence}, kStateGhost, true);
+                    }
+                    state.set({0, face}, way.flag, true);
+                    backend.syncState(state);
+                };
+                const std::vector<u8> expected = renderScenario(*metal, blob, options, change);
+                const std::vector<u8> image = renderScenario(*web, blob, options, change);
+                REQUIRE(image.size() == expected.size());
+                if (const char* keep = std::getenv("GEOMETRYVIEW_WEBGPU_IMAGES")) {
+                    engine::writePng(
+                        std::format("{}/rim-{}-{}-metal.png", keep, way.name, face).c_str(),
+                        expected, kWidth, kHeight);
+                    engine::writePng(
+                        std::format("{}/rim-{}-{}-webgpu.png", keep, way.name, face).c_str(), image,
+                        kWidth, kHeight);
+                }
+                // The two agree to the pixel here, and a rim is about 0.25% of the picture.
+                const Difference d = compare(image, expected);
+                CAPTURE(d.mean);
+                CAPTURE(d.changed);
+                CHECK(d.mean < 0.05);
+                CHECK(d.changed < 0.0005);
+            }
+        }
+        unlink(blob.c_str());
+    }
+}
+
 // Picking reads ids and depths back a few frames late, but what it reads must be what Metal
 // reads at once: the same face and nearly the same depth, across the view and the cube's grid.
 TEST_CASE("the WebGPU renderer picks as Metal does") {

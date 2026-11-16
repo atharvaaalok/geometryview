@@ -16,6 +16,7 @@ namespace geo::test {
 struct CutBox {
     std::array<double, 3> lo, hi;
     bool cavity = false;
+    bool splitTop = false; // its top as two coplanar faces (StepWriter::Solid)
 };
 
 /// Imports the boxes, in order, into a cache file. Returns its path.
@@ -23,7 +24,8 @@ inline std::string importBoxes(const std::vector<CutBox>& boxes, const char* wor
     StepWriter writer;
     const int root = writer.assembly("scene");
     for (usize i = 0; i < boxes.size(); ++i) {
-        const int shape = writer.box(boxes[i].lo, boxes[i].hi, boxes[i].cavity);
+        const int shape =
+            writer.boxes({{boxes[i].lo, boxes[i].hi, boxes[i].cavity, "box", boxes[i].splitTop}});
         writer.place(root, writer.part("box" + std::to_string(i), shape), shape, {0, 0, 0});
     }
     const std::string text = writer.text();
@@ -45,6 +47,11 @@ inline std::string importBoxes(const std::vector<CutBox>& boxes, const char* wor
 /// through the big one's cut pass in and out of the small one before leaving the big one.
 inline std::vector<CutBox> reachingBoxes() {
     return {{{0, 0, 0}, {4, 4, 4}}, {{3, 1, 1}, {6, 3, 1.5}}};
+}
+
+/// A flat box whose top is two faces meeting smoothly along its middle.
+inline std::vector<CutBox> splitTopBox() {
+    return {{{0, 0, 0}, {4, 4, 2}, false, true}};
 }
 
 } // namespace geo::test

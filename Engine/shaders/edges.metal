@@ -173,8 +173,12 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     const uint flagsB = faceFlags(state, faceStates, faceB);
     const bool shownA = (flagsA & kStateHidden) == 0;
     const bool shownB = (flagsB & kStateHidden) == 0;
-    const bool solid =
-        (shownA && (flagsA & kStateGhost) == 0) || (shownB && (flagsB & kStateGhost) == 0);
+    const bool solidA = shownA && (flagsA & kStateGhost) == 0;
+    const bool solidB = shownB && (flagsB & kStateGhost) == 0;
+    const bool solid = solidA || solidB;
+    // The rim of a hidden or ghosted face, the border of what it opened, is drawn even where the
+    // faces meet smoothly; elsewhere a smooth edge is drawn only as a highlight.
+    const bool rim = solidA != solidB;
     const uint idA = occurrence.idBase + faceA + 1, idB = occurrence.idBase + faceB + 1;
     const bool hovered = (shownA && idA >= frame.hoverFirst && idA < frame.hoverEnd) ||
                          (shownB && idB >= frame.hoverFirst && idB < frame.hoverEnd);
@@ -183,9 +187,11 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
 
     uint kind = 0;
     if (kGhostLinePass) {
-        kind = !solid && (shownA || shownB) && edgeClass != kEdgeSmooth ? kInked : 0;
+        kind = !solid && (shownA || shownB) && (edgeClass != kEdgeSmooth || shownA != shownB)
+                   ? kInked
+                   : 0;
     } else {
-        kind = (solid && edgeClass != kEdgeSmooth && style.crease > 0.0 ? kInked : 0) |
+        kind = (solid && (edgeClass != kEdgeSmooth || rim) && style.crease > 0.0 ? kInked : 0) |
                (hovered || selected ? kHighlighted : 0);
     }
 
