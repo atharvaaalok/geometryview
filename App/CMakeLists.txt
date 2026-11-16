@@ -18,6 +18,10 @@ target_link_options(GeometryView PRIVATE
     "$<$<CONFIG:Release>:SHELL:-Xlinker -dead_strip>"
 )
 add_dependencies(GeometryView engine_shaders geometryview-import geometryview-occt-worker)
+# The bundle gets the shaders and the helpers below, after it links: a change to any of them alone
+# relinks the app too, or the bundle would keep the old ones.
+set_property(TARGET GeometryView APPEND PROPERTY LINK_DEPENDS "${GEO_METALLIB}"
+    "$<TARGET_FILE:geometryview-import>" "$<TARGET_FILE:geometryview-occt-worker>")
 
 # The icon, made from its 1024 px master.
 set(app_icon "${CMAKE_CURRENT_BINARY_DIR}/AppIcon.icns")
