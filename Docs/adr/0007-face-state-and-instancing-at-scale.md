@@ -98,5 +98,21 @@ M8, along with a classic instanced path for definitions small enough not to need
   range starting elsewhere, as the open batches after the closed ones do, drew the closed batches
   again and never its own. A batch range now carries its buffers and binds them from its own
   first batch.
-- Not done: a thin wall tessellated more coarsely than it is thick could show its opened inside
-  through the outside; none of the fixtures does.
+- **Where an opened part touches another, the part it touches shows.** Two parts that touch do
+  so with opposite normals, so from any view one of the pair is a back face, and while every
+  closed part culled them nothing fought. An opened part draws its back faces, and where they lie
+  on another part's face the two take turns pixel by pixel as the view moves: on the matryoshka,
+  where the upper's shell rests flat on the lower's lip, they differ only by rounding, and where
+  its skirt wraps the lip, the two tessellations cross. The inside of an opened part (a vertex
+  whose normal faces away from the eye) is drawn a hair behind where it is: by twice the chord
+  error (`GpuDefinition.edgeLift`, which two parts' facets can cross by), and at least half a
+  pixel at its depth for depth precision on flat contacts. The point slides along its own view
+  ray, so it covers the same pixels, and section planes and the shadow use the true point. Every
+  pass that draws surfaces moves it alike, so the shell's equal-depth blend still matches. A
+  vertex cannot know its triangle's facing, but faces never share vertices, so a flat face's
+  vertices agree exactly, and on a curved face the change falls at the fold, where its near and
+  far sheets meet. The other way round, the inside drawn in front, would keep an opened part
+  looking hollow at its contacts, but a wall thinner than the lift would then show its inside
+  through its outside, and on a curved contact the dashes return once zoomed in past the lift.
+- A wall tessellated more coarsely than it is thick could have shown its opened inside through its
+  outside. The same sink keeps it behind, up to twice the chord error.

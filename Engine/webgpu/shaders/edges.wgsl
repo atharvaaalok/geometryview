@@ -24,13 +24,6 @@ struct EdgeVertex {
     @location(3) world: vec3f,
 }
 
-fn pixelWorldOf(p: vec3f) -> f32 {
-    if (frame.perspective != 0u) {
-        return frame.worldPerPixel * max(dot(p - frame.eye, frame.forward), 0.0);
-    }
-    return frame.worldPerPixel;
-}
-
 // Toward the eye by the floor, or by the definition's chord error (`chordLift`, world units) where
 // that is more and the segment has a face on one side only. A segment between two faces lies on
 // both faces' triangles exactly, and needs only the floor: a line has width, which a concave
