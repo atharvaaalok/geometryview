@@ -53,8 +53,7 @@ enum BufferIndex : unsigned {
     kBufferFrame = 0,
     kBufferDefinitions = 1,
     kBufferOccurrences = 2,
-    kBufferBatches = 3,
-    kBufferDrawBase = 4,
+    kBufferBatches = 3, // bound from a draw's own first batch
     kBufferOccurrenceState = 5,
     kBufferFaceState = 6,
     kBufferMeshletRefs = 7,

@@ -60,28 +60,34 @@ struct Stage {
     model::FaceState state;
     Aabb bounds{};
 
-    explicit Stage(const std::vector<float>& corners, bool perspective = false) {
+    explicit Stage(const std::vector<float>& corners, bool perspective = false)
+        : Stage(std::vector<std::vector<float>>{corners}, perspective) {}
+
+    // Several parts, each imported as a document of its own: a closed one and an open one, say.
+    explicit Stage(const std::vector<std::vector<float>>& parts, bool perspective = false) {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         const bool hasDevice = device != nil; // doctest cannot print an Objective-C pointer
         REQUIRE(hasDevice);
         renderer = gpu::Renderer::create(device, GEO_TEST_SHADER_LIBRARY);
         REQUIRE(renderer != nullptr);
 
-        char path[] = "/tmp/georenderXXXXXX";
-        const int fd = mkstemp(path);
-        REQUIRE(fd >= 0);
-        std::string error;
-        const std::string stl = binaryStl(corners);
-        import::ImportResult result;
-        REQUIRE(import::importMesh({reinterpret_cast<const u8*>(stl.data()), stl.size()}, fd,
-                                   nullptr, result, error));
-        std::vector<std::shared_ptr<scene::Segment>> segments;
-        REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
-        close(fd);
-        unlink(path);
-        scene::Document& document = scene.document(scene.addDocument());
-        for (std::shared_ptr<scene::Segment>& segment : segments) {
-            REQUIRE_MESSAGE(document.add(std::move(segment), error), error);
+        for (const std::vector<float>& corners : parts) {
+            char path[] = "/tmp/georenderXXXXXX";
+            const int fd = mkstemp(path);
+            REQUIRE(fd >= 0);
+            std::string error;
+            const std::string stl = binaryStl(corners);
+            import::ImportResult result;
+            REQUIRE(import::importMesh({reinterpret_cast<const u8*>(stl.data()), stl.size()}, fd,
+                                       nullptr, result, error));
+            std::vector<std::shared_ptr<scene::Segment>> segments;
+            REQUIRE_MESSAGE(scene::openCacheFile(fd, segments, error), error);
+            close(fd);
+            unlink(path);
+            scene::Document& document = scene.document(scene.addDocument());
+            for (std::shared_ptr<scene::Segment>& segment : segments) {
+                REQUIRE_MESSAGE(document.add(std::move(segment), error), error);
+            }
         }
         renderer->syncScene(scene);
         state.resize(scene.faceCounts());
@@ -304,6 +310,32 @@ std::set<u32> visibleIds(Stage& stage, const render::ViewState& view) {
 }
 
 } // namespace
+
+TEST_CASE("closed and open surfaces in one scene both draw") {
+    @autoreleasepool {
+        // A closed box, and beside it an open sheet: the scene's batches are the box's, then the
+        // sheet's, and each list must draw its own.
+        std::vector<float> sheet;
+        addQuad(sheet, {2, -1, 0}, {4, -1, 0}, {4, 1, 0}, {2, 1, 0}); // faces +z
+        Stage stage(std::vector<std::vector<float>>{box(), sheet});
+        for (const double z : {5.0, -5.0}) { // its front, then its back
+            CAPTURE(z);
+            stage.camera.lookAt(simd_make_double3(1, 0, z), simd_make_double3(1, 0, 0),
+                                simd_make_double3(0, 1, 0));
+            nav::fit(stage.camera, stage.bounds, stage.viewport, 1.2);
+            const render::ViewState view = stage.view();
+            stage.renderer->renderOffscreen(view);
+            std::set<u32> occurrences;
+            for (const u32 id : visibleIds(stage, view)) {
+                if (const auto target = stage.scene.resolve(id)) {
+                    occurrences.insert(target->globalOccurrence);
+                }
+            }
+            CHECK(occurrences.contains(0)); // the box
+            CHECK(occurrences.contains(1)); // the sheet
+        }
+    }
+}
 
 TEST_CASE("a hidden face is neither drawn nor picked") {
     @autoreleasepool {

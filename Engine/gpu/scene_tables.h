@@ -11,8 +11,10 @@
 
 namespace geo::gpu {
 
-/// Draw lists of batches, each batch one object threadgroup.
+/// A draw list of batches, each batch one object threadgroup: batches [first, last) of `batches`,
+/// whose meshlets or edge chunks `refs` lists. A draw binds the list from its own first batch.
 struct BatchRange {
+    id<MTLBuffer> batches = nil, refs = nil;
     usize first = 0, last = 0;
     bool empty() const { return first == last; }
 };
@@ -31,17 +33,14 @@ public:
 
     id<MTLBuffer> definitions() const { return definitions_; }
     id<MTLBuffer> occurrences() const { return occurrences_; }
-    id<MTLBuffer> batches() const { return batches_; }
-    id<MTLBuffer> meshletRefs() const { return meshletRefs_; }
-    id<MTLBuffer> drawBases() const { return drawBases_; }
     // Edge batches cover edge chunks the way surface batches cover meshlets.
-    id<MTLBuffer> edgeBatches() const { return edgeBatches_; }
-    id<MTLBuffer> edgeRefs() const { return edgeRefs_; }
-    BatchRange allEdgeBatches() const { return {0, edgeBatchCount_}; }
+    BatchRange allEdgeBatches() const { return {edgeBatches_, edgeRefs_, 0, edgeBatchCount_}; }
 
     /// Closed surfaces draw with back faces culled, and open ones show both sides.
-    BatchRange closedBatches() const { return {0, openBatchStart_}; }
-    BatchRange openBatches() const { return {openBatchStart_, surfaceBatchCount_}; }
+    BatchRange closedBatches() const { return {batches_, meshletRefs_, 0, openBatchStart_}; }
+    BatchRange openBatches() const {
+        return {batches_, meshletRefs_, openBatchStart_, surfaceBatchCount_};
+    }
 
 private:
     struct SegmentResidency {
@@ -49,7 +48,7 @@ private:
         id<MTLResidencySet> set;
     };
     std::unordered_map<const scene::Segment*, SegmentResidency> segments_;
-    id<MTLBuffer> definitions_, occurrences_, batches_, drawBases_, meshletRefs_;
+    id<MTLBuffer> definitions_, occurrences_, batches_, meshletRefs_;
     id<MTLBuffer> edgeBatches_, edgeRefs_;
     usize edgeBatchCount_ = 0;
     u64 triangles_ = 0;

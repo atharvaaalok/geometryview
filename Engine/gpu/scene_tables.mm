@@ -183,17 +183,10 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     id<MTLBuffer> edgeChunkRefs = context.makeShared(edgeRefs.size() * sizeof(MeshletRef));
     std::copy(edgeRefs.begin(), edgeRefs.end(), static_cast<MeshletRef*>(edgeChunkRefs.contents));
 
-    const usize drawCount = std::max(batchCount, edges.batches.size()) / kMaxBatchesPerDraw + 2;
-    id<MTLBuffer> drawBases = context.makeShared(drawCount * sizeof(u32));
-    auto* bases = static_cast<u32*>(drawBases.contents);
-    for (usize i = 0; i < drawCount; ++i) {
-        bases[i] = u32(i * kMaxBatchesPerDraw);
-    }
-
     // The last frame may still read the old tables, so they go when it finishes.
     std::vector<id<MTLBuffer>> oldBuffers;
-    for (id<MTLBuffer> old : {definitions_, occurrences_, batches_, drawBases_, meshletRefs_,
-                              edgeBatches_, edgeRefs_}) {
+    for (id<MTLBuffer> old :
+         {definitions_, occurrences_, batches_, meshletRefs_, edgeBatches_, edgeRefs_}) {
         if (old != nil) {
             oldBuffers.push_back(old);
         }
@@ -211,7 +204,6 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     occurrences_ = occurrences;
     batches_ = batches;
     meshletRefs_ = meshletRefs;
-    drawBases_ = drawBases;
     edgeBatches_ = edgeBatches;
     edgeRefs_ = edgeChunkRefs;
     surfaceBatchCount_ = batchCount;
@@ -220,7 +212,7 @@ void SceneTables::sync(GpuContext& context, Retirement& retirement, const scene:
     triangles_ = triangles;
     edgeSegments_ = edgeSegments;
     for (id<MTLBuffer> resource :
-         {definitions, occurrences, batches, drawBases, meshletRefs, edgeBatches, edgeChunkRefs}) {
+         {definitions, occurrences, batches, meshletRefs, edgeBatches, edgeChunkRefs}) {
         [context.residency addAllocation:resource];
     }
     [context.residency commit];
