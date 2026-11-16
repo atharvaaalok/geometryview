@@ -20,7 +20,8 @@ can be on an edge, because sides inside a face share their vertices. Those sides
 their packed grid positions, exactly what the GPU draws. An edge is classified by the normals on
 its two sides:
 - **Crease**: the normals differ by more than 15 degrees.
-- **Smooth**: they agree. Inked only around a highlighted face.
+- **Smooth**: they agree. Inked only around a highlighted face, and as the rim of a hidden or
+  ghosted face (addendum of 2026-11-16).
 - **Seam**: they agree and both sides are one face. Dropped.
 - **Boundary**: there is only one side.
 
@@ -209,3 +210,16 @@ The composite writes two sources: ink, and the colour beneath times what is kept
 with them leaves every opaque frame as it was, and with the sheet's alpha at 0 a frame comes out
 premultiplied: the part, its lines and its cast shadow, for the gallery to lay on its own sheet.
 The 20 goldens did not change.
+
+## Addendum (2026-11-16): the rim of a hidden or ghosted face
+
+- **A smooth edge with one side solid and the other hidden or ghosted is inked as a crease.** It
+  is the border of what the face opened (ADR 0007, "Parts opened by a face"): a doll's shell
+  beside its hidden outer face, a fillet beside a hidden top. Before, that border was drawn only by
+  the composite's outline where the depth jumps, a lighter grey, and not at all where it does not.
+- **In a part ghosted whole as dashed lines**, a smooth edge between a ghosted face and a hidden
+  one is dashed, the same way.
+- Measured on a box whose top is two faces meeting smoothly: with one half hidden, 0% of the seam
+  was as dark as a crease (1% with it ghosted; the outline's grey is about 60), and now all of it
+  is. In a Lines ghost with one half hidden, no dash fell on the seam, and now 60% of it is
+  marked, its dashes and gaps. Metal and WebGPU agree to the pixel.

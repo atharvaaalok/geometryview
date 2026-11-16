@@ -26,6 +26,9 @@ public:
         std::array<double, 3> lo, hi;
         bool withCavity = false;
         std::string name = "box"; // the body's own name
+        // The top as two faces, split across x at its middle: an edge between coplanar faces,
+        // which meet smoothly.
+        bool splitTop = false;
     };
 
     /// Several boxes as the bodies of one shape, as `box` writes each.
@@ -33,7 +36,8 @@ public:
         const int context = ensureContext();
         std::string list;
         for (const Solid& solid : solids) {
-            list += std::format("#{},", brep(solid.lo, solid.hi, solid.withCavity, solid.name));
+            list += std::format(
+                "#{},", brep(solid.lo, solid.hi, solid.withCavity, solid.name, solid.splitTop));
         }
         const int origin = placement({0, 0, 0});
         return add(std::format("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}#{}),#{})", list, origin,
@@ -158,8 +162,8 @@ private:
     // A closed shell of six planar faces with outward normals.
     // One solid, named `name`: a box, with a void if `withCavity`.
     int brep(std::array<double, 3> lo, std::array<double, 3> hi, bool withCavity,
-             const std::string& name) {
-        const int outer = shell(lo, hi);
+             const std::string& name, bool splitTop = false) {
+        const int outer = shell(lo, hi, splitTop);
         int body = 0;
         if (withCavity) {
             std::array<double, 3> innerLo{}, innerHi{};
@@ -177,35 +181,48 @@ private:
         return body;
     }
 
-    int shell(std::array<double, 3> lo, std::array<double, 3> hi) {
-        std::array<int, 8> vertices{};
-        std::array<std::array<double, 3>, 8> corners{};
+    int shell(std::array<double, 3> lo, std::array<double, 3> hi, bool splitTop = false) {
+        std::vector<std::array<double, 3>> corners(8);
         for (int c = 0; c < 8; ++c) {
             corners[c] = {c & 1 ? hi[0] : lo[0], c & 2 ? hi[1] : lo[1], c & 4 ? hi[2] : lo[2]};
-            vertices[c] = add(std::format("VERTEX_POINT('',#{})", point(corners[c])));
         }
-        // Each face as four corners, counter-clockwise seen from outside, with its outward normal.
+        if (splitTop) {
+            // The top edges' middles, along x, at the low and high y: corners 8 and 9.
+            const double middle = (lo[0] + hi[0]) / 2.0;
+            corners.push_back({middle, lo[1], hi[2]});
+            corners.push_back({middle, hi[1], hi[2]});
+        }
+        std::vector<int> vertices;
+        for (const auto& corner : corners) {
+            vertices.push_back(add(std::format("VERTEX_POINT('',#{})", point(corner))));
+        }
+        // Each face as its corners, counter-clockwise seen from outside, with its outward normal.
         struct Face {
-            std::array<int, 4> corners;
+            std::vector<int> corners;
             std::array<double, 3> normal;
             std::array<double, 3> reference;
         };
-        const std::array<Face, 6> faces = {{
-            {{0, 2, 3, 1}, {0, 0, -1}, {1, 0, 0}},
-            {{4, 5, 7, 6}, {0, 0, 1}, {1, 0, 0}},
-            {{0, 1, 5, 4}, {0, -1, 0}, {1, 0, 0}},
-            {{2, 6, 7, 3}, {0, 1, 0}, {1, 0, 0}},
-            {{0, 4, 6, 2}, {-1, 0, 0}, {0, 1, 0}},
-            {{1, 3, 7, 5}, {1, 0, 0}, {0, 1, 0}},
-        }};
+        std::vector<Face> faces = {
+            {{0, 2, 3, 1}, {0, 0, -1}, {1, 0, 0}}, {{4, 5, 7, 6}, {0, 0, 1}, {1, 0, 0}},
+            {{0, 1, 5, 4}, {0, -1, 0}, {1, 0, 0}}, {{2, 6, 7, 3}, {0, 1, 0}, {1, 0, 0}},
+            {{0, 4, 6, 2}, {-1, 0, 0}, {0, 1, 0}}, {{1, 3, 7, 5}, {1, 0, 0}, {0, 1, 0}},
+        };
+        if (splitTop) {
+            faces[1] = {{4, 8, 9, 6}, {0, 0, 1}, {1, 0, 0}};
+            faces.insert(faces.begin() + 2, Face{{8, 5, 7, 9}, {0, 0, 1}, {1, 0, 0}});
+            faces[3].corners = {0, 1, 5, 8, 4};
+            faces[4].corners = {2, 6, 9, 7, 3};
+        }
         std::vector<int> faceIds;
-        std::array<std::array<int, 8>, 8> edges{};
+        std::map<std::pair<int, int>, int> edges;
         for (const Face& face : faces) {
             std::vector<int> oriented;
-            for (int i = 0; i < 4; ++i) {
-                const int a = face.corners[i], b = face.corners[(i + 1) % 4];
+            const usize n = face.corners.size();
+            for (usize i = 0; i < n; ++i) {
+                const int a = face.corners[i], b = face.corners[(i + 1) % n];
                 const int low = std::min(a, b), high = std::max(a, b);
-                if (edges[low][high] == 0) {
+                int& edge = edges[{low, high}];
+                if (edge == 0) {
                     std::array<double, 3> d{};
                     double length = 0;
                     for (int axis = 0; axis < 3; ++axis) {
@@ -220,14 +237,17 @@ private:
                         add(std::format("VECTOR('',#{},{})", direction(d), number(length)));
                     const int line =
                         add(std::format("LINE('',#{},#{})", point(corners[low]), vector));
-                    edges[low][high] = add(std::format("EDGE_CURVE('',#{},#{},#{},.T.)",
-                                                       vertices[low], vertices[high], line));
+                    edge = add(std::format("EDGE_CURVE('',#{},#{},#{},.T.)", vertices[low],
+                                           vertices[high], line));
                 }
-                oriented.push_back(add(std::format("ORIENTED_EDGE('',*,*,#{},{})", edges[low][high],
-                                                   a == low ? ".T." : ".F.")));
+                oriented.push_back(add(
+                    std::format("ORIENTED_EDGE('',*,*,#{},{})", edge, a == low ? ".T." : ".F.")));
             }
-            const int loop = add(std::format("EDGE_LOOP('',(#{},#{},#{},#{}))", oriented[0],
-                                             oriented[1], oriented[2], oriented[3]));
+            std::string loopEdges;
+            for (const int e : oriented) {
+                loopEdges += std::format("{}#{}", loopEdges.empty() ? "" : ",", e);
+            }
+            const int loop = add(std::format("EDGE_LOOP('',({}))", loopEdges));
             const int bound = add(std::format("FACE_OUTER_BOUND('',#{},.T.)", loop));
             const int plane = add(std::format(
                 "PLANE('',#{})", placement(corners[face.corners[0]], face.normal, face.reference)));
