@@ -18,6 +18,8 @@
 //   2, 3  ghosts, closed and open: occurrences ghosted whole or in part
 //   4, 5  the see-through shell, closed and open, while it fades
 //   6     the cast shadow, culled against the shadow's projection
+// A closed part opened by a hidden or ghosted face joins the open lists: its inside shows through
+// the gap, so it draws both sides, and section caps, drawn from list 0, leave it out.
 // The CPU sizes each list's region from the states it uploaded, so a list never overflows.
 
 struct Region {
@@ -115,15 +117,18 @@ fn membership(occurrence: u32, m: Meshlet, d: Definition, o: Occurrence) -> u32 
     if ((flags & kStateHidden) != 0u) {
         return 0u;
     }
-    let open = select(0u, 1u, (d.flags & kDefinitionOpen) != 0u);
+    // Opened: its back faces show, so no normal cone proves a meshlet unseen.
+    let opened = (d.flags & kDefinitionOpen) == 0u && (flags & kStateOpened) != 0u;
+    let open = select(0u, 1u, (d.flags & kDefinitionOpen) != 0u || opened);
     let ghostWhole = (flags & kStateGhost) != 0u;
     let shell = (state.look & kLookShell) != 0u && frame.seeThrough > 0.0;
     let section = frame.sectionPlaneCount > 0u;
+    let cone = !section && !opened;
     var bits = 0u;
-    if (!ghostWhole && !shell && meshletVisible(m, d, o, !section)) {
+    if (!ghostWhole && !shell && meshletVisible(m, d, o, cone)) {
         bits |= 1u << open;
     }
-    if ((flags & (kStateGhost | kStateFaceGhost)) != 0u && meshletVisible(m, d, o, !section)) {
+    if ((flags & (kStateGhost | kStateFaceGhost)) != 0u && meshletVisible(m, d, o, cone)) {
         bits |= 1u << (2u + open);
     }
     if (!ghostWhole && shell && meshletVisible(m, d, o, false)) {

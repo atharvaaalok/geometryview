@@ -48,7 +48,8 @@ unchanged.
 
 **3. Culling into ordered lists, drawn with 16-bit indices in chunks.**
 - **One compute pass culls each meshlet instance** for seven lists: solids, ghosts and the
-  see-through shell, each split into closed and open, plus the cast shadow.
+  see-through shell, each split into closed and open, plus the cast shadow. A closed part opened
+  by a hidden or ghosted face joins the open lists, its cone test skipped (ADR 0007).
 - **It counts, scans and writes**, so every list is in instance order. Compaction by atomic append
   ordered meshlets as threads finished, and coincident faces z-fought differently each frame.
 - **Each visible meshlet gets its exact index range.** An index is

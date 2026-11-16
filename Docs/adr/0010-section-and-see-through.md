@@ -58,7 +58,9 @@ textures. Both draws come after the opaque path, so its hidden-surface removal i
   no part's code results. There the opaque pass's own caps stay, as before.
 - Two parts whose tags are equal, that is whose indices differ by a multiple of 127, cannot be told
   apart by the code.
-- A closed part with a face hidden or ghosted alone counts wrongly behind that face.
+- ~~A closed part with a face hidden or ghosted alone counts wrongly behind that face.~~ Since
+  2026-11-16 such a part is opened (ADR 0007, "Parts opened by a face"): it no longer encloses
+  anything, so it leaves the count and has no cap, and the cut shows its inside.
 
 ## See-through
 

@@ -1129,7 +1129,9 @@ struct Renderer::State {
             if ((flags & kStateHidden) != 0 || info.meshlets == 0) {
                 continue;
             }
-            const u32 open = info.open ? 1 : 0;
+            // A closed part opened by a hidden or ghosted face joins the open lists, as cull.wgsl's
+            // membership puts it: the two must agree, or a list overflows and drops meshlets.
+            const u32 open = info.open || (flags & kStateOpened) != 0 ? 1 : 0;
             const bool ghostWhole = (flags & kStateGhost) != 0;
             const bool ghost = (flags & (kStateGhost | kStateFaceGhost)) != 0;
             const bool shell = o < looks.size() && (looks[o] & kLookShell) != 0;

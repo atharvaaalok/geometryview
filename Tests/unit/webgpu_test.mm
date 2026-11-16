@@ -518,6 +518,7 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
             bool perspective = false;
             std::array<bool, 3> section{};
             Scenario change = [](engine::OffscreenView&, render::Backend&) {};
+            bool mustChange = false; // its picture differs from the plain one, or it tests nothing
         };
         const std::vector<Case> cases = {
             {"section-x", GeoStyleIllustration, false, {true, false, false}},
@@ -560,6 +561,33 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
                  frame.view.uniforms.seeThrough = 0.6f;
              }},
             {"perspective-metal", GeoStyleMetal, true},
+            // A part opened by a hidden face draws both sides: its inside shows through the gap.
+            {"hidden-face",
+             GeoStyleIllustration,
+             false,
+             {},
+             withState([&](model::FaceState& state) { state.set({2, 1}, kStateHidden, true); }),
+             true},
+            {"hidden-face-section-x",
+             GeoStyleIllustration,
+             false,
+             {true, false, false},
+             withState([&](model::FaceState& state) { state.set({2, 1}, kStateHidden, true); }),
+             true},
+            // Every part opened: the CPU sizes the open lists for them as the cull pass fills them.
+            {"every-part-opened",
+             GeoStyleIllustration,
+             false,
+             {},
+             [&](engine::OffscreenView& frame, render::Backend& backend) {
+                 const auto faces = frame.scene.faceCounts();
+                 withState([&](model::FaceState& state) {
+                     for (u32 o = 0; o < frame.scene.occurrenceCount(); ++o) {
+                         state.set({o, faces[o] > 1 ? 1u : 0u}, kStateHidden, true);
+                     }
+                 })(frame, backend);
+             },
+             true},
             // Studio draws no creases, but highlights the selected and the hovered.
             {"studio-selected-hovered",
              GeoStyleStudio,
@@ -606,6 +634,11 @@ TEST_CASE("the WebGPU renderer draws states as Metal does") {
             const std::vector<u8> expected = renderScenario(*metal, blob, options, c.change);
             const std::vector<u8> image = renderScenario(*web, blob, options, c.change);
             REQUIRE(image.size() == expected.size());
+            if (c.mustChange) {
+                const std::vector<u8> plain = renderScenario(
+                    *metal, blob, options, [](engine::OffscreenView&, render::Backend&) {});
+                CHECK(compare(expected, plain).changed > 0.001);
+            }
             if (keep != nullptr) {
                 engine::writePng(std::format("{}/{}-metal.png", keep, c.name).c_str(), expected,
                                  kWidth, kHeight);

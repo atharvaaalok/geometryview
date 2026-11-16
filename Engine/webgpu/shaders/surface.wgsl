@@ -64,7 +64,10 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     out.world = world;
     // Neighbouring bodies have different tags, unless their indices differ by a multiple of 127.
     let tag = 1u + slot.x % kTagValues;
-    let open = select(0u, kFlagOpen, (d.flags & kDefinitionOpen) != 0u);
+    // An open surface, or a closed part opened by a hidden or ghosted face: its back faces are its
+    // inside, and a cut through it has no cap.
+    let open = select(0u, kFlagOpen, (d.flags & kDefinitionOpen) != 0u ||
+                                     (state.flags & kStateOpened) != 0u);
     let shell = (state.look & kLookShell) != 0u;
     out.flags = flags | open | select(0u, kFlagShell, shell) | (tag << 8u) |
                 ((state.look & kLookIndex) << 16u);

@@ -161,6 +161,8 @@ const kStateSelected = 4u;
 const kStateFaceHidden = 16u;
 const kStateFaceGhost = 32u;
 const kStateFaceSelected = 64u;
+// A closed part with a face hidden or ghosted is opened: it draws both sides, as an open surface.
+const kStateOpened = 48u;
 
 const kTagCap = 0x80u;
 const kTagShell = 0x80u;

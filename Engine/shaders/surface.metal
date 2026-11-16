@@ -25,7 +25,8 @@ constant bool kPeel [[function_constant(6)]];
 // Which see-through layer this is. See ShellLayer.
 constant uint kShellLayer [[function_constant(7)]];
 
-// Set in a vertex's flags when its definition is not closed, so a cut through it has no cap.
+// Set in a vertex's flags when its definition is not closed, or its closed part is opened by a
+// hidden or ghosted face, so its back faces are its inside and a cut through it has no cap.
 constant uint kFlagOpen = 0x80;
 // Set when the occurrence is part of the see-through shell.
 constant uint kFlagShell = 0x08;
@@ -64,13 +65,14 @@ struct SurfaceOutput {
 struct Payload {
     uint visible[kBatchMeshlets];
     uint occurrence; // kNoOccurrence for a packed batch
+    uint opened;     // 1 for the opened parts' batches: their back faces are their inside
 };
 
 constant uint kNoOccurrence = 0xFFFFFFFF;
 
 static inline bool isVisible(const device Meshlet& m, const device GpuDefinition& definition,
-                             const device GpuOccurrence& occurrence,
-                             constant FrameUniforms& frame) {
+                             const device GpuOccurrence& occurrence, constant FrameUniforms& frame,
+                             bool opened) {
     const float3 center =
         boundsCenter(definition, occurrence, ushort3(m.centerX, m.centerY, m.centerZ));
     const float radius = float(m.radius) * definition.boundsStep;
@@ -92,9 +94,11 @@ static inline bool isVisible(const device Meshlet& m, const device GpuDefinition
         }
     }
 
-    // An open surface shows both sides, so a normal cone proves nothing about it; nor does it
-    // where back faces are drawn: as caps through a section, and as the shell's far walls.
-    if ((definition.flags & kDefinitionOpen) != 0 || kSection || kShellLayer == kShellBack) {
+    // An open surface shows both sides, so a normal cone proves nothing about it, nor about a part
+    // opened by a hidden face; nor does it where back faces are drawn: as caps through a section,
+    // and as the shell's far walls.
+    if ((definition.flags & kDefinitionOpen) != 0 || opened || kSection ||
+        kShellLayer == kShellBack) {
         return true;
     }
     const float3 axis = transformDirection(occurrence, float3(m.coneX, m.coneY, m.coneZ) / 127.0);
@@ -127,19 +131,34 @@ void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_propertie
                    const device GpuDefinition* definitions [[buffer(kBufferDefinitions)]],
                    const device GpuOccurrence* occurrences [[buffer(kBufferOccurrences)]],
                    const device Batch* batches [[buffer(kBufferBatches)]],
+                   const device uint* openedBits [[buffer(kBufferOpened)]],
                    const device OccurrenceState* states [[buffer(kBufferOccurrenceState)]],
                    const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                    uint group [[threadgroup_position_in_grid]]) {
     // Each draw binds its batches from its own first one.
     const device Batch& batch = batches[group];
+    // The opened parts' batches draw only them, and every other batch leaves them out. A part is
+    // opened when its state says so and the bits made with this frame's batches agree: the state
+    // is rewritten in place, so a frame in flight can see a part's new state with the old bits.
+    // Then it draws as it was, once, rather than in neither list. Only a part with a hidden or
+    // ghosted face reads its bit.
+    const bool openedBatch = (batch.kind & kBatchOpened) != 0;
+    const uint kind = batch.kind & ~uint(kBatchOpened);
+    const auto drawnHere = [&](uint occurrence) {
+        const uint flags = states[occurrence].flags;
+        const bool opened = (flags & kStateOpened) != 0 &&
+                            ((openedBits[occurrence / 32] >> (occurrence % 32)) & 1) != 0;
+        return opened == openedBatch && passKeeps(flags);
+    };
     uint count = 0;
-    if (batch.kind == kBatchRun) {
-        if (passKeeps(states[batch.occurrence].flags)) {
+    if (kind == kBatchRun) {
+        if (drawnHere(batch.occurrence)) {
             const device GpuOccurrence& occurrence = occurrences[batch.occurrence];
             const device GpuDefinition& definition = definitions[occurrence.definition];
             for (uint i = 0; i < batch.count; ++i) {
                 const uint index = batch.first + i;
-                if (isVisible(definition.meshlets[index], definition, occurrence, frame)) {
+                if (isVisible(definition.meshlets[index], definition, occurrence, frame,
+                              openedBatch)) {
                     payload.visible[count++] = index;
                 }
             }
@@ -147,17 +166,19 @@ void surfaceObject(object_data Payload& payload [[payload]], mesh_grid_propertie
     } else {
         for (uint i = 0; i < batch.count; ++i) {
             const MeshletRef ref = refs[batch.first + i];
-            if (!passKeeps(states[ref.occurrence].flags)) {
+            if (!drawnHere(ref.occurrence)) {
                 continue;
             }
             const device GpuOccurrence& occurrence = occurrences[ref.occurrence];
             const device GpuDefinition& definition = definitions[occurrence.definition];
-            if (isVisible(definition.meshlets[ref.meshlet], definition, occurrence, frame)) {
+            if (isVisible(definition.meshlets[ref.meshlet], definition, occurrence, frame,
+                          openedBatch)) {
                 payload.visible[count++] = batch.first + i;
             }
         }
     }
-    payload.occurrence = batch.kind == kBatchRun ? batch.occurrence : kNoOccurrence;
+    payload.occurrence = kind == kBatchRun ? batch.occurrence : kNoOccurrence;
+    payload.opened = openedBatch ? 1 : 0;
     grid.set_threadgroups_per_grid(uint3(count, 1, 1));
 }
 
@@ -168,7 +189,7 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          const device GpuDefinition& definition,
                                          const device GpuOccurrence& occurrence,
                                          OccurrenceState state, const device uchar* faceStates,
-                                         uint occurrenceIndex, uint look,
+                                         uint occurrenceIndex, uint look, bool opened,
                                          constant FrameUniforms& frame, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
@@ -183,7 +204,7 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     out.id = occurrence.idBase + face + 1;
     // Neighbouring bodies have different tags, unless their indices differ by a multiple of 127.
     const uint tag = 1 + occurrenceIndex % kTagValues;
-    const uint open = (definition.flags & kDefinitionOpen) != 0 ? kFlagOpen : 0;
+    const uint open = (definition.flags & kDefinitionOpen) != 0 || opened ? kFlagOpen : 0;
     const bool shell = (look & kLookShell) != 0;
     out.flags = flags | open | (shell ? kFlagShell : 0) | tag << 8 | (look & kLookIndex) << 16;
     if (kOccurrenceIds) {
@@ -247,7 +268,8 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
     if (index < m.vertexCount) {
         out.set_vertex(index,
                        decodeVertex(m, definition, occurrence, state, faceStates, ref.occurrence,
-                                    uint(looks[ref.occurrence]), frame, index));
+                                    uint(looks[ref.occurrence]), payload.opened != 0, frame,
+                                    index));
     }
     if (index < m.triangleCount) {
         // Clamped because a cache file is untrusted and per-index validation would read every page.

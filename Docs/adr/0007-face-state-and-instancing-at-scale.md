@@ -67,3 +67,36 @@ M8, along with a classic instanced path for definitions small enough not to need
   not depend on row count, but no frame times were taken.
 - Real mouse and keyboard use of hold-H and hold-G. The engine paths are covered by unit and GPU
   tests, and the live app was driven only by the scripted exercise.
+
+## Addendum (2026-11-16): parts opened by a face
+
+**Hiding or ghosting a face of a closed part opens it: the part draws both sides.**
+- A closed part culls its back faces, in the rasterizer and by its meshlets' normal cones. Hide one
+  of its faces and its inside, seen through the gap, is all back faces: on a matryoshka's thin
+  shell only the far half of the inner wall showed and the top cap vanished as the camera dropped
+  below it; a sprocket with its top face hidden looked see-through from above and solid from
+  below, and its edges floated with nothing drawn behind them.
+- An occurrence whose word has `kStateFaceHidden` or `kStateFaceGhost` (`kStateOpened`), of a closed
+  definition, is opened. It is drawn as an open surface is in every pass: no back-face culling,
+  no cone test, and `kFlagOpen` on its vertices, so its back faces take the style's inside tone
+  and a section through it has no cap; the caps draw closed parts only, so it also leaves their
+  count. Nothing new is stored: the summary bits stay exact through set, clear, undo and redo.
+- **Metal.** `SceneTables::syncOpened` keeps a small list of the opened parts' batches (`kind` or'd
+  with `kBatchOpened`) and a bit per occurrence, rebuilt only when the set changes and drawn
+  wherever the open batches are. The closed batches leave out a part whose word says opened and
+  whose bit agrees. The state words are rewritten in place while a frame may be in flight, so the
+  bit is read only for a part whose word says opened, and a part seen with a new word and the old
+  bits draws as it was, once, rather than in neither list.
+- **WebGPU.** The compute cull puts an opened part's meshlets in the odd (open) lists, with no
+  cone test, and `planLists` sizes those lists by the same rule from the same words.
+- **Cost** (offscreen, 1600 × 1000, GPU median): with nothing opened, as before (1M-part rack
+  15.3 ms at 1× and 9.7 ms at 5×, against 15.8 and 10.2 before; 100k, 3.73 and 1.39 against 3.74
+  and 1.39). With 1 or 1,000 parts opened, unchanged; with every one of the million opened,
+  +8% at 1× and +13% at 5×. A state change rebuilding the list takes 2.4 ms at 1M occurrences
+  (7.7 ms with all of them opened), against 1.2 ms before.
+- Found on the way: Metal's draws found their batches through a table of multiples of 4,096, so a
+  range starting elsewhere, as the open batches after the closed ones do, drew the closed batches
+  again and never its own. A batch range now carries its buffers and binds them from its own
+  first batch.
+- Not done: a thin wall tessellated more coarsely than it is thick could show its opened inside
+  through the outside; none of the fixtures does.
