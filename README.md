@@ -257,6 +257,26 @@ leanness.
 picture on this page is drawn by GeometryView, from models made by
 [`Tools/showcase`](Tools/showcase).
 
+## Citing GeometryView
+
+If you use GeometryView in your research, please cite it:
+
+> Aalok, A. (2026). *GeometryView: A STEP and STL viewer for people and AI agents* [Computer
+> software]. https://github.com/atharvaaalok/geometryview
+
+```bibtex
+@software{aalok_geometryview_2026,
+  author  = {Aalok, Atharva},
+  title   = {{GeometryView: A STEP and STL viewer for people and AI agents}},
+  year    = {2026},
+  url     = {https://github.com/atharvaaalok/geometryview},
+  version = {0.5.0}
+}
+```
+
+Set `version` to the one you used. [CITATION.cff](CITATION.cff) holds the same, and GitHub's
+"Cite this repository" gives it in other formats.
+
 ## License
 
 [MIT](LICENSE), the showcase models included. GeometryView builds on OCCT, meshoptimizer, xxHash,
