@@ -357,6 +357,12 @@ fn pixelWorldOf(p: vec3f) -> f32 {
 // The least an opened part's inside is drawn behind where it is, in pixels at its depth: enough
 // for depth precision where it lies flat on another part's face.
 const kInsideSinkPixels = 0.5;
+// How far a line reaches either side of its middle, in pixels: half the widest of a style's crease,
+// highlight and ghost line, and the pixel of soft edge (edges.wgsl). Opaque surfaces are held
+// back by their slope across this many pixels (surface.wgsl).
+fn lineReach() -> f32 {
+    return 0.5 * max(max(style.crease, style.highlight), style.ghostLine) + 1.0;
+}
 
 fn texelColor(texel: u32) -> vec3f {
     return unpack4x8unorm(texel).rgb;

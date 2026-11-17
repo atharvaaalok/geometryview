@@ -121,6 +121,7 @@ public:
         bool occurrenceIds = false;
         bool peel = false;
         uint32_t shellLayer = kShellNone;
+        bool holdsForLines = false; // the opaque pass: faces held back for the lines on them
     };
 
     MTLFunctionConstantValues* surfaceConstants(SurfaceKind kind) {
@@ -136,6 +137,9 @@ public:
         [constants setConstantValue:&kind.shellLayer
                                type:MTLDataTypeUInt
                             atIndex:kConstantShellLayer];
+        [constants setConstantValue:&kind.holdsForLines
+                               type:MTLDataTypeBool
+                            atIndex:kConstantHoldsForLines];
         return constants;
     }
 
@@ -170,7 +174,9 @@ public:
     }
 
     id<MTLRenderPipelineState> surface(bool ghost, bool physical, bool section, Writes writes) {
-        return surfaceKind({.ghost = ghost, .physical = physical, .section = section}, writes);
+        return surfaceKind(
+            {.ghost = ghost, .physical = physical, .section = section, .holdsForLines = !ghost},
+            writes);
     }
 
     // Feature edges, as screen-space quads. The ghost-lines pass draws the dashed edges of ghosts;

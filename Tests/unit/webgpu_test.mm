@@ -4,6 +4,7 @@
 #if defined(GEO_HAS_WEBGPU)
 #include "core/look_state.h"
 #include "core/offscreen_view.h"
+#include "crease_fixture.h"
 #include "cut_fixture.h"
 #include "drive_fixture.h"
 #include "engine.h"
@@ -440,6 +441,28 @@ TEST_CASE("the WebGPU renderer keeps hidden edges hidden, as Metal does") {
         CHECK(d.mean < 1.0);
         CHECK(d.changed < 0.005);
         unlink(blob.c_str());
+    }
+}
+
+TEST_CASE("the WebGPU renderer inks every crease of a grooved block wherever it shows") {
+    @autoreleasepool {
+        const std::string blob = test::importGrooveBlock(GEO_TEST_WORKER_PATH);
+        Dawn dawn = makeDawn();
+        std::string error;
+        std::unique_ptr<webgpu::Renderer> web = webgpu::Renderer::create(
+            dawn.instance, dawn.device, wgpu::TextureFormat::BGRA8Unorm, error);
+        REQUIRE_MESSAGE(web != nullptr, error);
+        std::unique_ptr<gpu::Renderer> metal =
+            gpu::Renderer::create(MTLCreateSystemDefaultDevice(), GEO_TEST_SHADER_LIBRARY);
+        REQUIRE(metal != nullptr);
+        // What hides a crease, read from Metal's picks of the same views: WebGPU's come back
+        // frames late.
+        const test::CreaseSweep sweep = test::sweepCreases(*web, blob, metal.get());
+        unlink(blob.c_str());
+        CAPTURE(sweep.views);
+        CAPTURE(sweep.worstView);
+        CHECK(sweep.views > 300);
+        CHECK(sweep.short_ == 0);
     }
 }
 

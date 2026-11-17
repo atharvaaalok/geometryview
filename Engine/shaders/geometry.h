@@ -68,6 +68,12 @@ static inline float pixelWorldAt(float3 p, constant FrameUniforms& frame) {
 // The least an opened part's inside is drawn behind where it is, in pixels at its depth: enough
 // for depth precision where it lies flat on another part's face.
 constant float kInsideSinkPixels = 0.5;
+// How far a line reaches either side of its middle, in pixels: half the widest of a style's crease,
+// highlight and ghost line, and the pixel of soft edge (edges.metal). Opaque surfaces are held
+// back by their slope across this many pixels (surface.metal).
+static inline float lineReach(constant StyleUniforms& style) {
+    return 0.5 * metal::max(metal::max(style.crease, style.highlight), style.ghostLine) + 1.0;
+}
 
 // The flags a face shows: its occurrence's own, combined with any of its own.
 static inline uint faceFlags(OccurrenceState state, const device uchar* faceStates, uint face) {

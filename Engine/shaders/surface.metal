@@ -24,6 +24,10 @@ constant bool kOccurrenceIds [[function_constant(5)]];
 constant bool kPeel [[function_constant(6)]];
 // Which see-through layer this is. See ShellLayer.
 constant uint kShellLayer [[function_constant(7)]];
+// The opaque pass: each face is held back for the lines lying on it (decodeVertex).
+constant bool kHoldsForLines [[function_constant(9)]];
+// How steep a face is reckoned at most, in depth across a pixel, when it is held back for lines.
+constant float kSteepest = 8.0;
 
 // Set in a vertex's flags when its definition is not closed, or its closed part is opened by a
 // hidden or ghosted face, so its back faces are its inside and a cut through it has no cap.
@@ -43,6 +47,9 @@ static inline float3 shadowOf(float3 p, constant FrameUniforms& frame) {
 struct SurfaceVertex {
     float4 position [[position]];
     float clip [[clip_distance, function_constant(kSection)]][kMaxSectionPlanes];
+    // The depth as drawn, before the opaque pass holds faces back for lines (decodeVertex): what
+    // picking, outlines and occlusion read.
+    float depth [[center_no_perspective]];
     float3 normal;
     uint id [[flat]];
     uint flags [[flat]]; // state flags in the low byte, the body's tag in the next, its look above
@@ -51,6 +58,7 @@ struct SurfaceVertex {
 // What the fragment stage sees: the vertex without its clip distances.
 struct SurfaceFragmentIn {
     float4 position [[position]];
+    float depth [[center_no_perspective]];
     float3 normal;
     uint id [[flat]];
     uint flags [[flat]];
@@ -193,7 +201,8 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
                                          const device GpuOccurrence& occurrence,
                                          OccurrenceState state, const device uchar* faceStates,
                                          uint occurrenceIndex, uint look, bool opened,
-                                         constant FrameUniforms& frame, uint index) {
+                                         constant FrameUniforms& frame,
+                                         constant StyleUniforms& style, uint index) {
     const uint vertexIndex = m.vertexOffset + index;
     const device PackedVertex& v = definition.vertices[vertexIndex];
     const float3 world = transformPoint(occurrence, decodePosition(definition, vertexIndex));
@@ -209,13 +218,29 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     // view moves. By twice the chord error, which two parts' facets can cross by, and at least
     // half a pixel for depth precision. Only depth moves: the point slides along its own view ray,
     // so it covers the same pixels, and section planes cut it where they did. See ADR 0007.
-    if (opened && !kShadowPass) {
-        const float3 away = frame.perspective != 0 ? normalize(world - frame.eye) : frame.forward;
-        if (dot(normal, away) > 0.0) {
-            const float sink = max(definition.edgeLift * length(occurrence.rows[0].xyz),
-                                   kInsideSinkPixels * pixelWorldAt(world, frame));
-            out.position = frame.viewProjection * float4(world + away * sink, 1.0);
-        }
+    const float3 away = frame.perspective != 0 ? normalize(world - frame.eye) : frame.forward;
+    float sink = 0.0;
+    if (opened && !kShadowPass && dot(normal, away) > 0.0) {
+        sink = max(definition.edgeLift * length(occurrence.rows[0].xyz),
+                   kInsideSinkPixels * pixelWorldAt(world, frame));
+        out.position = frame.viewProjection * float4(world + away * sink, 1.0);
+    }
+    // The depth picking, outlines and occlusion read: as drawn, before the hold below.
+    float4 drawn = out.position;
+    // Faces give way to the lines lying on them. A line is a band, and a face beside a crease that
+    // rises toward the eye across it, as a groove's wall seen steeply does, would cover part of
+    // the band, or all of it, seen edge on. So in the opaque pass each face is held back by its
+    // own change in depth across the lines' reach: its slope to the view, from its normal, times
+    // the reach. From the normal rather than the facet, so where two parts' faces lie together,
+    // as a sleeve on a shaft, both are held back nearly alike; an opened part's inside, held back
+    // half as far again, still lies behind the face it touches, as the sink above has it.
+    if (kHoldsForLines) {
+        const float facing = abs(dot(normal, away));
+        const float steep =
+            min(sqrt(max(1.0 - facing * facing, 0.0)) / max(facing, 1e-4), kSteepest);
+        const float reach = lineReach(style) * (sink > 0.0 ? 1.5 : 1.0);
+        const float hold = reach * steep * pixelWorldAt(world, frame);
+        out.position = frame.viewProjection * float4(world + away * (sink + hold), 1.0);
     }
     out.normal = frame.viewRotation * normal;
     out.id = occurrence.idBase + face + 1;
@@ -252,11 +277,14 @@ static inline SurfaceVertex decodeVertex(const device Meshlet& m,
     }
     if (dropped) {
         out.position = float4(0.0, 0.0, 2.0, 1.0);
+        drawn = out.position;
     } else if (kShadowPass) {
         // Held at mid depth, since the flattened model can reach outside the depth range.
         const float4 clip = frame.viewProjection * float4(shadowOf(world, frame), 1.0);
         out.position = float4(clip.xy, 0.5 * clip.w, clip.w);
+        drawn = out.position;
     }
+    out.depth = drawn.z / drawn.w;
     return out;
 }
 
@@ -271,6 +299,7 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
                  const device uchar* faceStates [[buffer(kBufferFaceState)]],
                  const device MeshletRef* refs [[buffer(kBufferMeshletRefs)]],
                  const device ushort* looks [[buffer(kBufferLooks)]],
+                 constant StyleUniforms& style [[buffer(kBufferStyle)]],
                  uint index [[thread_index_in_threadgroup]],
                  uint group [[threadgroup_position_in_grid]]) {
     const MeshletRef ref = payload.occurrence != kNoOccurrence
@@ -288,7 +317,7 @@ void surfaceMesh(SurfaceMesh out, object_data const Payload& payload [[payload]]
         out.set_vertex(index,
                        decodeVertex(m, definition, occurrence, state, faceStates, ref.occurrence,
                                     uint(looks[ref.occurrence]), payload.opened != 0, frame,
-                                    index));
+                                    style, index));
     }
     if (index < m.triangleCount) {
         // Clamped because a cache file is untrusted and per-index validation would read every page.
@@ -616,7 +645,7 @@ static SurfaceOutput shade(SurfaceFragmentIn in, bool frontFacing, constant Fram
                     ? mix(color, style.hideTint, 0.6)
                     : mix(color, style.hover, style.hoverAmount * (selected ? 0.5 : 1.0));
     }
-    return {float4(color, 1.0), in.id, in.position.z, uint2(tag)};
+    return {float4(color, 1.0), in.id, in.depth, uint2(tag)};
 }
 
 // The shadow mask: coverage only.

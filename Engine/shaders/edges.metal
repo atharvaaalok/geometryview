@@ -206,10 +206,28 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
         }
     }
 
-    const float3 a =
-        transformPoint(occurrence, decodePosition(definition, min(segment.a, lastVertex)));
-    const float3 b =
-        transformPoint(occurrence, decodePosition(definition, min(segment.b, lastVertex)));
+    float3 a = transformPoint(occurrence, decodePosition(definition, min(segment.a, lastVertex)));
+    float3 b = transformPoint(occurrence, decodePosition(definition, min(segment.b, lastVertex)));
+    // Arc length, so dashes keep their size and run on across segments.
+    const float scale = metal::length(occurrence.rows[0].xyz);
+    float alongA = segment.along * scale;
+    // In perspective, a segment reaching behind the camera is cut where it crosses the near plane.
+    // A long straight edge is one segment, and close to a part its far end can be behind the eye:
+    // left out whole, it vanished from end to end.
+    if (frame.perspective != 0) {
+        const float near = frame.depthNear * 1.001;
+        const float wa = dot(a - frame.eye, frame.forward), wb = dot(b - frame.eye, frame.forward);
+        if (wa < near && wb < near) {
+            kind = 0;
+        } else if (wa < near) {
+            const float3 cut = mix(a, b, (near - wa) / (wb - wa));
+            alongA += distance(a, cut);
+            a = cut;
+        } else if (wb < near) {
+            b = mix(a, b, (near - wa) / (wb - wa));
+        }
+    }
+    const float alongB = alongA + distance(a, b);
     // Toward the eye by the floor, or by the definition's chord error where that is more and the
     // segment has a face on one side only. A segment between two faces lies on both faces'
     // triangles exactly, and needs only the floor: a line has width, which a concave crease's
@@ -245,11 +263,6 @@ void edgeMesh(EdgeMesh out, object_data const EdgePayload& payload [[payload]],
     const float width = max((kind & kInked) != 0 ? inked : 0.0,
                             (kind & kHighlighted) != 0 ? style.highlight : 0.0);
     const float halfWidth = 0.5 * width + 1.0; // a pixel more, for the soft edge
-
-    // Arc length in pixels, so dashes keep their size and run on across segments.
-    const float scale = metal::length(occurrence.rows[0].xyz);
-    const float alongA = segment.along * scale;
-    const float alongB = alongA + distance(a, b);
 
     v.kind = kind;
     for (uint k = 0; k < 4; ++k) {

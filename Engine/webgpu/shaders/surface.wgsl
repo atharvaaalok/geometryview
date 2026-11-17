@@ -28,6 +28,10 @@ override kPeel: bool = false;
 // Which see-through layer this is: 0 none, 1 the shell's far walls, 2 its nearest front faces into
 // depth only, 3 those faces again, blended.
 override kShellLayer: u32 = 0u;
+// The opaque pass: each face is held back for the lines lying on it (surfaceVertex).
+override kHoldsForLines: bool = false;
+// How steep a face is reckoned at most, in depth across a pixel, when it is held back for lines.
+const kSteepest = 8.0;
 
 // Set in a vertex's flags when its definition is not closed, so a cut through it has no cap, and
 // when the occurrence is part of the see-through shell.
@@ -44,6 +48,9 @@ struct SurfaceVertex {
     // State flags in the low byte, the body's tag in the next, its look above.
     @location(2) @interpolate(flat) flags: u32,
     @location(3) world: vec3f, // for clipping by section planes
+    // The depth as drawn, before the opaque pass holds faces back for lines (surfaceVertex): what
+    // picking, outlines and occlusion read.
+    @location(4) @interpolate(linear) depth: f32,
 }
 
 @vertex
@@ -69,16 +76,30 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     // half a pixel for depth precision. Only depth moves: the point slides along its own view ray,
     // so it covers the same pixels, and section planes cut it where they did. See ADR 0007.
     let opened = (d.flags & kDefinitionOpen) == 0u && (state.flags & kStateOpened) != 0u;
-    if (opened && !kShadowPass) {
-        var away = frame.forward;
-        if (frame.perspective != 0u) {
-            away = normalize(world - frame.eye);
-        }
-        if (dot(normal, away) > 0.0) {
-            let sink = max(d.edgeLift * length(o.row0.xyz),
-                           kInsideSinkPixels * pixelWorldOf(world));
-            out.position = frame.viewProjection * vec4f(world + away * sink, 1.0);
-        }
+    var away = frame.forward;
+    if (frame.perspective != 0u) {
+        away = normalize(world - frame.eye);
+    }
+    var sink = 0.0;
+    if (opened && !kShadowPass && dot(normal, away) > 0.0) {
+        sink = max(d.edgeLift * length(o.row0.xyz), kInsideSinkPixels * pixelWorldOf(world));
+        out.position = frame.viewProjection * vec4f(world + away * sink, 1.0);
+    }
+    // The depth picking, outlines and occlusion read: as drawn, before the hold below.
+    var drawn = out.position;
+    // Faces give way to the lines lying on them. A line is a band, and a face beside a crease that
+    // rises toward the eye across it, as a groove's wall seen steeply does, would cover part of
+    // the band, or all of it, seen edge on. So in the opaque pass each face is held back by its
+    // own change in depth across the lines' reach: its slope to the view, from its normal, times
+    // the reach. From the normal rather than the facet, so where two parts' faces lie together,
+    // as a sleeve on a shaft, both are held back nearly alike; an opened part's inside, held back
+    // half as far again, still lies behind the face it touches, as the sink above has it.
+    if (kHoldsForLines) {
+        let facing = abs(dot(normal, away));
+        let steep = min(sqrt(max(1.0 - facing * facing, 0.0)) / max(facing, 1e-4), kSteepest);
+        let reach = lineReach() * select(1.0, 1.5, sink > 0.0);
+        let hold = reach * steep * pixelWorldOf(world);
+        out.position = frame.viewProjection * vec4f(world + away * (sink + hold), 1.0);
     }
     out.normal = frame.viewRotation * normal;
     out.id = o.idBase + face + 1u;
@@ -112,11 +133,14 @@ fn surfaceVertex(@builtin(vertex_index) index: u32) -> SurfaceVertex {
     }
     if (dropped) {
         out.position = vec4f(0.0, 0.0, 2.0, 1.0);
+        drawn = out.position;
     } else if (kShadowPass) {
         // Held at mid depth, since the flattened model can reach outside the depth range.
         let clip = frame.viewProjection * vec4f(shadowOf(world), 1.0);
         out.position = vec4f(clip.xy, 0.5 * clip.w, clip.w);
+        drawn = out.position;
     }
+    out.depth = drawn.z / drawn.w;
     return out;
 }
 
@@ -299,11 +323,11 @@ struct SurfaceOutput {
     @location(4) tags: vec2u, // the pipeline's write mask picks solid or ghost
 }
 
-// The fragment's depth at the pixel's centre. Metal shades once per pixel, there, for all four
-// samples; a jittered sample moves its depth back along the surface.
-fn centreDepth(position: vec4f) -> f32 {
+// The depth as drawn, unbiased (SurfaceVertex.depth), at the pixel's centre. Metal shades once
+// per pixel, there, for all four samples; a jittered sample moves its depth back along the surface.
+fn centreOf(depth: f32) -> f32 {
     let toCentre = -frame.sampleOffset;
-    return position.z + dpdx(position.z) * toCentre.x + dpdy(position.z) * toCentre.y;
+    return depth + dpdx(depth) * toCentre.x + dpdy(depth) * toCentre.y;
 }
 
 // How much of a cap's own depth it keeps on top of the plane's: enough to order caps among
@@ -328,7 +352,7 @@ fn surfaceFragment(in: SurfaceVertex, @builtin(front_facing) frontFacing: bool) 
     if (kSection && sectionCuts(in.world)) {
         discard;
     }
-    return shade(in, frontFacing, centreDepth(in.position));
+    return shade(in, frontFacing, centreOf(in.depth));
 }
 
 // Counts the closed surfaces behind the cut, each part's apart: every surface adds one to the

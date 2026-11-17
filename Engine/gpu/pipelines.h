@@ -17,6 +17,7 @@ enum FunctionConstant : NSUInteger {
     kConstantPeel = 6,
     kConstantShellLayer = 7,
     kConstantOutlines = 8,
+    kConstantHoldsForLines = 9,
 };
 
 struct Pipelines {
