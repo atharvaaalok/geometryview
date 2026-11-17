@@ -270,7 +270,7 @@ If you use GeometryView in your research, please cite it:
   title   = {{GeometryView: A STEP and STL viewer for people and AI agents}},
   year    = {2026},
   url     = {https://github.com/atharvaaalok/geometryview},
-  version = {0.5.0}
+  version = {0.6.0}
 }
 ```
 
