@@ -6,6 +6,7 @@
 #define GEOMETRYVIEW_ENGINE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -248,6 +249,19 @@ typedef enum GeoCitationFormat {
 
 /// How to cite GeometryView, as a static string: the same as the repository's CITATION.cff.
 const char* geo_citation(GeoCitationFormat format);
+
+/// A PNG's bytes, made by the engine.
+typedef struct GeoPng {
+    uint8_t* bytes;
+    size_t size;
+} GeoPng;
+
+/// A picture to save or share, tagged with what made it: PNG text naming GeometryView and this
+/// version (Software), and where it is and how to cite it (Comment). False, leaving `out` empty,
+/// if `png` is not a PNG. Free `out` with geo_png_free.
+bool geo_tag_picture(const uint8_t* png, size_t size, GeoPng* out);
+
+void geo_png_free(GeoPng* png);
 
 /// Creates the engine and starts its thread. Returns null if the GPU is unsupported or the shader
 /// library cannot be loaded.

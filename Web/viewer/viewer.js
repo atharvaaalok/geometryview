@@ -558,7 +558,7 @@ function setGalleryPoster(poster) {
 }
 
 async function saveGalleryPoster() {
-  const png = await gallery?.view.posterPNG();
+  const png = await tagged(await gallery?.view.posterPNG());
   if (!png) return;
   const link = el("a", { href: URL.createObjectURL(png), download: `${gallery.title} poster.png` });
   link.click();
@@ -587,7 +587,7 @@ async function saveGalleryPDF() {
 // screen's resolution, cropped to what the sidebar leaves clear; in a gallery, the view as a
 // poster. A PNG blob, or null with nothing to show.
 async function pictureBlob() {
-  if (galleryShown) return (await gallery?.view.posterPNG()) ?? null;
+  if (galleryShown) return tagged((await gallery?.view.posterPNG()) ?? null);
   if (names.filter(Boolean).length === 0) return null;
   const image = await engine.snapshot({ overlay: false });
   if (!image) return null;
@@ -597,7 +597,14 @@ async function pictureBlob() {
       new ImageData(new Uint8ClampedArray(image.pixels.buffer), image.width, image.height), 0, 0);
   const picture = new OffscreenCanvas(image.width - x, image.height);
   picture.getContext("2d").drawImage(whole, x, 0, image.width - x, image.height, 0, 0, image.width - x, image.height);
-  return picture.convertToBlob({ type: "image/png" });
+  return tagged(await picture.convertToBlob({ type: "image/png" }));
+}
+
+// A picture to save or share, as a PNG that says what made it: GeometryView and its version, and
+// how to cite it. As it was without an engine to tag it.
+async function tagged(blob) {
+  if (!blob || !engine) return blob;
+  return new Blob([engine.tagPicture(new Uint8Array(await blob.arrayBuffer()))], { type: "image/png" });
 }
 
 // A blob as a data: URL, as the iPhone shell takes a file.
@@ -1342,7 +1349,8 @@ function bridgeHandlers() {
       context.fillRect(0, 0, width, height);
       const fit = Math.min(width / w, height / h);
       context.drawImage(whole, x, y, w, h, (width - w * fit) / 2, (height - h * fit) / 2, w * fit, h * fit);
-      const png = new Uint8Array(await (await picture.convertToBlob({ type: "image/png" })).arrayBuffer());
+      const drawn = new Uint8Array(await (await picture.convertToBlob({ type: "image/png" })).arrayBuffer());
+      const png = engine.tagPicture(drawn);
       return { png: toBase64(png), width, height };
     },
   };

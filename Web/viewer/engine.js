@@ -157,6 +157,24 @@ export class Engine {
   citation(format) {
     return this.#module.UTF8ToString(this.#module._geo_web_citation(format === "bibtex" ? 1 : 0));
   }
+  /**
+   * A PNG's bytes, tagged with what made it: GeometryView and its version, and how to cite it, as
+   * PNG text that image viewers show. The bytes as they were if they are not a PNG.
+   */
+  tagPicture(png) {
+    const m = this.#module;
+    const input = m._malloc(png.length);
+    const size = m._malloc(4);
+    m.HEAPU8.set(png, input);
+    const output = m._geo_web_tag_picture(input, png.length, size);
+    const length = new Uint32Array(m.HEAPU8.buffer, size, 1)[0];
+    m._free(input);
+    m._free(size);
+    if (!output) return png;
+    const tagged = m.HEAPU8.slice(output, output + length);
+    m._free(output);
+    return tagged;
+  }
 
   // The look every app starts with, as setLook takes it: the engine's, so all agree.
   defaultLook() {

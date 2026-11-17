@@ -519,6 +519,26 @@ const char* geo_citation(GeoCitationFormat format) {
     return format == GeoCitationBibTeX ? bibtex.c_str() : text.c_str();
 }
 
+bool geo_tag_picture(const uint8_t* png, size_t size, GeoPng* out) {
+    *out = {};
+    const std::vector<geo::u8> tagged = geo::about::taggedPicture({png, size});
+    if (tagged.empty()) {
+        return false;
+    }
+    out->bytes = static_cast<uint8_t*>(std::malloc(tagged.size()));
+    if (out->bytes == nullptr) {
+        return false;
+    }
+    std::memcpy(out->bytes, tagged.data(), tagged.size());
+    out->size = tagged.size();
+    return true;
+}
+
+void geo_png_free(GeoPng* png) {
+    std::free(png->bytes);
+    *png = {};
+}
+
 GeoEngine* geo_engine_create(const GeoEngineDescriptor* descriptor) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     std::unique_ptr<gpu::Renderer> renderer =

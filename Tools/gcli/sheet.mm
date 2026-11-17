@@ -10,6 +10,8 @@
 // cell in points, the scale it was drawn at in model units per point, and any error.
 #include "sheet.h"
 
+#include "picture_file.h"
+
 #include "base/types.h"
 #include "engine.h"
 
@@ -580,7 +582,7 @@ int sheetCommand(int argc, const char** argv) {
         CGImageRelease(sheet);
         CGContextRelease(context);
         CGColorSpaceRelease(space);
-        if (!written) {
+        if (!written || !tagPictureFile(output)) {
             std::println(stderr, "could not write {}", output);
             return 1;
         }
