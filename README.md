@@ -272,7 +272,7 @@ If you use GeometryView in your research, please cite it:
   title     = {{GeometryView: A STEP and STL viewer for people and AI agents}},
   year      = {2026},
   publisher = {Zenodo},
-  version   = {0.6.0},
+  version   = {0.6.1},
   doi       = {10.5281/zenodo.24295273},
   url       = {https://github.com/atharvaaalok/geometryview}
 }

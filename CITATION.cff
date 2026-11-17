@@ -18,8 +18,8 @@ url: "https://atharvaaalok.github.io/geometryview/"
 license: MIT
 # Zenodo's DOI for every version (the "concept" DOI); each release also gets one of its own.
 doi: 10.5281/zenodo.24295273
-version: 0.6.0
-date-released: "2026-11-16"
+version: 0.6.1
+date-released: "2026-11-17"
 keywords:
   - STEP
   - STL
