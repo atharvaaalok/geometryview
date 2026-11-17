@@ -17,7 +17,7 @@ and the web must agree within 1 point.
 
 | Part | Rule |
 |---|---|
-| Entry | Clicking a folder in the Library card shows its gallery in the main window. The card stays as the navigator, with the folder in view selected. Opening a file (⏎ or a double-click) goes to the viewer; Esc or the masthead's back pill returns to the same place. |
+| Entry | Clicking a folder in the Library card shows its gallery in the main window. The card stays as the navigator, with the folder in view selected. Opening a file (⏎ or a double-click) goes to the viewer; Esc or the masthead's Back returns to the same place. **Build:** Back and Forward go through every folder shown and every part opened, one step each, the same on the Mac (`Navigation.swift`) and the web (`navigation.js`, a browser history entry a step), both held to `Tests/data/navigation.json`. A folder comes back with the view, scroll, selection and search it was left with; the part last open is still open behind the gallery and is uncovered, not opened again. Views and searches are not steps. |
 | Window | The view area runs from the Library card's right edge plus 22 to the right edge less 18, and from 96 to the bottom less 84. The toolbar card is centred, 22 above the bottom. **Build:** the app's own positions win: the Library card's top is at 72 (`MainWindow.swift`), and the masthead stays where the app has it. |
 | Show it off | Every view has a poster state: the full window less 30 each side, no cards, the title and a footer rule printed on the sheet. It exports as PNG (G4) or PDF (G9). |
 | Folders | Any tree, any depth. A folder shows its subfolders and its own files. A folder of files only, with no subfolders, groups by measured size: under 20, 20–100, 100–500, over 500 mm. |
@@ -99,6 +99,7 @@ Ease (0.3, 0.7, 0.2, 1); all of it instant under Reduce Motion.
 | Space | Peek: the part large, with its measured size, parts, triangles and file; turnable in G9 |
 | ⏎ · double-click | Open in the viewer · ⌘⏎ adds it to the view |
 | ⌘↑ · ⌘↓ | Up a folder · into the selected folder |
+| ⌘[ · ⌘] (Alt+← · Alt+→ off a Mac) | Back · Forward, through the folders shown and the parts opened; the mouse's side buttons too |
 | Esc | Closes Peek or a card, then clears the search, then the selection, then goes up a folder |
 | Typing | Searches this folder: names, product names, folders. **Build:** Backspace only edits the search; it never goes up a folder |
 | ⇧⌘L | The Look card: six styles, the same choice as the viewer |

@@ -1,20 +1,34 @@
 import AppKit
 
 /// The title over the top left of the view: what is open, with a button that closes it, a line
-/// about it, and import progress. It sits on the figure itself, not in a card, so text gets a paper
-/// halo to stay readable. Like a window's title, dragging it moves the window.
+/// about it, and import progress. Back and Forward stand before it, once there is somewhere to go.
+/// It sits on the figure itself, not in a card, so text gets a paper halo to stay readable. Like a
+/// window's title, dragging it moves the window.
 @MainActor
 final class Masthead: NSView {
     private let title = NSTextField(labelWithString: "")
     private let close = PillButton(icon: .close, style: .ghostly, help: "Close (⌘W)")
+    private let back = PillButton(icon: .back, style: .ghostly, help: "Back (⌘[)")
+    private let forward = PillButton(icon: .forward, style: .ghostly, help: "Forward (⌘])")
+    private let arrows = NSStackView()
     private let subtitle = NSTextField(labelWithString: "")
     private let progress = ProgressPill()
     private let stack = NSStackView()
+    private var textBesideArrows: NSLayoutConstraint?
+    private var textAtEdge: NSLayoutConstraint?
 
     /// Closes what is open.
     var onClose: (() -> Void)? {
         get { close.onPress }
         set { close.onPress = newValue }
+    }
+    var onBack: (() -> Void)? {
+        get { back.onPress }
+        set { back.onPress = newValue }
+    }
+    var onForward: (() -> Void)? {
+        get { forward.onPress }
+        set { forward.onPress = newValue }
     }
 
     override init(frame: NSRect) {
@@ -35,6 +49,8 @@ final class Masthead: NSView {
         ChromeLayout.name(subtitle, "masthead.subtitle")
         ChromeLayout.name(progress, "masthead.progress")
         ChromeLayout.name(close, "masthead.close")
+        ChromeLayout.name(back, "masthead.back")
+        ChromeLayout.name(forward, "masthead.forward")
         let titleRow = NSStackView(views: [title, close])
         titleRow.orientation = .horizontal
         titleRow.alignment = .centerY
@@ -46,12 +62,24 @@ final class Masthead: NSView {
         stack.setCustomSpacing(10, after: subtitle)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        arrows.setViews([back, forward], in: .leading)
+        arrows.orientation = .horizontal
+        arrows.spacing = 0
+        arrows.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(arrows)
+        let beside = stack.leadingAnchor.constraint(equalTo: arrows.trailingAnchor, constant: 6)
+        let edge = stack.leadingAnchor.constraint(equalTo: leadingAnchor)
+        textBesideArrows = beside
+        textAtEdge = edge
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            arrows.leadingAnchor.constraint(equalTo: leadingAnchor),
+            arrows.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
+            edge,
             stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        arrows.isHidden = true
         progress.isHidden = true
         isHidden = true
     }
@@ -61,12 +89,18 @@ final class Masthead: NSView {
         fatalError("Masthead is not used from Interface Builder")
     }
 
-    // Only the text itself, whose labels take no clicks of their own, and the close button.
+    // Only the text itself, whose labels take no clicks of their own, and the buttons.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !isHidden, stack.frame.contains(convert(point, from: superview)) else {
+        let local = convert(point, from: superview)
+        guard !isHidden,
+            (!stack.isHidden && stack.frame.contains(local))
+                || (!arrows.isHidden && arrows.frame.contains(local))
+        else {
             return nil
         }
-        if let hit = super.hitTest(point), hit.isDescendant(of: close) {
+        if let hit = super.hitTest(point),
+            [close, back, forward].contains(where: { hit.isDescendant(of: $0) })
+        {
             return hit
         }
         return self
@@ -74,6 +108,21 @@ final class Masthead: NSView {
 
     override func mouseDown(with event: NSEvent) {
         WindowDragging.handle(event, in: window)
+    }
+
+    /// Back and Forward: shown once there has been somewhere to go, each dimmed with nowhere its way.
+    func setNavigation(shown: Bool, back canGoBack: Bool, forward canGoForward: Bool) {
+        arrows.isHidden = !shown
+        back.isEnabled = canGoBack
+        forward.isEnabled = canGoForward
+        textAtEdge?.isActive = !shown
+        textBesideArrows?.isActive = shown
+    }
+
+    /// Nothing shows, but Back and Forward still lead somewhere: the arrows alone.
+    func showArrowsOnly() {
+        stack.isHidden = true
+        isHidden = arrows.isHidden
     }
 
     /// On a dark sheet, Blueprint's or Studio's, the masthead, drawn straight on it, turns light.
@@ -85,6 +134,7 @@ final class Masthead: NSView {
     func show(title text: String, subtitle detail: String) {
         title.stringValue = text
         subtitle.stringValue = detail
+        stack.isHidden = false
         isHidden = false
     }
 

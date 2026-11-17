@@ -7,7 +7,7 @@ import AppKit
 enum Icons {
     enum Name: String, CaseIterable {
         case eye, eyeSlash, ghost, scope, undo, redo, seeThrough, scissors, palette, cube, fit
-        case chevron, assembly, search, folder, folderPlus, file, plus, close, parts, sidebar, more
+        case chevron, back, forward, assembly, search, folder, folderPlus, file, plus, close, parts, sidebar, more
         case check, camera
         case plates, sheet, ladders, atlas, catalogue, poster
     }

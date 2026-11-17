@@ -221,10 +221,13 @@ kbd.cap {
   z-index: 1;
   pointer-events: none;
 }
+.masthead:not([hidden]) { display: flex; align-items: flex-start; gap: 6px; }
+.masthead .text { min-width: 0; }
 .masthead .title, .masthead .subtitle { text-shadow: 0 0 3px var(--paper); }
-/* The masthead lets clicks through to the view, but for its close button. */
+/* The masthead lets clicks through to the view, but for its buttons. */
 .masthead .title-row { display: flex; align-items: center; gap: 4px; }
-.masthead .title-row .pill { pointer-events: auto; flex: none; }
+.masthead .title-row .pill, .masthead .arrows .pill { pointer-events: auto; flex: none; }
+.masthead .arrows:not([hidden]) { display: flex; flex: none; }
 .masthead .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .masthead .title { font-size: var(--text-l); font-weight: 600; }
 .masthead .subtitle { margin-top: 2px; font-size: var(--text-s); color: var(--muted); }

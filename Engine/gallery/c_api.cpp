@@ -103,6 +103,10 @@ bool geo_gallery_set_folder(GeoGallery* gallery, const char* path) {
     return gallery->gallery.setFolder(path != nullptr ? path : "");
 }
 
+bool geo_gallery_go_to_folder(GeoGallery* gallery, const char* path) {
+    return gallery->gallery.goTo(path != nullptr ? path : "");
+}
+
 const char* geo_gallery_folder(const GeoGallery* gallery) {
     auto* g = const_cast<GeoGallery*>(gallery);
     g->folderPath = gallery->gallery.tree().folder(gallery->gallery.folder()).path;
@@ -165,6 +169,10 @@ GeoGalleryAction geo_gallery_key(GeoGallery* gallery, uint32_t key) {
 
 uint32_t geo_gallery_selected(const GeoGallery* gallery) {
     return gallery->gallery.selected();
+}
+
+void geo_gallery_select(GeoGallery* gallery, uint32_t file) {
+    gallery->gallery.select(file);
 }
 
 uint32_t geo_gallery_wanted(const GeoGallery* gallery, GeoGalleryWant* out, uint32_t capacity) {

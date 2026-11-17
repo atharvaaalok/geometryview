@@ -22,7 +22,7 @@ test("every icon is on a line of its own, as the Mac app reads them", async () =
 test("the icons the chrome uses are all there", async () => {
   const { iconMarkup } = await import(source.href);
   for (const name of ["eye", "eyeSlash", "ghost", "scope", "undo", "redo", "seeThrough", "scissors",
-                      "palette", "cube", "fit", "chevron", "assembly", "search", "folder",
+                      "palette", "cube", "fit", "chevron", "back", "forward", "assembly", "search", "folder",
                       "folderPlus", "file", "plus", "close", "parts", "plates", "sheet", "ladders",
                       "atlas", "catalogue", "poster"]) {
     assert.ok(iconMarkup[name], name);

@@ -1,0 +1,94 @@
+{
+  "about": "Back and forward: the rules the Mac app (Navigation.swift, --navigation-check) and the web viewer (navigation.js, Launcher/test/navigation.test.mjs) share. A place is a folder in the gallery, \"folder:<root>|<path>\", or the files open in the viewer, \"files:<path>,<path>\". After each event the history holds `steps`, with `at` the one shown. `visit` says how it moved (same, back, forward or new); `back` and `forward` give the place they went to, or null where there is none.",
+  "limit": 50,
+  "cases": [
+    {
+      "name": "a folder, a subfolder and a part, then back and forward through them",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|", "move": "new", "steps": ["folder:/lib|"], "at": 0},
+        {"do": "visit", "place": "folder:/lib|gears", "move": "new",
+         "steps": ["folder:/lib|", "folder:/lib|gears"], "at": 1},
+        {"do": "visit", "place": "files:/lib/gears/spur.step", "move": "new",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 2},
+        {"do": "back", "place": "folder:/lib|gears",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 1},
+        {"do": "back", "place": "folder:/lib|",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 0},
+        {"do": "back", "place": null,
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 0},
+        {"do": "forward", "place": "folder:/lib|gears",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 1},
+        {"do": "forward", "place": "files:/lib/gears/spur.step",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 2},
+        {"do": "forward", "place": null,
+         "steps": ["folder:/lib|", "folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 2}
+      ]
+    },
+    {
+      "name": "going somewhere new drops the steps ahead",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|", "move": "new", "steps": ["folder:/lib|"], "at": 0},
+        {"do": "visit", "place": "folder:/lib|gears", "move": "new",
+         "steps": ["folder:/lib|", "folder:/lib|gears"], "at": 1},
+        {"do": "visit", "place": "folder:/lib|gears/spur", "move": "new",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "folder:/lib|gears/spur"], "at": 2},
+        {"do": "back", "place": "folder:/lib|gears",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "folder:/lib|gears/spur"], "at": 1},
+        {"do": "back", "place": "folder:/lib|",
+         "steps": ["folder:/lib|", "folder:/lib|gears", "folder:/lib|gears/spur"], "at": 0},
+        {"do": "visit", "place": "folder:/lib|bearings", "move": "new",
+         "steps": ["folder:/lib|", "folder:/lib|bearings"], "at": 1},
+        {"do": "forward", "place": null, "steps": ["folder:/lib|", "folder:/lib|bearings"], "at": 1}
+      ]
+    },
+    {
+      "name": "a place beside the one shown is a move, not a step: Esc back to the gallery, x forward to the part",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|gears", "move": "new", "steps": ["folder:/lib|gears"], "at": 0},
+        {"do": "visit", "place": "files:/lib/gears/spur.step", "move": "new",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 1},
+        {"do": "visit", "place": "folder:/lib|gears", "move": "back",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 0},
+        {"do": "visit", "place": "files:/lib/gears/spur.step", "move": "forward",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 1}
+      ]
+    },
+    {
+      "name": "the place already shown is no step",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|", "move": "new", "steps": ["folder:/lib|"], "at": 0},
+        {"do": "visit", "place": "folder:/lib|", "move": "same", "steps": ["folder:/lib|"], "at": 0}
+      ]
+    },
+    {
+      "name": "a file added to the view joins the step that holds files; from a folder it is a step",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|gears", "move": "new", "steps": ["folder:/lib|gears"], "at": 0},
+        {"do": "visit", "place": "files:/lib/gears/spur.step", "move": "new",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step"], "at": 1},
+        {"do": "add", "place": "files:/lib/gears/spur.step,/lib/gears/rack.step", "move": "same",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step,/lib/gears/rack.step"], "at": 1},
+        {"do": "back", "place": "folder:/lib|gears",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/spur.step,/lib/gears/rack.step"], "at": 0},
+        {"do": "add", "place": "files:/lib/gears/worm.step", "move": "new",
+         "steps": ["folder:/lib|gears", "files:/lib/gears/worm.step"], "at": 1}
+      ]
+    },
+    {
+      "name": "folders in two connected roots are different places",
+      "events": [
+        {"do": "visit", "place": "folder:/lib|", "move": "new", "steps": ["folder:/lib|"], "at": 0},
+        {"do": "visit", "place": "folder:/other|", "move": "new",
+         "steps": ["folder:/lib|", "folder:/other|"], "at": 1},
+        {"do": "back", "place": "folder:/lib|", "steps": ["folder:/lib|", "folder:/other|"], "at": 0}
+      ]
+    },
+    {
+      "name": "the history keeps the last 50 steps",
+      "events": [
+        {"do": "visitMany", "prefix": "files:/lib/part", "count": 60, "first": "files:/lib/part10",
+         "length": 50, "at": 49}
+      ]
+    }
+  ]
+}

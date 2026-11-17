@@ -84,3 +84,7 @@ add_custom_target(install-app
     DEPENDS GeometryView
     VERBATIM
 )
+
+# Back and forward keep the web viewer's rules: both run Tests/data/navigation.json.
+add_test(NAME navigation
+    COMMAND sh -c "\"$<TARGET_FILE:GeometryView>\" --navigation-check < \"${CMAKE_SOURCE_DIR}/Tests/data/navigation.json\"")

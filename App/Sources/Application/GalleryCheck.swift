@@ -60,8 +60,17 @@ final class GalleryCheck {
         var lookOpen: () -> Bool
         var inGallery: () -> Bool
         var pressClose: () -> Void
+        /// Back and Forward, as the masthead's arrows go; the steps and the one shown; how many
+        /// files have begun opening.
+        var back: () -> Void = {}
+        var forward: () -> Void = {}
+        var steps: () -> (at: Int, count: Int) = { (0, 0) }
+        var opens: () -> Int = { 0 }
     }
     var hooks: Hooks?
+    /// `--gallery-walk`: Back and Forward through the folder, a subfolder and a part opened there;
+    /// writes gallery-walk.json and quits.
+    static var isWalk: Bool { CommandLine.arguments.contains("--gallery-walk") }
     /// `--gallery-watch <file>`: shows the file's folder, says when it is ready, and waits for the
     /// file to change on disk, to see it re-ink alone.
     static var watchFile: String? {
@@ -111,6 +120,13 @@ final class GalleryCheck {
                 NSApp.terminate(nil)
                 return
             }
+        }
+
+        if Self.isWalk {
+            report["walk"] = await walk()
+            write(report, to: "gallery-walk.json")
+            NSApp.terminate(nil)
+            return
         }
 
         if let mode = Self.settleMode {
@@ -821,6 +837,128 @@ final class GalleryCheck {
                 + String(format: "%.2f", watch.lastChange ?? -1) + " s"
         )
         return out
+    }
+
+    /// The folder shown when the check began, a subfolder in it, a part opened there, then Back,
+    /// Back, Forward, Forward. Each Back must find its folder as it was left (its view, selection
+    /// and scroll), and the last Forward the part still open behind the gallery, not opened again.
+    private func walk() async -> [String: Any] {
+        guard let hooks else {
+            return ["error": "the window gave no hooks"]
+        }
+        let view = controller.view
+        let gallery = controller.gallery
+        let here = { () -> [String: Any] in
+            let shown = view.shown()
+            let steps = hooks.steps()
+            return [
+                "gallery": hooks.inGallery(),
+                "folder": hooks.inGallery() ? gallery.folder : NSNull(),
+                "selected": shown.selected ?? NSNull(), "view": Int(shown.view),
+                "scroll": Double(shown.scroll.rounded()), "at": steps.at, "steps": steps.count,
+            ]
+        }
+        let pause = { (ms: Int) async in try? await Task.sleep(for: .milliseconds(ms)) }
+        controller.setView(GeoViewPlates.rawValue)
+        _ = await settle()
+        let top = here()
+        guard let plate = gallery.items.first(where: { $0.target_kind == GeoTargetFolder.rawValue })
+        else {
+            return ["error": "no subfolder to walk into"]
+        }
+        view.click(kind: GeoTargetFolder.rawValue, target: plate.target)
+        await pause(700)
+        _ = await settle()
+        // In the subfolder: Sheet, a file selected and the view scrolled, which Back is to bring back.
+        controller.setView(GeoViewSheet.rawValue)
+        _ = await settle()
+        view.press(GeoKeyRight)  // selects the first file
+        var scrolled = view.shown()
+        scrolled.scroll = 60
+        view.restore(scrolled)
+        let left = here()
+        view.press(GeoKeyEnter)  // opens it
+        await pause(2500)
+        let opened = here()
+        let opens = hooks.opens()
+        hooks.back()
+        await pause(800)
+        let back1 = here()
+        snapshot("gallery-walk-gallery.png")
+        hooks.back()
+        await pause(800)
+        let back2 = here()
+        hooks.forward()
+        await pause(800)
+        let forward1 = here()
+        hooks.forward()
+        await pause(800)
+        var forward2 = here()
+        forward2["opensSince"] = hooks.opens() - opens
+        snapshot("gallery-walk-part.png")
+        // Back and Forward again, by pressing the masthead's arrows themselves.
+        press(button: "Back (⌘[)")
+        await pause(800)
+        let arrowBack = here()
+        press(button: "Forward (⌘])")
+        await pause(800)
+        var arrowForward = here()
+        arrowForward["opensSince"] = hooks.opens() - opens
+        let same = { (a: [String: Any], b: [String: Any]) -> Bool in
+            a["folder"] as? String == b["folder"] as? String
+                && a["selected"] as? String == b["selected"] as? String
+                && a["view"] as? Int == b["view"] as? Int
+                && abs((a["scroll"] as? Double ?? -9) - (b["scroll"] as? Double ?? 9)) <= 1
+        }
+        let passed =
+            back1["gallery"] as? Bool == true && same(back1, left)
+            && back2["gallery"] as? Bool == true
+            && back2["folder"] as? String == top["folder"] as? String
+            && forward1["gallery"] as? Bool == true
+            && forward1["folder"] as? String == left["folder"] as? String
+            && forward2["gallery"] as? Bool == false && forward2["opensSince"] as? Int == 0
+            && arrowBack["gallery"] as? Bool == true && same(arrowBack, left)
+            && arrowForward["gallery"] as? Bool == false && arrowForward["opensSince"] as? Int == 0
+        print("gallery-walk: \(passed ? "passed" : "FAILED")")
+        return [
+            "passed": passed, "top": top, "left": left, "opened": opened, "back1": back1,
+            "back2": back2,
+            "forward1": forward1, "forward2": forward2, "arrowBack": arrowBack,
+            "arrowForward": arrowForward,
+        ]
+    }
+
+    /// Presses the chrome's button with this tooltip, as the pointer would.
+    private func press(button help: String) {
+        guard let window = controller.view.window, let root = window.contentView,
+            let button = Self.buttons(in: root).first(where: { $0.toolTip == help })
+        else {
+            print("gallery-walk: no button \(help)")
+            return
+        }
+        let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(
+                with: type,
+                location: point,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            ) {
+                window.sendEvent(event)
+            }
+        }
+    }
+
+    private static func buttons(in view: NSView) -> [PillButton] {
+        if let button = view as? PillButton {
+            return [button]
+        }
+        return view.subviews.flatMap { buttons(in: $0) }
     }
 
     private func settle() async -> Double {

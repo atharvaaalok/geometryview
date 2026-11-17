@@ -895,6 +895,7 @@ export class GalleryView {
   }
 
   #click(e, twice) {
+    this.#noteDeparture();
     const { x, y } = this.#point(e);
     const hit = this.#core.hit(x, y);
     if (twice && hit.kind === Targets.None && this.#core.view === Views.Atlas) {
@@ -994,7 +995,43 @@ export class GalleryView {
 
   /** A key: what it asks, and the selection scrolled into view. */
   key(key) {
+    this.#noteDeparture();
     this.act(this.#core.key(key), { reveal: true });
+  }
+
+  // ---- Back and forward ----
+
+  /** The folder in view, and what it showed, just before the last click or key: what Back comes back to. */
+  departure = null;
+
+  /** What the folder in view shows: its view, scroll, selection and search. */
+  shown() {
+    const selected = this.#core.selected;
+    return { view: this.#core.view, scroll: this.#clip.scrollTop,
+             selected: selected === null ? null : this.#core.path(selected), search: this.#core.search };
+  }
+
+  /** Shows again what a folder showed when Back or Forward left it; the gallery must be showing. */
+  restore(shown) {
+    if (this.#core.view !== shown.view) this.#core.setView(shown.view);
+    if (this.#core.search !== shown.search) this.#core.setSearch(shown.search);
+    this.#core.select(shown.selected === null ? null : this.#core.fileAt(shown.selected));
+    this.reload();
+    this.#clip.scrollTop = shown.scroll;
+    this.#core.setScroll(this.#clip.scrollTop);
+    this.#painted = null;
+    this.#paint();
+    this.#on.viewChanged?.();
+  }
+
+  /** A click on a target, as the checks make it. */
+  clickTarget(kind, target) {
+    this.#noteDeparture();
+    this.act(this.#core.click(kind, target, false));
+  }
+
+  #noteDeparture() {
+    this.departure = { folder: this.#core.folder, shown: this.shown() };
   }
 
   /** Shows another view, if enabled, flying what both views show; the selection kept in view. */

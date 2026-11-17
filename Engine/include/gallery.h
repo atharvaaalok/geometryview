@@ -232,6 +232,9 @@ void geo_gallery_set_scroll(GeoGallery* gallery, float top);
 /// Shows a folder by its path ("" for the root). Returns false if there is none.
 bool geo_gallery_set_folder(GeoGallery* gallery, const char* path);
 const char* geo_gallery_folder(const GeoGallery* gallery);
+/// Shows a folder as Back and Forward go to it: into or out of it, with the motion, when it is
+/// beside the folder in view; at once from anywhere else. Returns false if there is none.
+bool geo_gallery_go_to_folder(GeoGallery* gallery, const char* path);
 /// The folder in view's heading and its counts, for the masthead.
 const char* geo_gallery_folder_title(const GeoGallery* gallery);
 const char* geo_gallery_folder_subtitle(const GeoGallery* gallery);
@@ -255,6 +258,8 @@ GeoGalleryAction geo_gallery_click(GeoGallery* gallery, uint32_t target_kind, ui
 GeoGalleryAction geo_gallery_key(GeoGallery* gallery, uint32_t key);
 /// The file selected, or UINT32_MAX.
 uint32_t geo_gallery_selected(const GeoGallery* gallery);
+/// Selects a file, as a click on it does, or nothing with UINT32_MAX.
+void geo_gallery_select(GeoGallery* gallery, uint32_t file);
 
 /// The files to draw, in the library's bands: those in view, those near, the rest of the folder.
 /// Writes at most `capacity`; returns how many there are.

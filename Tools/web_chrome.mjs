@@ -36,6 +36,8 @@ const kElements = {
   "masthead.title": ".masthead .title",
   "masthead.subtitle": ".masthead .subtitle",
   "masthead.close": ".masthead .title-row .pill",
+  "masthead.back": ".masthead .arrows:not([hidden]) .pill:first-child",
+  "masthead.forward": ".masthead .arrows:not([hidden]) .pill:last-child",
   "structure.card": ".card.structure:not(.library):not([hidden])",
   "structure.switcher": ".card.structure:not(.library):not([hidden]) .segmented",
   "structure.segment": [".card.structure:not(.library):not([hidden]) .segmented button"],

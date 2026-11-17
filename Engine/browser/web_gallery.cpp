@@ -182,6 +182,10 @@ EMSCRIPTEN_KEEPALIVE int gv_gallery_set_folder(GeoGallery* gallery, const char* 
     return geo_gallery_set_folder(gallery, path) ? 1 : 0;
 }
 
+EMSCRIPTEN_KEEPALIVE int gv_gallery_go_to_folder(GeoGallery* gallery, const char* path) {
+    return geo_gallery_go_to_folder(gallery, path) ? 1 : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE const char* gv_gallery_folder(GeoGallery* gallery) {
     return geo_gallery_folder(gallery);
 }
@@ -356,6 +360,10 @@ EMSCRIPTEN_KEEPALIVE bool gv_gallery_peek_turnable(GeoGallery* gallery) {
 
 EMSCRIPTEN_KEEPALIVE uint32_t gv_gallery_selected(GeoGallery* gallery) {
     return geo_gallery_selected(gallery);
+}
+
+EMSCRIPTEN_KEEPALIVE void gv_gallery_select(GeoGallery* gallery, uint32_t file) {
+    geo_gallery_select(gallery, file);
 }
 
 EMSCRIPTEN_KEEPALIVE float gv_gallery_reveal(GeoGallery* gallery) {

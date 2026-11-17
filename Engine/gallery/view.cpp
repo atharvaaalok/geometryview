@@ -232,6 +232,35 @@ bool Gallery::setFolder(std::string_view path) {
     return true;
 }
 
+bool Gallery::goTo(std::string_view path) {
+    const u32 folder = tree_.folderAt(path);
+    if (folder == kNone) {
+        return false;
+    }
+    if (folder != folder_) {
+        const bool beside =
+            tree_.folder(folder).parent == folder_ || tree_.folder(folder_).parent == folder;
+        if (beside) {
+            enter(folder);
+        } else {
+            setFolder(path);
+        }
+    }
+    return true;
+}
+
+void Gallery::select(u32 file) {
+    const u32 next = file < tree_.fileCount() ? file : kNone;
+    if (next != selected_) {
+        selected_ = next;
+        focused_ = kNone;
+        if (next != kNone) {
+            seen(next);
+        }
+        dirty_ = true;
+    }
+}
+
 std::string Gallery::subtitle() const {
     const Folder& f = tree_.folder(folder_);
     std::string out = count(f.count, "file");
