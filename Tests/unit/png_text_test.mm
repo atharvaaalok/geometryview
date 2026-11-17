@@ -97,7 +97,7 @@ TEST_CASE("a tagged picture says what made it, right after its header, and is ot
     CHECK(after[1].type == "tEXt");
     CHECK(after[1].data == std::string("Software") + '\0' + about::pictureSoftware());
     CHECK(after[2].type == "tEXt");
-    CHECK(after[2].data == std::string("Comment") + '\0' + std::string(about::pictureComment()));
+    CHECK(after[2].data == std::string("Comment") + '\0' + about::pictureComment());
     CHECK(about::pictureSoftware() == std::string("GeometryView ") + geo_engine_version());
     for (usize i = 0; i < after.size(); ++i) {
         CAPTURE(i);

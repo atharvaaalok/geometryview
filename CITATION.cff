@@ -16,6 +16,8 @@ authors:
 repository-code: "https://github.com/atharvaaalok/geometryview"
 url: "https://atharvaaalok.github.io/geometryview/"
 license: MIT
+# Zenodo's DOI for every version (the "concept" DOI); each release also gets one of its own.
+doi: 10.5281/zenodo.24295273
 version: 0.6.0
 date-released: "2026-11-16"
 keywords:
@@ -40,4 +42,7 @@ preferred-citation:
       affiliation: Stanford University
       orcid: "https://orcid.org/0000-0002-1132-9333"
   year: 2026
+  publisher:
+    name: Zenodo
+  doi: 10.5281/zenodo.24295273
   url: "https://github.com/atharvaaalok/geometryview"

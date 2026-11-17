@@ -41,6 +41,7 @@ TEST_CASE("the apps cite GeometryView as its citation file does, at the version 
     const std::string cff = readSource("CITATION.cff");
     CHECK(field(cff, "title") == about::citationTitle());
     CHECK(field(cff, "repository-code") == about::citationUrl());
+    CHECK(field(cff, "doi") == about::citationDoi());
     CHECK(field(cff, "version") == geo_engine_version());
     CHECK(std::string_view(geo_engine_version()) == about::version());
 
@@ -48,7 +49,7 @@ TEST_CASE("the apps cite GeometryView as its citation file does, at the version 
     CHECK(std::string_view(geo_citation(GeoCitationBibTeX)) == about::citationBibtex());
     CHECK(about::citationText() ==
           "Aalok, A. (2026). GeometryView: A STEP and STL viewer for people and AI agents "
-          "[Computer software]. https://github.com/atharvaaalok/geometryview");
+          "[Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24295273");
 }
 
 TEST_CASE("the README's citation is the apps', word for word") {

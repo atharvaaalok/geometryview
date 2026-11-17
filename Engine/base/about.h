@@ -18,6 +18,8 @@ std::string_view version();
 /// one title, author and year.
 std::string_view citationTitle();
 std::string_view citationUrl();
+/// Zenodo's DOI for every version.
+std::string_view citationDoi();
 
 /// The citation as a line of text, in APA's style.
 std::string citationText();
@@ -26,9 +28,9 @@ std::string citationText();
 std::string citationBibtex();
 
 /// What a saved picture says of itself, as PNG text: its Software, GeometryView and this release,
-/// and a Comment with where GeometryView is and how to cite it.
+/// and a Comment with where GeometryView is and its DOI, to cite it by.
 std::string pictureSoftware();
-std::string_view pictureComment();
+std::string pictureComment();
 
 /// `png` carrying that text. Empty if it is not a PNG.
 std::vector<u8> taggedPicture(std::span<const u8> png);
