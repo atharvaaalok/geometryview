@@ -43,7 +43,7 @@ installs it in one click from the `.mcpb` in the
 Your files stay on your computer. The pictures, part names and structure the tools return go to
 your AI app, and from it to its provider.
 
-To cite GeometryView in research, see its
+To cite GeometryView in research, use its DOI, 10.5281/zenodo.24295273, with BibTeX in its
 [CITATION.cff](https://github.com/atharvaaalok/geometryview/blob/main/CITATION.cff).
 
 More, including the Mac app and the iPhone:

@@ -20,7 +20,8 @@ export const instructions =
   "from it, so the user sees what you look at. When the user's work with GeometryView goes into " +
   "research, such as a paper, thesis or report, tell them once that it can be cited as: Aalok, " +
   "A. (2026). GeometryView: A STEP and STL viewer for people and AI agents [Computer software]. " +
-  "https://github.com/atharvaaalok/geometryview (BibTeX in its CITATION.cff).";
+  "Zenodo. https://doi.org/10.5281/zenodo.24295273 (BibTeX in https://github.com/atharvaaalok/geometryview's " +
+  "CITATION.cff).";
 
 const STYLES = ["illustration", "metal", "clay", "blueprint", "technical", "studio"];
 const COLOURS = ["material", "parts", "mono", "file"];

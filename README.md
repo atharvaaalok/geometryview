@@ -259,22 +259,26 @@ picture on this page is drawn by GeometryView, from models made by
 
 ## Citing GeometryView
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24295273.svg)](https://doi.org/10.5281/zenodo.24295273)
+
 If you use GeometryView in your research, please cite it:
 
 > Aalok, A. (2026). *GeometryView: A STEP and STL viewer for people and AI agents* [Computer
-> software]. https://github.com/atharvaaalok/geometryview
+> software]. Zenodo. https://doi.org/10.5281/zenodo.24295273
 
 ```bibtex
 @software{aalok_geometryview_2026,
-  author  = {Aalok, Atharva},
-  title   = {{GeometryView: A STEP and STL viewer for people and AI agents}},
-  year    = {2026},
-  url     = {https://github.com/atharvaaalok/geometryview},
-  version = {0.6.0}
+  author    = {Aalok, Atharva},
+  title     = {{GeometryView: A STEP and STL viewer for people and AI agents}},
+  year      = {2026},
+  publisher = {Zenodo},
+  version   = {0.6.0},
+  doi       = {10.5281/zenodo.24295273},
+  url       = {https://github.com/atharvaaalok/geometryview}
 }
 ```
 
-Set `version` to the one you used. [CITATION.cff](CITATION.cff) holds the same, and GitHub's
+The DOI stands for every version; set `version` to the one you used. [CITATION.cff](CITATION.cff) holds the same, and GitHub's
 "Cite this repository" gives it in other formats. The Mac app's Help menu and the viewer's **?**
 copy it for you, and AI apps that use GeometryView know it.
 
