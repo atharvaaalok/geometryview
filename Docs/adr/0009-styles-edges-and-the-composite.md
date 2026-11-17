@@ -241,3 +241,40 @@ The 20 goldens did not change.
 - Measured on a box with its front face ghosted alone, as Lines: 5% of the face's pixels differed
   from the face hidden; now all of them do. Behind a box ghosted whole as Lines, 51% of the dark
   ink kept its darkness; now all of it does. The 20 goldens did not change.
+
+## Addendum (2026-11-16): no face covers a line lying on it
+
+On a linear bushing's housing, the lines along its top's grooves (1.5 mm deep, 45-degree walls)
+were whole from one angle and stopped partway from another. Two causes, both measured on
+`Tests/data/groove_block.step`, a block with the same grooves, drawn from 396 directions in ortho
+and in perspective close to the grooves (`crease_test.mm`, and its WebGPU twin in `webgpu_test.mm`):
+for every crease, where nothing nearer covers its middle, ink must lie along 98% of it. Before,
+206 creases of 792 views were short, the worst with none.
+
+- **A segment reaching behind the camera was left out whole.** A straight edge is one segment, and
+  close to a part in perspective its far end can be behind the eye; the edge stage dropped any
+  segment with an end at w ≤ 0, so the line vanished from end to end. Now it is cut where it
+  crosses the near plane (`edges.metal`, `edges.wgsl`).
+- **A face beside a crease covered its line.** A line is a band, centred on the crease and lifted 1
+  point toward the eye. A face rising toward the eye across the band, as a groove's wall seen
+  steeply, covered the half over it, or all of the band where the wall is seen nearly edge on, as
+  along the grooves from low down. Now, in the opaque pass only, every face is held back along its
+  view ray by its own change in depth across the lines' reach: its slope to the view, from its
+  normal and at most 8, times half the widest line plus the soft pixel (`lineReach`). Faces of
+  other parts give way to a line only within that reach, under the outline drawn there; the edge
+  leak tests (a box behind a box, the thin tube) pass unchanged.
+- **From the normal, not the facet.** Hardware slope-scaled depth bias did the same from each
+  facet's own slope, but where two parts' faces lie together, as a sleeve on a shaft, their facets
+  differ, and near grazing the shaft lost to the sleeve's opened inside (ADR 0007). Vertex normals
+  of both follow the same circle. The opened inside is held back half as far again, so the sink
+  still decides.
+- **Picking, outlines and occlusion read the depth as drawn**, before the hold: surfaces pass it as
+  a varying and write it to the depth copy, since a fragment's own position carries the hold.
+
+Goldens moved by a few dozen pixels each, lines a pixel more whole; the two section goldens by
+about 1%, along the cut's outlines. Gallery pictures change with them: `kPictureDrawing` is 2, so
+kept pictures are drawn again. GPU time, WebGPU on Dawn, alternating runs: the 100k rack 3.95 →
+4.03 ms, the 10M-triangle STL 5.02 → 5.15 ms.
+
+Left: where a wall is seen within a degree of edge on, the composite's fold check reads its
+one-pixel sliver as a step and marks a dot beside the crease every few pixels.

@@ -20,7 +20,7 @@ namespace geo::engine {
 /// ground, the lines), and only then, so they are drawn again when they look different and kept
 /// across updates that don't change them. Tests/unit/golden_test.mm holds it to the thumbnail
 /// goldens.
-inline constexpr int kPictureDrawing = 1;
+inline constexpr int kPictureDrawing = 2;
 
 struct OffscreenView {
     scene::Scene scene;

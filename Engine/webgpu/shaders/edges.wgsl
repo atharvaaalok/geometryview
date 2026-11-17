@@ -102,8 +102,29 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
                select(0u, kHighlighted, hovered || selected);
     }
 
-    let a = transformPoint(o, decodePosition(d, min(segmentA, lastVertex)));
-    let b = transformPoint(o, decodePosition(d, min(segmentB, lastVertex)));
+    var a = transformPoint(o, decodePosition(d, min(segmentA, lastVertex)));
+    var b = transformPoint(o, decodePosition(d, min(segmentB, lastVertex)));
+    // Arc length, so dashes keep their size and run on across segments.
+    let scale = length(o.row0.xyz);
+    var alongA = along * scale;
+    // In perspective, a segment reaching behind the camera is cut where it crosses the near plane.
+    // A long straight edge is one segment, and close to a part its far end can be behind the eye:
+    // left out whole, it vanished from end to end.
+    if (frame.perspective != 0u) {
+        let near = frame.depthNear * 1.001;
+        let wa = dot(a - frame.eye, frame.forward);
+        let wb = dot(b - frame.eye, frame.forward);
+        if (wa < near && wb < near) {
+            kind = 0u;
+        } else if (wa < near) {
+            let cut = mix(a, b, (near - wa) / (wb - wa));
+            alongA += distance(a, cut);
+            a = cut;
+        } else if (wb < near) {
+            b = mix(a, b, (near - wa) / (wb - wa));
+        }
+    }
+    let alongB = alongA + distance(a, b);
     let chordLift = select(0.0, d.edgeLift * length(o.row0.xyz), rawB == kEdgeNoFace);
     let clipA = frame.viewProjection * vec4f(lift(a, chordLift), 1.0);
     let clipB = frame.viewProjection * vec4f(lift(b, chordLift), 1.0);
@@ -122,11 +143,6 @@ fn edgeVertex(@builtin(vertex_index) vertexId: u32) -> EdgeVertex {
     let width = max(select(0.0, inked, (kind & kInked) != 0u),
                     select(0.0, style.highlight, (kind & kHighlighted) != 0u));
     let halfWidth = 0.5 * width + 1.0; // a pixel more, for the soft edge
-
-    // Arc length in pixels, so dashes keep their size and run on across segments.
-    let scale = length(o.row0.xyz);
-    let alongA = along * scale;
-    let alongB = alongA + distance(a, b);
 
     let t = f32(k >> 1u);
     let side = select(-1.0, 1.0, (k & 1u) != 0u);

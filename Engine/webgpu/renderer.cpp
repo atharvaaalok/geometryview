@@ -704,7 +704,8 @@ struct Renderer::State {
             vertexConstants = {constant("kGhostPass", key.kind == Kind::Ghost),
                                constant("kShadowPass", key.kind == Kind::Shadow),
                                constant("kOccurrenceIds", key.kind == Kind::Classify),
-                               constant("kShellLayer", layer)};
+                               constant("kShellLayer", layer),
+                               constant("kHoldsForLines", key.kind == Kind::Solid)};
             if (key.kind == Kind::Shadow || key.kind == Kind::ShellDepth ||
                 key.kind == Kind::Parity) {
                 fragmentConstants = {constant("kSection", key.section)};

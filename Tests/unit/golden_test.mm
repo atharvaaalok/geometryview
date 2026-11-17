@@ -259,6 +259,7 @@ TEST_CASE("the gallery's pictures look different only under a new kPictureDrawin
     // kPictureDrawing + 1 and bump kPictureDrawing; never change an entry.
     const std::map<int, u64> drawings = {
         {1, 0x40b3f856cc0fc489ull}, // 0.5.0's pictures
+        {2, 0x1e88528ae8b4e7bbull}, // 0.6.1's: no face covers a line lying on it
     };
     u64 hash = 0xcbf29ce484222325ull;
     for (const char* style :
