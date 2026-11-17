@@ -1047,12 +1047,7 @@ final class MainWindow: NSWindow {
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "\(galleryController.title) poster.png"
         panel.beginSheetModal(for: self) { response in
-            guard response == .OK, let url = panel.url,
-                let data = NSBitmapImageRep(cgImage: image).representation(
-                    using: .png,
-                    properties: [:]
-                )
-            else {
+            guard response == .OK, let url = panel.url, let data = Picture.png(image) else {
                 return
             }
             try? data.write(to: url)
@@ -1065,10 +1060,7 @@ final class MainWindow: NSWindow {
     /// gallery, the view as a poster.
     @objc func copy(_ sender: Any?) {
         makePicture { [weak self] image in
-            guard let self, let image,
-                let png = NSBitmapImageRep(cgImage: image)
-                    .representation(using: .png, properties: [:])
-            else {
+            guard let self, let image, let png = Picture.png(image) else {
                 return
             }
             let item = NSPasteboardItem()
@@ -1098,10 +1090,7 @@ final class MainWindow: NSWindow {
             let name = names.first.map { ($0 as NSString).deletingPathExtension } ?? "GeometryView"
             panel.nameFieldStringValue = "\(name).png"
             panel.beginSheetModal(for: self) { response in
-                guard response == .OK, let url = panel.url,
-                    let data = NSBitmapImageRep(cgImage: image)
-                        .representation(using: .png, properties: [:])
-                else {
+                guard response == .OK, let url = panel.url, let data = Picture.png(image) else {
                     return
                 }
                 try? data.write(to: url)

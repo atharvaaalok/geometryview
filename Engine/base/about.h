@@ -2,8 +2,12 @@
 // file at the repository's root (CITATION.cff), which a test holds them to.
 #pragma once
 
+#include "base/types.h"
+
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace geo::about {
 
@@ -20,5 +24,13 @@ std::string citationText();
 
 /// The citation as a BibTeX entry, with this release as its version.
 std::string citationBibtex();
+
+/// What a saved picture says of itself, as PNG text: its Software, GeometryView and this release,
+/// and a Comment with where GeometryView is and how to cite it.
+std::string pictureSoftware();
+std::string_view pictureComment();
+
+/// `png` carrying that text. Empty if it is not a PNG.
+std::vector<u8> taggedPicture(std::span<const u8> png);
 
 } // namespace geo::about

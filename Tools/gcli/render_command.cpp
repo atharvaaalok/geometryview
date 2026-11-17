@@ -12,6 +12,8 @@
 // shot at the scale the largest needs, so a turntable or a cut doesn't change size as it moves.
 #include "render_command.h"
 
+#include "picture_file.h"
+
 #include "base/types.h"
 #include "engine.h"
 
@@ -259,7 +261,8 @@ int drawShots(const char* shaders, std::vector<Shot>& shots, bool sameScale, boo
         GeoThumbnail picture{};
         const bool drawn = geo_thumbnailer_render(thumbnailer, shot.blob.c_str(), &shot.options,
                                                   &picture, error, sizeof(error));
-        const bool written = drawn && geo_thumbnail_write_png(&picture, shot.png.c_str());
+        const bool written = drawn && geo_thumbnail_write_png(&picture, shot.png.c_str()) &&
+                             tagPictureFile(shot.png.c_str());
         const double ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
                 .count();
@@ -324,7 +327,9 @@ int positional(int argc, const char** argv) {
     if (argc > 14) {
         options.isolate = argv[14];
     }
-    return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) ? 0 : 1;
+    return geo_render_blob_to_png(argv[2], argv[3], argv[4], &options) && tagPictureFile(argv[4])
+               ? 0
+               : 1;
 }
 
 } // namespace

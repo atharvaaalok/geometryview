@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -428,6 +430,21 @@ EMSCRIPTEN_KEEPALIVE const char* geo_web_citation(u32 format) {
     static const std::string text = about::citationText();
     static const std::string bibtex = about::citationBibtex();
     return format == GeoCitationBibTeX ? bibtex.c_str() : text.c_str();
+}
+
+/// A picture to save or share, tagged with what made it (base/about.h): a new buffer the page
+/// frees, its size in `outSize`. Null if `png` is not a PNG.
+EMSCRIPTEN_KEEPALIVE u8* geo_web_tag_picture(const u8* png, u32 size, u32* outSize) {
+    const std::vector<u8> tagged = about::taggedPicture({png, size});
+    *outSize = u32(tagged.size());
+    if (tagged.empty()) {
+        return nullptr;
+    }
+    u8* out = static_cast<u8*>(std::malloc(tagged.size()));
+    if (out != nullptr) {
+        std::memcpy(out, tagged.data(), tagged.size());
+    }
+    return out;
 }
 
 /// How the gallery's pictures are drawn (core/offscreen_view.h): part of a kept picture's key.
