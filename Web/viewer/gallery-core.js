@@ -168,6 +168,8 @@ export class GalleryCore {
   setViewport(width, height) { this.#m._gv_gallery_set_viewport(this.#g, width, height); }
   setScroll(top) { this.#m._gv_gallery_set_scroll(this.#g, top); }
   setFolder(path) { return this.#string(path, (p) => this.#m._gv_gallery_set_folder(this.#g, p)) !== 0; }
+  /** Shows a folder as Back and Forward go to it: with the motion into or out of it when it is beside. */
+  goToFolder(path) { return this.#string(path, (p) => this.#m._gv_gallery_go_to_folder(this.#g, p)) !== 0; }
   get folder() { return this.#m.UTF8ToString(this.#m._gv_gallery_folder(this.#g)); }
   get title() { return this.#m.UTF8ToString(this.#m._gv_gallery_folder_title(this.#g)); }
   get subtitle() { return this.#m.UTF8ToString(this.#m._gv_gallery_folder_subtitle(this.#g)); }
@@ -279,6 +281,9 @@ export class GalleryCore {
     const file = this.#m._gv_gallery_selected(this.#g) >>> 0;
     return file === kNone ? null : file;
   }
+
+  /** Selects a file, as a click on it does, or nothing with null. */
+  select(file) { this.#m._gv_gallery_select(this.#g, file ?? kNone); }
 
   /** Where to scroll so the selection shows, or null if it shows already. */
   get reveal() {

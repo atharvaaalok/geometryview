@@ -171,6 +171,13 @@ final class GalleryHandle {
         geo_gallery_set_folder(gallery, path)
     }
 
+    /// Shows a folder as Back and Forward go to it: with the motion into or out of it when it is
+    /// beside the folder in view.
+    @discardableResult
+    func goTo(folder path: String) -> Bool {
+        geo_gallery_go_to_folder(gallery, path)
+    }
+
     var folder: String { String(cString: geo_gallery_folder(gallery)) }
     var title: String { String(cString: geo_gallery_folder_title(gallery)) }
     var subtitle: String { String(cString: geo_gallery_folder_subtitle(gallery)) }
@@ -215,8 +222,11 @@ final class GalleryHandle {
     }
 
     var selected: UInt32? {
-        let file = geo_gallery_selected(gallery)
-        return file == UInt32.max ? nil : file
+        get {
+            let file = geo_gallery_selected(gallery)
+            return file == UInt32.max ? nil : file
+        }
+        set { geo_gallery_select(gallery, newValue ?? UInt32.max) }
     }
 
     // MARK: Views, search, Peek and motion

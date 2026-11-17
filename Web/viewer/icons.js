@@ -20,6 +20,8 @@ export const iconMarkup = {
   cube: `<path d="M8 1.75l5.5 3v6.5L8 14.25l-5.5-3V4.75z"/><path d="M2.5 4.75L8 7.75l5.5-3M8 7.75v6.5"/>`,
   fit: `<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>`,
   chevron: `<path d="M6 4l4 4-4 4"/>`,
+  back: `<path d="M10 3.5L5.5 8l4.5 4.5"/>`,
+  forward: `<path d="M6 3.5l4.5 4.5L6 12.5"/>`,
   assembly: `<path stroke-width="1.25" d="M9.24 8.1L5.6 10.2L1.96 8.1L1.96 3.9L5.6 1.8L9.24 3.9zM14.04 12.1L10.4 14.2L6.76 12.1L6.76 7.9L10.4 5.8L14.04 7.9z"/>`,
   search: `<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3.5 3.5"/>`,
   folder: `<path d="M2.5 4.5v8h11V6.5H8L6.5 4.5z"/>`,

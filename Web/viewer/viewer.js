@@ -14,6 +14,7 @@ import { keyOf } from "./library-rows.js";
 import { LibraryStore } from "./library-store.js";
 import { Importers } from "./importers.js";
 import { Gallery } from "./gallery.js";
+import { Navigation } from "./navigation.js";
 import { Flags as ItemFlags, Kinds, Targets } from "./gallery-core.js";
 import { GalleryToolbar } from "./gallery-toolbar.js";
 import { kContentInsets as kGalleryInsets } from "./gallery-view.js";
@@ -131,14 +132,29 @@ let showingLibrary = true; // which card the sidebar shows when open
 // The gallery, made when a folder's is first shown (gallery.js).
 let gallery = null;
 let galleryShown = false;
-let openedFromGallery = false;
+// Where the page has been: folders shown in the gallery and files opened (navigation.js). Each
+// step is an entry in the browser's history too, the URL unchanged, so the browser's Back and
+// Forward, ⌘[ and ⌘], Alt+← and Alt+→ and the mouse's side buttons go through them as the
+// masthead's arrows do.
+const navigation = new Navigation();
+let walking = false; // going Back or Forward: what that shows is the step gone to
+let shownFiles = []; // the files open, as the history knows them
+const reopeners = new Map(); // how to open each again, by its key
+// Steps' ids in the browser's history, unique to this page, and the move made by the page itself
+// that popstate is to let pass.
+const pageId = Math.random().toString(36).slice(2);
+let nextStepId = 1;
+let quietPop = null;
+let opensStarted = 0; // files that began opening, for the checks
 // What the chrome covers of the view, in CSS pixels, as framing keeps clear of it.
 let insets = { left: 0, top: 0, right: 0, bottom: 0 };
 let pointer = null; // { x, y } in CSS pixels, while over the view
 
 const masthead = new Masthead();
 // In the gallery, × leaves it, as Esc does at the top; in the viewer it closes the files.
-masthead.onClose = () => (galleryShown ? leaveGallery() : closeFiles());
+masthead.onClose = () => (galleryShown ? leaveGalleryForWhatIsOpen() : closeFiles());
+masthead.onBack = () => goBack();
+masthead.onForward = () => goForward();
 const structure = new StructureCard(engine, { onSwitch: (show) => showLibrary(show),
                                               onHide: () => setPanelOpen(false) });
 const library = new LibraryCard(libraryStore, {
@@ -218,8 +234,8 @@ new ViewportInput(engine, canvas, {
     showHover();
   },
 });
-// While the gallery shows, its keys are its own; in the viewer, Esc goes back to the gallery the
-// files came from once no card is open.
+// While the gallery shows, its keys are its own; in the viewer, Esc goes back to the gallery, where
+// that is the step behind, once no card is open.
 addEventListener("keydown", (e) => {
   // ⌥S puts the sidebar away or brings it back, in the viewer and the gallery alike; not while
   // typing, where it is a letter.
@@ -252,10 +268,10 @@ addEventListener("keydown", (e) => {
   } else if (galleryShown && gallery?.key(e)) {
     e.preventDefault();
     e.stopImmediatePropagation();
-  } else if (!galleryShown && openedFromGallery && e.key === "Escape" && !dismissCard()) {
+  } else if (!galleryShown && e.key === "Escape" && navigation.behind?.place.kind === "folder" && !dismissCard()) {
     e.preventDefault();
     e.stopImmediatePropagation();
-    enterGallery();
+    goBack();
   }
 }, { capture: true });
 // ⌘O opens files, ⇧⌘O adds them to what is shown, ⌥⌘O connects a folder: the Mac's keys.
@@ -351,13 +367,16 @@ function refreshSelection() {
 }
 
 function refreshMasthead() {
+  masthead.setNavigation({ shown: navigation.steps.length > 1, back: navigation.canGoBack,
+                           forward: navigation.canGoForward });
   if (galleryShown) {
     masthead.show(gallery.title, gallery.subtitle);
     masthead.setProgress(null);
     return;
   }
   if (names.length === 0) {
-    masthead.hide();
+    // Nothing shows: the arrows alone, if they lead anywhere.
+    masthead.showArrowsOnly();
     return;
   }
   const title = names.length === 1 ? names[0] : `${names.length} files`;
@@ -481,8 +500,12 @@ function galleryFor() {
   const views = params.get("views") === "two" ? 0b11 : 0b11111;
   gallery = new Gallery({ engine, store: libraryStore, importers, phone, probes: params.get("test") === "gallery", views }, {
     open: (root, path) => openFromGallery(root, path),
-    leave: () => leaveGallery(),
+    leave: () => leaveGalleryForWhatIsOpen(),
     folderChanged: () => refreshMasthead(),
+    entered: (left, shown) => {
+      navigation.keep({ kind: "folder", root: gallery.root.id, path: left }, shown);
+      visited();
+    },
     changed: () => galleryToolbar.show(gallery.state),
     leavePoster: (toggle = false) => setGalleryPoster(toggle ? !gallery.poster : false),
     // Permission asked again from the lost card's Reconnect, in its click.
@@ -503,13 +526,16 @@ function galleryFor() {
 
 async function showGallery(root, path) {
   const g = galleryFor();
+  keepGallery();
   if (phone && panelOpen) {
     // Chosen in the Library's sheet: the sheet goes down over the gallery.
     panelOpen = false;
     showLibrary(true);
   }
   enterGallery();
-  await g.show(root, path);
+  const shown = g.show(root, path);
+  visited();
+  await shown;
 }
 
 function enterGallery() {
@@ -676,9 +702,141 @@ async function savePicture() {
 }
 
 async function openFromGallery(root, path) {
-  leaveGallery();
-  openedFromGallery = true;
   await openFromFolder({ root: root.id, path, name: path.split("/").pop() }, false);
+}
+
+// ---- Back and forward ---------------------------------------------------------------------------
+
+// The page's steps, kept in the browser's history: see "Back and forward" below.
+
+// What shows: the folder in the gallery, or else the files open.
+function shownPlace() {
+  if (galleryShown && gallery?.root) return { kind: "folder", root: gallery.root.id, path: gallery.core.folder };
+  return shownFiles.length > 0 ? { kind: "files", files: [...shownFiles] } : null;
+}
+
+// A file's key in the history: its connected folder and path, or its name.
+function fileKey(name) {
+  const source = sources.get(name);
+  return source?.root ? keyOf(source.root, source.path) : name;
+}
+
+// What shows changed: a step, unless it is the one beside, or Back and Forward walked to it.
+function visited() {
+  const place = shownPlace();
+  if (!walking && place) moved(navigation.visit(place));
+  refreshMasthead();
+}
+
+// The browser's history follows the page's: a new entry for a new step, or a move to the one beside.
+function moved(move) {
+  try {
+    if (move === "new") {
+      const step = navigation.current;
+      step.id = `${pageId}-${nextStepId++}`;
+      const state = { ...(history.state ?? {}), geometryViewStep: step.id };
+      // The first step takes the page's own entry: Back from it leaves the page, as before.
+      if (navigation.steps.length === 1) history.replaceState(state, "");
+      else history.pushState(state, "");
+    } else if (move === "back" || move === "forward") {
+      quietPop = navigation.current.id;
+      history.go(move === "back" ? -1 : 1);
+    }
+  } catch {
+    // No history to keep in step with: the page's own arrows still work.
+  }
+}
+
+// A file starts opening, from anywhere: it shows, over the gallery if that was up.
+function noteOpening(name, add, reopen) {
+  opensStarted += 1;
+  if (galleryShown) {
+    keepGallery();
+    leaveGallery();
+  }
+  const key = fileKey(name);
+  reopeners.set(key, reopen);
+  shownFiles = add ? [...shownFiles, key] : [key];
+  if (!walking) moved(add ? navigation.add({ kind: "files", files: [...shownFiles] })
+                          : navigation.visit({ kind: "files", files: [...shownFiles] }));
+  refreshMasthead();
+}
+
+// Keeps what the gallery's folder shows, before something else shows in its place.
+function keepGallery() {
+  if (!galleryShown || !gallery?.root) return;
+  navigation.keep({ kind: "folder", root: gallery.root.id, path: gallery.core.folder }, gallery.shown());
+}
+
+// × in the gallery, or Esc at its top: the files open behind it show again.
+function leaveGalleryForWhatIsOpen() {
+  keepGallery();
+  leaveGallery();
+  visited();
+}
+
+// The arrows and Esc go through the browser's history, which walks the page's (popstate); where
+// the browser keeps none for this page, the page walks its own.
+function goBack() {
+  if (!navigation.canGoBack || gallery?.poster) return;
+  if (navigation.behind?.id && history.state?.geometryViewStep === navigation.current?.id) history.back();
+  else walkTo(navigation.at - 1);
+}
+
+function goForward() {
+  if (!navigation.canGoForward || gallery?.poster) return;
+  if (navigation.ahead?.id && history.state?.geometryViewStep === navigation.current?.id) history.forward();
+  else walkTo(navigation.at + 1);
+}
+
+addEventListener("popstate", (e) => {
+  const id = e.state?.geometryViewStep;
+  if (id === undefined || id === null) return;
+  if (id === quietPop) {
+    quietPop = null;
+    return;
+  }
+  const index = navigation.steps.findIndex((step) => step.id === id);
+  if (index >= 0 && index !== navigation.at && !gallery?.poster) walkTo(index);
+});
+
+// Shows the step at `index`: a folder as it was left, or files, which are still open behind the
+// gallery if they were the last shown, and are opened again if not.
+async function walkTo(index) {
+  keepGallery();
+  const step = navigation.go(index);
+  if (!step) return;
+  walking = true;
+  try {
+    if (step.place.kind === "folder") {
+      const id = step.place.root;
+      const root = gallery?.root?.id === id ? gallery.root
+                 : library.readyFolders.has(id) ? { id, name: library.folderName(id) } : null;
+      if (!root) {
+        status.showFailure("That folder is no longer connected.");
+        return;
+      }
+      const g = galleryFor();
+      if (g.root?.id === root.id) {
+        if (!galleryShown) enterGallery();
+        if (!g.goToFolder(step.place.path)) status.showFailure(`${step.place.path || root.name} is no longer there.`);
+      } else {
+        enterGallery();
+        await g.show(root, step.place.path);
+      }
+      if (step.shown) g.restore(step.shown);
+    } else if (step.place.files.join("\n") === shownFiles.join("\n")) {
+      if (galleryShown) leaveGallery();
+    } else {
+      for (const [i, key] of step.place.files.entries()) {
+        const reopen = reopeners.get(key);
+        if (reopen) await reopen(i > 0);
+      }
+    }
+  } finally {
+    walking = false;
+    refreshMasthead();
+  }
 }
 
 // ---- Layout -----------------------------------------------------------------------------------
@@ -857,16 +1015,19 @@ function forget() {
   sectionCard.element.hidden = true;
 }
 
-// Closes everything open: back to the Library and the invitation to open something.
+// Closes everything open: back to the Library and the invitation to open something. In the
+// gallery the files close behind it, and it stays.
 function closeFiles() {
   forget();
   closeCards();
   engine.close();
+  shownFiles = [];
   refreshMasthead();
-  showEmpty();
+  if (!galleryShown) showEmpty();
 }
 
 function openCache(source, name, add) {
+  noteOpening(name, add, (again) => openCache(source, name, again));
   if (!add) forget();
   engine.open(source, name, { add });
 }
@@ -930,6 +1091,7 @@ function stlImportBytes(file) {
 const kPhoneImportBudget = 1.2 * 1024 ** 3;
 
 function importFile(file, add) {
+  noteOpening(file.name, add, (again) => importFile(file, again));
   if (!/\.stl$/i.test(file.name)) stepSources.set(file.name, file);
   importing = importers.live(`open-${nextJob++}`, async (signal) => {
     const key = await keyFor(file);
@@ -1637,6 +1799,75 @@ async function watchSettle(g, mode) {
            firstChange: round(firstChange), lastChange: round(lastChange) };
 }
 
+// Back and forward through the browser's history, as its Back button goes: a folder, a subfolder
+// in it, a part opened there, then Back, Back, Forward, Forward, and Back and Forward again by the
+// masthead's arrows. ?test=gallery&walk=1
+async function walkCheck(g, settle) {
+  const startUrl = location.href;
+  const popped = () => new Promise((resolve) => {
+    addEventListener("popstate", () => setTimeout(resolve, 400), { once: true });
+  });
+  const where = () => ({
+    gallery: galleryShown, folder: galleryShown ? g.core.folder : null, files: shownFiles.length,
+    selected: g.core.selected === null ? null : g.core.path(g.core.selected), view: g.core.view,
+    scroll: Math.round(g.shown().scroll), at: navigation.at, steps: navigation.steps.length,
+    back: navigation.canGoBack, forward: navigation.canGoForward, arrows: !masthead.element.querySelector(".arrows").hidden,
+  });
+  g.setView(0);
+  await settle();
+  const top = where();
+  const plate = g.core.items.find((i) => i.targetKind === Targets.Folder);
+  if (!plate) throw new Error("The folder has no subfolder to walk into.");
+  g.view.clickTarget(Targets.Folder, plate.target);
+  await sleep(700);
+  await settle();
+  // In the subfolder: Sheet, a file selected and the view scrolled, which Back is to bring back.
+  g.setView(1);
+  await settle();
+  g.view.key(1); // → selects the first file
+  g.restore({ ...g.shown(), scroll: 60 });
+  const left = where();
+  const ready = waitFor(Events.SceneReady);
+  g.view.key(4); // ⏎ opens it
+  await ready;
+  await sleep(300);
+  const opened = where();
+  const opens = opensStarted;
+  history.back();
+  await popped();
+  const back1 = where();
+  const shot = async (name) => {
+    if (!params.has("shots")) return;
+    await fetch(`/shot?name=${encodeURIComponent(`${params.get("label") ?? "web"}-walk-${name}`)}`);
+    await sleep(1500);
+  };
+  await shot("gallery");
+  history.back();
+  await popped();
+  const back2 = where();
+  history.forward();
+  await popped();
+  const forward1 = where();
+  history.forward();
+  await popped();
+  const forward2 = { ...where(), opensSince: opensStarted - opens };
+  await shot("part");
+  masthead.onBack();
+  await popped();
+  const arrowBack = where();
+  masthead.onForward();
+  await popped();
+  const arrowForward = { ...where(), opensSince: opensStarted - opens };
+  const same = (a, b) => a.folder === b.folder && a.selected === b.selected && a.view === b.view &&
+                         Math.abs(a.scroll - b.scroll) <= 1;
+  const passed = back1.gallery && same(back1, left) && back2.gallery && back2.folder === top.folder &&
+                 forward1.gallery && forward1.folder === left.folder && !forward2.gallery &&
+                 forward2.opensSince === 0 && arrowBack.gallery && same(arrowBack, left) &&
+                 !arrowForward.gallery && arrowForward.opensSince === 0 && location.href === startUrl;
+  return { passed, urlKept: location.href === startUrl, top, left, opened, back1, back2, forward1, forward2,
+           arrowBack, arrowForward };
+}
+
 async function runGalleryTest() {
   const dir = params.get("folder") ?? "test-models";
   const name = dir.split("/").pop();
@@ -1676,6 +1907,10 @@ async function runGalleryTest() {
     await new Promise(requestAnimationFrame);
     return Math.round(performance.now() - started) / 1000;
   };
+  if (params.has("walk")) {
+    await post({ folder: dir, walk: await walkCheck(g, settle) });
+    return;
+  }
   const subfolders = [...new Set(listing.filter((e) => e.folder && !e.path.includes("/")).map((e) => e.path))]
     .filter((p) => listing.some((e) => !e.folder && e.path.startsWith(`${p}/`))).sort().slice(0, 3);
   const runs = [];

@@ -42,6 +42,8 @@ final class GalleryController {
     var onLeave: (() -> Void)?
     /// The folder in view changed, for the masthead.
     var onFolderChanged: (() -> Void)?
+    /// Went into or up a folder by a click or key: the folder left, and what it showed.
+    var onEnteredFolder: ((_ left: String, _ shown: Navigation.Shown) -> Void)?
     /// The view in use or its controls changed, for the toolbar and the View menu.
     var onChanged: (() -> Void)?
     /// The search or what it found changed, for the search field.
@@ -219,6 +221,21 @@ final class GalleryController {
         onChanged?()
         onSearchChanged?()
         scheduleWant()
+    }
+
+    /// Shows a folder of the root in view as Back and Forward go to it: into or out of it, with
+    /// the motion, when it is beside. Returns false if the root has no such folder now.
+    func goTo(folder path: String) -> Bool {
+        guard gallery.goTo(folder: path) else {
+            return false
+        }
+        view.scrollToTop()
+        view.reload()
+        onFolderChanged?()
+        onChanged?()
+        onSearchChanged?()
+        scheduleWant()
+        return true
     }
 
     func setStyle(_ style: GeoStyle) {
@@ -651,6 +668,9 @@ final class GalleryController {
         switch action.kind {
         case GeoActionEnterFolder.rawValue:
             // A folder shows the view it last showed.
+            if let departure = view.departure {
+                onEnteredFolder?(departure.folder, departure.shown)
+            }
             onFolderChanged?()
             onChanged?()
             onSearchChanged?()

@@ -37,8 +37,9 @@ export class Gallery {
 
   /**
    * `on` takes open(root, path) to open a file in the viewer, leave() when Esc reaches the top,
-   * folderChanged() for the masthead, changed() when the view or its controls changed, for the
-   * toolbar, and search(query, found) for the search box. `views` are those that may be shown, a bit
+   * folderChanged() for the masthead, entered(left, shown) when a click or key went into or up a
+   * folder (the folder left and what it showed, for Back), changed() when the view or its controls
+   * changed, for the toolbar, and search(query, found) for the search box. `views` are those that may be shown, a bit
    * each. With `probes`, texts carry baseline marks, for the checks.
    */
   constructor({ engine, store, importers, phone = false, probes = false, views = 0b11 }, on) {
@@ -113,6 +114,28 @@ export class Gallery {
     this.core.setFolder(path);
     this.view.reload();
     this.#on.folderChanged?.();
+    this.#changed();
+    this.#scheduleWant();
+  }
+
+  /**
+   * Shows a folder of the root in view as Back and Forward go to it: into or out of it, with the
+   * motion, when it is beside. Returns false if the root has no such folder now.
+   */
+  goToFolder(path) {
+    if (!this.core.goToFolder(path)) return false;
+    this.view.scrollToTop();
+    this.view.reload();
+    this.#on.folderChanged?.();
+    this.#changed();
+    this.#scheduleWant();
+    return true;
+  }
+
+  /** What the folder in view shows, and showing it again: for Back and Forward. */
+  shown() { return this.view.shown(); }
+  restore(shown) {
+    this.view.restore(shown);
     this.#changed();
     this.#scheduleWant();
   }
@@ -344,6 +367,8 @@ export class Gallery {
       this.setView(Number(e.code.slice(5)) - 1);
       return true;
     }
+    // Alt+← and Alt+→ are the browser's Back and Forward, which go through the page's steps.
+    if (e.altKey && !mod && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return false;
     const keys = { ArrowLeft: Keys.Left, ArrowRight: Keys.Right, ArrowUp: Keys.Up, ArrowDown: Keys.Down,
                    Enter: Keys.Enter, " ": Keys.Space, Escape: Keys.Escape };
     let key = keys[e.key];
@@ -565,6 +590,7 @@ export class Gallery {
     this.#updateTurn(); // Peek opened, closed or moved: its turntable follows
     switch (action.kind) {
       case 2: // into a folder: it shows the view it last showed
+        if (this.view.departure) this.#on.entered?.(this.view.departure.folder, this.view.departure.shown);
         this.#on.folderChanged?.();
         this.#changed();
         this.#scheduleWant();

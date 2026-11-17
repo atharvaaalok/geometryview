@@ -134,9 +134,17 @@ final class ChromeCheck {
         guard let root = window.contentView else {
             return
         }
+        // The name sits right of Back and Forward when they show: found where it is drawn.
+        var name = NSPoint(x: 100, y: root.bounds.maxY - 22)
+        if let title = Self.find(named: "masthead.title", in: root),
+            !title.isHiddenOrHasHiddenAncestor
+        {
+            let frame = title.convert(title.bounds, to: root)
+            name = NSPoint(x: frame.minX + min(12, frame.width / 2), y: frame.midY)
+        }
         let points = [
             ("the top edge", NSPoint(x: root.bounds.midX, y: root.bounds.maxY - 6)),
-            ("the file's name", NSPoint(x: 100, y: root.bounds.maxY - 22)),
+            ("the file's name", name),
         ]
         for (name, point) in points {
             let hit = root.hitTest(root.convert(point, to: root.superview))
@@ -145,6 +153,19 @@ final class ChromeCheck {
                 leaks.append("a press on \(name) reaches \(found), not what moves the window")
             }
         }
+    }
+
+    /// The view laid out under `name` (ChromeLayout), if any.
+    static func find(named name: String, in view: NSView) -> NSView? {
+        if view.identifier?.rawValue == "layout:\(name)" {
+            return view
+        }
+        for child in view.subviews {
+            if let found = find(named: name, in: child) {
+                return found
+            }
+        }
+        return nil
     }
 
     // A tree row's buttons, shown as though the pointer were on the row, must reach the engine:

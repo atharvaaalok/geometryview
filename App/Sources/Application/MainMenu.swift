@@ -10,6 +10,7 @@ enum MainMenu {
         bar.addItem(fileMenu())
         bar.addItem(editMenu())
         bar.addItem(viewMenu())
+        bar.addItem(goMenu())
         bar.addItem(helpMenu())
         return bar
     }
@@ -27,6 +28,24 @@ enum MainMenu {
         )
         item.keyEquivalentModifierMask = modifiers
         item.tag = Int(action.rawValue)
+        return item
+    }
+
+    /// Back and Forward through the folders shown and the parts opened.
+    private static func goMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "Go")
+        menu.addItem(
+            withTitle: "Back",
+            action: #selector(MainWindow.goBack(_:)),
+            keyEquivalent: "["
+        )
+        menu.addItem(
+            withTitle: "Forward",
+            action: #selector(MainWindow.goForward(_:)),
+            keyEquivalent: "]"
+        )
+        let item = NSMenuItem(title: "Go", action: nil, keyEquivalent: "")
+        item.submenu = menu
         return item
     }
 

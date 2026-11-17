@@ -30,12 +30,16 @@ final class MainWindow: NSWindow {
     private let sectionCard = SectionCard()
     private lazy var galleryController = GalleryController(views: GalleryCheck.views)
     private lazy var galleryToolbar = GalleryToolbar(enabled: galleryController.gallery.views)
-    /// Whether the gallery covers the viewport, and whether the files open came from it, so Esc
-    /// goes back.
+    /// Whether the gallery covers the viewport.
     private var inGallery = false
     /// A PDF being made: another waits until it is done.
     private var exportingPDF = false
-    private var openedFromGallery = false
+    /// Where the window has been, for Back and Forward.
+    private var navigation = Navigation()
+    /// Going Back or Forward: what that shows is the step gone to, not a new one.
+    private var walking = false
+    /// Files that began opening, for the checks.
+    private var opensStarted = 0
     private var look = Look.saved()
     private var exercise: Exercise?
     private var chromeCheck: ChromeCheck?
@@ -119,7 +123,10 @@ final class MainWindow: NSWindow {
             })
         else {
             print("gallery: \(path) is not inside a connected folder")
-            if GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil {
+            let checking =
+                GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil
+                || GalleryCheck.isWalk
+            if checking {
                 NSApp.terminate(nil)
             }
             return
@@ -132,7 +139,10 @@ final class MainWindow: NSWindow {
             _ = galleryController.setView(GeoViewPlates.rawValue)
         }
         showGallery(root: root.url, folder: folder)
-        guard GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil else {
+        let checking =
+            GalleryCheck.isCheck || GalleryCheck.isLayout || GalleryCheck.settleMode != nil
+            || GalleryCheck.isWalk
+        guard checking else {
             return
         }
         let check = GalleryCheck(controller: galleryController, engine: engine) { [weak self] style in
@@ -148,7 +158,11 @@ final class MainWindow: NSWindow {
             toggleLook: { [weak self] in self?.toggleLookCard(nil) },
             lookOpen: { [weak self] in !(self?.lookCard.isHidden ?? true) },
             inGallery: { [weak self] in self?.inGallery ?? false },
-            pressClose: { [weak self] in self?.masthead.onClose?() }
+            pressClose: { [weak self] in self?.masthead.onClose?() },
+            back: { [weak self] in self?.masthead.onBack?() },
+            forward: { [weak self] in self?.masthead.onForward?() },
+            steps: { [weak self] in (self?.navigation.at ?? 0, self?.navigation.steps.count ?? 0) },
+            opens: { [weak self] in self?.opensStarted ?? 0 }
         )
         Task {
             await check.run(root: root.url, folder: folder)
@@ -297,11 +311,13 @@ final class MainWindow: NSWindow {
                 return
             }
             if inGallery {
-                leaveGallery()
+                leaveGalleryForWhatIsOpen()
             } else {
                 closeFiles(nil)
             }
         }
+        masthead.onBack = { [weak self] in self?.goBack(nil) }
+        masthead.onForward = { [weak self] in self?.goForward(nil) }
         toolBar.onShowShortcuts = { [weak self] in self?.shortcuts.isHidden = false }
         toolBar.onShowLook = { [weak self] in self?.toggleLookCard(nil) }
         structure.switcher.onChange = { [weak self] index in self?.showLibrary(index == 0) }
@@ -321,7 +337,14 @@ final class MainWindow: NSWindow {
             self?.showGallery(root: root, folder: folder)
         }
         galleryController.onOpen = { [weak self] url in self?.openFromGallery(url) }
-        galleryController.onLeave = { [weak self] in self?.leaveGallery() }
+        galleryController.onLeave = { [weak self] in self?.leaveGalleryForWhatIsOpen() }
+        galleryController.onEnteredFolder = { [weak self] left, shown in
+            guard let self, let root = galleryController.root else {
+                return
+            }
+            navigation.keep(shown, for: .folder(root: root, path: left))
+            visited()
+        }
         galleryController.onFolderChanged = { [weak self] in self?.refreshMasthead() }
         galleryController.onChanged = { [weak self] in self?.refreshGalleryToolbar() }
         galleryController.onSearchChanged = { [weak self] in self?.refreshGallerySearch() }
@@ -457,7 +480,10 @@ final class MainWindow: NSWindow {
         engine.close()
         refreshMasthead()
         showLibrary(true)
-        showEmpty()
+        // In the gallery the files close behind it, and it stays.
+        if !inGallery {
+            showEmpty()
+        }
     }
 
     /// Opens a file alongside what is shown.
@@ -466,6 +492,12 @@ final class MainWindow: NSWindow {
     }
 
     private func add(_ url: URL, replacing: Bool) {
+        opensStarted += 1
+        // A part opened from anywhere shows, over the gallery if that was up: Back returns to it.
+        if inGallery {
+            keepGallery()
+            leaveGallery()
+        }
         // The sandbox grant travels with the URL, and a path alone would not carry it. Access stays
         // active while the file is open, because the import helper reads it after this returns.
         if url.startAccessingSecurityScopedResource() {
@@ -490,6 +522,13 @@ final class MainWindow: NSWindow {
             engine.open(path: url.path)
         } else {
             engine.add(path: url.path)
+        }
+        if !walking {
+            if replacing {
+                navigation.visit(.files(openURLs))
+            } else {
+                navigation.add(.files(openURLs))
+            }
         }
         refreshMasthead()
     }
@@ -824,6 +863,10 @@ final class MainWindow: NSWindow {
         case #selector(togglePoster(_:)):
             item.state = galleryController.gallery.poster ? .on : .off
             return inGallery
+        case #selector(goBack(_:)):
+            return navigation.canGoBack && !galleryController.gallery.poster
+        case #selector(goForward(_:)):
+            return navigation.canGoForward && !galleryController.gallery.poster
         case #selector(exportPoster(_:)):
             return inGallery
         case #selector(exportPDF(_:)):
@@ -894,24 +937,157 @@ final class MainWindow: NSWindow {
         _ = escapeFromViewer()
     }
 
-    /// Esc in the viewer: closes a card, or else goes back to the gallery the files came from.
+    /// Esc in the viewer: closes a card, or else goes back to the gallery, where that is the step
+    /// behind.
     private func escapeFromViewer() -> Bool {
         if dismissCard() {
             return true
         }
-        if openedFromGallery, !inGallery, galleryController.root != nil {
-            enterGallery()
+        if !inGallery, case .folder = navigation.behind?.place {
+            goBack(nil)
             return true
         }
         return false
+    }
+
+    // MARK: Back and forward
+
+    /// What shows: the folder in the gallery, or else the files open.
+    private var shownPlace: Navigation.Place? {
+        if inGallery, let root = galleryController.root {
+            return .folder(root: root, path: galleryController.gallery.folder)
+        }
+        return openURLs.isEmpty ? nil : .files(openURLs)
+    }
+
+    /// What shows changed: a step, unless it is the one beside, or Back and Forward walked to it.
+    private func visited() {
+        if !walking, let place = shownPlace {
+            navigation.visit(place)
+        }
+        refreshMasthead()
+    }
+
+    /// Keeps what the gallery's folder shows, before something else shows in its place.
+    private func keepGallery() {
+        guard inGallery, let root = galleryController.root else {
+            return
+        }
+        navigation.keep(
+            galleryController.view.shown(),
+            for: .folder(root: root, path: galleryController.gallery.folder)
+        )
+    }
+
+    /// × in the gallery, or Esc at its top: the files open behind it show again.
+    private func leaveGalleryForWhatIsOpen() {
+        keepGallery()
+        leaveGallery()
+        visited()
+    }
+
+    @objc func goBack(_ sender: Any?) {
+        walk { $0.back() }
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        walk { $0.forward() }
+    }
+
+    /// The mouse's back and forward buttons go Back and Forward, wherever the pointer is. Its
+    /// other extra buttons pan, as the middle one does.
+    override func sendEvent(_ event: NSEvent) {
+        let sideButton = event.buttonNumber == 3 || event.buttonNumber == 4
+        if sideButton, [.otherMouseDown, .otherMouseUp, .otherMouseDragged].contains(event.type) {
+            if event.type == .otherMouseDown {
+                event.buttonNumber == 3 ? goBack(nil) : goForward(nil)
+            }
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    /// A swipe between pages, where the trackpad is set to swipe with three fingers: Back and
+    /// Forward. Two-finger swipes stay with the gallery's lanes and with turning the model.
+    override func swipe(with event: NSEvent) {
+        if event.deltaX > 0 {
+            goBack(nil)
+        } else if event.deltaX < 0 {
+            goForward(nil)
+        } else {
+            super.swipe(with: event)
+        }
+    }
+
+    var canGoBack: Bool { navigation.canGoBack }
+    var canGoForward: Bool { navigation.canGoForward }
+
+    /// Shows the step Back or Forward goes to: a folder as it was left, or files, which are still
+    /// open behind the gallery if they were the last shown, and are opened again if not.
+    private func walk(_ move: (inout Navigation) -> Navigation.Step?) {
+        // A poster shows the folder as a page to save; it is put away first.
+        if galleryController.gallery.poster {
+            return
+        }
+        keepGallery()
+        guard let step = move(&navigation) else {
+            NSSound.beep()
+            return
+        }
+        walking = true
+        defer {
+            walking = false
+            refreshMasthead()
+        }
+        switch step.place {
+        case .folder(let root, let path):
+            let connected = library.roots.contains {
+                $0.url.standardizedFileURL == root.standardizedFileURL
+            }
+            guard connected else {
+                status.showFailure("\(root.lastPathComponent) is no longer connected.")
+                return
+            }
+            if galleryController.root == root {
+                if !galleryController.goTo(folder: path) {
+                    let name = path.isEmpty ? root.lastPathComponent : path
+                    status.showFailure("\(name) is no longer there.")
+                }
+            } else {
+                galleryController.show(root: root, folder: root.appendingPathComponent(path))
+            }
+            if !inGallery {
+                enterGallery()
+            }
+            if let shown = step.shown {
+                galleryController.view.restore(shown)
+                refreshGalleryToolbar()
+            }
+        case .files(let urls):
+            if urls == openURLs {
+                if inGallery {
+                    leaveGallery()
+                }
+            } else {
+                for (index, url) in urls.enumerated() {
+                    if index == 0 {
+                        open(url)
+                    } else {
+                        add(url)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Gallery
 
     /// Shows a connected folder's gallery over the viewport, the Library beside it.
     private func showGallery(root: URL, folder: URL) {
+        keepGallery()
         galleryController.show(root: root, folder: folder)
         enterGallery()
+        visited()
     }
 
     private func enterGallery() {
@@ -1178,8 +1354,6 @@ final class MainWindow: NSWindow {
     }
 
     private func openFromGallery(_ url: URL) {
-        leaveGallery()
-        openedFromGallery = true
         open(url)
     }
 
@@ -1316,6 +1490,11 @@ final class MainWindow: NSWindow {
     }
 
     private func refreshMasthead() {
+        masthead.setNavigation(
+            shown: navigation.steps.count > 1,
+            back: navigation.canGoBack,
+            forward: navigation.canGoForward
+        )
         if inGallery {
             masthead.isHidden = false
             masthead.show(title: galleryController.title, subtitle: galleryController.subtitle)
@@ -1323,7 +1502,8 @@ final class MainWindow: NSWindow {
             return
         }
         guard !names.isEmpty else {
-            masthead.isHidden = true
+            // Nothing shows: the arrows alone, if they lead anywhere.
+            masthead.showArrowsOnly()
             return
         }
         let title = names.count == 1 ? names[0] : "\(names.count) files"

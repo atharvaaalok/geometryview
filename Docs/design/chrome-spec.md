@@ -51,7 +51,7 @@ Shadows are solid ink, unblurred: cards 3, chips and menus 2, key caps 1.
 
 | Part | Both draw |
 |---|---|
-| Masthead | Title 13.5/600, 2 above the subtitle 11.5 muted, each with a paper halo of 3. Progress, only while importing: a 240×6 pill, sheet with an ink line and r3, filled with mustard up to a 1.5 ink edge, 10 below the subtitle. The Mac's sits beside its window buttons; the page's 24 in, 10 down. |
+| Masthead | Title 13.5/600, 2 above the subtitle 11.5 muted, each with a paper halo of 3. Progress, only while importing: a 240×6 pill, sheet with an ink line and r3, filled with mustard up to a 1.5 ink edge, 10 below the subtitle. The Mac's sits beside its window buttons; the page's 24 in, 10 down. Back and Forward stand before the title once there has been somewhere to go: two ghostly 30-pt pills, ‹ and ›, centred on the title row, 6 before the text; an arrow with nowhere its way is at 40%. With nothing open but somewhere to go, the arrows show alone. |
 | Structure card | 300 wide, 18 from the left, from 72 to 96 above the bottom. Switcher 16 in and 12 down; search 10 below it, 16 in; the tree 10 below that, 6 in from the card, 8 above its bottom. |
 | Switcher | 30 tall, r15, sheet, an ink outline over its segments. Segments as wide as their labels plus 11 each side, divided by 1.5 ink; 11.5 at 500, the chosen one at 600 on cream with a 2 ink underline above the outline. Hover cream wash. |
 | Search | 28 tall, r14, white, 1.5 rule line, ink while focused. Magnifier 14 muted, 10 inside the line, then 6, the text 12.5 (placeholder muted), and the match count 10.5 muted at the end. Return steps through matches, Escape clears. |

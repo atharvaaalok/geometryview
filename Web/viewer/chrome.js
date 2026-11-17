@@ -413,16 +413,38 @@ export class Toolbar {
 export class Masthead {
   #title = el("div.title");
   #close = pill({ icon: icons.close, help: "Close", style: "ghostly", onPress: () => this.onClose?.() });
+  #back = pill({ icon: icons.back, help: kAppleKeys ? "Back (⌘[)" : "Back (Alt+←)", style: "ghostly",
+                 onPress: () => this.onBack?.() });
+  #forward = pill({ icon: icons.forward, help: kAppleKeys ? "Forward (⌘])" : "Forward (Alt+→)", style: "ghostly",
+                    onPress: () => this.onForward?.() });
+  #arrows = el("div.arrows", { hidden: true }, [this.#back, this.#forward]);
   #subtitle = el("div.subtitle");
   #bar = el("div.progress", { hidden: true }, [el("div.fill")]);
-  element = el("header.masthead", { hidden: true },
-               [el("div.title-row", {}, [this.#title, this.#close]), this.#subtitle, this.#bar]);
+  #text = el("div.text", {}, [el("div.title-row", {}, [this.#title, this.#close]), this.#subtitle, this.#bar]);
+  // Back and Forward stand before the title, once there is somewhere to go.
+  element = el("header.masthead", { hidden: true }, [this.#arrows, this.#text]);
   onClose = null;
+  onBack = null;
+  onForward = null;
 
   show(title, subtitle) {
     this.#title.textContent = title;
     this.#subtitle.textContent = subtitle;
+    this.#text.hidden = false;
     this.element.hidden = false;
+  }
+
+  /** Back and Forward: shown once there has been somewhere to go, each dimmed with nowhere its way. */
+  setNavigation({ shown, back, forward }) {
+    this.#arrows.hidden = !shown;
+    this.#back.disabled = !back;
+    this.#forward.disabled = !forward;
+  }
+
+  /** Nothing shows, but Back and Forward still lead somewhere: the arrows alone. */
+  showArrowsOnly() {
+    this.#text.hidden = true;
+    this.element.hidden = this.#arrows.hidden;
   }
 
   hide() { this.element.hidden = true; }
@@ -550,6 +572,10 @@ export class DropZone {
   ]);
 }
 
+// Whether the keyboard is an Apple one, where Back is ⌘[ rather than Alt+←.
+export const kAppleKeys = typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+
 export class ShortcutsSheet {
   element;
 
@@ -570,6 +596,7 @@ export class ShortcutsSheet {
       [["S"], "Section across X"],
       [["Esc"], "Close a card, or clear the selection"],
       [["⌘O"], "Open a file"],
+      kAppleKeys ? [["⌘", "["], "Back, with ] to go forward"] : [["Alt", "←"], "Back, with → to go forward"],
       [["⌘C"], "Copy a picture of the view"],
       [["⌘S"], "Save a picture of the view"],
       [["⌥S"], "Hide or show the sidebar"],

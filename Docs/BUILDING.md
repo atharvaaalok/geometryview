@@ -143,6 +143,10 @@ The app has switches for measuring and checking it:
   the file. Give it `--card structure`, so the tree is showing, and launch it through `open`, which
   lets the sandboxed app read the file: `open -n -W --stdout out.txt -a
   build/release/App/GeometryView.app part.step --args --chrome-check --card structure`.
+- `--navigation-check < Tests/data/navigation.json` runs Back and Forward's rules through the cases
+  the web viewer shares (`ctest` runs it as `navigation`); `--gallery <folder> --gallery-walk` walks
+  a folder, a subfolder and a part opened there, Back and Forward, and writes `gallery-walk.json`.
+  In the browser, `?test=gallery&backend=visit&folder=<name>&walk=1` does the same walk.
 - `--snapshot` writes the window to `chrome.png` in the app's temporary directory; `--window WxH`
   sizes the window, `--card structure` shows the opened file's structure, and `--plain` leaves out
   the view cube and scale bar. In the browser viewer, `?plain` does the same.

@@ -1149,6 +1149,40 @@ final class GalleryView: NSView {
         paint()
     }
 
+    // MARK: Back and forward
+
+    /// The folder in view, and what it showed, just before the last click or key: what Back
+    /// comes back to, should that click or key have left it.
+    private(set) var departure: (folder: String, shown: Navigation.Shown)?
+
+    /// What the folder in view shows: its view, scroll, selection and search.
+    func shown() -> Navigation.Shown {
+        Navigation.Shown(
+            view: gallery.view,
+            scroll: scrollY,
+            selected: gallery.selected.map { gallery.path(of: $0) },
+            search: gallery.search
+        )
+    }
+
+    /// Shows again what a folder showed when Back or Forward left it.
+    func restore(_ shown: Navigation.Shown) {
+        if gallery.view != shown.view {
+            _ = gallery.setView(shown.view)
+        }
+        if gallery.search != shown.search {
+            gallery.search = shown.search
+            onSearchChanged?()
+        }
+        gallery.selected = shown.selected.flatMap { gallery.file(at: $0) }
+        reload()
+        scroll(to: shown.scroll)
+    }
+
+    private func noteDeparture() {
+        departure = (gallery.folder, shown())
+    }
+
     // MARK: For the checks
 
     /// Scrolls to `top`, as the wheel does.
@@ -1161,8 +1195,12 @@ final class GalleryView: NSView {
     }
 
     /// A key, as typed; a click on a target.
-    func press(_ key: GeoGalleryKey) { act(gallery.key(key), reveal: true) }
+    func press(_ key: GeoGalleryKey) {
+        noteDeparture()
+        act(gallery.key(key), reveal: true)
+    }
     func click(kind: UInt32, target: UInt32) {
+        noteDeparture()
         act(gallery.click(kind: kind, target: target, twice: false))
     }
 
@@ -1282,6 +1320,7 @@ final class GalleryView: NSView {
             atlasMoved()
             return
         }
+        noteDeparture()
         act(gallery.click(kind: hit.target_kind, target: hit.target, twice: event.clickCount >= 2))
         if hit.target_kind == GeoTargetPage.rawValue {
             onAtlasMoved?()  // the book turned: the toolbar says so
@@ -1392,6 +1431,7 @@ final class GalleryView: NSView {
             return  // a poster takes no keys but Esc
         }
         if let key {
+            noteDeparture()
             act(gallery.key(key), reveal: true)
             onSearchChanged?()
             if gallery.view == GeoViewCatalogue.rawValue {
@@ -1431,6 +1471,7 @@ final class GalleryView: NSView {
             onLeavePoster?()
             return
         }
+        noteDeparture()
         act(gallery.key(GeoKeyEscape))
         onSearchChanged?()
     }

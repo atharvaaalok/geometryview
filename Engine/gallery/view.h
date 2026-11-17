@@ -100,6 +100,10 @@ public:
     void setScroll(float top) { scroll_ = top; }
 
     bool setFolder(std::string_view path);
+    /// Shows a folder as Back and Forward go to it: into or out of it, with the motion, when it is
+    /// beside the folder in view, as a click or Esc would; at once from anywhere else. Returns
+    /// false if there is none.
+    bool goTo(std::string_view path);
     u32 folder() const { return folder_; }
     std::string subtitle() const;
 
@@ -113,6 +117,8 @@ public:
     GeoGalleryAction click(u32 kind, u32 index, bool twice);
     GeoGalleryAction key(u32 key);
     u32 selected() const { return selected_; }
+    /// Selects a file, as a click on it does, or nothing with kNone.
+    void select(u32 file);
 
     std::vector<GeoGalleryWant> wanted() const;
     /// Files drawn large in view, nearest the middle first, at most 32 (GeoItemDetail).

@@ -186,6 +186,7 @@ final class ShortcutsSheet: NSView {
             ([cap(.section)], "Section across X"),
             ([cap(.clearSelection)], "Close a card, or clear the selection"),
             (["⌘", "W"], "Close the file"),
+            (["⌘", "["], "Back, with ] to go forward"),
             (["⌘", "C"], "Copy a picture of the view"),
             (["⌘", "S"], "Save a picture of the view"),
             (["⌃⌘", "S"], "Hide or show the sidebar"),

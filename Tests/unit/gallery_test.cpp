@@ -545,6 +545,49 @@ TEST_CASE("into a folder it grows from its plate, and back out it shrinks into i
     CHECK(t.rect[3] == plate.h);
 }
 
+TEST_CASE("Back and Forward go to a folder: into or out of one beside, at once from afar") {
+    Gallery g = measured();
+    g.layout();
+    // Beside: into a folder of the root, and back out to the root, each with its motion.
+    REQUIRE(g.goTo("fastener"));
+    REQUIRE(g.layout());
+    CHECK(g.folder() == g.tree().folderAt("fastener"));
+    CHECK(g.transition().kind == GeoTransitionInto);
+    REQUIRE(g.goTo("fastener/hexnut_iso4032"));
+    REQUIRE(g.layout());
+    CHECK(g.transition().kind == GeoTransitionInto);
+    // From afar, two levels up or across: at once, as a click on the Library's tree is.
+    REQUIRE(g.goTo(""));
+    REQUIRE(g.layout());
+    CHECK(g.folder() == 0);
+    CHECK(g.transition().kind == GeoTransitionNone);
+    REQUIRE(g.goTo("motor"));
+    g.layout();
+    REQUIRE(g.goTo("bearing"));
+    REQUIRE(g.layout());
+    CHECK(g.transition().kind == GeoTransitionNone);
+    // The folder in view again changes nothing, and a folder that isn't there is refused.
+    CHECK(g.goTo("bearing"));
+    CHECK_FALSE(g.layout());
+    CHECK_FALSE(g.goTo("gone"));
+    CHECK(g.folder() == g.tree().folderAt("bearing"));
+}
+
+TEST_CASE("a file selected as Back left it is selected again, without opening") {
+    Gallery g = measured();
+    REQUIRE(g.setFolder("motor"));
+    g.layout();
+    const u32 file = g.tree().fileAt("motor/nema16.step");
+    REQUIRE(file != kNone);
+    g.select(file);
+    CHECK(g.selected() == file);
+    CHECK(g.layout());
+    g.select(kNone);
+    CHECK(g.selected() == kNone);
+    g.select(1u << 30); // no such file: nothing selected
+    CHECK(g.selected() == kNone);
+}
+
 TEST_CASE("a search marks what it found, and Esc steps back: Peek, search, selection, folder") {
     Gallery g = measured();
     g.setSearch("m12");
